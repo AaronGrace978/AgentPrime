@@ -1,0 +1,246 @@
+# AgentPrime - AI Coding Assistant IDE - Cursor Rules
+
+## Project Overview
+AgentPrime is a sophisticated AI-powered desktop IDE built with Electron, featuring:
+- Multiple AI providers (Anthropic Claude, OpenAI GPT, Ollama, OpenRouter)
+- Template system for project generation
+- VibeCoder - specialized IDE for AI-assisted development
+- Python backend with FastAPI
+- Modular architecture with IPC communication
+
+## Code Style & Conventions
+
+### JavaScript/TypeScript
+- Use ES6+ features, async/await over Promises
+- Prefer arrow functions for concise expressions
+- Use template literals over string concatenation
+- Follow camelCase for variables/functions, PascalCase for classes/components
+- Use meaningful variable names, avoid abbreviations
+- Add JSDoc comments for public APIs and complex functions
+
+### React Components
+- Use functional components with hooks over class components
+- Prefer custom hooks for reusable logic
+- Use meaningful component and prop names
+- Keep components small and focused (single responsibility)
+- Use TypeScript interfaces for props and state
+
+### Python Backend
+- Follow PEP 8 style guidelines
+- Use type hints for function parameters and return values
+- Prefer f-strings over .format() or % formatting
+- Use meaningful variable names, avoid single letters except for loops
+- Add docstrings for all public functions and classes
+
+### Error Handling
+- Always handle errors gracefully with try/catch blocks
+- Provide meaningful error messages
+- Log errors appropriately (console.error for dev, proper logging for prod)
+- Never expose sensitive information in error messages
+
+## Architecture Patterns
+
+### IPC Communication
+- Use Electron's IPC for main ↔ renderer communication
+- Define clear IPC channel names (e.g., 'fs:readFile', 'ai:chat')
+- Validate all IPC message data before processing
+- Handle IPC errors gracefully
+
+### AI Provider Integration
+- Implement consistent interface across all providers
+- Handle API rate limits and errors appropriately
+- Cache responses when appropriate
+- Implement streaming support for real-time responses
+
+### Template System
+- Templates should be self-contained with package.json
+- Include README.md with setup and usage instructions
+- Use consistent naming and structure
+- Test templates before adding to registry
+
+## Security Considerations
+
+### Electron Security
+- Enable contextIsolation and nodeIntegration: false
+- Use preload scripts for secure IPC communication
+- Implement Content Security Policy (CSP) headers
+- Validate all user inputs, especially file paths and URLs
+
+### API Keys & Secrets
+- Never commit API keys or secrets to version control
+- Use environment variables for configuration
+- Implement proper key validation and rotation
+- Log API usage without exposing sensitive data
+
+## Testing Requirements
+
+### Unit Tests
+- Write tests for all utility functions
+- Test error conditions and edge cases
+- Use descriptive test names (e.g., "should handle invalid file path")
+- Aim for 80%+ code coverage
+
+### Integration Tests
+- Test IPC communication between main and renderer
+- Test AI provider integrations with mock responses
+- Test template generation and validation
+- Use Playwright for end-to-end testing
+
+### Performance Testing
+- Monitor memory usage in Electron apps
+- Test with large files and projects
+- Profile AI API response times
+- Optimize bundle sizes and load times
+
+## Development Workflow
+
+### New Features
+1. Create feature branch from main
+2. Write tests first (TDD approach)
+3. Implement feature with clean, documented code
+4. Test thoroughly across all supported platforms
+5. Update documentation if needed
+6. Create pull request with detailed description
+
+### Bug Fixes
+1. Reproduce the issue with clear steps
+2. Write test case that reproduces the bug
+3. Fix the issue with minimal changes
+4. Ensure all existing tests still pass
+5. Test fix across different environments
+
+### Code Reviews
+- Review for security vulnerabilities
+- Check code style and conventions
+- Verify tests are included and pass
+- Ensure documentation is updated
+- Test the changes manually if possible
+
+## File Organization
+
+### Main Application (src/)
+- `main/` - Electron main process code
+  - `ai-providers/` - AI provider implementations
+  - `core/` - Core business logic
+  - `ipc-handlers/` - IPC communication handlers
+  - `mirror/` - AI mirroring functionality
+  - `tools/` - Utility tools and helpers
+- `renderer/` - Electron renderer process (UI)
+- `types/` - TypeScript type definitions
+
+### VibeCoder (vibecoder/src/)
+- `main.js` - Electron main process
+- `renderer/` - React UI components
+- `preload.js` - Secure IPC bridge
+
+### Templates (templates/)
+- Each template in its own directory
+- Include package.json, README.md, and template.json
+- Follow consistent structure and naming
+
+### Backend (backend/)
+- `app/` - FastAPI application
+  - `api/` - API endpoints
+  - `core/` - Core business logic
+  - `config.py` - Configuration management
+
+## Build & Deployment
+
+### Development
+- Use `npm run dev` for main app development
+- Use `cd vibecoder && npm run dev` for VibeCoder development
+- Use `npm run start:dev` for backend development
+- Test on Windows, macOS, and Linux when possible
+
+### Production Builds
+- Use Electron Builder for desktop app packaging
+- Include all necessary dependencies
+- Test installers on clean systems
+- Verify all features work in packaged app
+
+### Release Process
+1. Update version numbers in package.json files
+2. Update changelog and release notes
+3. Create GitHub release with installers
+4. Update documentation if needed
+5. Announce release to community
+
+## Documentation
+
+### Code Documentation
+- Add JSDoc comments for all public APIs
+- Document complex algorithms and business logic
+- Include usage examples in comments
+- Keep README files up to date
+
+### User Documentation
+- Maintain comprehensive README.md
+- Include setup and installation instructions
+- Document all features and keyboard shortcuts
+- Provide troubleshooting guides
+
+### API Documentation
+- Document all IPC channels and message formats
+- Document AI provider interfaces
+- Include examples for custom integrations
+- Keep API documentation synchronized with code
+
+## Performance Optimization
+
+### Electron Apps
+- Minimize bundle sizes with code splitting
+- Use virtual scrolling for large file trees
+- Implement lazy loading for heavy components
+- Monitor and optimize memory usage
+
+### AI Integration
+- Implement intelligent caching strategies
+- Stream responses for better UX
+- Handle API rate limits gracefully
+- Optimize token usage and costs
+
+### File Operations
+- Use streaming for large file reads/writes
+- Implement progress indicators for long operations
+- Handle file locks and permissions properly
+- Provide clear feedback for file operations
+
+## Accessibility & UX
+
+### Keyboard Navigation
+- Support standard keyboard shortcuts
+- Provide keyboard navigation for all UI elements
+- Include screen reader support
+- Test with keyboard-only navigation
+
+### Visual Design
+- Maintain consistent dark theme
+- Use clear, readable fonts and colors
+- Provide appropriate contrast ratios
+- Include loading states and progress indicators
+
+### Error Handling UX
+- Provide clear, actionable error messages
+- Include recovery options when possible
+- Log errors for debugging while protecting user privacy
+- Test error scenarios thoroughly
+
+## Continuous Integration
+
+### Automated Testing
+- Run unit tests on every commit
+- Run integration tests nightly
+- Test builds on multiple platforms
+- Monitor test coverage and performance metrics
+
+### Code Quality
+- Use ESLint for JavaScript/TypeScript
+- Use Prettier for code formatting
+- Run security scans regularly
+- Monitor bundle sizes and performance
+
+### Release Automation
+- Automate version bumping and tagging
+- Generate release notes from commits
+- Build installers for all platforms
+- Deploy to update channels automatically

@@ -1,0 +1,45 @@
+# AgentPrime Model Training Configuration
+# Example configuration for training custom autocomplete models
+
+model:
+  name: "agentprime-autocomplete"
+  architecture: "transformer"
+  hidden_size: 768
+  num_layers: 12
+  num_heads: 12
+  vocab_size: 50257
+
+training:
+  batch_size: 32
+  learning_rate: 0.0001
+  num_epochs: 10
+  warmup_steps: 1000
+  gradient_clip: 1.0
+  mixed_precision: true
+  
+  optimizer: "adamw"
+  scheduler: "cosine_annealing"
+  
+  # Reinforcement Learning (like Cursor's Tab model)
+  use_rl: true
+  rl_reward_threshold: 0.7
+  rl_learning_rate: 0.00001
+
+data:
+  dataset_path: "./datasets/github-code"
+  train_split: 0.9
+  val_split: 0.05
+  test_split: 0.05
+  max_sequence_length: 512
+  languages: ["javascript", "typescript", "python", "java", "go"]
+
+checkpoint:
+  save_dir: "../checkpoints"
+  save_frequency: 1000  # steps
+  keep_last_n: 5
+
+results:
+  log_dir: "../results"
+  tensorboard: true
+  wandb: false  # Set to true to use Weights & Biases
+

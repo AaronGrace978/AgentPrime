@@ -1,0 +1,3 @@
+@echo off
+echo Starting AgentPrime Gateway...
+node "%~dp0dist\cli\agentprime.js" gateway --port 18789

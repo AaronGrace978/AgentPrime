@@ -1,0 +1,808 @@
+/**
+ * AgentPrime - STUNNING UI Enhancement
+ * 
+ * Takes the solid foundation and makes it ABSOLUTELY GORGEOUS
+ * Inspired by: Linear, Vercel, Raycast, Arc Browser
+ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLASSMORPHISM & DEPTH
+   Modern frosted glass effects with depth
+   ═══════════════════════════════════════════════════════════════════ */
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] .glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GRADIENT MAGIC
+   Stunning gradients that catch the eye
+   ═══════════════════════════════════════════════════════════════════ */
+
+.gradient-primary {
+  background: linear-gradient(
+    135deg,
+    #667eea 0%,
+    #764ba2 25%,
+    #f093fb 50%,
+    #4facfe 75%,
+    #00f2fe 100%
+  );
+  background-size: 200% 200%;
+  animation: gradientShift 15s ease infinite;
+}
+
+.gradient-accent {
+  background: linear-gradient(
+    135deg,
+    #ff6b4a 0%,
+    #ff8a6b 50%,
+    #ffa58b 100%
+  );
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+.gradient-success {
+  background: linear-gradient(
+    135deg,
+    #10b981 0%,
+    #3fb950 50%,
+    #6ee7b7 100%
+  );
+}
+
+.gradient-purple {
+  background: linear-gradient(
+    135deg,
+    #8b5cf6 0%,
+    #a78bfa 50%,
+    #c4b5fd 100%
+  );
+}
+
+.gradient-text {
+  background: linear-gradient(
+    135deg,
+    #667eea 0%,
+    #764ba2 50%,
+    #f093fb 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLOW EFFECTS
+   Subtle glows that add depth and focus
+   ═══════════════════════════════════════════════════════════════════ */
+
+.glow-accent {
+  box-shadow: 
+    0 0 20px rgba(255, 107, 74, 0.3),
+    0 0 40px rgba(255, 107, 74, 0.2),
+    0 0 60px rgba(255, 107, 74, 0.1);
+}
+
+.glow-blue {
+  box-shadow: 
+    0 0 20px rgba(59, 130, 246, 0.3),
+    0 0 40px rgba(59, 130, 246, 0.2);
+}
+
+.glow-purple {
+  box-shadow: 
+    0 0 20px rgba(139, 92, 246, 0.3),
+    0 0 40px rgba(139, 92, 246, 0.2);
+}
+
+.glow-green {
+  box-shadow: 
+    0 0 20px rgba(16, 185, 129, 0.3),
+    0 0 40px rgba(16, 185, 129, 0.2);
+}
+
+/* Pulsing glow for active elements */
+.glow-pulse {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 
+      0 0 20px rgba(255, 107, 74, 0.3),
+      0 0 40px rgba(255, 107, 74, 0.2);
+  }
+  50% {
+    box-shadow: 
+      0 0 30px rgba(255, 107, 74, 0.5),
+      0 0 60px rgba(255, 107, 74, 0.3),
+      0 0 90px rgba(255, 107, 74, 0.2);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING BUTTONS
+   Buttons that beg to be clicked
+   ═══════════════════════════════════════════════════════════════════ */
+
+.btn-stunning {
+  position: relative;
+  padding: 12px 24px;
+  font-weight: 600;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-stunning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.btn-stunning:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 12px 24px rgba(0, 0, 0, 0.15),
+    0 0 40px rgba(255, 107, 74, 0.3);
+}
+
+.btn-stunning:hover::before {
+  opacity: 1;
+}
+
+.btn-stunning:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Icon alignment in buttons - CRITICAL for Lucide React SVGs in flex containers */
+.btn-stunning svg {
+  display: block;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  width: auto;
+  height: auto;
+  transform: none !important; /* Kill any rogue rotations/transforms */
+}
+
+/* Lucide React icons - ensure they align properly in flex containers */
+.btn-stunning > svg {
+  display: block;
+  flex-shrink: 0;
+  align-self: center;
+  transform: none !important; /* Prevent parent transforms from affecting icons */
+}
+
+/* Ensure proper spacing between icon and text in buttons */
+.btn-stunning > svg + * {
+  margin-left: 6px;
+}
+
+/* Lucide icon class alignment - works in flex containers */
+.btn-stunning .icon,
+.btn .icon,
+.header-right .btn .icon,
+.header-right .btn-stunning .icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: none !important; /* Kill any rogue rotations */
+}
+
+/* Ensure icons inside icon wrappers are also protected */
+.btn-stunning .icon svg,
+.btn .icon svg {
+  transform: none !important;
+  display: block;
+}
+
+/* Primary button */
+.btn-primary-stunning {
+  background: linear-gradient(135deg, #ff6b4a 0%, #ff8a6b 100%);
+  color: white;
+  box-shadow: 
+    0 4px 12px rgba(255, 107, 74, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Secondary button with glass effect */
+.btn-secondary-stunning {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--prime-text);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CARD DESIGNS
+   Beautiful cards with depth and hover effects
+   ═══════════════════════════════════════════════════════════════════ */
+
+.card-stunning {
+  background: var(--prime-surface);
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid var(--prime-border);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+/* When card-stunning is used in welcome-actions, make it a flex column */
+.welcome-actions .card-stunning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  cursor: pointer;
+  min-height: 150px;
+}
+
+/* Ensure action icons are perfectly centered in welcome cards */
+.welcome-actions .card-stunning .action-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px auto;
+  box-sizing: border-box;
+}
+
+/* Protect action icons from card transforms and ensure perfect centering */
+.welcome-actions .card-stunning .action-icon svg {
+  transform: none !important; /* Prevent card hover transforms from affecting icons */
+  margin: 0 !important;
+  display: block !important;
+}
+
+.card-stunning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 107, 74, 0.05) 0%,
+    rgba(59, 130, 246, 0.05) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.card-stunning:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    0 0 0 1px rgba(255, 107, 74, 0.1);
+}
+
+.card-stunning:hover::before {
+  opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   INPUT FIELDS
+   Beautiful, focused input experiences
+   ═══════════════════════════════════════════════════════════════════ */
+
+.input-stunning {
+  width: 100%;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-family: inherit;
+  background: var(--prime-surface);
+  border: 2px solid var(--prime-border);
+  border-radius: 12px;
+  color: var(--prime-text);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.input-stunning:focus {
+  border-color: var(--prime-accent);
+  box-shadow: 
+    0 0 0 4px rgba(255, 107, 74, 0.1),
+    0 8px 16px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.input-stunning::placeholder {
+  color: var(--prime-text-muted);
+}
+
+/* Large composer input */
+.composer-input-stunning {
+  min-height: 120px;
+  padding: 20px 24px;
+  font-size: 16px;
+  line-height: 1.6;
+  resize: vertical;
+  background: var(--prime-surface-elevated);
+  border: 2px solid transparent;
+  border-radius: 16px;
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.composer-input-stunning:focus {
+  border-color: var(--prime-accent);
+  box-shadow: 
+    0 0 0 4px rgba(255, 107, 74, 0.1),
+    0 12px 24px rgba(0, 0, 0, 0.08),
+    inset 0 2px 4px rgba(0, 0, 0, 0.02);
+  transform: translateY(-2px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING HEADER
+   Eye-catching header with depth
+   ═══════════════════════════════════════════════════════════════════ */
+
+.header-stunning {
+  background: var(--prime-surface);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid var(--prime-border);
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.03);
+  position: relative;
+}
+
+.header-stunning::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 107, 74, 0.3) 50%,
+    transparent 100%
+  );
+}
+
+/* Logo with gradient */
+.logo-stunning {
+  font-size: 24px;
+  font-weight: 800;
+  background: linear-gradient(
+    135deg,
+    #ff6b4a 0%,
+    #ff8a6b 50%,
+    #ffa58b 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+  letter-spacing: -0.02em;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING SIDEBAR
+   Beautiful sidebar with depth and hover states
+   ═══════════════════════════════════════════════════════════════════ */
+
+.sidebar-stunning {
+  background: var(--prime-surface);
+  border-right: 1px solid var(--prime-border);
+  box-shadow: 
+    1px 0 3px rgba(0, 0, 0, 0.02),
+    inset -1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-item-stunning {
+  padding: 10px 16px;
+  margin: 4px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar-item-stunning::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--prime-accent);
+  transform: scaleY(0);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.sidebar-item-stunning:hover {
+  background: var(--prime-surface-hover);
+  transform: translateX(2px);
+}
+
+.sidebar-item-stunning.active {
+  background: var(--prime-accent-light);
+  color: var(--prime-accent);
+  font-weight: 600;
+}
+
+.sidebar-item-stunning.active::before {
+  transform: scaleY(1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING MODALS
+   Beautiful modals that command attention
+   ═══════════════════════════════════════════════════════════════════ */
+
+.modal-backdrop-stunning {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+.modal-stunning {
+  background: var(--prime-surface);
+  border-radius: 20px;
+  padding: 32px;
+  max-width: 600px;
+  width: 90%;
+  box-shadow: 
+    0 24px 48px rgba(0, 0, 0, 0.2),
+    0 8px 16px rgba(0, 0, 0, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+  animation: modalSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.modal-stunning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(
+    90deg,
+    #ff6b4a 0%,
+    #ff8a6b 50%,
+    #ffa58b 100%
+  );
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING TABS
+   Beautiful tab navigation
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tabs-stunning {
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  background: var(--prime-surface-elevated);
+  border-radius: 12px;
+  border: 1px solid var(--prime-border);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.tab-stunning {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--prime-text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+
+.tab-stunning:hover {
+  background: var(--prime-surface-hover);
+  color: var(--prime-text);
+}
+
+.tab-stunning.active {
+  background: var(--prime-surface);
+  color: var(--prime-accent);
+  font-weight: 600;
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING BADGES
+   Eye-catching status indicators
+   ═══════════════════════════════════════════════════════════════════ */
+
+.badge-stunning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.badge-success {
+  background: linear-gradient(135deg, #10b981 0%, #3fb950 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+.badge-warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.badge-error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.badge-info {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING ANIMATIONS
+   Delightful micro-interactions
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Shimmer effect for loading states */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--prime-surface) 0%,
+    var(--prime-surface-hover) 50%,
+    var(--prime-surface) 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING SCROLLBARS
+   Beautiful custom scrollbars
+   ═══════════════════════════════════════════════════════════════════ */
+
+.stunning-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.stunning-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stunning-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--prime-border);
+  border-radius: 10px;
+  border: 2px solid var(--prime-surface);
+  transition: background 0.2s ease;
+}
+
+.stunning-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--prime-accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   STUNNING TOOLTIPS
+   Beautiful, informative tooltips
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tooltip-stunning {
+  position: relative;
+}
+
+.tooltip-stunning::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.tooltip-stunning:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVE UTILITIES
+   ═══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .modal-stunning {
+    padding: 24px;
+    border-radius: 16px;
+  }
+  
+  .card-stunning {
+    padding: 16px;
+    border-radius: 12px;
+  }
+  
+  .btn-stunning {
+    padding: 10px 20px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   Quick styling utilities
+   ═══════════════════════════════════════════════════════════════════ */
+
+.text-gradient {
+  background: linear-gradient(135deg, #ff6b4a 0%, #ff8a6b 50%, #ffa58b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.shadow-stunning {
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.border-gradient {
+  border: 2px solid transparent;
+  background: 
+    linear-gradient(var(--prime-surface), var(--prime-surface)) padding-box,
+    linear-gradient(135deg, #ff6b4a, #ff8a6b, #ffa58b) border-box;
+}
+
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+}
+

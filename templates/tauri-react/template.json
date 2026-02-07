@@ -1,0 +1,26 @@
+{
+  "id": "tauri-react",
+  "files": [
+    { "path": "package.json", "template": "package.json" },
+    { "path": "tsconfig.json", "template": "tsconfig.json" },
+    { "path": "tsconfig.node.json", "template": "tsconfig.node.json" },
+    { "path": "vite.config.ts", "template": "vite.config.ts" },
+    { "path": "README.md", "template": "README.md" },
+    { "path": "src/main.tsx", "template": "src/main.tsx" },
+    { "path": "src/App.tsx", "template": "src/App.tsx" },
+    { "path": "src/styles.css", "template": "src/styles.css" },
+    { "path": "index.html", "template": "index.html" },
+    { "path": "src-tauri/tauri.conf.json", "template": "src-tauri/tauri.conf.json" },
+    { "path": "src-tauri/Cargo.toml", "template": "src-tauri/Cargo.toml" },
+    { "path": "src-tauri/build.rs", "template": "src-tauri/build.rs" },
+    { "path": "src-tauri/src/main.rs", "template": "src-tauri/src/main.rs" },
+    { "path": "icons/README.md", "template": "icons/README.md" },
+    { "path": ".gitignore", "template": ".gitignore" }
+  ],
+  "directories": [
+    "src",
+    "src-tauri",
+    "src-tauri/src",
+    "icons"
+  ]
+}

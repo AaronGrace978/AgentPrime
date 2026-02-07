@@ -1,0 +1,151 @@
+/* AgentPrime - Ghost Text Completions Styling */
+/* Matches Cursor's appearance for seamless user experience */
+
+/* Ghost text styling - matches Cursor's gray inline text */
+.ghost-completion-text {
+  color: #6e7681 !important;          /* Gray color like Cursor */
+  opacity: 0.7 !important;            /* Slightly transparent */
+  font-style: normal !important;      /* Match Cursor - NOT italic */
+  font-weight: 400 !important;
+  user-select: none !important;       /* Prevent selection */
+  pointer-events: none !important;    /* Ignore mouse events */
+  white-space: pre !important;        /* Preserve whitespace */
+  tab-size: 2 !important;             /* Consistent tab size */
+  font-family: inherit !important;    /* Match editor font */
+  letter-spacing: inherit !important; /* Match editor letter-spacing */
+  line-height: inherit !important;    /* Match editor line height */
+  transition: opacity 0.1s ease-out !important; /* Smoother transitions */
+}
+
+/* Critical: Ensure inline decoration positioning works correctly */
+.monaco-editor .view-lines .view-line span span.ghost-completion-text {
+  display: inline !important;
+  position: relative !important;
+}
+
+/* Remove border/decoration styling that Monaco might add */
+.monaco-editor .ghost-completion-text::after {
+  content: none !important;
+}
+
+/* Hide ghost text when editor is not focused */
+.monaco-editor:not(.focused) .ghost-completion-text {
+  opacity: 0 !important;
+  transition: opacity 0.15s ease-out !important;
+}
+
+/* Enhanced focus states for better UX */
+.monaco-editor.focused .ghost-completion-text {
+  /* Ensure smooth fade-in with proper timing */
+  animation: fadeInGhost 0.08s ease-out forwards;
+}
+
+/* Smooth fade in animation for better UX - faster than before */
+.monaco-editor.focused .ghost-completion-text {
+  animation: fadeInGhost 0.08s ease-out forwards;
+}
+
+@keyframes fadeInGhost {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.7;
+  }
+}
+
+/* Handle multi-line ghost text completions properly */
+.ghost-completion-text.multiline,
+.monaco-editor .ghost-completion-multiline {
+  white-space: pre-wrap !important;
+  display: inline-block !important;
+  vertical-align: top !important;
+  /* Ensure proper line height and spacing for multi-line */
+  line-height: inherit !important;
+  /* Prevent Monaco from breaking multi-line decorations */
+  word-break: keep-all !important;
+}
+
+/* Dark theme specific styling (VS Code dark+) */
+.monaco-editor.vs-dark .ghost-completion-text,
+.monaco-editor[data-theme*="dark"] .ghost-completion-text {
+  color: #8b949e !important;
+}
+
+/* Light theme specific styling */
+.monaco-editor.vs .ghost-completion-text,
+.monaco-editor.vs-light .ghost-completion-text {
+  color: #57606a !important;
+}
+
+/* High contrast theme support */
+.monaco-editor.hc-black .ghost-completion-text {
+  color: #a8a8a8 !important;
+  opacity: 0.85 !important;
+}
+
+/* Additional theme support for better compatibility */
+.monaco-editor[data-theme*="light"] .ghost-completion-text {
+  color: #57606a !important;
+}
+
+.monaco-editor[data-theme*="dark"] .ghost-completion-text {
+  color: #8b949e !important;
+}
+
+/* GitHub themes */
+.monaco-editor[data-theme*="github-light"] .ghost-completion-text {
+  color: #656d76 !important;
+}
+
+.monaco-editor[data-theme*="github-dark"] .ghost-completion-text {
+  color: #7d8590 !important;
+}
+
+/* Selection interference prevention */
+.monaco-editor .ghost-completion-text::selection {
+  background: transparent !important;
+}
+
+.monaco-editor .ghost-completion-text::-moz-selection {
+  background: transparent !important;
+}
+
+/* Cursor-like highlight when Tab hint is shown */
+.ghost-completion-hint {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 2px 6px;
+  background: rgba(110, 118, 129, 0.15);
+  border-radius: 3px;
+  font-size: 0.75em;
+  color: #6e7681;
+  opacity: 0.6;
+  font-weight: 500;
+  user-select: none;
+  pointer-events: none;
+  animation: pulseHint 2s ease-in-out infinite;
+  vertical-align: baseline;
+}
+
+@keyframes pulseHint {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.4; }
+}
+
+/* Ghost completion container for absolute positioning cases */
+.ghost-completion-container {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Streaming animation for partial completions */
+@keyframes ghostTextTyping {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.5; }
+}
+
+.ghost-completion-text.streaming {
+  animation: ghostTextTyping 0.8s ease-in-out infinite;
+}

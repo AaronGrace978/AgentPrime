@@ -1,0 +1,19 @@
+[package]
+name = "{{projectName}}"
+version = "0.1.0"
+edition = "2021"
+authors = ["{{author}}"]
+description = "{{description}}"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+colored = "2.1"
+anyhow = "1.0"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
+
+[[bin]]
+name = "{{projectName}}"
+path = "src/main.rs"

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentPrime - AI-Powered Code Intelligence</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      overflow: hidden;
+    }
+
+    #root {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Loading spinner */
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #30363d;
+      border-top: 4px solid #58a6ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+  <!-- Stunning UI Styles -->
+  <link rel="stylesheet" href="../src/renderer/stunning-ui.css">
+  <!-- Load the React app bundle (webpack will inject this) -->
+</head>
+<body>
+  <div id="root">
+    <div class="loading">
+      <div class="spinner"></div>
+      <div>Loading AgentPrime...</div>
+    </div>
+  </div>
+</body>
+</html>

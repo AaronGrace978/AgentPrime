@@ -1,0 +1,22 @@
+{
+  "id": "electron-react",
+  "files": [
+    { "path": "package.json", "template": "package.json" },
+    { "path": "tsconfig.json", "template": "tsconfig.json" },
+    { "path": "tsconfig.main.json", "template": "tsconfig.main.json" },
+    { "path": "vite.config.ts", "template": "vite.config.ts" },
+    { "path": ".gitignore", "template": ".gitignore" },
+    { "path": "README.md", "template": "README.md" },
+    { "path": "src/main/main.ts", "template": "src/main/main.ts" },
+    { "path": "src/main/preload.ts", "template": "src/main/preload.ts" },
+    { "path": "src/renderer/index.html", "template": "src/renderer/index.html" },
+    { "path": "src/renderer/index.tsx", "template": "src/renderer/index.tsx" },
+    { "path": "src/renderer/App.tsx", "template": "src/renderer/App.tsx" },
+    { "path": "src/renderer/styles.css", "template": "src/renderer/styles.css" }
+  ],
+  "directories": [
+    "src/main",
+    "src/renderer",
+    "src/renderer/components"
+  ]
+}

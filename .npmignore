@@ -1,0 +1,175 @@
+# ===========================================
+# AgentPrime .npmignore
+# ===========================================
+# Controls which files are included when publishing to npm
+# This is separate from .gitignore as npm publishing has different needs
+
+# ===========================================
+# Source files (only dist/ is needed)
+# ===========================================
+src/
+renderer/
+*.ts
+*.tsx
+!*.d.ts
+
+# ===========================================
+# Development and build configuration
+# ===========================================
+webpack.*.config.js
+tsconfig*.json
+jest.config.js
+playwright.config.js
+.babelrc
+.babelrc.js
+.eslintrc*
+.prettierrc*
+
+# ===========================================
+# Tests and test files
+# ===========================================
+tests/
+test-*/
+__tests__/
+*.test.js
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.tsx
+coverage/
+.nyc_output/
+test*.js
+test*.md
+
+# ===========================================
+# Development scripts and tools
+# ===========================================
+scripts/
+experiments/
+archive/
+checkpoints/
+results/
+training-corpus/
+*.bat
+codebase-indexer.js
+temp-*.js
+
+# ===========================================
+# Documentation (keep README.md)
+# ===========================================
+docs/
+*.md
+!README.md
+
+# ===========================================
+# IDE and Editor files
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ===========================================
+# OS generated files
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# Logs and temporary files
+# ===========================================
+logs/
+*.log
+npm-debug.log*
+tmp/
+temp/
+.tmp/
+.temp/
+*.tmp
+*.temp
+*.bak
+
+# ===========================================
+# Python (backend not needed in npm package)
+# ===========================================
+backend/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env/
+ENV/
+*.egg-info/
+.eggs/
+*.egg
+
+# ===========================================
+# Project-specific exclusions
+# ===========================================
+data/
+userData/
+Projects/
+vibecoder/
+express-api/
+lib/
+node_modules/
+dist/
+build/
+out/
+release/
+
+# ===========================================
+# Secrets and environment files
+# ===========================================
+.env
+.env.*
+*.pem
+*.key
+secrets/
+credentials.json
+
+# ===========================================
+# Build artifacts (keep only what's needed)
+# ===========================================
+*.exe
+*.dmg
+*.AppImage
+*.snap
+*.deb
+*.rpm
+*.asar
+
+# ===========================================
+# Git and version control
+# ===========================================
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+
+# ===========================================
+# CI/CD and deployment
+# ===========================================
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+azure-pipelines.yml
+

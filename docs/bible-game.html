@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Journey with Jesus - Bible Adventure Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Georgia', serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #gameContainer {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .game-header {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #ffd700;
+            z-index: 100;
+        }
+
+        .game-title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffd700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 8px 15px;
+            border-radius: 5px;
+            border: 1px solid #ffd700;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #ffd700;
+        }
+
+        /* Main Game Area */
+        .game-content {
+            flex: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Scene Canvas */
+        #gameCanvas {
+            flex: 1;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98D8C8 50%, #6B8E23 100%);
+            cursor: crosshair;
+        }
+
+        /* Sidebar */
+        .game-sidebar {
+            width: 350px;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 20px;
+            overflow-y: auto;
+            border-left: 3px solid #ffd700;
+        }
+
+        .sidebar-section {
+            margin-bottom: 25px;
+        }
+
+        .section-title {
+            font-size: 18px;
+            color: #ffd700;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #ffd700;
+            padding-bottom: 5px;
+        }
+
+        /* Inventory */
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .inventory-item {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid #ffd700;
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .inventory-item:hover {
+            background: rgba(255, 215, 0, 0.3);
+            transform: scale(1.05);
+        }
+
+        .inventory-item.empty {
+            border-color: #666;
+            opacity: 0.5;
+        }
+
+        .item-icon {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .item-name {
+            font-size: 12px;
+            color: #ccc;
+        }
+
+        /* Quest Log */
+        .quest-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #ffd700;
+        }
+
+        .quest-title {
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 5px;
+        }
+
+        .quest-description {
+            font-size: 14px;
+            color: #ccc;
+            line-height: 1.4;
+        }
+
+        .quest-progress {
+            margin-top: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            height: 6px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .quest-progress-bar {
+            background: #ffd700;
+            height: 100%;
+            transition: width 0.3s;
+        }
+
+        /* Dialogue Box */
+        .dialogue-box {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 350px;
+            background: rgba(0, 0, 0, 0.95);
+            border-top: 4px solid #ffd700;
+            padding: 20px;
+            max-height: 200px;
+            display: none;
+        }
+
+        .dialogue-box.active {
+            display: block;
+            animation: slideUp 0.3s;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        .dialogue-speaker {
+            font-size: 18px;
+            color: #ffd700;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .dialogue-text {
+            font-size: 16px;
+            line-height: 1.6;
+            color: #fff;
+        }
+
+        .dialogue-choices {
+            margin-top: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .dialogue-choice {
+            background: rgba(255, 215, 0, 0.2);
+            border: 2px solid #ffd700;
+            padding: 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: #fff;
+        }
+
+        .dialogue-choice:hover {
+            background: rgba(255, 215, 0, 0.4);
+            transform: translateX(5px);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, #ffd700, #ffed4e);
+            color: #000;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        .action-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Character Sprite */
+        .character {
+            position: absolute;
+            transition: all 0.3s ease;
+            font-size: 48px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .jesus {
+            color: #fff;
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.8));
+        }
+
+        /* Particle Effects */
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            font-size: 20px;
+            animation: floatUp 2s ease-out forwards;
+        }
+
+        @keyframes floatUp {
+            to {
+                transform: translateY(-100px);
+                opacity: 0;
+            }
+        }
+
+        /* Notification */
+        .notification {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #ffd700;
+            padding: 15px 20px;
+            border-radius: 8px;
+            min-width: 300px;
+            display: none;
+            z-index: 1000;
+            animation: slideIn 0.3s;
+        }
+
+        .notification.show {
+            display: block;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+            }
+            to {
+                transform: translateX(0);
+            }
+        }
+
+        .notification-title {
+            color: #ffd700;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .notification-text {
+            color: #fff;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Header -->
+        <div class="game-header">
+            <div class="game-title">✨ Journey with Jesus ✨</div>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-label">Faith</div>
+                    <div class="stat-value" id="faithValue">100</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Love</div>
+                    <div class="stat-value" id="loveValue">100</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Wisdom</div>
+                    <div class="stat-value" id="wisdomValue">50</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Chapter</div>
+                    <div class="stat-value" id="chapterValue">1</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="game-content">
+            <!-- Game Canvas -->
+            <canvas id="gameCanvas"></canvas>
+
+            <!-- Sidebar -->
+            <div class="game-sidebar">
+                <!-- Inventory -->
+                <div class="sidebar-section">
+                    <div class="section-title">📦 Inventory</div>
+                    <div class="inventory-grid" id="inventoryGrid">
+                        <!-- Inventory items will be generated here -->
+                    </div>
+                </div>
+
+                <!-- Quests -->
+                <div class="sidebar-section">
+                    <div class="section-title">📜 Active Quests</div>
+                    <div id="questLog">
+                        <!-- Quests will be generated here -->
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="sidebar-section">
+                    <div class="section-title">⚡ Actions</div>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="pray()">🙏 Pray</button>
+                        <button class="action-btn" onclick="heal()">💚 Heal</button>
+                        <button class="action-btn" onclick="teach()">📖 Teach</button>
+                        <button class="action-btn" onclick="miracle()">✨ Miracle</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dialogue Box -->
+            <div class="dialogue-box" id="dialogueBox">
+                <div class="dialogue-speaker" id="dialogueSpeaker">Jesus</div>
+                <div class="dialogue-text" id="dialogueText"></div>
+                <div class="dialogue-choices" id="dialogueChoices"></div>
+            </div>
+        </div>
+
+        <!-- Notification -->
+        <div class="notification" id="notification">
+            <div class="notification-title" id="notificationTitle"></div>
+            <div class="notification-text" id="notificationText"></div>
+        </div>
+    </div>
+
+    <script>
+        // Game State
+        const gameState = {
+            faith: 100,
+            love: 100,
+            wisdom: 50,
+            chapter: 1,
+            inventory: [],
+            quests: [],
+            currentScene: 'nazareth',
+            jesusPosition: { x: 400, y: 300 },
+            npcs: [],
+            particles: []
+        };
+
+        // Bible Stories & Chapters
+        const bibleChapters = [
+            {
+                id: 1,
+                title: "The Birth in Bethlehem",
+                scene: "bethlehem",
+                description: "Witness the miraculous birth of Jesus in a humble stable.",
+                quests: [
+                    {
+                        id: "visit_stable",
+                        title: "Visit the Stable",
+                        description: "Find the stable where Jesus was born",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ],
+                dialogue: [
+                    {
+                        speaker: "Mary",
+                        text: "Behold, the Son of God is born this day in Bethlehem!",
+                        choices: [
+                            { text: "Rejoice with the angels", action: "rejoice" },
+                            { text: "Offer gifts", action: "gifts" }
+                        ]
+                    }
+                ]
+            },
+            {
+                id: 2,
+                title: "The Baptism in the Jordan",
+                scene: "jordan_river",
+                description: "John baptizes Jesus, and the heavens open.",
+                quests: [
+                    {
+                        id: "baptism",
+                        title: "Witness the Baptism",
+                        description: "Watch as Jesus is baptized by John",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ]
+            },
+            {
+                id: 3,
+                title: "The Sermon on the Mount",
+                scene: "mount",
+                description: "Listen to Jesus teach the Beatitudes.",
+                quests: [
+                    {
+                        id: "sermon",
+                        title: "Learn the Beatitudes",
+                        description: "Listen to Jesus' teachings on the mount",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ]
+            },
+            {
+                id: 4,
+                title: "Feeding the 5000",
+                scene: "sea_of_galilee",
+                description: "Witness the miracle of multiplying loaves and fishes.",
+                quests: [
+                    {
+                        id: "feeding",
+                        title: "Help Feed the Multitude",
+                        description: "Assist in distributing the multiplied food",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ]
+            },
+            {
+                id: 5,
+                title: "Walking on Water",
+                scene: "sea_of_galilee",
+                description: "See Jesus walk on the stormy sea.",
+                quests: [
+                    {
+                        id: "walk_water",
+                        title: "Witness the Miracle",
+                        description: "Watch Jesus walk on water",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ]
+            },
+            {
+                id: 6,
+                title: "The Last Supper",
+                scene: "upper_room",
+                description: "Share in the final meal with the disciples.",
+                quests: [
+                    {
+                        id: "last_supper",
+                        title: "Participate in the Last Supper",
+                        description: "Join Jesus and the disciples",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ]
+            },
+            {
+                id: 7,
+                title: "The Resurrection",
+                scene: "tomb",
+                description: "Witness the glorious resurrection!",
+                quests: [
+                    {
+                        id: "resurrection",
+                        title: "Witness the Resurrection",
+                        description: "See the empty tomb and risen Lord",
+                        progress: 0,
+                        maxProgress: 100
+                    }
+                ]
+            }
+        ];
+
+        // Initialize Game
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            const sidebar = document.querySelector('.game-sidebar');
+            canvas.width = window.innerWidth - sidebar.offsetWidth;
+            canvas.height = window.innerHeight - document.querySelector('.game-header').offsetHeight;
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Initialize Inventory
+        function initInventory() {
+            const inventoryGrid = document.getElementById('inventoryGrid');
+            for (let i = 0; i < 9; i++) {
+                const item = document.createElement('div');
+                item.className = 'inventory-item empty';
+                item.innerHTML = `
+                    <div class="item-icon">📦</div>
+                    <div class="item-name">Empty</div>
+                `;
+                inventoryGrid.appendChild(item);
+            }
+        }
+
+        // Initialize Quests
+        function initQuests() {
+            const currentChapter = bibleChapters.find(c => c.id === gameState.chapter);
+            if (currentChapter && currentChapter.quests) {
+                gameState.quests = currentChapter.quests;
+                updateQuestLog();
+            }
+        }
+
+        function updateQuestLog() {
+            const questLog = document.getElementById('questLog');
+            questLog.innerHTML = '';
+            
+            gameState.quests.forEach(quest => {
+                const questItem = document.createElement('div');
+                questItem.className = 'quest-item';
+                const progressPercent = (quest.progress / quest.maxProgress) * 100;
+                questItem.innerHTML = `
+                    <div class="quest-title">${quest.title}</div>
+                    <div class="quest-description">${quest.description}</div>
+                    <div class="quest-progress">
+                        <div class="quest-progress-bar" style="width: ${progressPercent}%"></div>
+                    </div>
+                `;
+                questLog.appendChild(questItem);
+            });
+        }
+
+        // Update Stats Display
+        function updateStats() {
+            document.getElementById('faithValue').textContent = gameState.faith;
+            document.getElementById('loveValue').textContent = gameState.love;
+            document.getElementById('wisdomValue').textContent = gameState.wisdom;
+            document.getElementById('chapterValue').textContent = gameState.chapter;
+        }
+
+        // Show Dialogue
+        function showDialogue(speaker, text, choices = []) {
+            const dialogueBox = document.getElementById('dialogueBox');
+            const dialogueSpeaker = document.getElementById('dialogueSpeaker');
+            const dialogueText = document.getElementById('dialogueText');
+            const dialogueChoices = document.getElementById('dialogueChoices');
+
+            dialogueBox.classList.add('active');
+            dialogueSpeaker.textContent = speaker;
+            dialogueText.textContent = text;
+
+            dialogueChoices.innerHTML = '';
+            if (choices.length > 0) {
+                choices.forEach((choice, index) => {
+                    const choiceBtn = document.createElement('div');
+                    choiceBtn.className = 'dialogue-choice';
+                    choiceBtn.textContent = choice.text;
+                    choiceBtn.onclick = () => {
+                        handleDialogueChoice(choice.action);
+                    };
+                    dialogueChoices.appendChild(choiceBtn);
+                });
+            } else {
+                const closeBtn = document.createElement('div');
+                closeBtn.className = 'dialogue-choice';
+                closeBtn.textContent = 'Continue...';
+                closeBtn.onclick = () => {
+                    dialogueBox.classList.remove('active');
+                };
+                dialogueChoices.appendChild(closeBtn);
+            }
+        }
+
+        function handleDialogueChoice(action) {
+            document.getElementById('dialogueBox').classList.remove('active');
+            
+            switch(action) {
+                case 'rejoice':
+                    showNotification('Rejoicing!', 'The angels sing praises! Your faith increases!');
+                    gameState.faith = Math.min(100, gameState.faith + 10);
+                    createParticles(canvas.width / 2, canvas.height / 2, '✨', 20);
+                    updateStats();
+                    break;
+                case 'gifts':
+                    showNotification('Gifts Given', 'You offer gold, frankincense, and myrrh. Your love increases!');
+                    gameState.love = Math.min(100, gameState.love + 10);
+                    addToInventory('Gold', '🥇');
+                    addToInventory('Frankincense', '🕯️');
+                    addToInventory('Myrrh', '💎');
+                    updateStats();
+                    break;
+            }
+        }
+
+        // Add to Inventory
+        function addToInventory(name, icon) {
+            const emptySlots = document.querySelectorAll('.inventory-item.empty');
+            if (emptySlots.length > 0) {
+                const slot = emptySlots[0];
+                slot.classList.remove('empty');
+                slot.innerHTML = `
+                    <div class="item-icon">${icon}</div>
+                    <div class="item-name">${name}</div>
+                `;
+                gameState.inventory.push({ name, icon });
+            }
+        }
+
+        // Show Notification
+        function showNotification(title, text) {
+            const notification = document.getElementById('notification');
+            document.getElementById('notificationTitle').textContent = title;
+            document.getElementById('notificationText').textContent = text;
+            notification.classList.add('show');
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // Create Particles
+        function createParticles(x, y, symbol, count) {
+            for (let i = 0; i < count; i++) {
+                const particle = {
+                    x: x + (Math.random() - 0.5) * 50,
+                    y: y + (Math.random() - 0.5) * 50,
+                    symbol: symbol,
+                    life: 1.0
+                };
+                gameState.particles.push(particle);
+            }
+        }
+
+        // Action Functions
+        function pray() {
+            showDialogue('Jesus', 'Come to me, all you who are weary and burdened, and I will give you rest. (Matthew 11:28)');
+            gameState.faith = Math.min(100, gameState.faith + 5);
+            gameState.wisdom = Math.min(100, gameState.wisdom + 3);
+            createParticles(gameState.jesusPosition.x, gameState.jesusPosition.y, '✨', 15);
+            updateStats();
+            showNotification('Prayer', 'Your faith and wisdom have increased!');
+        }
+
+        function heal() {
+            showDialogue('Jesus', 'I am the way, the truth, and the life. (John 14:6) Your wounds are healed.');
+            gameState.love = Math.min(100, gameState.love + 10);
+            createParticles(gameState.jesusPosition.x, gameState.jesusPosition.y, '💚', 20);
+            updateStats();
+            showNotification('Healing', 'You have been healed! Your love increases!');
+        }
+
+        function teach() {
+            const teachings = [
+                'Blessed are the poor in spirit, for theirs is the kingdom of heaven.',
+                'Love your neighbor as yourself.',
+                'Do unto others as you would have them do unto you.',
+                'The greatest among you will be your servant.',
+                'I am the light of the world.'
+            ];
+            const teaching = teachings[Math.floor(Math.random() * teachings.length)];
+            showDialogue('Jesus', teaching);
+            gameState.wisdom = Math.min(100, gameState.wisdom + 5);
+            updateStats();
+            showNotification('Teaching', 'You have gained wisdom!');
+        }
+
+        function miracle() {
+            if (gameState.faith >= 50) {
+                showDialogue('Jesus', 'With faith as small as a mustard seed, you can move mountains. A miracle occurs!');
+                createParticles(canvas.width / 2, canvas.height / 2, '✨', 50);
+                gameState.faith = Math.min(100, gameState.faith + 15);
+                gameState.love = Math.min(100, gameState.love + 10);
+                updateStats();
+                showNotification('Miracle!', 'A great miracle has occurred!');
+            } else {
+                showNotification('Insufficient Faith', 'You need more faith to perform miracles!');
+            }
+        }
+
+        // Game Loop
+        function gameLoop() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(0.5, '#98D8C8');
+            gradient.addColorStop(1, '#6B8E23');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw ground
+            ctx.fillStyle = '#8B7355';
+            ctx.fillRect(0, canvas.height - 100, canvas.width, 100);
+
+            // Draw Jesus
+            ctx.save();
+            ctx.translate(gameState.jesusPosition.x, gameState.jesusPosition.y);
+            ctx.font = '48px Arial';
+            ctx.fillStyle = '#fff';
+            ctx.shadowColor = 'rgba(255, 215, 0, 0.8)';
+            ctx.shadowBlur = 20;
+            ctx.textAlign = 'center';
+            ctx.fillText('👤', 0, 0);
+            ctx.restore();
+
+            // Draw particles
+            gameState.particles = gameState.particles.filter(particle => {
+                particle.y -= 2;
+                particle.life -= 0.02;
+                
+                ctx.save();
+                ctx.globalAlpha = particle.life;
+                ctx.font = '20px Arial';
+                ctx.fillText(particle.symbol, particle.x, particle.y);
+                ctx.restore();
+                
+                return particle.life > 0;
+            });
+
+            // Draw clouds
+            for (let i = 0; i < 5; i++) {
+                const x = (Date.now() / 50 + i * 200) % (canvas.width + 100) - 50;
+                const y = 50 + i * 30;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.beginPath();
+                ctx.arc(x, y, 30, 0, Math.PI * 2);
+                ctx.arc(x + 25, y, 35, 0, Math.PI * 2);
+                ctx.arc(x + 50, y, 30, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Canvas Click Handler
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Move Jesus towards click
+            gameState.jesusPosition.x = x;
+            gameState.jesusPosition.y = y;
+
+            // Create click effect
+            createParticles(x, y, '✨', 10);
+
+            // Random dialogue on click
+            if (Math.random() > 0.7) {
+                const dialogues = [
+                    { speaker: 'Jesus', text: 'Follow me, and I will make you fishers of men.' },
+                    { speaker: 'Jesus', text: 'I am the good shepherd. The good shepherd lays down his life for the sheep.' },
+                    { speaker: 'Jesus', text: 'Come, follow me, and I will show you the way.' }
+                ];
+                const dialogue = dialogues[Math.floor(Math.random() * dialogues.length)];
+                showDialogue(dialogue.speaker, dialogue.text);
+            }
+        });
+
+        // Initialize
+        initInventory();
+        initQuests();
+        updateStats();
+        gameLoop();
+
+        // Start with welcome dialogue
+        setTimeout(() => {
+            showDialogue('Jesus', 'Welcome, my child. Come, follow me on this journey through the greatest story ever told. Together, we will walk through the pages of Scripture and witness the love, miracles, and teachings that changed the world forever.');
+        }, 1000);
+    </script>
+</body>
+</html>

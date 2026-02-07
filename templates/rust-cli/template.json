@@ -1,0 +1,14 @@
+{
+  "name": "Rust CLI",
+  "version": "1.0.0",
+  "directories": [
+    "src"
+  ],
+  "files": [
+    { "template": "Cargo.toml", "path": "Cargo.toml" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "src/main.rs", "path": "src/main.rs" },
+    { "template": "src/lib.rs", "path": "src/lib.rs" }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Go Microservice",
+  "version": "1.0.0",
+  "directories": [
+    "cmd/server",
+    "internal/handlers",
+    "internal/models",
+    "pkg"
+  ],
+  "files": [
+    { "template": "go.mod", "path": "go.mod" },
+    { "template": "Makefile", "path": "Makefile" },
+    { "template": "Dockerfile", "path": "Dockerfile" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "cmd/server/main.go", "path": "cmd/server/main.go" },
+    { "template": "internal/handlers/handlers.go", "path": "internal/handlers/handlers.go" },
+    { "template": "internal/models/models.go", "path": "internal/models/models.go" }
+  ]
+}

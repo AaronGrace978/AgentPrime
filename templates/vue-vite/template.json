@@ -1,0 +1,24 @@
+{
+  "name": "Vue 3 + Vite",
+  "version": "1.0.0",
+  "directories": [
+    "src",
+    "src/components",
+    "src/views",
+    "src/assets",
+    "public"
+  ],
+  "files": [
+    { "template": "package.json", "path": "package.json" },
+    { "template": "vite.config.ts", "path": "vite.config.ts" },
+    { "template": "tsconfig.json", "path": "tsconfig.json" },
+    { "template": "index.html", "path": "index.html" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "src/main.ts", "path": "src/main.ts" },
+    { "template": "src/App.vue", "path": "src/App.vue" },
+    { "template": "src/style.css", "path": "src/style.css" },
+    { "template": "src/components/HelloWorld.vue", "path": "src/components/HelloWorld.vue" },
+    { "template": "src/vite-env.d.ts", "path": "src/vite-env.d.ts" }
+  ]
+}

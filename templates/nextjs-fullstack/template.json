@@ -1,0 +1,26 @@
+{
+  "name": "Next.js Full-Stack",
+  "version": "1.0.0",
+  "directories": [
+    "src/app",
+    "src/app/api",
+    "src/components",
+    "src/lib",
+    "public"
+  ],
+  "files": [
+    { "template": "package.json", "path": "package.json" },
+    { "template": "tsconfig.json", "path": "tsconfig.json" },
+    { "template": "next.config.js", "path": "next.config.js" },
+    { "template": "tailwind.config.js", "path": "tailwind.config.js" },
+    { "template": "postcss.config.js", "path": "postcss.config.js" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "src/app/layout.tsx", "path": "src/app/layout.tsx" },
+    { "template": "src/app/page.tsx", "path": "src/app/page.tsx" },
+    { "template": "src/app/globals.css", "path": "src/app/globals.css" },
+    { "template": "src/app/api/hello/route.ts", "path": "src/app/api/hello/route.ts" },
+    { "template": "src/components/Header.tsx", "path": "src/components/Header.tsx" },
+    { "template": "src/lib/utils.ts", "path": "src/lib/utils.ts" }
+  ]
+}

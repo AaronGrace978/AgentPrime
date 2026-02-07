@@ -1,0 +1,127 @@
+{
+  "patterns": {
+    "action_open_app_calendar_add_event": {
+      "id": "action_open_app_calendar_add_event",
+      "trigger": {
+        "type": "action",
+        "value": "open_app"
+      },
+      "actions": [
+        "calendar_add_event"
+      ],
+      "params": {
+        "subject": "meeting"
+      },
+      "confidence": 0.8999999999999999,
+      "occurrences": 4,
+      "lastSeen": 1770257404441,
+      "context": {
+        "timeOfDay": "night",
+        "dayOfWeek": [
+          3
+        ]
+      }
+    },
+    "time_night_calendar_add_event": {
+      "id": "time_night_calendar_add_event",
+      "trigger": {
+        "type": "time",
+        "value": "night"
+      },
+      "actions": [
+        "calendar_add_event"
+      ],
+      "params": {
+        "subject": "meeting"
+      },
+      "confidence": 0.5,
+      "occurrences": 2,
+      "lastSeen": 1770257404441,
+      "context": {
+        "timeOfDay": "night",
+        "dayOfWeek": [
+          3
+        ]
+      }
+    },
+    "action_calendar_add_event_open_app": {
+      "id": "action_calendar_add_event_open_app",
+      "trigger": {
+        "type": "action",
+        "value": "calendar_add_event"
+      },
+      "actions": [
+        "open_app"
+      ],
+      "params": {
+        "app": "outlook"
+      },
+      "confidence": 0.5,
+      "occurrences": 2,
+      "lastSeen": 1770257404441,
+      "context": {
+        "timeOfDay": "night",
+        "dayOfWeek": [
+          3
+        ]
+      }
+    },
+    "time_night_open_app": {
+      "id": "time_night_open_app",
+      "trigger": {
+        "type": "time",
+        "value": "night"
+      },
+      "actions": [
+        "open_app"
+      ],
+      "params": {
+        "app": "outlook"
+      },
+      "confidence": 0.3,
+      "occurrences": 1,
+      "lastSeen": 1770257404438,
+      "context": {
+        "timeOfDay": "night",
+        "dayOfWeek": [
+          3
+        ]
+      }
+    }
+  },
+  "history": [
+    {
+      "action": "open_app",
+      "params": {
+        "app": "outlook"
+      },
+      "timestamp": 1770257404432,
+      "success": true
+    },
+    {
+      "action": "calendar_add_event",
+      "params": {
+        "subject": "meeting"
+      },
+      "timestamp": 1770257404434,
+      "success": true
+    },
+    {
+      "action": "open_app",
+      "params": {
+        "app": "outlook"
+      },
+      "timestamp": 1770257404438,
+      "success": true
+    },
+    {
+      "action": "calendar_add_event",
+      "params": {
+        "subject": "standup"
+      },
+      "timestamp": 1770257404441,
+      "success": true
+    }
+  ],
+  "savedAt": 1770257404441
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Python CLI Tool",
+  "version": "1.0.0",
+  "directories": [
+    "src",
+    "tests"
+  ],
+  "files": [
+    { "template": "pyproject.toml", "path": "pyproject.toml" },
+    { "template": "requirements.txt", "path": "requirements.txt" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "src/__init__.py", "path": "src/__init__.py" },
+    { "template": "src/main.py", "path": "src/main.py" },
+    { "template": "src/cli.py", "path": "src/cli.py" },
+    { "template": "tests/__init__.py", "path": "tests/__init__.py" },
+    { "template": "tests/test_main.py", "path": "tests/test_main.py" }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "fullstack-react-fastapi",
+  "files": [
+    { "path": "README.md", "template": "README.md" },
+    { "path": ".gitignore", "template": ".gitignore" },
+    { "path": "frontend/package.json", "template": "frontend/package.json" },
+    { "path": "frontend/tsconfig.json", "template": "frontend/tsconfig.json" },
+    { "path": "frontend/vite.config.ts", "template": "frontend/vite.config.ts" },
+    { "path": "frontend/index.html", "template": "frontend/index.html" },
+    { "path": "frontend/src/main.tsx", "template": "frontend/src/main.tsx" },
+    { "path": "frontend/src/App.tsx", "template": "frontend/src/App.tsx" },
+    { "path": "frontend/src/styles.css", "template": "frontend/src/styles.css" },
+    { "path": "frontend/src/api.ts", "template": "frontend/src/api.ts" },
+    { "path": "backend/requirements.txt", "template": "backend/requirements.txt" },
+    { "path": "backend/main.py", "template": "backend/main.py" },
+    { "path": "backend/app/__init__.py", "template": "backend/app/__init__.py" },
+    { "path": "backend/app/routes.py", "template": "backend/app/routes.py" },
+    { "path": "backend/app/models.py", "template": "backend/app/models.py" }
+  ],
+  "directories": [
+    "frontend/src",
+    "backend/app"
+  ]
+}

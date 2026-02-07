@@ -1,0 +1,25 @@
+{
+  "id": "fullstack-react-express",
+  "files": [
+    { "path": "package.json", "template": "package.json" },
+    { "path": "README.md", "template": "README.md" },
+    { "path": ".gitignore", "template": ".gitignore" },
+    { "path": "frontend/package.json", "template": "frontend/package.json" },
+    { "path": "frontend/tsconfig.json", "template": "frontend/tsconfig.json" },
+    { "path": "frontend/vite.config.ts", "template": "frontend/vite.config.ts" },
+    { "path": "frontend/index.html", "template": "frontend/index.html" },
+    { "path": "frontend/src/main.tsx", "template": "frontend/src/main.tsx" },
+    { "path": "frontend/src/App.tsx", "template": "frontend/src/App.tsx" },
+    { "path": "frontend/src/api.ts", "template": "frontend/src/api.ts" },
+    { "path": "frontend/src/styles.css", "template": "frontend/src/styles.css" },
+    { "path": "backend/package.json", "template": "backend/package.json" },
+    { "path": "backend/tsconfig.json", "template": "backend/tsconfig.json" },
+    { "path": "backend/src/index.ts", "template": "backend/src/index.ts" },
+    { "path": "backend/src/routes/items.ts", "template": "backend/src/routes/items.ts" }
+  ],
+  "directories": [
+    "frontend/src",
+    "backend/src",
+    "backend/src/routes"
+  ]
+}

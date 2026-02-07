@@ -1,0 +1,142 @@
+# ===========================================
+# AgentPrime .gitignore
+# ===========================================
+
+# ===========================================
+# SECRETS - NEVER COMMIT THESE!
+# ===========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+credentials.json
+
+# ===========================================
+# Node.js
+# ===========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# ===========================================
+# Build outputs
+# ===========================================
+dist/
+build/
+out/
+*.exe
+*.dmg
+*.AppImage
+*.snap
+*.deb
+*.rpm
+
+# ===========================================
+# Electron
+# ===========================================
+release/
+*.asar
+
+# ===========================================
+# Python
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+*.egg-info/
+.eggs/
+*.egg
+
+# ===========================================
+# IDE and Editors
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# ===========================================
+# OS generated files
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# Logs
+# ===========================================
+logs/
+*.log
+npm-debug.log*
+
+# ===========================================
+# Test coverage
+# ===========================================
+coverage/
+.nyc_output/
+
+# ===========================================
+# Temporary files
+# ===========================================
+tmp/
+temp/
+.tmp/
+.temp/
+*.tmp
+*.temp
+*.bak
+
+# ===========================================
+# TypeScript build artifacts
+# ===========================================
+*.tsbuildinfo
+*.map
+
+# ===========================================
+# Project-specific
+# ===========================================
+# User data directory
+userData/
+
+# Projects created by the app (optional - remove if you want to track)
+# Projects/
+
+# Mirror memory data (contains learned patterns)
+data/mirror-memory.json
+
+# Database files
+*.db
+
+# Cache files
+.cache/
+*.cache

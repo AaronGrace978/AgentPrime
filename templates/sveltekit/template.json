@@ -1,0 +1,22 @@
+{
+  "name": "SvelteKit",
+  "version": "1.0.0",
+  "directories": [
+    "src",
+    "src/routes",
+    "src/lib",
+    "static"
+  ],
+  "files": [
+    { "template": "package.json", "path": "package.json" },
+    { "template": "svelte.config.js", "path": "svelte.config.js" },
+    { "template": "vite.config.ts", "path": "vite.config.ts" },
+    { "template": "tsconfig.json", "path": "tsconfig.json" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "src/app.html", "path": "src/app.html" },
+    { "template": "src/app.css", "path": "src/app.css" },
+    { "template": "src/routes/+page.svelte", "path": "src/routes/+page.svelte" },
+    { "template": "src/routes/+layout.svelte", "path": "src/routes/+layout.svelte" }
+  ]
+}

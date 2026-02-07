@@ -1,0 +1,766 @@
+/**
+ * Matrix Lock Screen Styles - Movie-Authentic Edition
+ * Cyberpunk aesthetic inspired by The Matrix (1999)
+ * "The Matrix is the world that has been pulled over your eyes" - Morpheus
+ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   CSS VARIABLES - Matrix Color Palette
+   ═══════════════════════════════════════════════════════════════════ */
+.matrix-lock-screen {
+  --matrix-green: #00ff41;
+  --matrix-green-bright: #7fff7f;
+  --matrix-green-dim: #00cc33;
+  --matrix-green-dark: #008f11;
+  --matrix-green-glow: rgba(0, 255, 65, 0.6);
+  --matrix-green-subtle: rgba(0, 255, 65, 0.15);
+  --matrix-black: #000000;
+  --matrix-black-light: #0a0a0a;
+  --matrix-red: #ff0040;
+  --matrix-white: #ffffff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN CONTAINER - Pure black void
+   ═══════════════════════════════════════════════════════════════════ */
+.matrix-lock-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--matrix-black);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  /* CRT screen curvature effect */
+  perspective: 1000px;
+}
+
+/* Phosphor layer - adds that CRT phosphor glow */
+.matrix-lock-screen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 255, 65, 0.03) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SCANLINE EFFECT - Authentic CRT horizontal lines
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-scanlines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15),
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 10;
+  animation: scanlineFlicker 0.1s infinite;
+}
+
+/* Vertical RGB phosphor lines for extra authenticity */
+.lock-scanlines::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(0, 255, 65, 0.03),
+    rgba(0, 255, 65, 0.03) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CRT VIGNETTE - Dark edges like an old monitor
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-vignette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 0%,
+    transparent 40%,
+    rgba(0, 0, 0, 0.3) 70%,
+    rgba(0, 0, 0, 0.7) 100%
+  );
+  pointer-events: none;
+  z-index: 11;
+}
+
+/* Screen edge glow */
+.lock-vignette::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid rgba(0, 255, 65, 0.05);
+  border-radius: 20px;
+  box-shadow: 
+    inset 0 0 100px rgba(0, 0, 0, 0.5),
+    inset 0 0 200px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN CONTENT AREA
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-content {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40px;
+  padding: 40px;
+  /* Subtle chromatic aberration on content */
+  text-shadow: 
+    -1px 0 rgba(255, 0, 64, 0.1),
+    1px 0 rgba(0, 255, 65, 0.1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   MATRIX-STYLE LOGO - Glowing green text
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-logo {
+  font-size: 32px;
+  letter-spacing: 12px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  animation: logoGlow 3s ease-in-out infinite;
+}
+
+.logo-bracket {
+  color: var(--matrix-green-dim);
+  opacity: 0.6;
+  animation: bracketFlicker 4s infinite;
+}
+
+.logo-text {
+  color: var(--matrix-green);
+  text-shadow: 
+    0 0 5px var(--matrix-green),
+    0 0 10px var(--matrix-green),
+    0 0 20px var(--matrix-green),
+    0 0 40px var(--matrix-green),
+    0 0 80px rgba(0, 255, 65, 0.5);
+  font-weight: bold;
+  letter-spacing: 8px;
+}
+
+.logo-prime {
+  color: var(--matrix-green-bright);
+  text-shadow: 
+    0 0 5px var(--matrix-green),
+    0 0 10px var(--matrix-green),
+    0 0 30px var(--matrix-green),
+    0 0 60px rgba(0, 255, 65, 0.4);
+  font-weight: bold;
+  letter-spacing: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DIGITAL CLOCK - Massive glowing display
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-clock {
+  text-align: center;
+}
+
+.clock-time {
+  font-size: 120px;
+  font-weight: 300;
+  color: var(--matrix-green);
+  letter-spacing: 8px;
+  text-shadow: 
+    0 0 10px var(--matrix-green),
+    0 0 20px var(--matrix-green),
+    0 0 40px rgba(0, 255, 65, 0.5),
+    0 0 80px rgba(0, 255, 65, 0.3),
+    0 0 120px rgba(0, 255, 65, 0.2);
+  line-height: 1;
+  animation: clockPulse 2s ease-in-out infinite;
+}
+
+.clock-segment {
+  display: inline-block;
+  min-width: 1.1em;
+  text-align: center;
+  transition: text-shadow 0.3s ease;
+}
+
+.clock-segment:hover {
+  text-shadow: 
+    0 0 15px var(--matrix-green),
+    0 0 30px var(--matrix-green),
+    0 0 60px var(--matrix-green),
+    0 0 100px rgba(0, 255, 65, 0.6);
+}
+
+.clock-colon {
+  color: var(--matrix-green);
+  animation: colonBlink 1s steps(2) infinite;
+  margin: 0 4px;
+  text-shadow: 
+    0 0 10px var(--matrix-green),
+    0 0 20px var(--matrix-green);
+}
+
+.clock-colon.dim,
+.clock-segment.dim {
+  opacity: 0.4;
+}
+
+.clock-segment.seconds {
+  font-size: 60px;
+  vertical-align: super;
+  color: var(--matrix-green-dim);
+}
+
+.clock-date {
+  font-size: 20px;
+  color: var(--matrix-green-dim);
+  margin-top: 20px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  opacity: 0.8;
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   QUOTE TYPING EFFECT - "Wake up, Neo..."
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-quote {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 400px;
+}
+
+.quote-text {
+  font-size: 28px;
+  color: var(--matrix-green);
+  text-shadow: 
+    0 0 10px var(--matrix-green),
+    0 0 20px rgba(0, 255, 65, 0.4);
+  letter-spacing: 3px;
+  font-style: italic;
+}
+
+.quote-cursor {
+  color: var(--matrix-green-bright);
+  animation: cursorBlink 0.7s steps(2) infinite;
+  margin-left: 4px;
+  font-size: 28px;
+  text-shadow: 
+    0 0 10px var(--matrix-green),
+    0 0 20px var(--matrix-green);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   UNLOCK HINT - Fade in instructions
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-hint {
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin-top: 40px;
+}
+
+.lock-hint.visible {
+  opacity: 1;
+}
+
+.hint-icon {
+  font-size: 40px;
+  color: var(--matrix-green);
+  animation: hintFloat 2.5s ease-in-out infinite;
+  text-shadow: 0 0 20px var(--matrix-green);
+}
+
+.hint-text {
+  font-size: 18px;
+  color: var(--matrix-green-dim);
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+}
+
+.hint-shortcut {
+  font-size: 13px;
+  color: var(--matrix-green-dark);
+  letter-spacing: 2px;
+  margin-top: 8px;
+  padding: 6px 16px;
+  border: 1px solid rgba(0, 255, 65, 0.2);
+  border-radius: 4px;
+  background: rgba(0, 255, 65, 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SIDE CODE RAIN - Decorative falling characters
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-side-code {
+  position: absolute;
+  top: 0;
+  width: 150px;
+  height: 100%;
+  overflow: hidden;
+  z-index: 5;
+  opacity: 0.5;
+}
+
+.lock-side-code.left {
+  left: 0;
+  text-align: left;
+  padding-left: 20px;
+  mask-image: linear-gradient(to right, rgba(0,0,0,0.8), transparent);
+  -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,0.8), transparent);
+}
+
+.lock-side-code.right {
+  right: 0;
+  text-align: right;
+  padding-right: 20px;
+  mask-image: linear-gradient(to left, rgba(0,0,0,0.8), transparent);
+  -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,0.8), transparent);
+}
+
+.code-line {
+  color: var(--matrix-green);
+  font-size: 14px;
+  line-height: 2;
+  animation: sideCodeFade 4s linear infinite;
+  white-space: nowrap;
+  text-shadow: 0 0 5px var(--matrix-green);
+}
+
+.code-line span {
+  opacity: 0.7;
+  transition: opacity 0.3s, text-shadow 0.3s;
+}
+
+.code-line span:first-child {
+  color: var(--matrix-green-bright);
+  opacity: 1;
+  text-shadow: 0 0 10px var(--matrix-green);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SYSTEM INFO BAR - Bottom status display
+   ═══════════════════════════════════════════════════════════════════ */
+.lock-system-info {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--matrix-green-dim);
+  letter-spacing: 3px;
+  z-index: 20;
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+}
+
+.system-divider {
+  opacity: 0.3;
+  color: var(--matrix-green-dark);
+}
+
+.system-item {
+  animation: systemPulse 4s ease-in-out infinite;
+  transition: color 0.3s, text-shadow 0.3s;
+}
+
+.system-item:hover {
+  color: var(--matrix-green);
+  text-shadow: 0 0 15px var(--matrix-green);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   UNLOCK ANIMATION - Dramatic system access
+   ═══════════════════════════════════════════════════════════════════ */
+.unlock-animation {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 100;
+}
+
+.unlock-text {
+  font-size: 28px;
+  color: var(--matrix-green);
+  letter-spacing: 6px;
+  margin-bottom: 24px;
+  animation: unlockTextFlicker 0.1s infinite;
+  text-shadow: 
+    0 0 10px var(--matrix-green),
+    0 0 20px var(--matrix-green),
+    0 0 40px var(--matrix-green);
+}
+
+.unlock-progress {
+  width: 350px;
+  height: 4px;
+  background: rgba(0, 255, 65, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 
+    0 0 10px rgba(0, 255, 65, 0.2),
+    inset 0 0 5px rgba(0, 255, 65, 0.1);
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--matrix-green-dim), var(--matrix-green), var(--matrix-green-bright));
+  box-shadow: 
+    0 0 15px var(--matrix-green),
+    0 0 30px rgba(0, 255, 65, 0.5);
+  animation: progressFill 0.8s ease-out forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   UNLOCKING STATE - Exit animation
+   ═══════════════════════════════════════════════════════════════════ */
+.matrix-lock-screen.unlocking {
+  animation: unlockScreen 0.8s ease-out forwards;
+}
+
+.matrix-lock-screen.unlocking .lock-content {
+  animation: unlockContentScale 0.6s ease-out forwards;
+}
+
+.matrix-lock-screen.unlocking .lock-scanlines {
+  animation: scanlineIntensify 0.4s ease-out forwards;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLITCH EFFECT - Random digital corruption
+   ═══════════════════════════════════════════════════════════════════ */
+.matrix-lock-screen.glitch {
+  animation: glitchScreen 0.15s linear;
+}
+
+.matrix-lock-screen.glitch .lock-content {
+  animation: glitchContent 0.15s linear;
+}
+
+.matrix-lock-screen.glitch .clock-time {
+  animation: glitchText 0.15s linear;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS - The Matrix effects
+   ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes scanlineFlicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.98; }
+}
+
+@keyframes colonBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.2; }
+}
+
+@keyframes cursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes hintFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes sideCodeFade {
+  0% { opacity: 0.2; transform: translateY(-5px); }
+  50% { opacity: 0.7; transform: translateY(0); }
+  100% { opacity: 0.2; transform: translateY(5px); }
+}
+
+@keyframes systemPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
+}
+
+@keyframes clockPulse {
+  0%, 100% { 
+    text-shadow: 
+      0 0 10px var(--matrix-green),
+      0 0 20px var(--matrix-green),
+      0 0 40px rgba(0, 255, 65, 0.5),
+      0 0 80px rgba(0, 255, 65, 0.3);
+  }
+  50% { 
+    text-shadow: 
+      0 0 15px var(--matrix-green),
+      0 0 30px var(--matrix-green),
+      0 0 60px rgba(0, 255, 65, 0.6),
+      0 0 100px rgba(0, 255, 65, 0.4);
+  }
+}
+
+@keyframes logoGlow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
+}
+
+@keyframes bracketFlicker {
+  0%, 90%, 100% { opacity: 0.6; }
+  92%, 94%, 96%, 98% { opacity: 0.2; }
+  91%, 93%, 95%, 97%, 99% { opacity: 0.6; }
+}
+
+@keyframes unlockTextFlicker {
+  0%, 100% { opacity: 1; }
+  25% { opacity: 0.9; }
+  50% { opacity: 1; }
+  75% { opacity: 0.85; }
+}
+
+@keyframes progressFill {
+  0% { width: 0; }
+  100% { width: 100%; }
+}
+
+@keyframes unlockScreen {
+  0% { 
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(2);
+  }
+  100% { 
+    opacity: 0;
+    filter: brightness(3);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes unlockContentScale {
+  0% { 
+    transform: scale(1); 
+    filter: blur(0);
+    opacity: 1;
+  }
+  100% { 
+    transform: scale(1.3);
+    filter: blur(20px);
+    opacity: 0;
+  }
+}
+
+@keyframes scanlineIntensify {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes glitchScreen {
+  0% { transform: translate(0); filter: hue-rotate(0deg); }
+  10% { transform: translate(-3px, 2px); }
+  20% { transform: translate(3px, -2px); filter: hue-rotate(90deg); }
+  30% { transform: translate(-2px, -3px); }
+  40% { transform: translate(2px, 3px); filter: hue-rotate(180deg); }
+  50% { transform: translate(-3px, 2px); }
+  60% { transform: translate(3px, -2px); filter: hue-rotate(270deg); }
+  70% { transform: translate(-2px, 3px); }
+  80% { transform: translate(2px, -3px); filter: hue-rotate(360deg); }
+  90% { transform: translate(-3px, -2px); }
+  100% { transform: translate(0); filter: hue-rotate(0deg); }
+}
+
+@keyframes glitchContent {
+  0% { 
+    text-shadow: 0 0 10px var(--matrix-green);
+    clip-path: inset(0 0 0 0);
+  }
+  20% { 
+    text-shadow: -4px 0 var(--matrix-red), 4px 0 var(--matrix-green);
+    clip-path: inset(15% 0 25% 0);
+  }
+  40% { 
+    text-shadow: 4px 0 var(--matrix-red), -4px 0 var(--matrix-green);
+    clip-path: inset(45% 0 15% 0);
+  }
+  60% { 
+    text-shadow: -4px 0 var(--matrix-green), 4px 0 var(--matrix-red);
+    clip-path: inset(5% 0 55% 0);
+  }
+  80% { 
+    text-shadow: 4px 0 var(--matrix-green), -4px 0 var(--matrix-red);
+    clip-path: inset(35% 0 25% 0);
+  }
+  100% { 
+    text-shadow: 0 0 10px var(--matrix-green);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes glitchText {
+  0%, 100% { 
+    transform: skew(0deg);
+    text-shadow: 
+      0 0 10px var(--matrix-green),
+      0 0 20px var(--matrix-green);
+  }
+  20% { 
+    transform: skew(-2deg);
+    text-shadow: 
+      -3px 0 var(--matrix-red),
+      3px 0 cyan,
+      0 0 10px var(--matrix-green);
+  }
+  40% { 
+    transform: skew(1deg);
+  }
+  60% { 
+    transform: skew(-1deg);
+    text-shadow: 
+      2px 0 var(--matrix-red),
+      -2px 0 cyan,
+      0 0 10px var(--matrix-green);
+  }
+  80% { 
+    transform: skew(2deg);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RESPONSIVE ADJUSTMENTS
+   ═══════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .clock-time {
+    font-size: 72px;
+    letter-spacing: 4px;
+  }
+  
+  .clock-segment.seconds {
+    font-size: 36px;
+  }
+  
+  .quote-text,
+  .quote-cursor {
+    font-size: 20px;
+  }
+  
+  .lock-quote {
+    min-width: 280px;
+  }
+  
+  .lock-side-code {
+    display: none;
+  }
+  
+  .lock-logo {
+    font-size: 24px;
+    letter-spacing: 6px;
+  }
+  
+  .unlock-progress {
+    width: 260px;
+  }
+  
+  .lock-system-info {
+    font-size: 11px;
+    letter-spacing: 2px;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .clock-time {
+    font-size: 48px;
+  }
+  
+  .clock-segment.seconds {
+    font-size: 24px;
+  }
+  
+  .lock-logo {
+    font-size: 18px;
+    letter-spacing: 4px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ACCESSIBILITY
+   ═══════════════════════════════════════════════════════════════════ */
+@media (prefers-contrast: high) {
+  .lock-scanlines,
+  .lock-vignette::before {
+    display: none;
+  }
+  
+  .quote-text,
+  .clock-time,
+  .logo-text,
+  .logo-prime {
+    text-shadow: none;
+  }
+  
+  .matrix-lock-screen {
+    background: #000;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clock-colon,
+  .quote-cursor,
+  .hint-icon,
+  .code-line,
+  .system-item,
+  .logo-bracket,
+  .clock-time,
+  .lock-logo {
+    animation: none !important;
+  }
+  
+  .matrix-lock-screen.unlocking,
+  .matrix-lock-screen.glitch,
+  .matrix-lock-screen.unlocking .lock-content,
+  .matrix-lock-screen.glitch .lock-content {
+    animation: none !important;
+  }
+  
+  .lock-hint {
+    transition: none;
+  }
+}

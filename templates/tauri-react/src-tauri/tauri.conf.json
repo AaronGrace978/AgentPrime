@@ -1,0 +1,48 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "copyright": "Copyright © {{currentYear}} {{author}}. All rights reserved.",
+    "createUpdaterBundle": false,
+    "deb": {
+      "depends": []
+    },
+    "externalBin": [],
+    "icon": [],
+    "identifier": "com.{{projectName}}.app",
+    "longDescription": "{{description}}",
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    },
+    "resources": [],
+    "shortDescription": "{{description}}",
+    "targets": "all",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": null
+    }
+  },
+  "identifier": "com.{{projectName}}.app",
+  "plugins": {
+    "updater": {
+      "active": false
+    }
+  },
+  "productName": "{{projectName}}",
+  "security": {
+    "csp": "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'self'; form-action 'self';"
+  },
+  "version": "1.0.0"
+}

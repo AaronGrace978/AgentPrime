@@ -1,0 +1,84 @@
+"""
+AgentPrime Autocomplete Model Training Script
+Example script for training a custom code completion model
+"""
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+import yaml
+from pathlib import Path
+
+# Load config
+config_path = Path(__file__).parent.parent / 'config.yaml'
+with open(config_path) as f:
+    config = yaml.safe_load(f)
+
+class AutocompleteModel(nn.Module):
+    """Transformer-based code completion model"""
+    def __init__(self, config):
+        super().__init__()
+        # Implement your model architecture here
+        # This is a placeholder
+        pass
+    
+    def forward(self, x):
+        # Implement forward pass
+        pass
+
+def train_epoch(model, dataloader, optimizer, device):
+    """Train for one epoch"""
+    model.train()
+    total_loss = 0
+    
+    for batch in dataloader:
+        optimizer.zero_grad()
+        
+        # Forward pass
+        outputs = model(batch['input_ids'])
+        loss = compute_loss(outputs, batch['labels'])
+        
+        # Backward pass
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), config['training']['gradient_clip'])
+        optimizer.step()
+        
+        total_loss += loss.item()
+    
+    return total_loss / len(dataloader)
+
+def main():
+    # Setup
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Load model
+    model = AutocompleteModel(config['model']).to(device)
+    
+    # Load data
+    # train_dataset = YourDataset(config['data'])
+    # train_loader = DataLoader(train_dataset, batch_size=config['training']['batch_size'])
+    
+    # Optimizer
+    optimizer = torch.optim.AdamW(
+        model.parameters(),
+        lr=config['training']['learning_rate']
+    )
+    
+    # Training loop
+    for epoch in range(config['training']['num_epochs']):
+        avg_loss = train_epoch(model, train_loader, optimizer, device)
+        print(f"Epoch {epoch}: Loss = {avg_loss:.4f}")
+        
+        # Save checkpoint
+        if (epoch + 1) % config['checkpoint']['save_frequency'] == 0:
+            checkpoint_path = Path(config['checkpoint']['save_dir']) / f"model_epoch_{epoch}.pt"
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': avg_loss,
+            }, checkpoint_path)
+
+if __name__ == '__main__':
+    main()
+

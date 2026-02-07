@@ -1,0 +1,853 @@
+{
+  "version": "1.0",
+  "projects": [
+    {
+      "id": "proj_1766927119107_la4hr0goy",
+      "name": "MuscleGame",
+      "path": "E:\\MuscleGame",
+      "type": "game",
+      "description": "💪 I think you know what to build<3  WOOOOOHOOOOOOOOO I WANT A PRIMETIME GAME SUPER FUN, SUPER ADDIC...",
+      "createdAt": "2025-12-28T13:05:19.106Z",
+      "updatedAt": "2025-12-28T13:05:19.106Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "styles.css",
+        "game.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2025-12-28T13:05:19.106Z",
+          "action": "create",
+          "description": "💪 I think you know what to build<3  WOOOOOHOOOOOOOOO I WANT A PRIMETIME GAME SUPER FUN, SUPER ADDIC...",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "styles.css",
+            "game.js"
+          ],
+          "prompt": "💪 I think you know what to build<3  WOOOOOHOOOOOOOOO I WANT A PRIMETIME GAME SUPER FUN, SUPER ADDICTION YAAAHOOOOOOOOOO!"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767319186461_jixhwnba8",
+      "name": "Dino2",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\Dino2",
+      "type": "game",
+      "description": "Yo build me a Diablo 2 type game, make it extra Dino-licious<3 I want CLASSIC D2 but its called Dino...",
+      "createdAt": "2026-01-02T01:59:46.461Z",
+      "updatedAt": "2026-01-02T02:03:29.092Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "styles.css",
+        "game.js",
+        "README.md",
+        "dino-assets.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Express",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-02T01:59:46.461Z",
+          "action": "create",
+          "description": "Yo build me a Diablo 2 type game, make it extra Dino-licious<3 I want CLASSIC D2 but its called Dino...",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "styles.css",
+            "game.js",
+            "README.md"
+          ],
+          "prompt": "Yo build me a Diablo 2 type game, make it extra Dino-licious<3 I want CLASSIC D2 but its called Dino2, whatever graphics they got, implement it, LETS GOOOOOOOO"
+        },
+        {
+          "timestamp": "2026-01-02T02:03:29.092Z",
+          "action": "update",
+          "description": "yo can you build it",
+          "filesChanged": [
+            "index.html",
+            "package.json",
+            "dino-assets.js"
+          ],
+          "prompt": "yo can you build it?  those Dino assets for my Dino2 Diablo 2 like game?"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767320447453_pmivdnb03",
+      "name": "AgentPrime Official Website",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\AgentPrime Official Website",
+      "type": "web",
+      "description": "Create a modern landing page with responsive design  <-- can you make it the official AgentPrime",
+      "createdAt": "2026-01-02T02:20:47.453Z",
+      "updatedAt": "2026-01-02T02:20:47.453Z",
+      "files": [
+        "index.html",
+        "styles.css",
+        "script.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-02T02:20:47.453Z",
+          "action": "create",
+          "description": "Create a modern landing page with responsive design  <-- can you make it the official AgentPrime",
+          "filesChanged": [
+            "index.html",
+            "styles.css",
+            "script.js"
+          ],
+          "prompt": "Create a modern landing page with responsive design  <-- can you make it the official AgentPrime.dev webpage, I need you to make it look good<3 thanks "
+        }
+      ]
+    },
+    {
+      "id": "proj_1767387131610_yeet70v7o",
+      "name": "DinoTetris",
+      "path": "G:\\DinoTetris",
+      "type": "game",
+      "description": "Build a simple browser-based game with HTML, CSS, and JavaScript -> I want a Dinosaur themed Tetris...",
+      "createdAt": "2026-01-02T20:52:11.609Z",
+      "updatedAt": "2026-01-02T20:52:11.609Z",
+      "files": [
+        "index.html",
+        "style.css",
+        "game.js",
+        "package.json",
+        "Dockerfile",
+        "vite.config.js",
+        "nginx.conf",
+        ".github/workflows/deploy.yml"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-02T20:52:11.609Z",
+          "action": "create",
+          "description": "Build a simple browser-based game with HTML, CSS, and JavaScript -> I want a Dinosaur themed Tetris...",
+          "filesChanged": [
+            "index.html",
+            "style.css",
+            "game.js",
+            "package.json",
+            "Dockerfile",
+            "vite.config.js",
+            "nginx.conf",
+            ".github/workflows/deploy.yml"
+          ],
+          "prompt": "Build a simple browser-based game with HTML, CSS, and JavaScript -> I want a Dinosaur themed Tetris Game, with sound effects and different levels."
+        }
+      ]
+    },
+    {
+      "id": "proj_1767494156233_15y91kysq",
+      "name": "LasertagGame",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\LasertagGame",
+      "type": "game",
+      "description": "Build a simple browser-based game with HTML, CSS, and JavaScript I want you to take your time on it,...",
+      "createdAt": "2026-01-04T02:35:56.233Z",
+      "updatedAt": "2026-01-04T02:35:56.233Z",
+      "files": [
+        "index.html",
+        "style.css",
+        "game.js",
+        "package.json",
+        "Dockerfile",
+        "vite.config.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-04T02:35:56.233Z",
+          "action": "create",
+          "description": "Build a simple browser-based game with HTML, CSS, and JavaScript I want you to take your time on it,...",
+          "filesChanged": [
+            "index.html",
+            "style.css",
+            "game.js",
+            "package.json",
+            "Dockerfile",
+            "vite.config.js"
+          ],
+          "prompt": "Build a simple browser-based game with HTML, CSS, and JavaScript I want you to take your time on it, and make it work, I want to make like a laser tag game or ping pong"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767494285031_cxd1dstb1",
+      "name": "Pingpong",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\Pingpong",
+      "type": "game",
+      "description": "Build me a pingpong game",
+      "createdAt": "2026-01-04T02:38:05.031Z",
+      "updatedAt": "2026-01-04T02:38:05.031Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "style.css",
+        "game.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-04T02:38:05.031Z",
+          "action": "create",
+          "description": "Build me a pingpong game",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "style.css",
+            "game.js"
+          ],
+          "prompt": "Build me a pingpong game "
+        }
+      ]
+    },
+    {
+      "id": "proj_1767496889158_1g7um235k",
+      "name": "Website",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\Website",
+      "type": "web",
+      "description": "Create a modern landing page with responsive design, I want it fully functional",
+      "createdAt": "2026-01-04T03:21:29.158Z",
+      "updatedAt": "2026-01-04T03:21:29.158Z",
+      "files": [
+        "index.html",
+        "styles.css",
+        "script.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-04T03:21:29.158Z",
+          "action": "create",
+          "description": "Create a modern landing page with responsive design, I want it fully functional",
+          "filesChanged": [
+            "index.html",
+            "styles.css",
+            "script.js"
+          ],
+          "prompt": "Create a modern landing page with responsive design, I want it fully functional"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767570577597_oqea2eq8z",
+      "name": "CraftMine",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\CraftMine\\CraftMine",
+      "type": "game",
+      "description": "Build me a minecraft envorinment in this Three",
+      "createdAt": "2026-01-04T23:49:37.597Z",
+      "updatedAt": "2026-01-04T23:49:37.597Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "game.js",
+        "README.md",
+        "styles.css"
+      ],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-04T23:49:37.597Z",
+          "action": "create",
+          "description": "Build me a minecraft envorinment in this Three",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "game.js",
+            "README.md",
+            "styles.css"
+          ],
+          "prompt": "Build me a minecraft envorinment in this Three.js foulder "
+        }
+      ]
+    },
+    {
+      "id": "proj_1767574481223_63t3icl0f",
+      "name": "my-game",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\dino3dworld\\my-game",
+      "type": "web",
+      "description": "Build me the Official Dino Buddy 3d World video game<3",
+      "createdAt": "2026-01-05T00:54:41.223Z",
+      "updatedAt": "2026-01-05T01:05:21.039Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "src/styles.css",
+        "src/main.js",
+        "src/game/Game.js"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite",
+        "JavaScript"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-05T00:54:41.223Z",
+          "action": "create",
+          "description": "Build me the Official Dino Buddy 3d World video game<3",
+          "filesChanged": [],
+          "prompt": "Build me the Official Dino Buddy 3d World video game<3"
+        },
+        {
+          "timestamp": "2026-01-05T01:04:03.020Z",
+          "action": "update",
+          "description": "Build me a 3d Dino world game please <3   I want a demo I can show to MIT please and thanks",
+          "filesChanged": [],
+          "prompt": "Build me a 3d Dino world game please <3   I want a demo I can show to MIT please and thanks"
+        },
+        {
+          "timestamp": "2026-01-05T01:05:21.039Z",
+          "action": "update",
+          "description": "========================================\n  Running: dev\n========================================...",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "src/styles.css",
+            "src/main.js",
+            "src/game/Game.js"
+          ],
+          "prompt": "\n========================================\n  Running: dev\n========================================\n\n\n> my-game@1.0.0 dev\n> vite\n\n'vite' is not recognized as an internal or external command,\noperable program or batch file.\n\nPress any key to continue . . .\n\n\n\n\n\n\n\n\n"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767574695330_sk47uv62d",
+      "name": "my-game",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\3dgame\\my-game",
+      "type": "web",
+      "description": "Build me a Dino Buddy 3d world game, kinda of like mario 64",
+      "createdAt": "2026-01-05T00:58:15.330Z",
+      "updatedAt": "2026-01-05T01:01:54.770Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-05T00:58:15.330Z",
+          "action": "create",
+          "description": "Build me a Dino Buddy 3d world game, kinda of like mario 64",
+          "filesChanged": [],
+          "prompt": "Build me a Dino Buddy 3d world game, kinda of like mario 64"
+        },
+        {
+          "timestamp": "2026-01-05T01:01:54.770Z",
+          "action": "update",
+          "description": "fix this game so i can launch it",
+          "filesChanged": [],
+          "prompt": "fix this game so i can launch it"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767576635443_pbwv92h7t",
+      "name": "my-game",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\AdvancedWars\\my-game",
+      "type": "game",
+      "description": "Build me a Game Boy Advance-style Advance Wars turn-based strategy game",
+      "createdAt": "2026-01-05T01:30:35.443Z",
+      "updatedAt": "2026-01-05T01:30:35.443Z",
+      "files": [
+        "index.html",
+        "styles.css",
+        "game.js",
+        "package.json"
+      ],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-05T01:30:35.443Z",
+          "action": "create",
+          "description": "Build me a Game Boy Advance-style Advance Wars turn-based strategy game",
+          "filesChanged": [
+            "index.html",
+            "styles.css",
+            "game.js",
+            "package.json"
+          ],
+          "prompt": "Build me a Game Boy Advance-style Advance Wars turn-based strategy game. I want:\nTurn-based tactical combat with a grid-based map (like Advance Wars)\nMultiple unit types: Infantry, Tanks, Artillery, Planes, Ships\nGBA pixel art aesthetic - 16-bit style graphics, chunky pixels, retro color palette\nTwo-player mode - Red vs Blue armies taking turns\nUnit movement and combat - Click to select unit, click destination to move, attack enemies in range\nVictory conditions - Capture enemy HQ or destroy all units\nSimple UI - Unit stats, turn indicator, action buttons\nTech stack: Use HTML5 Canvas with JavaScript/TypeScript for rendering. Make it playable in browser. Include:\nGrid-based map system\nUnit sprites (can be simple colored rectangles with pixel art style)\nTurn management system\nCombat calculation system\nPathfinding for unit movement\nSave/load game state\nVisual style: Game Boy Advance pixel art - 240x160 resolution feel, limited color palette, chunky sprites. Use a retro color scheme (greens, browns, blues like classic GBA games).\nMake it fully playable with mouse/touch controls. Include a README with instructions."
+        }
+      ]
+    },
+    {
+      "id": "proj_1767647673148_tun4s83m9",
+      "name": "my-vue-app",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\VUE3\\my-vue-app",
+      "type": "web",
+      "description": "\"Build me a Vue 3 single-page app called Agent Prime Flow: a full-screen interactive audio-reactive...",
+      "createdAt": "2026-01-05T21:14:33.146Z",
+      "updatedAt": "2026-01-05T21:14:33.146Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "Vue",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-05T21:14:33.146Z",
+          "action": "create",
+          "description": "\"Build me a Vue 3 single-page app called Agent Prime Flow: a full-screen interactive audio-reactive...",
+          "filesChanged": [],
+          "prompt": "\"Build me a Vue 3 single-page app called Agent Prime Flow: a full-screen interactive audio-reactive particle visualization.\nUse Three.js for the WebGL particle system (start with 10k-50k particles for performance, make it scalable).\nKey features:\n\nFull-screen canvas with beautiful fluid/particle flows in vibrant colors (purples, pinks, blues—like wavy noise fields or Refik Anadol vibes).\nMicrophone access via Web Audio API—analyze volume/frequencies in real-time.\nModes toggle: Breath (volume pushes particles like wind), Music (bass/mids/treble drive movement, color shifts, rotation), Fireworks/Snaps (detect loud peaks for burst effects).\nOverlay controls panel: sliders for particle count, speed, force strength, color palette, trail length; mode selector; reset button.\nAuto-request mic permission on load, with fallback message if denied.\nSmooth animations, post-processing effects (bloom, glow) for that premium look.\nDark background, responsive for desktop/mobile.\nBonus: simple AI chat sidebar where I describe a 'vibe' (e.g., 'cosmic ocean waves with neon glow') and it suggests parameter tweaks or code snippets to hot-reload."
+        }
+      ]
+    },
+    {
+      "id": "proj_1767655616491_lzryt000p",
+      "name": "craftworld",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\craftworld\\my-game",
+      "type": "other",
+      "description": "Create a Minecraft-style voxel game with:\n  - Three",
+      "createdAt": "2026-01-05T23:26:56.491Z",
+      "updatedAt": "2026-01-05T23:27:21.076Z",
+      "files": [],
+      "technologies": [],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-05T23:26:56.491Z",
+          "action": "create",
+          "description": "Create a Minecraft-style voxel game with:\n  - Three",
+          "filesChanged": [],
+          "prompt": "  Create a Minecraft-style voxel game with:\n  - Three.js for 3D rendering\n  - Player movement (WASD + mouse look)\n  - Block placing and breaking\n  - Simple procedural terrain generation\n  - Inventory system"
+        },
+        {
+          "timestamp": "2026-01-05T23:27:21.076Z",
+          "action": "create",
+          "description": "Create a Minecraft-style voxel game with:\n  - Three",
+          "filesChanged": [],
+          "prompt": "  Create a Minecraft-style voxel game with:\n  - Three.js for 3D rendering\n  - Player movement (WASD + mouse look)\n  - Block placing and breaking\n  - Simple procedural terrain generation\n  - Inventory system"
+        }
+      ]
+    },
+    {
+      "id": "proj_1767713776681_sutxjonc6",
+      "name": "my-game",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\Primewars\\my-game",
+      "type": "web",
+      "description": "Build me a 3d world to run around in :D",
+      "createdAt": "2026-01-06T15:36:16.681Z",
+      "updatedAt": "2026-01-06T15:36:16.681Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-06T15:36:16.681Z",
+          "action": "create",
+          "description": "Build me a 3d world to run around in :D",
+          "filesChanged": [],
+          "prompt": "Build me a 3d world to run around in :D "
+        }
+      ]
+    },
+    {
+      "id": "proj_1768511868932_qr9aqn1on",
+      "name": "GraphPrime",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\GraphPrime",
+      "type": "web",
+      "description": "C:\\Users\\AGrac\\OneDrive\\Documents\\GraphPrime  <- build me a graph here  Make me a Dino themed graph...",
+      "createdAt": "2026-01-15T21:17:48.932Z",
+      "updatedAt": "2026-01-15T21:17:48.932Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-15T21:17:48.932Z",
+          "action": "create",
+          "description": "C:\\Users\\AGrac\\OneDrive\\Documents\\GraphPrime  <- build me a graph here  Make me a Dino themed graph...",
+          "filesChanged": [],
+          "prompt": "C:\\Users\\AGrac\\OneDrive\\Documents\\GraphPrime  <- build me a graph here  Make me a Dino themed graph :D"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768513745091_tb5ji6qp0",
+      "name": "Test",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\Test",
+      "type": "web",
+      "description": "Create a new Electron + React project called 'TestApp' with the following specifications:\nProject St...",
+      "createdAt": "2026-01-15T21:49:05.091Z",
+      "updatedAt": "2026-01-15T21:49:05.091Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-15T21:49:05.091Z",
+          "action": "create",
+          "description": "Create a new Electron + React project called 'TestApp' with the following specifications:\nProject St...",
+          "filesChanged": [],
+          "prompt": "Create a new Electron + React project called 'TestApp' with the following specifications:\nProject Structure:\nMain Electron process with TypeScript\nReact frontend with TypeScript\nWebpack configuration for both main and renderer\nBasic UI with a counter component\nDependencies:\nElectron\nReact & React DOM\nTypeScript\nWebpack & webpack-cli\nHTML Webpack Plugin\nCSS & style loaders\nScripts:\nnpm run dev - concurrent development servers\nnpm run build - production build\nnpm start - run the built app\nBatch Files:\nCreate Windows batch files (.bat) for easy execution\nEnsure Node.js detection works correctly with A:\\Nodejs path\nInclude proper error handling\nFeatures:\nBasic Electron window with React app\nHot reload during development\nProduction build optimization"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768514297967_6eixabfkr",
+      "name": "test 2",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\test 2",
+      "type": "web",
+      "description": "Project Setup:\nUse Tauri 2",
+      "createdAt": "2026-01-15T21:58:17.967Z",
+      "updatedAt": "2026-01-15T22:48:27.429Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-15T21:58:17.967Z",
+          "action": "create",
+          "description": "Project Setup:\nUse Tauri 2",
+          "filesChanged": [],
+          "prompt": "Project Setup:\nUse Tauri 2.x (latest version)\nReact 18 with TypeScript\nModern Vite build system\nFeatures Required:\nBasic React app with a counter component\nTauri command to get system info\nProper security configuration (CSP enabled)\nCross-platform build setup\nProject Structure:\nComplete directory structure with icons folder\nProper .gitignore file\nComprehensive README with troubleshooting\nAll necessary configuration files\nSecurity & Best Practices:\nContent Security Policy properly configured\nSecurity meta tags in index.html\nModern dependencies (no outdated packages)\nProper TypeScript configuration\nBuild Verification:\nProject should build successfully\nDevelopment mode should work\nNo missing files or broken references\nPlease create this Tauri v2.x project with all modern best practices and security measures in place.\""
+        },
+        {
+          "timestamp": "2026-01-15T22:18:40.358Z",
+          "action": "update",
+          "description": "\"Create a new Tauri + React project called 'PrimeTest' with the following specifications:\nModern Ta...",
+          "filesChanged": [],
+          "prompt": "\n\"Create a new Tauri + React project called 'PrimeTest' with the following specifications:\nModern Tauri v2 Setup:\nUse Tauri 2.x (NOT v1.5 - completely different config format)\nReact 18 with TypeScript\nModern Vite build system\nFeatures Required:\nBasic React app with a counter component\nTauri command to get system information (CPU, memory, OS)\nFile system operations (read/write text files)\nProper security configuration (CSP enabled)\nWindow management (minimize, maximize, close)\nProject Structure:\nComplete directory structure with icons folder\nProper .gitignore file for Tauri projects\nComprehensive README with setup and troubleshooting\nAll necessary configuration files (tauri.conf.json v2 format)\nSecurity & Best Practices:\nContent Security Policy properly configured (not null)\nSecurity meta tags in index.html\nModern dependencies (latest React, TypeScript, Vite)\nProper TypeScript configuration\nTauri v2 Specific Requirements:\nUse @tauri-apps/plugin-shell for shell operations\nConfigure plugins properly in Rust code\nUse correct v2 API patterns\nProper Cargo.toml with modern features\nBuild Verification:\nProject should build successfully on first try\nDevelopment mode should work without errors\nNo missing files or broken references\nAll dependencies should resolve correctly"
+        },
+        {
+          "timestamp": "2026-01-15T22:48:27.429Z",
+          "action": "update",
+          "description": "\"Create a new Tauri + React project called 'PrimeTest' with the following specifications:\nModern Ta...",
+          "filesChanged": [],
+          "prompt": "\n\"Create a new Tauri + React project called 'PrimeTest' with the following specifications:\nModern Tauri v2 Setup:\nUse Tauri 2.x (NOT v1.5 - completely different config format)\nReact 18 with TypeScript\nModern Vite build system\nFeatures Required:\nBasic React app with a counter component\nTauri command to get system information (CPU, memory, OS)\nFile system operations (read/write text files)\nProper security configuration (CSP enabled)\nWindow management (minimize, maximize, close)\nProject Structure:\nComplete directory structure with icons folder\nProper .gitignore file for Tauri projects\nComprehensive README with setup and troubleshooting\nAll necessary configuration files (tauri.conf.json v2 format)\nSecurity & Best Practices:\nContent Security Policy properly configured (not null)\nSecurity meta tags in index.html\nModern dependencies (latest React, TypeScript, Vite)\nProper TypeScript configuration\nTauri v2 Specific Requirements:\nUse @tauri-apps/plugin-shell for shell operations\nConfigure plugins properly in Rust code\nUse correct v2 API patterns\nProper Cargo.toml with modern features\nBuild Verification:\nProject should build successfully on first try\nDevelopment mode should work without errors\nNo missing files or broken references\nAll dependencies should resolve correctly"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768518414547_6xe1oial1",
+      "name": "DinoPingpong",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\DinoPingpong",
+      "type": "game",
+      "description": "Can you build me a Dino Buddy Ping pong tauri app game with all the latest hottest ping pong feature...",
+      "createdAt": "2026-01-15T23:06:54.547Z",
+      "updatedAt": "2026-01-15T23:06:54.547Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-15T23:06:54.547Z",
+          "action": "create",
+          "description": "Can you build me a Dino Buddy Ping pong tauri app game with all the latest hottest ping pong feature...",
+          "filesChanged": [],
+          "prompt": "Can you build me a Dino Buddy Ping pong tauri app game with all the latest hottest ping pong features<3 "
+        }
+      ]
+    },
+    {
+      "id": "proj_1768519225347_7kzop1cfi",
+      "name": "electron",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\electron",
+      "type": "web",
+      "description": "Build me an Ai powered Electron App please next, I want you to take your time on this and lock in",
+      "createdAt": "2026-01-15T23:20:25.347Z",
+      "updatedAt": "2026-01-15T23:20:25.347Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-15T23:20:25.347Z",
+          "action": "create",
+          "description": "Build me an Ai powered Electron App please next, I want you to take your time on this and lock in",
+          "filesChanged": [],
+          "prompt": "Build me an Ai powered Electron App please next, I want you to take your time on this and lock in. This electron Ai Project I want a Dino Emoji RIGHT in the middle that jumps when clicked :D "
+        }
+      ]
+    },
+    {
+      "id": "proj_1768520468248_uu4t8nuj5",
+      "name": "react",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\react",
+      "type": "web",
+      "description": "\"Create a simple React Todo App with local storage, dark theme toggle, and smooth animations",
+      "createdAt": "2026-01-15T23:41:08.248Z",
+      "updatedAt": "2026-01-15T23:41:08.248Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-15T23:41:08.248Z",
+          "action": "create",
+          "description": "\"Create a simple React Todo App with local storage, dark theme toggle, and smooth animations",
+          "filesChanged": [],
+          "prompt": " \"Create a simple React Todo App with local storage, dark theme toggle, and smooth animations. Include proper TypeScript, error handling, and a clean modern UI."
+        }
+      ]
+    },
+    {
+      "id": "proj_1768845055938_t23v38w0h",
+      "name": "porn",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\porn",
+      "type": "web",
+      "description": "Yo build me a porn website make it extra saucy",
+      "createdAt": "2026-01-19T17:50:55.938Z",
+      "updatedAt": "2026-01-19T17:50:55.938Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-19T17:50:55.938Z",
+          "action": "create",
+          "description": "Yo build me a porn website make it extra saucy",
+          "filesChanged": [],
+          "prompt": "Yo build me a porn website make it extra saucy"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768845348000_ciphpgneo",
+      "name": "Aaron Grace",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\Aaron Grace",
+      "type": "other",
+      "description": "Create a modern landing page with responsive design for porn",
+      "createdAt": "2026-01-19T17:55:48.000Z",
+      "updatedAt": "2026-01-19T17:55:48.000Z",
+      "files": [],
+      "technologies": [],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-19T17:55:48.000Z",
+          "action": "create",
+          "description": "Create a modern landing page with responsive design for porn",
+          "filesChanged": [],
+          "prompt": "Create a modern landing page with responsive design for porn"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768849431934_bl4gx1dxt",
+      "name": "space sim",
+      "path": "G:\\dinoworld\\dino world 3d\\space sim",
+      "type": "web",
+      "description": "Build me a space simulator in three",
+      "createdAt": "2026-01-19T19:03:51.934Z",
+      "updatedAt": "2026-01-19T19:03:51.934Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-19T19:03:51.934Z",
+          "action": "create",
+          "description": "Build me a space simulator in three",
+          "filesChanged": [],
+          "prompt": "Build me a space simulator in three.js"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768937963938_8cd64aqnt",
+      "name": "OpusPrime",
+      "path": "G:\\Test Projects for AgentPrime\\OpusPrime",
+      "type": "game",
+      "description": "try again",
+      "createdAt": "2026-01-20T19:39:23.938Z",
+      "updatedAt": "2026-01-20T19:39:23.938Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-20T19:39:23.938Z",
+          "action": "create",
+          "description": "try again",
+          "filesChanged": [],
+          "prompt": "try again"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768942329565_8r1aco8db",
+      "name": "test 19",
+      "path": "G:\\Test Projects for AgentPrime\\test 19",
+      "type": "game",
+      "description": "Can you add wasd controls and space to jump",
+      "createdAt": "2026-01-20T20:52:09.565Z",
+      "updatedAt": "2026-01-20T20:52:09.565Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-20T20:52:09.565Z",
+          "action": "create",
+          "description": "Can you add wasd controls and space to jump",
+          "filesChanged": [],
+          "prompt": "Can you add wasd controls and space to jump?"
+        }
+      ]
+    },
+    {
+      "id": "proj_1768944666608_f87a8yc7q",
+      "name": "test 20",
+      "path": "G:\\Test Projects for AgentPrime\\test 20",
+      "type": "web",
+      "description": "Help me debug and fix issues in my code",
+      "createdAt": "2026-01-20T21:31:06.608Z",
+      "updatedAt": "2026-01-20T21:31:06.608Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-20T21:31:06.608Z",
+          "action": "create",
+          "description": "Help me debug and fix issues in my code",
+          "filesChanged": [],
+          "prompt": "Help me debug and fix issues in my code"
+        }
+      ]
+    },
+    {
+      "id": "proj_1769307962145_eshlaa0zr",
+      "name": "New folder",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Documents\\New folder",
+      "type": "web",
+      "description": "bUILD ME A THREE",
+      "createdAt": "2026-01-25T02:26:02.145Z",
+      "updatedAt": "2026-01-25T02:26:02.145Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-01-25T02:26:02.145Z",
+          "action": "create",
+          "description": "bUILD ME A THREE",
+          "filesChanged": [],
+          "prompt": "bUILD ME A THREE.JS DINO BUDDY GOODNESS GAME MAYBE CATCH SUPREMES FROM THE MAGIC SHELF<3 LET IT BE FUN :D"
+        }
+      ]
+    }
+  ]
+}

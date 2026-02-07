@@ -1,0 +1,485 @@
+/**
+ * IPC Input Validation & Sanitization
+ * 
+ * Provides security validation for all IPC messages to prevent:
+ * - Path traversal attacks
+ * - Payload size DoS attacks
+ * - Injection attacks
+ * - Malformed data attacks
+ */
+
+import * as path from 'path';
+
+// Maximum payload sizes (in bytes)
+const MAX_PAYLOAD_SIZES = {
+  default: 1024 * 1024, // 1MB default
+  fileContent: 10 * 1024 * 1024, // 10MB for file content
+  chat: 100 * 1024, // 100KB for chat messages
+  command: 10 * 1024, // 10KB for commands
+  settings: 50 * 1024, // 50KB for settings
+};
+
+// Dangerous characters/patterns to sanitize
+const DANGEROUS_PATTERNS = {
+  nullBytes: /\0/g,
+  controlChars: /[\x00-\x08\x0B\x0C\x0E-\x1F]/g,
+  pathTraversal: /\.\.[\/\\]/g,
+};
+
+/**
+ * Validation result
+ */
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  sanitized?: any;
+}
+
+/**
+ * Sanitize a folder or project name for safe filesystem usage.
+ * - Removes/replaces invalid characters for Windows/Unix
+ * - Trims whitespace from both ends
+ * - Removes trailing dots/spaces (Windows restriction)
+ * - Replaces consecutive dashes/underscores
+ * - Returns a safe, usable folder name
+ */
+export function sanitizeFolderName(name: string): string {
+  if (!name || typeof name !== 'string') {
+    return 'untitled';
+  }
+  
+  let sanitized = name
+    // Remove null bytes and control characters
+    .replace(/\0/g, '')
+    .replace(/[\x00-\x1F]/g, '')
+    // Replace Windows-invalid characters: < > : " / \ | ? *
+    .replace(/[<>:"/\\|?*]/g, '-')
+    // Trim whitespace from both ends
+    .trim()
+    // Remove trailing dots and spaces (Windows restriction)
+    .replace(/[\s.]+$/g, '')
+    // Remove leading dots (hidden files on Unix, problematic on Windows)
+    .replace(/^\.+/g, '')
+    // Replace consecutive dashes/underscores with single dash
+    .replace(/[-_]+/g, '-')
+    // Remove leading/trailing dashes
+    .replace(/^-+|-+$/g, '');
+  
+  // If sanitization removed everything, return default name
+  if (!sanitized || sanitized.length === 0) {
+    return 'untitled';
+  }
+  
+  // Limit length (Windows MAX_PATH considerations)
+  if (sanitized.length > 200) {
+    sanitized = sanitized.substring(0, 200);
+  }
+  
+  return sanitized;
+}
+
+/**
+ * Sanitize a file name for safe filesystem usage.
+ * Similar to sanitizeFolderName but:
+ * - Preserves file extensions
+ * - Preserves dots in filename (except leading/trailing)
+ * - Handles special unicode characters (em dashes, etc.)
+ */
+export function sanitizeFileName(name: string): string {
+  if (!name || typeof name !== 'string') {
+    return 'untitled';
+  }
+  
+  // Split into name and extension
+  const lastDotIndex = name.lastIndexOf('.');
+  let baseName: string;
+  let extension: string;
+  
+  if (lastDotIndex > 0) { // Has extension (and not a hidden file like .gitignore)
+    baseName = name.substring(0, lastDotIndex);
+    extension = name.substring(lastDotIndex); // includes the dot
+  } else {
+    baseName = name;
+    extension = '';
+  }
+  
+  // Sanitize the base name
+  let sanitized = baseName
+    // Remove null bytes and control characters
+    .replace(/\0/g, '')
+    .replace(/[\x00-\x1F]/g, '')
+    // Replace Windows-invalid characters: < > : " / \ | ? *
+    .replace(/[<>:"/\\|?*]/g, '-')
+    // Replace em dashes, en dashes, and other special unicode dashes with regular dash
+    .replace(/[\u2014\u2013\u2012\u2011\u2010]/g, '-')
+    // Replace other problematic unicode characters
+    .replace(/[\u00A0]/g, ' ') // Non-breaking space to regular space
+    // Trim whitespace from both ends
+    .trim()
+    // Remove trailing dots and spaces (Windows restriction)
+    .replace(/[\s.]+$/g, '')
+    // Remove leading dots
+    .replace(/^\.+/g, '')
+    // Replace multiple spaces with single space
+    .replace(/\s+/g, ' ')
+    // Replace consecutive dashes with single dash
+    .replace(/-+/g, '-')
+    // Remove leading/trailing dashes
+    .replace(/^-+|-+$/g, '');
+  
+  // If sanitization removed everything, use default name
+  if (!sanitized || sanitized.length === 0) {
+    sanitized = 'untitled';
+  }
+  
+  // Limit length (Windows MAX_PATH considerations, leave room for extension)
+  const maxBaseLength = 200 - extension.length;
+  if (sanitized.length > maxBaseLength) {
+    sanitized = sanitized.substring(0, maxBaseLength);
+  }
+  
+  // Sanitize extension too (just in case)
+  extension = extension
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/[\x00-\x1F]/g, '');
+  
+  return sanitized + extension;
+}
+
+/**
+ * Validate and sanitize a file path
+ */
+export function validateFilePath(
+  filePath: string,
+  workspacePath: string,
+  options: { allowAbsolute?: boolean; sanitizeFilename?: boolean } = {}
+): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof filePath !== 'string') {
+    return { valid: false, errors: ['File path must be a string'] };
+  }
+  
+  // Check for null bytes (can bypass path checks)
+  if (DANGEROUS_PATTERNS.nullBytes.test(filePath)) {
+    return { valid: false, errors: ['File path contains null bytes'] };
+  }
+  
+  // Sanitize path
+  let sanitized = filePath
+    .replace(DANGEROUS_PATTERNS.controlChars, '') // Remove control characters
+    .trim();
+  
+  // Normalize path separators
+  sanitized = sanitized.replace(/\\/g, '/');
+  
+  // Sanitize the filename component (removes invalid characters like * < > : " | ? etc.)
+  // This is enabled by default but can be disabled with sanitizeFilename: false
+  if (options.sanitizeFilename !== false) {
+    const parts = sanitized.split('/');
+    if (parts.length > 0) {
+      const fileName = parts[parts.length - 1];
+      // Only sanitize if it looks like a filename (has content)
+      if (fileName && fileName.length > 0) {
+        const sanitizedFileName = sanitizeFileName(fileName);
+        // Log if filename was changed for debugging
+        if (sanitizedFileName !== fileName) {
+          console.log(`[Path Validation] Sanitized filename: "${fileName}" -> "${sanitizedFileName}"`);
+        }
+        parts[parts.length - 1] = sanitizedFileName;
+        sanitized = parts.join('/');
+      }
+    }
+  }
+  
+  // Check for path traversal attempts
+  const traversalMatches = sanitized.match(/\.\.\//g);
+  if (traversalMatches && traversalMatches.length > 3) {
+    errors.push('Excessive path traversal sequences detected');
+  }
+  
+  // Resolve and check if within workspace
+  if (workspacePath) {
+    const resolvedPath = path.resolve(workspacePath, sanitized);
+    const normalizedWorkspace = path.normalize(workspacePath);
+    
+    if (!resolvedPath.startsWith(normalizedWorkspace)) {
+      errors.push('Path resolves outside of workspace');
+    }
+  }
+  
+  // Check for absolute paths (if not allowed)
+  if (!options.allowAbsolute && path.isAbsolute(sanitized)) {
+    errors.push('Absolute paths are not allowed');
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized
+  };
+}
+
+/**
+ * Validate a command string
+ */
+export function validateCommand(command: string): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof command !== 'string') {
+    return { valid: false, errors: ['Command must be a string'] };
+  }
+  
+  // Check size
+  if (command.length > MAX_PAYLOAD_SIZES.command) {
+    errors.push(`Command exceeds maximum size (${MAX_PAYLOAD_SIZES.command} bytes)`);
+  }
+  
+  // Check for null bytes
+  if (DANGEROUS_PATTERNS.nullBytes.test(command)) {
+    errors.push('Command contains null bytes');
+  }
+  
+  // Sanitize
+  const sanitized = command
+    .replace(DANGEROUS_PATTERNS.nullBytes, '')
+    .replace(DANGEROUS_PATTERNS.controlChars, '');
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized
+  };
+}
+
+/**
+ * Validate file content
+ */
+export function validateFileContent(content: string): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof content !== 'string') {
+    return { valid: false, errors: ['Content must be a string'] };
+  }
+  
+  // Check size
+  if (content.length > MAX_PAYLOAD_SIZES.fileContent) {
+    errors.push(`Content exceeds maximum size (${MAX_PAYLOAD_SIZES.fileContent} bytes)`);
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized: content // File content is not sanitized (preserve original)
+  };
+}
+
+/**
+ * Validate chat message
+ */
+export function validateChatMessage(message: string): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof message !== 'string') {
+    return { valid: false, errors: ['Message must be a string'] };
+  }
+  
+  // Check size
+  if (message.length > MAX_PAYLOAD_SIZES.chat) {
+    errors.push(`Message exceeds maximum size (${MAX_PAYLOAD_SIZES.chat} bytes)`);
+  }
+  
+  // Sanitize (remove null bytes but preserve other content)
+  const sanitized = message.replace(DANGEROUS_PATTERNS.nullBytes, '');
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized
+  };
+}
+
+/**
+ * Validate settings object
+ */
+export function validateSettings(settings: any): ValidationResult {
+  const errors: string[] = [];
+  
+  if (typeof settings !== 'object' || settings === null) {
+    return { valid: false, errors: ['Settings must be an object'] };
+  }
+  
+  // Check serialized size
+  const serialized = JSON.stringify(settings);
+  if (serialized.length > MAX_PAYLOAD_SIZES.settings) {
+    errors.push(`Settings exceed maximum size (${MAX_PAYLOAD_SIZES.settings} bytes)`);
+  }
+  
+  // Validate specific settings fields
+  if (settings.fontSize !== undefined) {
+    if (typeof settings.fontSize !== 'number' || settings.fontSize < 8 || settings.fontSize > 72) {
+      errors.push('fontSize must be a number between 8 and 72');
+    }
+  }
+  
+  if (settings.theme !== undefined) {
+    const validThemes = ['vs-dark', 'vs-light', 'hc-black', 'hc-light'];
+    if (!validThemes.includes(settings.theme)) {
+      errors.push(`theme must be one of: ${validThemes.join(', ')}`);
+    }
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized: settings
+  };
+}
+
+/**
+ * Validate generic IPC payload
+ */
+export function validatePayload(
+  payload: any,
+  options: {
+    maxSize?: number;
+    requiredFields?: string[];
+    allowedTypes?: string[];
+  } = {}
+): ValidationResult {
+  const errors: string[] = [];
+  const maxSize = options.maxSize || MAX_PAYLOAD_SIZES.default;
+  
+  // Check if payload is valid JSON-serializable
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(payload);
+  } catch (e) {
+    return { valid: false, errors: ['Payload is not JSON-serializable'] };
+  }
+  
+  // Check size
+  if (serialized.length > maxSize) {
+    errors.push(`Payload exceeds maximum size (${maxSize} bytes)`);
+  }
+  
+  // Check required fields
+  if (options.requiredFields && typeof payload === 'object' && payload !== null) {
+    for (const field of options.requiredFields) {
+      if (!(field in payload)) {
+        errors.push(`Missing required field: ${field}`);
+      }
+    }
+  }
+  
+  // Check allowed types
+  if (options.allowedTypes) {
+    const actualType = Array.isArray(payload) ? 'array' : typeof payload;
+    if (!options.allowedTypes.includes(actualType)) {
+      errors.push(`Invalid payload type: ${actualType}. Allowed: ${options.allowedTypes.join(', ')}`);
+    }
+  }
+  
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized: payload
+  };
+}
+
+/**
+ * IPC Rate Limiter
+ * Prevents flooding of IPC channels
+ */
+class IPCRateLimiter {
+  private callHistory: Map<string, number[]> = new Map();
+  private readonly DEFAULT_LIMIT = 100; // calls per minute
+  private readonly DEFAULT_WINDOW = 60000; // 1 minute in ms
+  
+  /**
+   * Check if a channel call is allowed
+   */
+  check(channel: string, limit?: number): { allowed: boolean; remaining: number } {
+    const now = Date.now();
+    const windowStart = now - this.DEFAULT_WINDOW;
+    const maxCalls = limit || this.DEFAULT_LIMIT;
+    
+    // Get history for this channel
+    let history = this.callHistory.get(channel) || [];
+    
+    // Filter to only recent calls
+    history = history.filter(t => t > windowStart);
+    
+    if (history.length >= maxCalls) {
+      return { allowed: false, remaining: 0 };
+    }
+    
+    // Record this call
+    history.push(now);
+    this.callHistory.set(channel, history);
+    
+    return { allowed: true, remaining: maxCalls - history.length };
+  }
+  
+  /**
+   * Get stats for monitoring
+   */
+  getStats(): Record<string, number> {
+    const stats: Record<string, number> = {};
+    const now = Date.now();
+    const windowStart = now - this.DEFAULT_WINDOW;
+    
+    for (const [channel, history] of this.callHistory.entries()) {
+      stats[channel] = history.filter(t => t > windowStart).length;
+    }
+    
+    return stats;
+  }
+  
+  /**
+   * Clear all history
+   */
+  clear(): void {
+    this.callHistory.clear();
+  }
+}
+
+// Global rate limiter instance
+export const ipcRateLimiter = new IPCRateLimiter();
+
+/**
+ * Wrapper to validate IPC handler input
+ * Use this to wrap IPC handlers for automatic validation
+ */
+export function withValidation<T extends (...args: any[]) => any>(
+  handler: T,
+  validators: Array<(arg: any) => ValidationResult>
+): T {
+  return (async (...args: any[]) => {
+    for (let i = 0; i < validators.length && i < args.length; i++) {
+      const validation = validators[i](args[i]);
+      if (!validation.valid) {
+        throw new Error(`Validation failed: ${validation.errors.join('; ')}`);
+      }
+      // Use sanitized value
+      if (validation.sanitized !== undefined) {
+        args[i] = validation.sanitized;
+      }
+    }
+    return handler(...args);
+  }) as T;
+}
+
+export default {
+  sanitizeFolderName,
+  sanitizeFileName,
+  validateFilePath,
+  validateCommand,
+  validateFileContent,
+  validateChatMessage,
+  validateSettings,
+  validatePayload,
+  ipcRateLimiter,
+  withValidation,
+};
+

@@ -1,0 +1,180 @@
+{
+  "version": "1.0.0",
+  "templates": [
+    {
+      "id": "electron-react",
+      "name": "Electron + React",
+      "description": "Modern desktop app with React UI, TypeScript, and Electron",
+      "icon": "🖥️",
+      "category": "desktop",
+      "tags": ["desktop", "react", "typescript", "electron"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-electron-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A modern Electron desktop application" }
+      ],
+      "postCreate": ["cd {{projectName}} && npm install"]
+    },
+    {
+      "id": "tauri-react",
+      "name": "Tauri + React",
+      "description": "Lightweight Rust-based desktop app with React UI - smaller & faster than Electron",
+      "icon": "🦀",
+      "category": "desktop",
+      "tags": ["desktop", "react", "typescript", "tauri", "rust"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-tauri-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A lightweight Tauri desktop application" }
+      ],
+      "postCreate": ["cd {{projectName}} && npm install"],
+      "requirements": ["Rust toolchain (rustup)", "Node.js 18+"]
+    },
+    {
+      "id": "fullstack-react-fastapi",
+      "name": "React + FastAPI",
+      "description": "Full-stack app with React frontend and Python FastAPI backend",
+      "icon": "🚀",
+      "category": "fullstack",
+      "tags": ["fullstack", "react", "python", "fastapi", "typescript"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-fullstack-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A full-stack application with React and FastAPI" }
+      ],
+      "postCreate": [
+        "cd {{projectName}}/frontend && npm install",
+        "cd {{projectName}}/backend && pip install -r requirements.txt"
+      ]
+    },
+    {
+      "id": "fullstack-react-express",
+      "name": "React + Express",
+      "description": "Full-stack app with React frontend and Node.js Express backend",
+      "icon": "📦",
+      "category": "fullstack",
+      "tags": ["fullstack", "react", "nodejs", "express", "typescript"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-mern-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A full-stack MERN application" }
+      ],
+      "postCreate": [
+        "cd {{projectName}} && npm install",
+        "cd {{projectName}}/frontend && npm install",
+        "cd {{projectName}}/backend && npm install"
+      ]
+    },
+    {
+      "id": "nextjs-fullstack",
+      "name": "Next.js Full-Stack",
+      "description": "Modern React framework with App Router, API routes, and Tailwind CSS",
+      "icon": "⚡",
+      "category": "fullstack",
+      "tags": ["fullstack", "react", "nextjs", "typescript", "tailwind"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-nextjs-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Next.js full-stack application" }
+      ],
+      "postCreate": ["cd {{projectName}} && npm install"]
+    },
+    {
+      "id": "vue-vite",
+      "name": "Vue 3 + Vite",
+      "description": "Modern Vue 3 app with Composition API, TypeScript, and Vite",
+      "icon": "💚",
+      "category": "frontend",
+      "tags": ["frontend", "vue", "typescript", "vite"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-vue-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Vue 3 application" }
+      ],
+      "postCreate": ["cd {{projectName}} && npm install"]
+    },
+    {
+      "id": "sveltekit",
+      "name": "SvelteKit",
+      "description": "Fast, modern web framework with server-side rendering and TypeScript",
+      "icon": "🔥",
+      "category": "fullstack",
+      "tags": ["fullstack", "svelte", "typescript", "vite"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-svelte-app" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A SvelteKit application" }
+      ],
+      "postCreate": ["cd {{projectName}} && npm install"]
+    },
+    {
+      "id": "python-cli",
+      "name": "Python CLI Tool",
+      "description": "Modern CLI tool with Click, Rich formatting, and pytest testing",
+      "icon": "🐍",
+      "category": "backend",
+      "tags": ["backend", "python", "cli", "click"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-cli-tool" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Python CLI tool" }
+      ],
+      "postCreate": [
+        "cd {{projectName}} && python -m venv venv",
+        "cd {{projectName}} && pip install -r requirements.txt"
+      ],
+      "requirements": ["Python 3.9+"]
+    },
+    {
+      "id": "go-microservice",
+      "name": "Go Microservice",
+      "description": "Lightweight REST API with Chi router, Docker support, and clean architecture",
+      "icon": "🐹",
+      "category": "backend",
+      "tags": ["backend", "go", "api", "docker", "microservice"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-go-service" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Go microservice" }
+      ],
+      "postCreate": ["cd {{projectName}} && go mod tidy"],
+      "requirements": ["Go 1.21+"]
+    },
+    {
+      "id": "rust-cli",
+      "name": "Rust CLI",
+      "description": "Fast CLI tool with Clap argument parsing and colored output",
+      "icon": "⚙️",
+      "category": "backend",
+      "tags": ["backend", "rust", "cli", "clap"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-rust-cli" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Rust CLI tool" }
+      ],
+      "postCreate": ["cd {{projectName}} && cargo build"],
+      "requirements": ["Rust toolchain (rustup)"]
+    },
+    {
+      "id": "threejs-game",
+      "name": "Three.js Game",
+      "description": "Minecraft-like voxel game with Three.js, React, and TypeScript - perfect for building 3D web games",
+      "icon": "🎮",
+      "category": "games",
+      "tags": ["games", "threejs", "react", "typescript", "voxel", "3d"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-game" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Three.js voxel game" }
+      ],
+      "postCreate": ["cd {{projectName}} && npm install"]
+    }
+  ],
+  "categories": [
+    { "id": "desktop", "name": "Desktop Apps", "icon": "🖥️" },
+    { "id": "fullstack", "name": "Full-Stack", "icon": "🌐" },
+    { "id": "frontend", "name": "Frontend", "icon": "💻" },
+    { "id": "backend", "name": "Backend", "icon": "🔧" },
+    { "id": "games", "name": "Games", "icon": "🎮" }
+  ]
+}

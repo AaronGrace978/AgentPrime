@@ -1,0 +1,21 @@
+AgentPrime Icon Placeholder
+
+Required icon files for distribution:
+- icon.ico (Windows) - 256x256 ICO format
+- icon.icns (macOS) - ICNS format with multiple sizes
+- icon.png (Linux) - 512x512 PNG format
+
+To generate icons:
+1. Create a 1024x1024 PNG source image
+2. Use icon generators like:
+   - For Windows: use png-to-ico npm package
+   - For macOS: use iconutil command or icon generators
+   - For Linux: resize the PNG to 512x512
+
+Command to generate from PNG (requires imagemagick):
+  convert icon.png -resize 256x256 icon.ico
+  
+For production, place your icon files here:
+  assets/icon.ico
+  assets/icon.icns
+  assets/icon.png
