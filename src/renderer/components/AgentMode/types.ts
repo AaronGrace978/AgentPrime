@@ -8,7 +8,7 @@ export interface AgentAction {
     // Game launching
     'launch_game' |
     // Smart Controller actions
-    'smart_click' | 'smart_type' | 'smart_hotkey' | 'smart_scroll' | 'smart_move_mouse' | 'smart_drag' |
+    'smart_click' | 'smart_type' | 'smart_hotkey' | 'smart_scroll' | 'smart_move_mouse' | 'smart_move_mouse_circle' | 'smart_drag' |
     'smart_screenshot' | 'smart_focus_window' | 'smart_get_windows' | 'smart_mouse_position' | 'smart_window_info' |
     'smart_emergency_stop' | 'smart_resume' |
     // Vault actions
@@ -37,6 +37,10 @@ export interface AgentMessage {
   timestamp: number;
   actions?: AgentAction[];
   searchResults?: WebSearchResult[];
+  /** Chain of thought — AI's reasoning before acting */
+  thinking?: string;
+  /** Whether this is a follow-up message after action results */
+  isFollowUp?: boolean;
 }
 
 export type SafetyMode = 'confirm-all' | 'smart' | 'speed';
@@ -123,6 +127,7 @@ export const SAFE_ACTIONS: Record<string, string[]> = {
   vault_status: [], // Read-only
   smart_scroll: [], // Low risk
   smart_move_mouse: [], // Low risk
+  smart_move_mouse_circle: [], // Low risk
 };
 
 // Actions that always require confirmation (ONLY credential/security-related)
@@ -146,6 +151,7 @@ export const SAFE_AUTOMATION_ACTIONS = [
   'smart_drag',
   'smart_scroll',
   'smart_move_mouse',
+  'smart_move_mouse_circle',
 ];
 
 export function classifyActionRisk(action: AgentAction): 'safe' | 'moderate' | 'risky' {

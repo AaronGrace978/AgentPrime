@@ -140,11 +140,26 @@ const AgentMode: React.FC<AgentModeProps> = ({ isOpen, onClose }) => {
       } else if (data.type === 'direct-action') {
         // Direct JSON action detected - show feedback
         console.log(`[AgentMode] Direct action: ${data.action}`);
+      } else if (data.type === 'thinking') {
+        // Chain of thought — show AI's reasoning as a system message
+        if (data.content) {
+          addMessage('system', `💭 ${data.content}`);
+        }
       } else if (data.type === 'response') {
         setIsStreaming(false);
         setStreamingContent('');
         addMessage('assistant', data.content, data.actions);
         setIsProcessing(false);
+      } else if (data.type === 'follow-up') {
+        // Chain of thought — follow-up reasoning after action results
+        if (data.content) {
+          addMessage('assistant', data.content);
+        }
+        setIsProcessing(false);
+      } else if (data.type === 'stream-chunk') {
+        // Follow-up stream chunks — append to streaming content
+        setIsStreaming(true);
+        setStreamingContent(prev => prev + (data.content || ''));
       } else if (data.type === 'agent-stream-start') {
         setIsStreaming(true);
         setStreamingContent('');

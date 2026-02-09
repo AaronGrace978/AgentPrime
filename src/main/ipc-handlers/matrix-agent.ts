@@ -2441,14 +2441,27 @@ will STILL work - it searches Steam automatically. ALWAYS use it!`;
         return { success: true, response: fullResponse };
       }
 
-      // Send initial response
+      // ═══ CHAIN OF THOUGHT — Surface thinking to UI and preserve in history ═══
+      const thinkingText = parsed.thinking || null;
+      const responseText = parsed.response || parsed.thinking || 'Processing...';
+      
+      // Send thinking step first (if AI provided reasoning)
+      if (thinkingText && parsed.response) {
+        webContents.send('matrix-agent:event', {
+          type: 'thinking',
+          content: thinkingText
+        });
+      }
+      
+      // Send main response
       webContents.send('matrix-agent:event', {
         type: 'response',
-        content: parsed.response || parsed.thinking || 'Processing...',
+        content: responseText,
+        thinking: thinkingText,
         actions: parsed.actions || []
       });
 
-      // Process actions - collect results to feed back to AI if needed
+      // Process actions - collect results to feed back to AI for follow-up reasoning
       const actions = parsed.actions || [];
       const actionResults: Array<{ action: string; success: boolean; result?: any; error?: string }> = [];
       for (const actionData of actions) {
@@ -2806,6 +2819,77 @@ IMPORTANT RULES:
             error: execError.message
           });
         }
+      }
+
+      // ═══ CHAIN OF THOUGHT — Feed action results back to AI for follow-up ═══
+      // If actions had failures or produced data the user should know about,
+      // give the AI a chance to reason about the outcomes and respond naturally.
+      const hasFailures = actionResults.some(r => !r.success);
+      const hasDataResults = actionResults.some(r => r.success && r.result);
+      
+      if (actionResults.length > 0 && (hasFailures || hasDataResults)) {
+        try {
+          const resultsSummary = actionResults.map(r => 
+            r.success 
+              ? `✅ ${r.action}: ${r.result || 'OK'}` 
+              : `❌ ${r.action}: ${r.error || 'Failed'}`
+          ).join('\n');
+          
+          const followUpPrompt = hasFailures
+            ? `Some actions had issues. Here are the results:\n${resultsSummary}\n\nBriefly tell the user what happened and suggest a fix if needed. Keep it casual and short.`
+            : `Actions completed. Here are the results:\n${resultsSummary}\n\nBriefly summarize what happened for the user. Keep it casual and short — don't repeat yourself if you already told them.`;
+          
+          // Add original response to history before follow-up
+          const fullAssistantMsg = thinkingText && parsed.response
+            ? `[Thinking: ${thinkingText}] ${parsed.response}`
+            : responseText;
+          addToHistory('assistant', fullAssistantMsg);
+          
+          // Build follow-up messages with conversation context
+          const followUpMessages = [
+            { role: 'system' as const, content: `You're Matrix, the user's chill AI buddy. Briefly summarize action results for the user. Keep it casual, short, and helpful. Don't use JSON — just talk naturally.` },
+            { role: 'user' as const, content: followUpPrompt }
+          ];
+          
+          let followUpResponse = '';
+          await aiRouter.stream(followUpMessages, (chunk: any) => {
+            const text = typeof chunk === 'string' ? chunk : chunk?.content || '';
+            if (text) {
+              followUpResponse += text;
+              webContents.send('matrix-agent:event', {
+                type: 'stream-chunk',
+                content: text
+              });
+            }
+          }, { model: activeModel });
+          
+          // Extract just the text (follow-up should be plain text, not JSON)
+          const followUpText = followUpResponse.replace(/```[\s\S]*?```/g, '').trim();
+          if (followUpText) {
+            // Try to parse as JSON in case model wraps it
+            let displayText = followUpText;
+            try {
+              const followUpJson = JSON.parse(extractBalancedJson(followUpText) || '{}');
+              displayText = followUpJson.response || followUpJson.thinking || followUpText;
+            } catch { /* use raw text */ }
+            
+            webContents.send('matrix-agent:event', {
+              type: 'follow-up',
+              content: displayText,
+              actionResults
+            });
+            addToHistory('assistant', displayText);
+          }
+        } catch (followUpError: any) {
+          // Follow-up reasoning failed — not critical, log and move on
+          console.warn('[Matrix Agent] Follow-up reasoning failed:', followUpError.message);
+        }
+      } else {
+        // No follow-up needed — just add the response to history
+        const fullAssistantMsg = thinkingText && parsed.response
+          ? `[Thinking: ${thinkingText}] ${parsed.response}`
+          : responseText;
+        addToHistory('assistant', fullAssistantMsg);
       }
 
       return { success: true, response: parsed.response };

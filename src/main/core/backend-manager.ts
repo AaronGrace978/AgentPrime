@@ -10,7 +10,7 @@ import * as http from 'http';
 import { app } from 'electron';
 
 const BRAIN_URL = process.env.BRAIN_URL || 'http://127.0.0.1:8000';
-const BACKEND_CHECK_INTERVAL = 2000; // Check every 2 seconds
+const BACKEND_CHECK_INTERVAL = 10000; // Check every 10 seconds (was 2s — too aggressive)
 const BACKEND_START_TIMEOUT = 30000; // 30 seconds to start
 
 let backendProcess: ChildProcess | null = null;
