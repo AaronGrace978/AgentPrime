@@ -3,7 +3,7 @@
  * Full-screen overlay with Matrix aesthetic for AI-powered system control
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import MatrixRain from './MatrixRain';
 import AgentChat from './AgentChat';
 import ConfirmModal from './ConfirmModal';
@@ -17,6 +17,9 @@ import {
   IntelligenceLevel,
   INTELLIGENCE_LEVEL_CONFIG
 } from './types';
+
+// Lazy-load showcase (heavy component, only shown on demand)
+const MatrixShowcase = lazy(() => import('../MatrixShowcase'));
 
 interface AgentModeProps {
   isOpen: boolean;
@@ -34,6 +37,7 @@ const AgentMode: React.FC<AgentModeProps> = ({ isOpen, onClose }) => {
   const [currentConfirmAction, setCurrentConfirmAction] = useState<AgentAction | null>(null);
   const [smartControllerOpen, setSmartControllerOpen] = useState(false);
   const [systemsPanelOpen, setSystemsPanelOpen] = useState(false);
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
   const [appliedEnhancements, setAppliedEnhancements] = useState<number>(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -408,6 +412,13 @@ const AgentMode: React.FC<AgentModeProps> = ({ isOpen, onClose }) => {
         
         <div className="header-right">
           <button 
+            className={`systems-panel-toggle ${showcaseOpen ? 'active' : ''}`}
+            onClick={() => setShowcaseOpen(!showcaseOpen)}
+            title="About Matrix Buddy"
+          >
+            🦖 ABOUT
+          </button>
+          <button 
             className={`systems-panel-toggle ${systemsPanelOpen ? 'active' : ''}`}
             onClick={() => setSystemsPanelOpen(!systemsPanelOpen)}
             title="Matrix Systems"
@@ -485,6 +496,13 @@ const AgentMode: React.FC<AgentModeProps> = ({ isOpen, onClose }) => {
           <span className="hint enhancements-hint">+{appliedEnhancements} enhancements</span>
         )}
       </div>
+
+      {/* Matrix Showcase (About / Pitch Deck) */}
+      {showcaseOpen && (
+        <Suspense fallback={null}>
+          <MatrixShowcase isOpen={showcaseOpen} onClose={() => setShowcaseOpen(false)} />
+        </Suspense>
+      )}
     </div>
   );
 };

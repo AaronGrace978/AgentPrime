@@ -12,6 +12,8 @@ import type {
 } from '../../types/ai-providers';
 import axios from 'axios';
 import { Readable } from 'stream';
+import dns from 'dns';
+import { lookup } from 'dns/promises';
 
 // Cache for available models (refreshed every 30 seconds)
 let modelCache: { models: string[]; timestamp: number } | null = null;
@@ -20,6 +22,22 @@ const CACHE_TTL = 30000; // 30 seconds
 export class OllamaProvider extends BaseProvider {
   private healthCheckPromise: Promise<boolean> | null = null;
   private useAnthropicCompat: boolean;
+  private alternateApiKey: string | null = null; // Desktop/secondary API key for key rotation
+  private keySwapAttempted: boolean = false; // Prevent infinite retry loops
+  
+  /**
+   * Get axios config with proper timeout and headers
+   * For cloud endpoints, we rely on Node.js DNS resolution (which prefers IPv4)
+   */
+  private getAxiosConfig(timeout: number): any {
+    return {
+      timeout,
+      headers: this.getHeaders(),
+      // Force IPv4 family for DNS resolution to avoid IPv6 issues
+      // This is especially important when DNS servers return IPv6 first
+      family: 4
+    };
+  }
   
   constructor(config: ProviderConfig = {}) {
     super(config);
@@ -41,12 +59,22 @@ export class OllamaProvider extends BaseProvider {
       return 'https://ollama.com';
     };
     
-    // Priority: explicit baseUrl > cloud URL detection > local default
-    if (config.baseUrl) {
-      // User provided explicit URL - respect it
+    // Priority: cloud model override > explicit cloud baseUrl > local default
+    // CRITICAL: Cloud models MUST use the cloud endpoint, even if baseUrl points to local Ollama.
+    // This prevents sending cloud model names to a local Ollama instance (which returns 404).
+    const isLocalUrl = config.baseUrl?.includes('127.0.0.1') || config.baseUrl?.includes('localhost');
+    
+    if (isCloudModel && (!config.baseUrl || isLocalUrl)) {
+      // Cloud model detected — force cloud endpoint (ignore local baseUrl from settings)
+      this.baseUrl = getCloudUrl(modelName);
+      if (isLocalUrl) {
+        console.log(`[OllamaProvider] ⚠️ Cloud model '${modelName}' detected but baseUrl was local (${config.baseUrl}) — overriding to ${this.baseUrl}`);
+      }
+    } else if (config.baseUrl) {
+      // User provided explicit cloud URL - respect it
       this.baseUrl = config.baseUrl;
-    } else if (isCloudModel || (hasApiKey && !config.baseUrl?.includes('127.0.0.1'))) {
-      // Cloud model detected or API key present - use cloud endpoint
+    } else if (hasApiKey) {
+      // API key present with no explicit URL — assume cloud
       this.baseUrl = getCloudUrl(modelName);
     } else {
       // Default to local Ollama (use 127.0.0.1 to avoid IPv6 issues)
@@ -54,10 +82,13 @@ export class OllamaProvider extends BaseProvider {
     }
     
     this.apiKey = config.apiKey || null; // For Ollama Cloud
+    // Store alternate key (desktop key) for automatic key rotation on failure
+    this.alternateApiKey = (config as any).alternateApiKey || process.env.OLLAMA_API_KEY_DESKTOP || null;
     // Anthropic API compatibility mode (requires Ollama v0.14.0+)
     this.useAnthropicCompat = config.useAnthropicCompat || false;
     
-    console.log(`[OllamaProvider] Initialized: baseUrl=${this.baseUrl}, model=${modelName}, hasApiKey=${hasApiKey}`);
+    const hasAltKey = !!this.alternateApiKey && this.alternateApiKey !== this.apiKey;
+    console.log(`[OllamaProvider] Initialized: baseUrl=${this.baseUrl}, model=${modelName}, hasApiKey=${hasApiKey}, hasAlternateKey=${hasAltKey}`);
   }
 
   private getHeaders(): Record<string, string> {
@@ -66,6 +97,52 @@ export class OllamaProvider extends BaseProvider {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
     return headers;
+  }
+
+  /**
+   * Try swapping to the alternate API key (desktop/secondary)
+   * Returns true if swap happened, false if no alternate available
+   */
+  private trySwapApiKey(): boolean {
+    if (this.keySwapAttempted) {
+      return false; // Already tried the alternate key this cycle
+    }
+    if (this.alternateApiKey && this.alternateApiKey !== this.apiKey) {
+      const oldKey = this.apiKey;
+      this.apiKey = this.alternateApiKey;
+      this.alternateApiKey = oldKey; // Keep the old key as alternate for next swap
+      this.keySwapAttempted = true; // Mark as attempted
+      console.log(`[OllamaProvider] 🔄 Swapped to alternate API key`);
+      // Reset the flag after 60s so future requests can try again
+      setTimeout(() => { this.keySwapAttempted = false; }, 60000);
+      return true;
+    }
+    return false;
+  }
+
+
+  /**
+   * Resolve model name for API calls.
+   * When using direct API access to ollama.com (not local Ollama), cloud models
+   * should NOT include the :cloud or -cloud suffix.
+   * See: https://docs.ollama.com/cloud
+   * 
+   * Examples:
+   * - Local CLI: 'qwen3-coder-next:cloud' → stays 'qwen3-coder-next:cloud'
+   * - Direct API: 'qwen3-coder-next:cloud' → 'qwen3-coder-next'
+   */
+  private resolveModelName(model: string, isDirectApi: boolean): string {
+    if (!isDirectApi) {
+      return model; // Local Ollama keeps the suffix
+    }
+    // Direct API to ollama.com - strip cloud suffix
+    if (model.endsWith(':cloud')) {
+      return model.slice(0, -6);
+    }
+    if (model.endsWith('-cloud')) {
+      return model.slice(0, -6);
+    }
+    return model;
   }
 
   /**
@@ -171,9 +248,18 @@ export class OllamaProvider extends BaseProvider {
 
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
-    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
-    const isCloudModel = model.includes('cloud') || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
+    const isCloudModelByName = model.includes('cloud') || model.includes(':cloud');
+    // Runtime URL override: if model is cloud but baseUrl is local, fix it
+    let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
+      baseUrl = model.toLowerCase().includes('deepseek') ? 'https://ollama.deepseek.com' : 'https://ollama.com';
+      console.log(`[Ollama] Runtime URL override: cloud model '${model}' → ${baseUrl}`);
+    }
+    const isCloudModel = isCloudModelByName || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
     const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    // Resolve model name: direct API calls to ollama.com need suffix stripped
+    const apiModel = this.resolveModelName(model, isDirectApi);
     
     // Adaptive timeout based on model size and token count
     const baseTimeout = 60000; // 60 seconds base
@@ -188,11 +274,14 @@ export class OllamaProvider extends BaseProvider {
     
     const timeout = Math.round(baseTimeout * tokenMultiplier * cloudMultiplier * sizeMultiplier);
     
-    console.log(`[Ollama] Chat with ${model} (${isCloudModel ? 'CLOUD' : 'local'}), timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}`);
+    const requestUrl = `${baseUrl}/api/chat`;
+    console.log(`[Ollama] Chat with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
+    console.log(`[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}`);
+    console.log(`[Ollama] API Key present: ${!!this.apiKey}, baseUrl: ${this.baseUrl}`);
     
     try {
-      const response = await axios.post(`${this.baseUrl}/api/chat`, {
-        model,
+      const response = await axios.post(requestUrl, {
+        model: apiModel,
         messages: this.formatMessages(messages),
         stream: false,
         options: {
@@ -213,12 +302,28 @@ export class OllamaProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      // Log detailed error info for debugging
+      console.error(`[Ollama] Request failed:`, {
+        url: requestUrl,
+        model: apiModel,
+        errorCode: e.code,
+        status: e.response?.status,
+        statusText: e.response?.statusText,
+        message: e.message,
+        isNetworkError: !e.response // Network errors don't have response
+      });
+      
       // Better error messages
-      if (e.code === 'ECONNREFUSED') {
+      if (e.code === 'ECONNREFUSED' || e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN') {
         if (isCloudModel) {
           return {
             success: false,
-            error: '❌ Cannot connect to Ollama Cloud. Check your API key and internet connection.'
+            error: `❌ Cannot connect to Ollama Cloud (${e.code}).\n\n` +
+              `Possible issues:\n` +
+              `• Internet connection problem\n` +
+              `• DNS resolution failed\n` +
+              `• Firewall/proxy blocking connection\n` +
+              `• Check your network settings`
           };
         }
         return {
@@ -229,11 +334,27 @@ export class OllamaProvider extends BaseProvider {
       if (e.code === 'ETIMEDOUT' || e.code === 'ECONNABORTED') {
         return {
           success: false,
-          error: `⏱️ Request timed out after ${Math.round(timeout/1000)}s. Try a faster model.`
+          error: `⏱️ Request timed out after ${Math.round(timeout/1000)}s.\n\n` +
+            `Possible issues:\n` +
+            `• Slow internet connection\n` +
+            `• Model is overloaded\n` +
+            `• Try a faster/smaller model`
+        };
+      }
+      if (e.code === 'ENETUNREACH' || e.code === 'EHOSTUNREACH') {
+        return {
+          success: false,
+          error: `❌ Network unreachable (${e.code}).\n\n` +
+            `Check your internet connection and try again.`
         };
       }
       if (e.response?.status === 404) {
         if (isCloudModel) {
+          // Try alternate API key before giving up
+          if (this.trySwapApiKey()) {
+            console.log(`[Ollama] Retrying chat with alternate API key...`);
+            return this.chat(messages, options);
+          }
           return {
             success: false,
             error: `❌ Cloud model '${model}' not found or unavailable.\n\nPossible issues:\n• Model name might be incorrect (check Ollama Cloud dashboard)\n• API key might be invalid or expired\n• Model might not be available in your region\n\nCheck your Ollama Cloud settings and API key in Settings.`
@@ -251,6 +372,11 @@ export class OllamaProvider extends BaseProvider {
         };
       }
       if (e.response?.status === 401 || e.response?.status === 403) {
+        // Try alternate API key before giving up
+        if (isCloudModel && this.trySwapApiKey()) {
+          console.log(`[Ollama] Auth failed, retrying chat with alternate API key...`);
+          return this.chat(messages, options);
+        }
         return {
           success: false,
           error: '❌ Authentication failed for Ollama Cloud.\n\nYour API key might be invalid or expired. Check your API key in Settings.'
@@ -265,13 +391,26 @@ export class OllamaProvider extends BaseProvider {
 
   async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
-    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
-    const isCloudModel = model.includes('cloud') || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
+    const isCloudModelByName = model.includes('cloud') || model.includes(':cloud');
+    // Runtime URL override: if model is cloud but baseUrl is local, fix it
+    let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
+      baseUrl = model.toLowerCase().includes('deepseek') ? 'https://ollama.deepseek.com' : 'https://ollama.com';
+      console.log(`[Ollama] Runtime URL override: cloud model '${model}' → ${baseUrl}`);
+    }
+    const isCloudModel = isCloudModelByName || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
     const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    // Resolve model name: direct API calls to ollama.com need suffix stripped
+    const apiModel = this.resolveModelName(model, isDirectApi);
+    const requestUrl = `${baseUrl}/api/chat`;
+    
+    console.log(`[Ollama] Stream with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
+    console.log(`[Ollama] Request URL: ${requestUrl}, API Key present: ${!!this.apiKey}`);
 
     try {
-      const response = await axios.post(`${this.baseUrl}/api/chat`, {
-        model,
+      const response = await axios.post(requestUrl, {
+        model: apiModel,
         messages: this.formatMessages(messages),
         stream: true,
         options: {
@@ -279,8 +418,7 @@ export class OllamaProvider extends BaseProvider {
           num_predict: options.maxTokens || 4096
         }
       }, {
-        headers: this.getHeaders(),
-        timeout: 300000,
+        ...this.getAxiosConfig(300000),
         responseType: 'stream'
       });
 
@@ -312,19 +450,54 @@ export class OllamaProvider extends BaseProvider {
         (response.data as Readable).on('error', reject);
       });
     } catch (e: any) {
+      // Log detailed error info for debugging
+      console.error(`[Ollama] Stream request failed:`, {
+        url: requestUrl,
+        model: apiModel,
+        errorCode: e.code,
+        status: e.response?.status,
+        statusText: e.response?.statusText,
+        message: e.message,
+        isNetworkError: !e.response
+      });
+      
       // Better error messages matching the chat() method
-      if (e.code === 'ECONNREFUSED') {
+      if (e.code === 'ECONNREFUSED' || e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN') {
         if (isCloudModel) {
-          throw new Error('❌ Cannot connect to Ollama Cloud. Check your API key and internet connection.');
+          throw new Error(
+            `❌ Cannot connect to Ollama Cloud (${e.code}).\n\n` +
+            `Possible issues:\n` +
+            `• Internet connection problem\n` +
+            `• DNS resolution failed\n` +
+            `• Firewall/proxy blocking connection\n` +
+            `• Check your network settings`
+          );
         }
         throw new Error('❌ Ollama not running! Start with: ollama serve');
       }
       if (e.code === 'ETIMEDOUT' || e.code === 'ECONNABORTED') {
-        throw new Error('⏱️ Request timed out. Try a faster model or reduce maxTokens.');
+        throw new Error(
+          `⏱️ Request timed out.\n\n` +
+          `Possible issues:\n` +
+          `• Slow internet connection\n` +
+          `• Model is overloaded\n` +
+          `• Try a faster/smaller model`
+        );
+      }
+      if (e.code === 'ENETUNREACH' || e.code === 'EHOSTUNREACH') {
+        throw new Error(
+          `❌ Network unreachable (${e.code}).\n\n` +
+          `Check your internet connection and try again.`
+        );
       }
       // Check for 404 in both response status and error message
       if (e.response?.status === 404 || e.message?.includes('404')) {
         if (isCloudModel) {
+          // Try alternate API key before giving up
+          if (this.trySwapApiKey()) {
+            console.log(`[Ollama] Retrying stream with alternate API key...`);
+            return this.stream(messages, onChunk, options);
+          }
           throw new Error(
             `❌ Cloud model '${model}' not found or unavailable.\n\n` +
             `Possible issues:\n` +
@@ -341,6 +514,11 @@ export class OllamaProvider extends BaseProvider {
       }
       // Check for 401/403 (authentication errors for cloud)
       if (e.response?.status === 401 || e.response?.status === 403) {
+        // Try alternate API key before giving up
+        if (isCloudModel && this.trySwapApiKey()) {
+          console.log(`[Ollama] Auth failed, retrying stream with alternate API key...`);
+          return this.stream(messages, onChunk, options);
+        }
         throw new Error(
           `❌ Authentication failed for Ollama Cloud.\n\n` +
           `Your API key might be invalid or expired. Check your API key in Settings.`
@@ -354,6 +532,9 @@ export class OllamaProvider extends BaseProvider {
 
   async complete(prompt: string, options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'llama3.2') as string;
+    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 100;
     
     // Adaptive timeout for completions (faster than chat)
@@ -361,7 +542,7 @@ export class OllamaProvider extends BaseProvider {
 
     try {
       const response = await axios.post(`${this.baseUrl}/api/generate`, {
-        model,
+        model: apiModel,
         prompt,
         stream: false,
         options: {
@@ -402,10 +583,13 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'llama3.2') as string;
+    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const apiModel = this.resolveModelName(model, isDirectApi);
     
     try {
       const response = await axios.post(`${this.baseUrl}/api/chat`, {
-        model,
+        model: apiModel,
         messages: this.formatMessages(messages),
         stream: true,
         options: {
@@ -521,16 +705,19 @@ export class OllamaProvider extends BaseProvider {
    */
   async chatAnthropicCompat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
+    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 4096;
 
     // Format messages for Anthropic API
     const { systemMessage, userMessages } = this.formatMessagesAnthropicStyle(messages);
 
-    console.log(`[Ollama/Anthropic] Chat with ${model}, maxTokens: ${maxTokens}`);
+    console.log(`[Ollama/Anthropic] Chat with ${apiModel}, maxTokens: ${maxTokens}`);
 
     try {
       const requestBody: any = {
-        model,
+        model: apiModel,
         max_tokens: maxTokens,
         messages: userMessages,
         temperature: options.temperature ?? 0.7
@@ -586,16 +773,19 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<ChatWithToolsResult> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
+    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 4096;
 
     // Format messages for Anthropic API
     const { systemMessage, userMessages } = this.formatMessagesAnthropicStyle(messages);
 
-    console.log(`[Ollama/Tools] Chat with ${model}, ${tools.length} tools available`);
+    console.log(`[Ollama/Tools] Chat with ${apiModel}, ${tools.length} tools available`);
 
     try {
       const requestBody: any = {
-        model,
+        model: apiModel,
         max_tokens: maxTokens,
         messages: userMessages,
         tools,
@@ -661,13 +851,16 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<void> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
+    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 4096;
 
     const { systemMessage, userMessages } = this.formatMessagesAnthropicStyle(messages);
 
     try {
       const requestBody: any = {
-        model,
+        model: apiModel,
         max_tokens: maxTokens,
         messages: userMessages,
         stream: true,

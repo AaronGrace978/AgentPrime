@@ -256,8 +256,9 @@ if (fs.existsSync(dotenvPath)) {
 // Cloud models can use various endpoints - check env vars or detect from model name
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder:480b-cloud';
 const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'deepseek-v3.1:671b-cloud';
-// Hard-wired Ollama API Key
+// Hard-wired Ollama API Keys (primary + desktop fallback)
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
+const OLLAMA_API_KEY_DESKTOP = process.env.OLLAMA_API_KEY_DESKTOP || '';
 
 // Other AI Provider API Keys (from environment)
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
@@ -335,7 +336,7 @@ let settings: Settings = {
     },
     ollamaSecondary: {
       baseUrl: OLLAMA_URL_SECONDARY,
-      apiKey: OLLAMA_API_KEY,
+      apiKey: OLLAMA_API_KEY_DESKTOP || OLLAMA_API_KEY,
       model: OLLAMA_MODEL_FALLBACK
     },
     anthropic: {
@@ -520,8 +521,10 @@ async function loadSecureApiKeys(): Promise<void> {
         // Skip hard-wired providers - use the hard-wired values from constants
         if (hardWiredProviders.includes(provider)) {
           // Ensure hard-wired values are set (they're already set in settings initialization)
-          if (provider === 'ollama' || provider === 'ollamaSecondary') {
+          if (provider === 'ollama') {
             providers[provider].apiKey = OLLAMA_API_KEY;
+          } else if (provider === 'ollamaSecondary') {
+            providers[provider].apiKey = OLLAMA_API_KEY_DESKTOP || OLLAMA_API_KEY;
           } else if (provider === 'anthropic') {
             providers[provider].apiKey = ANTHROPIC_API_KEY;
           } else if (provider === 'openai') {
@@ -1038,7 +1041,11 @@ app.whenReady().then(async () => {
         try {
           const browser = matrixInstance.browser as any;
           if (typeof browser.createProfile === 'function') {
-            browser.createProfile('matrix-buddy');
+            // Only create if profile doesn't already exist
+            const existing = typeof browser.getStatus === 'function' && browser.getStatus('matrix-buddy');
+            if (!existing) {
+              await browser.createProfile('matrix-buddy');
+            }
           }
           console.log('[Main] 🦖 Browser controller ready (matrix-buddy profile)');
         } catch (browserErr) {

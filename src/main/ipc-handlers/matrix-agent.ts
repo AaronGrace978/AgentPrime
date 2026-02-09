@@ -41,7 +41,7 @@ const SIMPLE_ACTIONS = new Set([
   // Basic actions - use system executor directly
   'launch_game', 'open_app', 'open_url', 'open_file', 'run_command',
   // Smart controller - uses robot.js directly
-  'smart_click', 'smart_move_mouse', 'smart_move_mouse_circle', 'smart_drag', 'smart_scroll', 'smart_mouse_position',
+  'smart_click', 'smart_move_mouse', 'smart_move_mouse_circle', 'smart_move_mouse_direction', 'smart_drag', 'smart_scroll', 'smart_mouse_position',
   'smart_type', 'smart_hotkey', 'smart_screenshot', 'smart_focus_window', 
   'smart_get_windows', 'smart_window_info', 'smart_emergency_stop', 'smart_resume',
   // File operations - use fs directly
@@ -1668,7 +1668,7 @@ function extractBalancedJson(text: string): string | null {
 // EXPANDED: Most automation actions are safe - only credential-related are risky
 const SAFE_SMART_ACTIONS = [
   'smart_screenshot', 'smart_mouse_position', 'smart_window_info', 'smart_get_windows',
-  'vault_status', 'smart_scroll', 'smart_move_mouse', 'vault_lock',
+  'vault_status', 'smart_scroll', 'smart_move_mouse', 'smart_move_mouse_circle', 'smart_move_mouse_direction', 'vault_lock',
   // These are now safe - they're just automation, not security-sensitive
   'smart_click', 'smart_focus_window', 'smart_type', 'smart_hotkey', 'smart_drag'
 ];
@@ -1781,12 +1781,22 @@ EMAIL: email_send(to,subject,body), email_read(folder,unreadOnly), email_unread_
 CONTACTS: contacts_search(query)
 NOTIFICATIONS: notification_show(title,message), reminder_create(title,message,time/delay,recurring)
 SYSTEM: datetime_get(), system_lock(), volume_set(level), mute_toggle()
-MOUSE: smart_click(x,y,button), smart_move_mouse(x,y), smart_move_mouse_circle(radius?,steps?,durationMs?), smart_scroll(direction,amount), smart_drag(x,y,target)
+MOUSE CURSOR (physical mouse pointer on screen):
+  - smart_move_mouse(x,y) → move the MOUSE CURSOR to exact coordinates
+  - smart_move_mouse_direction(direction,durationMs?,speed?) → move mouse continuously in a direction (left/right/up/down) for a duration. Use for "move right for 5 seconds", "slide left", "push up"
+  - smart_move_mouse_circle(radius?,steps?,durationMs?) → move the mouse in a circle/wiggle pattern (ONLY for "wiggle", "circle", "spin", "shake", "jiggle")
+  - smart_click(x,y,button) → click at coordinates
+  - smart_scroll(direction,amount) → scroll up/down/left/right
+  - smart_drag(x,y,target) → drag from one point to another
+  IMPORTANT: "move my mouse right/left/up/down" = smart_move_mouse_direction. "wiggle/circle my mouse" = smart_move_mouse_circle. NEVER desktop_move (that's for icons).
 KEYBOARD: smart_type(text), smart_hotkey(keys[])
 SCREEN: smart_screenshot(quality), smart_focus_window(target), smart_get_windows(), smart_window_info()
-DESKTOP: desktop_list(), desktop_move(icon,target,position), desktop_find(name), desktop_arrange(arrangement)
-  - desktop_move: Move icon BY NAME next to another icon. position: 'left'|'right'|'above'|'below'. NO COORDINATES NEEDED!
-  - Example: {"action":"desktop_move","params":{"icon":"Freelancer","target":"Screenshot","position":"right"}}
+DESKTOP ICONS (arrange icons on the desktop surface — NOT the mouse cursor):
+  - desktop_list() → list desktop icons
+  - desktop_move(icon,target,position) → move an ICON next to another icon. position: 'left'|'right'|'above'|'below'. NO COORDINATES.
+  - desktop_find(name) → find an icon by name
+  - desktop_arrange(arrangement) → arrange all icons
+  IMPORTANT: desktop_move moves ICONS, not the mouse. "Move Freelancer next to Screenshot" = desktop_move. "Move my mouse" = smart_move_mouse.
 FILES: organize_folder(path), analyze_folder(path), move_file(source,dest), copy_file(source,dest), delete_file(path), create_folder(path), create_file(path,content), list_folder(path), batch_rename(path,pattern)
   - For moving files on desktop: Use move_file(source,dest) with full paths, NOT smart_drag (which requires pixel coordinates)
   - smart_drag is ONLY for dragging UI elements when you have exact screen coordinates
@@ -1829,6 +1839,14 @@ EXAMPLES:
 "Open Chrome" → {"actions":[{"action":"open_app","params":{"app":"chrome"}}],"response":"Opening Chrome!"}
 "Ctrl+S" → {"actions":[{"action":"smart_hotkey","params":{"keys":["ctrl","s"]}}],"response":"Saving!"}
 "Scroll down" → {"actions":[{"action":"smart_scroll","params":{"direction":"down","amount":5}}],"response":"Scrolling!"}
+"Move my mouse" → {"actions":[{"action":"smart_move_mouse_circle","params":{"radius":50,"steps":36,"durationMs":3000}}],"response":"Moving the mouse!"}
+"Move my mouse to the right" → {"actions":[{"action":"smart_move_mouse_direction","params":{"direction":"right","durationMs":3000,"speed":200}}],"response":"Moving mouse to the right!"}
+"Move my mouse right for 5 seconds" → {"actions":[{"action":"smart_move_mouse_direction","params":{"direction":"right","durationMs":5000,"speed":200}}],"response":"Moving mouse right for 5 seconds!"}
+"Move my mouse left" → {"actions":[{"action":"smart_move_mouse_direction","params":{"direction":"left","durationMs":3000,"speed":200}}],"response":"Moving mouse left!"}
+"Move my mouse slightly for 5 seconds" → {"actions":[{"action":"smart_move_mouse_circle","params":{"radius":20,"steps":36,"durationMs":5000}}],"response":"Moving the cursor for 5 seconds!"}
+"Wiggle my mouse" → {"actions":[{"action":"smart_move_mouse_circle","params":{"radius":40,"steps":36,"durationMs":3000}}],"response":"Wiggling!"}
+"Click at 500 300" → {"actions":[{"action":"smart_click","params":{"x":500,"y":300}}],"response":"Clicking!"}
+⚠️ "move my mouse right/left/up/down" = smart_move_mouse_direction. "wiggle/circle my mouse" = smart_move_mouse_circle. "move Freelancer next to Screenshot" = desktop_move (ICON movement). NEVER confuse these.
 "Turn on lights" → {"actions":[{"action":"hue_lights","params":{"action":"on"}}],"response":"Lights on!"}
 "Add meeting to calendar for tomorrow at 2pm" → {"actions":[{"action":"calendar_add_event","params":{"subject":"meeting","date":"tomorrow","time":"2pm"}}],"response":"Added to your calendar!"}
 "Drag Freelancer to the right of Screenshot file" → {"actions":[{"action":"desktop_move","params":{"icon":"Freelancer","target":"Screenshot","position":"right"}}],"response":"Moving Freelancer next to Screenshot!"}
