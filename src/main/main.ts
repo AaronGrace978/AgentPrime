@@ -375,7 +375,12 @@ function initializeAIProviders(): void {
   };
 
   if (settings.providers.ollama) {
-    aiRouter.configureProvider('ollama', normalizeProviderConfig('ollama', settings.providers.ollama));
+    const ollamaConfig = normalizeProviderConfig('ollama', settings.providers.ollama);
+    // Pass active model when user has Ollama selected so provider uses correct baseUrl (local vs cloud)
+    if (settings.activeProvider === 'ollama' && settings.activeModel) {
+      ollamaConfig.model = settings.activeModel;
+    }
+    aiRouter.configureProvider('ollama', ollamaConfig);
   }
   if (settings.providers.anthropic?.apiKey) {
     aiRouter.configureProvider('anthropic', normalizeProviderConfig('anthropic', settings.providers.anthropic));
@@ -944,9 +949,135 @@ app.whenReady().then(async () => {
     console.warn('[Main] ⚠️ Inference server failed to start:', error);
     // Non-fatal - app continues without shared inference
   }
+  
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MATRIX BUDDY DESKTOP BACKEND — Auto-initialize Matrix Mode
+  // Browser, scheduler, automation, nodes — all start at boot.
+  // This gives Matrix Buddy its own Chrome, its own cron, its own hands.
+  // ═══════════════════════════════════════════════════════════════════════════
+  setTimeout(async () => {
+    try {
+      const { initializeMatrixMode, getMatrixMode } = await import('./matrix-mode');
+      const { validateAction } = await import('./core/guardian');
+      
+      console.log('[Main] 🦖 Starting Matrix Buddy Desktop Backend...');
+      
+      const matrixInstance = await initializeMatrixMode({
+        memory: { enabled: true },
+        scheduler: { enabled: true },
+        agents: { enabled: true },
+        gateway: { enabled: false }, // Don't auto-start gateway (user opts in)
+        browser: { enabled: true, headless: true },
+        voice: { enabled: false },   // Don't auto-start voice (user opts in)
+        canvas: { enabled: true },
+        integrations: { enabled: true },
+        automation: { enabled: true },
+        nodes: { enabled: true }
+      });
+      
+      // ─── Wire the scheduler executor ───────────────────────────────
+      // When a scheduled task fires, it needs to actually DO something.
+      // Route task actions through the system executor + Guardian.
+      if (matrixInstance.scheduler) {
+        matrixInstance.scheduler.setTaskExecutor(async (task: any) => {
+          const action = task.action;
+          if (!action) return { executed: false, error: 'No action defined' };
+          
+          console.log(`[DesktopBackend] Executing scheduled task: ${task.name} (${action.type})`);
+          
+          if (action.type === 'command' && action.command) {
+            // Validate through Guardian before executing
+            const verdict = validateAction('run_command', { command: action.command });
+            if (!verdict.allowed) {
+              console.warn(`[DesktopBackend] Guardian blocked scheduled command: ${verdict.reason}`);
+              return { executed: false, error: verdict.reason };
+            }
+            const { exec } = await import('child_process');
+            const { promisify } = await import('util');
+            const execAsync = promisify(exec);
+            const result = await execAsync(action.command, { timeout: 30000 });
+            return { executed: true, stdout: result.stdout, stderr: result.stderr };
+          }
+          
+          if (action.type === 'message' && action.message) {
+            // Log the message (could be wired to channels later)
+            console.log(`[DesktopBackend] Scheduled message: ${action.message}`);
+            return { executed: true, message: action.message };
+          }
+          
+          if (action.type === 'webhook' && action.url) {
+            const verdict = validateAction('open_url', { url: action.url });
+            if (!verdict.allowed) {
+              return { executed: false, error: verdict.reason };
+            }
+            const http = await import('http');
+            const https = await import('https');
+            const client = action.url.startsWith('https') ? https : http;
+            return new Promise((resolve) => {
+              const req = client.request(action.url, { method: action.method || 'POST' }, (res: any) => {
+                resolve({ executed: true, status: res.statusCode });
+              });
+              req.on('error', (e: any) => resolve({ executed: false, error: e.message }));
+              if (action.body) req.write(JSON.stringify(action.body));
+              req.end();
+            });
+          }
+          
+          if (action.type === 'workflow' && action.workflowId && matrixInstance.automation) {
+            const execution = await matrixInstance.automation.executeWorkflow(action.workflowId);
+            return { executed: true, workflowStatus: execution.status };
+          }
+          
+          return { executed: true };
+        });
+        console.log('[Main] 🦖 Scheduler executor wired — background tasks can run');
+      }
+      
+      // ─── Auto-start browser with dedicated profile ─────────────────
+      if (matrixInstance.browser) {
+        try {
+          const browser = matrixInstance.browser as any;
+          if (typeof browser.createProfile === 'function') {
+            browser.createProfile('matrix-buddy');
+          }
+          console.log('[Main] 🦖 Browser controller ready (matrix-buddy profile)');
+        } catch (browserErr) {
+          // Non-fatal — browser starts on first use
+          console.log('[Main] 🦖 Browser controller ready (default profile)');
+        }
+      }
+      
+      console.log('[Main] 🦖 Matrix Buddy Desktop Backend initialized');
+      console.log('[Main] 🦖 Subsystems:', {
+        memory: '✅',
+        scheduler: matrixInstance.scheduler ? '✅' : '❌',
+        browser: matrixInstance.browser ? '✅' : '❌',
+        automation: matrixInstance.automation ? '✅' : '❌',
+        nodes: matrixInstance.nodes ? '✅' : '❌',
+        canvas: matrixInstance.canvas ? '✅' : '❌',
+        integrations: matrixInstance.integrations ? '✅' : '❌'
+      });
+      
+    } catch (error: any) {
+      console.warn('[Main] ⚠️ Matrix Buddy Desktop Backend init failed:', error.message);
+      console.warn('[Main] Matrix Agent will lazy-init on first use (fallback)');
+      // Non-fatal — matrix-agent.ts still has its own lazy init
+    }
+  }, 3000); // Delay 3s after window creation so UI loads first
 });
 
 app.on('before-quit', async () => {
+  // Shutdown Matrix Buddy Desktop Backend
+  try {
+    const { shutdownMatrixMode, isMatrixModeInitialized } = await import('./matrix-mode');
+    if (isMatrixModeInitialized()) {
+      await shutdownMatrixMode();
+      console.log('[Main] 🦖 Matrix Buddy Desktop Backend shut down');
+    }
+  } catch (e) {
+    console.warn('[Main] Error shutting down Matrix Mode:', e);
+  }
+  
   // Stop inference server
   try {
     await stopInferenceServer();
