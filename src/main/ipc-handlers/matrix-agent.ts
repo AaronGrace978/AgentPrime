@@ -21,6 +21,7 @@ import {
   type ConversationContext
 } from '../smart-mode';
 import { systemDiscovery } from '../system-discovery';
+import { validateAction, type GuardianVerdict } from '../core/guardian';
 
 // New Modules - LocalBrain, ActionEngine, Anticipator
 import { getLocalBrain, initializeLocalBrain, classifyIntentFast } from '../modules/local-brain';
@@ -40,7 +41,7 @@ const SIMPLE_ACTIONS = new Set([
   // Basic actions - use system executor directly
   'launch_game', 'open_app', 'open_url', 'open_file', 'run_command',
   // Smart controller - uses robot.js directly
-  'smart_click', 'smart_move_mouse', 'smart_drag', 'smart_scroll', 'smart_mouse_position',
+  'smart_click', 'smart_move_mouse', 'smart_move_mouse_circle', 'smart_drag', 'smart_scroll', 'smart_mouse_position',
   'smart_type', 'smart_hotkey', 'smart_screenshot', 'smart_focus_window', 
   'smart_get_windows', 'smart_window_info', 'smart_emergency_stop', 'smart_resume',
   // File operations - use fs directly
@@ -111,7 +112,7 @@ async function ensureMatrixMode(): Promise<void> {
       canvas: { enabled: true },
       integrations: { enabled: true },
       automation: { enabled: true },
-      nodes: { enabled: false }
+      nodes: { enabled: true }
     });
 
     console.log('[Matrix Agent] Matrix Mode systems initialized');
@@ -320,7 +321,8 @@ async function executeMatrixModeAction(action: string, params: any): Promise<{ s
     if (action === 'node_camera') {
       const { getNodeManager } = await import('../matrix-mode/nodes');
       const nodes = requireSubsystem(getNodeManager(), 'nodes');
-      const image = await nodes.captureCamera(params.nodeId);
+      const options = params.facing ? { facing: params.facing as 'front' | 'back' } : undefined;
+      const image = await nodes.captureCamera(params.nodeId, options);
       return { success: !!image, message: image ? 'Camera captured' : 'Failed', data: image?.toString('base64') };
     }
     if (action === 'node_location') {
@@ -334,6 +336,41 @@ async function executeMatrixModeAction(action: string, params: any): Promise<{ s
       const nodes = requireSubsystem(getNodeManager(), 'nodes');
       const result = await nodes.sendNotification(params.nodeId, params.title, params.body);
       return { success: result, message: result ? 'Notification sent' : 'Failed' };
+    }
+    if (action === 'nodes_command') {
+      const { getNodeManager } = await import('../matrix-mode/nodes');
+      const nodes = requireSubsystem(getNodeManager(), 'nodes');
+      const { nodeId, type: cmdType, params: cmdParams, timeout } = params;
+      if (!nodeId || !cmdType) {
+        return { success: false, error: 'nodeId and type required' };
+      }
+      try {
+        const response = await nodes.sendCommand(nodeId, {
+          type: cmdType,
+          params: cmdParams || {},
+          timeout
+        });
+        return {
+          success: response.success,
+          message: response.success ? 'Command executed' : (response.error || 'Failed'),
+          data: response.data,
+          error: response.error
+        };
+      } catch (e: any) {
+        return { success: false, error: e.message };
+      }
+    }
+    if (action === 'node_screen') {
+      const { getNodeManager } = await import('../matrix-mode/nodes');
+      const nodes = requireSubsystem(getNodeManager(), 'nodes');
+      const image = await nodes.captureScreen(params.nodeId);
+      return { success: !!image, message: image ? 'Screen captured' : 'Failed', data: image?.toString('base64') };
+    }
+    if (action === 'node_canvas') {
+      const { getNodeManager } = await import('../matrix-mode/nodes');
+      const nodes = requireSubsystem(getNodeManager(), 'nodes');
+      const result = await nodes.displayCanvas(params.nodeId, params.html ?? '');
+      return { success: result, message: result ? 'Canvas displayed on node' : 'Failed' };
     }
 
     // File organization actions
@@ -1641,26 +1678,29 @@ const RISKY_SMART_ACTIONS = [
   'login', 'vault_unlock', 'vault_auto_fill', 'smart_emergency_stop'
 ];
 
-// Matrix Mode actions - safe
+// Matrix Mode actions - safe (read-only or low-impact)
 const SAFE_MATRIX_MODE_ACTIONS = [
   'memory_search', 'memory_recall', 'scheduler_list', 'scheduler_status',
   'integration_list', 'integration_status', 'browser_snapshot', 'browser_tabs',
-  'canvas_show', 'canvas_hide', 'workflow_list', 'nodes_list', 'voice_speak',
-  // File operations are safe - they just organize/move files
-  'organize_folder', 'analyze_folder', 'list_folder', 'move_file', 'copy_file', 
-  'create_folder', 'batch_rename', 'clipboard_read', 'clipboard_write'
+  'canvas_show', 'canvas_hide', 'workflow_list', 'nodes_list', 'node_camera', 'node_screen', 'node_location', 'voice_speak',
+  // Read-only file ops and safe operations
+  'analyze_folder', 'list_folder', 'create_folder', 'clipboard_read', 'clipboard_write'
 ];
 
-// Matrix Mode actions - moderate
+// Matrix Mode actions - moderate (state-changing but recoverable)
 const MODERATE_MATRIX_MODE_ACTIONS = [
   'browser_navigate', 'browser_click', 'canvas_render', 'integration_execute',
-  'scheduler_create', 'message_send', 'workflow_execute'
+  'scheduler_create', 'message_send', 'workflow_execute', 'node_notify', 'node_canvas',
+  // File mutations that could cause data loss — elevated from safe
+  'move_file', 'copy_file', 'organize_folder', 'batch_rename', 'rename_file', 'create_file'
 ];
 
-// Matrix Mode actions - risky
+// Matrix Mode actions - risky (destructive, irreversible, or remote execution)
 const RISKY_MATRIX_MODE_ACTIONS = [
   'scheduler_delete', 'integration_connect', 'integration_disconnect',
-  'nodes_command', 'workflow_delete'
+  'nodes_command', 'workflow_delete',
+  // Destructive file ops — elevated from safe
+  'delete_file'
 ];
 
 function classifyRisk(action: SystemAction | { action: string }): 'safe' | 'moderate' | 'risky' {
@@ -1741,7 +1781,7 @@ EMAIL: email_send(to,subject,body), email_read(folder,unreadOnly), email_unread_
 CONTACTS: contacts_search(query)
 NOTIFICATIONS: notification_show(title,message), reminder_create(title,message,time/delay,recurring)
 SYSTEM: datetime_get(), system_lock(), volume_set(level), mute_toggle()
-MOUSE: smart_click(x,y,button), smart_move_mouse(x,y), smart_scroll(direction,amount), smart_drag(x,y,target)
+MOUSE: smart_click(x,y,button), smart_move_mouse(x,y), smart_move_mouse_circle(radius?,steps?,durationMs?), smart_scroll(direction,amount), smart_drag(x,y,target)
 KEYBOARD: smart_type(text), smart_hotkey(keys[])
 SCREEN: smart_screenshot(quality), smart_focus_window(target), smart_get_windows(), smart_window_info()
 DESKTOP: desktop_list(), desktop_move(icon,target,position), desktop_find(name), desktop_arrange(arrangement)
@@ -1761,7 +1801,15 @@ INTEGRATIONS: spotify_play(query), spotify_pause(), spotify_next(), notion_searc
 CLIPBOARD: clipboard_read(), clipboard_write(text)
 WEB: web_search(query), web_fetch(url)
 WORKFLOWS: workflow_create(name,steps), workflow_run(workflowId), workflow_list()
-NODES: nodes_list(), node_camera(nodeId), node_location(nodeId), node_notify(nodeId,title,body)
+NODES (paired devices: phone, tablet, server — use nodes_list() first to get nodeId and capabilities):
+  - nodes_list() → list paired nodes with id, name, capabilities (camera, screen, location, notifications, canvas, commands)
+  - node_camera(nodeId) or node_camera(nodeId, { facing: "front"|"back" }) → capture photo from device camera
+  - node_screen(nodeId) → capture screenshot from device screen
+  - node_location(nodeId) → get device GPS (latitude, longitude)
+  - node_notify(nodeId, title, body) → push notification to device
+  - node_canvas(nodeId, html) → display HTML/content on device screen
+  - nodes_command(nodeId, type, params) → raw command: type one of camera.capture, screen.capture, location.get, notification.send, canvas.display, shell.execute
+  Chain of thought: 1) nodes_list to find nodeId and check capabilities 2) use the specific node_* action or nodes_command
 SAFETY: smart_emergency_stop(), smart_resume()
 
 RESPONSE FORMAT:
@@ -1791,6 +1839,7 @@ EXAMPLES:
 "How many unread emails?" → {"actions":[{"action":"email_unread_count","params":{}}],"response":"Checking inbox..."}
 "Remind me in 30 minutes to take a break" → {"actions":[{"action":"reminder_create","params":{"title":"Break time","message":"Take a break!","delay":30}}],"response":"I'll remind you!"}
 "What time is it?" → {"actions":[{"action":"datetime_get","params":{}}],"response":"..."}
+NODES: "Take a photo with my phone" → 1) nodes_list to get nodeId 2) node_camera(nodeId). "Where's my phone?" → nodes_list then node_location(nodeId). "Show this on my tablet" → node_canvas(nodeId, html). "Screenshot my phone" → node_screen(nodeId). "Remind me on my watch" → node_notify(nodeId, title, body).
 
 IMPORTANT FOR "pick any game" REQUESTS:
 When user asks you to pick/choose a game, LOOK at the DETECTED GAMES list provided and pick one using launch_game!
@@ -2142,76 +2191,15 @@ export function register(deps: MatrixAgentDeps): void {
       // NORMAL AI PROCESSING
       // ═══════════════════════════════════════════════════════════════
       
-      // Get AI settings
+      // Get AI settings - use the user's chosen provider and model (including Ollama Cloud)
       const settings = getSettings();
+      const activeProvider = settings?.activeProvider || 'ollama';
+      const activeModel = settings?.activeModel ?? undefined;
       
-      // ═══════════════════════════════════════════════════════════════
-      // MATRIX AGENT - FAST API MODEL PREFERENCE
-      // Matrix Agent needs FAST responses - Anthropic/OpenAI >> Ollama Cloud
-      // Ollama Cloud models (671B) are too slow for snappy interactions
-      // ═══════════════════════════════════════════════════════════════
-      
-      // Priority order: Anthropic (fastest) > OpenAI > OpenRouter > Ollama Cloud (slow)
-      const MATRIX_FAST_MODELS = [
-        // Tier 1: FAST API models (sub-second first token)
-        { provider: 'anthropic', model: 'claude-sonnet-4-20250514', speed: 'fast' },
-        { provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', speed: 'fast' },
-        { provider: 'openai', model: 'gpt-4o', speed: 'fast' },
-        { provider: 'openai', model: 'gpt-4o-mini', speed: 'fast' },
-        { provider: 'openrouter', model: 'anthropic/claude-3.5-sonnet', speed: 'medium' },
-        // Tier 2: Ollama Cloud (slow but powerful - 671B models take 5-15s)
-        { provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', speed: 'slow' },
-        { provider: 'ollama', model: 'qwen3-coder:480b-cloud', speed: 'slow' },
-      ];
-      
-      let activeModel = settings?.activeModel;
-      let activeProvider = settings?.activeProvider || 'ollama';
-      let modelSwitched = false;
-      
-      // ALWAYS try to use Anthropic/OpenAI for Matrix Agent - they're much faster
-      const isAlreadyFast = activeProvider === 'anthropic' || 
-                            activeProvider === 'openai' ||
-                            (activeProvider === 'openrouter' && activeModel?.includes('claude'));
-      
-      if (!isAlreadyFast) {
-        console.log('[Matrix Agent] Checking for faster API models (Anthropic/OpenAI)...');
-        
-        // Check each fast provider by testing if it's configured in the AI router
-        for (const preferred of MATRIX_FAST_MODELS) {
-          if (preferred.speed === 'slow') continue; // Skip slow Ollama Cloud models
-          
-          try {
-            // Quick check if provider is configured (don't wait for full test)
-            const provider = aiRouter.getProvider(preferred.provider);
-            const isConfigured = provider?.isConfigured?.() ?? false;
-            
-            console.log(`[Matrix Agent] Checking ${preferred.provider}: configured=${isConfigured}`);
-            
-            if (isConfigured) {
-              activeModel = preferred.model;
-              activeProvider = preferred.provider;
-              modelSwitched = true;
-              console.log(`[Matrix Agent] ⚡ Switching to FAST model: ${activeProvider}/${activeModel}`);
-              break;
-            }
-          } catch (e) {
-            // Provider not available, try next
-          }
-        }
-        
-        if (!modelSwitched) {
-          console.log('[Matrix Agent] No fast API providers configured, using current provider');
-          console.log('[Matrix Agent] 💡 TIP: Configure Anthropic or OpenAI in Settings for snappier responses');
-        }
-      } else {
-        console.log(`[Matrix Agent] ⚡ Already using fast provider: ${activeProvider}/${activeModel}`);
-      }
-      
-      // Configure the router to use the selected provider/model
-      if (modelSwitched) {
-        aiRouter.setActiveProvider(activeProvider, activeModel);
-        console.log(`[Matrix Agent] Router set to: ${activeProvider}/${activeModel}`);
-      }
+      // Respect user's choice: Matrix uses whatever provider/model is selected in Settings.
+      // Ollama Cloud, Anthropic, OpenAI, OpenRouter all work.
+      aiRouter.setActiveProvider(activeProvider, activeModel);
+      console.log(`[Matrix Agent] Using provider: ${activeProvider}, model: ${activeModel || 'default'}`);
       
       // Add user message to conversation history
       addToHistory('user', message);
@@ -2312,8 +2300,6 @@ will STILL work - it searches Steam automatically. ALWAYS use it!`;
       // ═══════════════════════════════════════════════════════════════
       // PRE-FLIGHT CHECK - Verify AI provider is available
       // ═══════════════════════════════════════════════════════════════
-      console.log(`[Matrix Agent] Using provider: ${activeProvider}, model: ${activeModel || 'default'}`);
-      
       try {
         const providerTest = await Promise.race([
           aiRouter.testProvider(activeProvider),
@@ -2328,12 +2314,11 @@ will STILL work - it searches Steam automatically. ALWAYS use it!`;
           // Send helpful error message to UI
           let errorMsg: string;
           if (activeProvider === 'ollama') {
-            errorMsg = `❌ Ollama Cloud connection failed!\n\n` +
-              `Matrix Agent requires cloud models for reliable operation.\n\n` +
-              `Options:\n` +
-              `• Configure Anthropic API key in Settings (recommended)\n` +
-              `• Configure OpenAI API key in Settings\n` +
-              `• Set up Ollama Cloud with API key\n\n` +
+            errorMsg = `❌ Ollama connection failed!\n\n` +
+              `Check:\n` +
+              `• Local: Is Ollama running? (ollama serve)\n` +
+              `• Cloud: Ollama Cloud API key set in Settings?\n` +
+              `• Endpoint/URL correct in Settings → AI Providers?\n\n` +
               `Go to Settings → AI Providers to configure.`;
           } else {
             errorMsg = `❌ ${activeProvider} provider is not configured.\n\nCheck your API key in Settings.`;
@@ -2474,21 +2459,47 @@ will STILL work - it searches Steam automatically. ALWAYS use it!`;
           ...actionData.params
         };
         
+        // ═══ GUARDIAN — Validate action before anything else ═══
+        const guardianVerdict: GuardianVerdict = validateAction(actionData.action, actionData.params);
+        
+        if (!guardianVerdict.allowed) {
+          // Guardian blocked this action — send rejection to renderer
+          webContents.send('matrix-agent:event', {
+            type: 'action-result',
+            actionId,
+            success: false,
+            error: guardianVerdict.reason
+          });
+          actionResults.push({
+            action: actionData.action,
+            success: false,
+            error: guardianVerdict.reason
+          });
+          continue;
+        }
+        
+        // Apply sanitized params if Guardian cleaned them
+        if (guardianVerdict.sanitizedParams) {
+          Object.assign(actionData.params, guardianVerdict.sanitizedParams);
+          Object.assign(systemAction, guardianVerdict.sanitizedParams);
+        }
+
         const riskLevel = classifyRisk(systemAction);
         // Safety modes:
         // - 'confirm-all': confirm every action
         // - 'smart': confirm risky + moderate actions (default)
         // - 'speed': only confirm risky actions (faster!)
-        // - 'off': no confirmations (dangerous!)
+        // - 'off': no confirmations (but Guardian minimum floor still applies!)
         let needsConfirm = false;
         if (safetyMode === 'confirm-all') {
           needsConfirm = true;
         } else if (safetyMode === 'off') {
-          needsConfirm = false;
+          // Guardian minimum safety floor — even 'off' can't bypass these
+          needsConfirm = guardianVerdict.requiresConfirmation;
         } else if (safetyMode === 'speed') {
-          needsConfirm = riskLevel === 'risky';
+          needsConfirm = riskLevel === 'risky' || guardianVerdict.requiresConfirmation;
         } else { // 'smart' (default)
-          needsConfirm = riskLevel === 'risky' || riskLevel === 'moderate';
+          needsConfirm = riskLevel === 'risky' || riskLevel === 'moderate' || guardianVerdict.requiresConfirmation;
         }
 
         // Send action request to renderer

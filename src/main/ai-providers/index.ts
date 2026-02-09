@@ -16,6 +16,7 @@ import { OpenRouterProvider } from './openrouter-provider';
 import { BaseProvider } from './base-provider';
 import type { ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback } from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
+import { injectCreed } from '../core/dino-buddy-creed';
 
 interface ProviderEntry {
   Class: new (config: ProviderConfig) => BaseProvider;
@@ -503,8 +504,11 @@ class AIProviderRouter {
     const provider = this.getActiveProvider();
     const model = (options.model || this.activeModel) as string | undefined;
 
+    // ═══ DINO BUDDY CREED — Injected at the deepest level ═══
+    const messagesWithCreed = injectCreed(messages);
+
     try {
-      const result = await provider.chat(messages, { ...options, model });
+      const result = await provider.chat(messagesWithCreed, { ...options, model });
       
       // Check for rate limit in result error
       const shouldFallback = !result.success && 
@@ -538,7 +542,7 @@ class AIProviderRouter {
         }
         
         const fallback = this.getProvider(this.fallbackProvider);
-        return fallback.chat(messages, options);
+        return fallback.chat(messagesWithCreed, options);
       }
 
       return result;
@@ -567,7 +571,7 @@ class AIProviderRouter {
         }
         
         const fallback = this.getProvider(this.fallbackProvider);
-        return fallback.chat(messages, options);
+        return fallback.chat(messagesWithCreed, options);
       }
       throw e;
     }
@@ -580,8 +584,11 @@ class AIProviderRouter {
     const provider = this.getActiveProvider();
     const model = (options.model || this.activeModel) as string | undefined;
 
+    // ═══ DINO BUDDY CREED — Injected at the deepest level ═══
+    const messagesWithCreed = injectCreed(messages);
+
     try {
-      return await provider.stream(messages, onChunk, { ...options, model });
+      return await provider.stream(messagesWithCreed, onChunk, { ...options, model });
     } catch (e: any) {
       const isRateLimit = this.isRateLimitError(e);
       if (this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
@@ -611,7 +618,7 @@ class AIProviderRouter {
         }
         
         const fallback = this.getProvider(this.fallbackProvider);
-        return fallback.stream(messages, onChunk, options);
+        return fallback.stream(messagesWithCreed, onChunk, options);
       }
       throw e;
     }
@@ -681,6 +688,12 @@ class AIProviderRouter {
           context: 128000,
           cost: 'low'
         },
+        'qwen3-coder-next:cloud': {
+          strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
+          speed: 'fast',
+          context: 256000,
+          cost: 'low'
+        },
         'deepseek-v3.1:671b-cloud': {
           strengths: ['analysis', 'creative', 'complex', 'chat'],
           speed: 'medium',
@@ -708,6 +721,30 @@ class AIProviderRouter {
       },
       // Anthropic models (excellent reasoning, expensive)
       'anthropic': {
+        'claude-opus-4-6': {
+          strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
+          speed: 'medium',
+          context: 1000000,
+          cost: 'premium'
+        },
+        'claude-opus-4-5-20251101': {
+          strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
+          speed: 'medium',
+          context: 200000,
+          cost: 'premium'
+        },
+        'claude-opus-4-20250514': {
+          strengths: ['analysis', 'creative', 'complex', 'debug', 'code'],
+          speed: 'medium',
+          context: 200000,
+          cost: 'premium'
+        },
+        'claude-sonnet-4-20250514': {
+          strengths: ['analysis', 'creative', 'complex', 'debug', 'code'],
+          speed: 'medium',
+          context: 200000,
+          cost: 'high'
+        },
         'claude-3-5-sonnet-20241022': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code'],
           speed: 'medium',
@@ -723,6 +760,18 @@ class AIProviderRouter {
       },
       // OpenAI models (balanced, reliable)
       'openai': {
+        'gpt-5.2-2025-12-11': {
+          strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning'],
+          speed: 'medium',
+          context: 128000,
+          cost: 'high'
+        },
+        'gpt-5.2': {
+          strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning'],
+          speed: 'medium',
+          context: 128000,
+          cost: 'high'
+        },
         'gpt-4o': {
           strengths: ['analysis', 'creative', 'complex', 'code', 'debug'],
           speed: 'medium',
