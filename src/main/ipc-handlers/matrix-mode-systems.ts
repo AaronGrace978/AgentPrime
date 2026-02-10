@@ -37,6 +37,7 @@ import { getCanvasManager, type A2UIComponent } from '../matrix-mode/canvas';
 import { getIntegrationRegistry } from '../matrix-mode/integrations';
 import { getWorkflowEngine } from '../matrix-mode/automation';
 import { getNodeManager } from '../matrix-mode/nodes';
+import { getSystemIntel } from '../matrix-mode/system-intel';
 
 interface MatrixModeSystemDeps {
   ipcMain: IpcMain;
@@ -73,6 +74,7 @@ export function register(deps: MatrixModeSystemDeps): void {
         integrations: { enabled: true },
         automation: { enabled: true },
         nodes: { enabled: settings?.matrixMode?.nodesEnabled ?? false },
+        systemIntel: { enabled: settings?.matrixMode?.systemIntelEnabled ?? true },
         ...config
       };
 
@@ -104,7 +106,8 @@ export function register(deps: MatrixModeSystemDeps): void {
         canvas: !!instance.canvas,
         integrations: !!instance.integrations,
         automation: !!instance.automation,
-        nodes: !!instance.nodes
+        nodes: !!instance.nodes,
+        systemIntel: !!instance.systemIntel
       }
     };
   });
@@ -599,6 +602,70 @@ export function register(deps: MatrixModeSystemDeps): void {
     }
   });
 
+  // ═══════════════════════════════════════════════════════════
+  // SYSTEM INTEL
+  // ═══════════════════════════════════════════════════════════
+
+  ipcMain.handle('matrix-mode:system-intel:health-snapshot', async () => {
+    try {
+      const intel = getSystemIntel();
+      const snapshot = await intel.getHealthSnapshot();
+      return { success: true, snapshot };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('matrix-mode:system-intel:battery-health', async () => {
+    try {
+      const intel = getSystemIntel();
+      const battery = intel.getBatteryHealth();
+      return { success: true, battery };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('matrix-mode:system-intel:disk-usage', async () => {
+    try {
+      const intel = getSystemIntel();
+      const disks = intel.getDiskUsage();
+      return { success: true, disks };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('matrix-mode:system-intel:watch-start', async (event, config?: any) => {
+    try {
+      const intel = getSystemIntel();
+      const status = intel.startTelemetryWatch(config || {});
+      return { success: true, status };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('matrix-mode:system-intel:watch-stop', async () => {
+    try {
+      const intel = getSystemIntel();
+      const status = intel.stopTelemetryWatch();
+      return { success: true, status };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('matrix-mode:system-intel:watch-status', async () => {
+    try {
+      const intel = getSystemIntel();
+      const status = intel.getWatchStatus();
+      return { success: true, status };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ Matrix Mode Systems IPC handlers registered');
   console.log('   📝 Memory system (persistent, vector search)');
   console.log('   ⏰ Scheduler (cron, webhooks, triggers)');
@@ -610,6 +677,7 @@ export function register(deps: MatrixModeSystemDeps): void {
   console.log('   🔗 Integrations (Notion, Spotify, Hue, GitHub)');
   console.log('   ⚙️  Workflow automation');
   console.log('   📱 Remote nodes (mobile/IoT)');
+  console.log('   💓 System intel (CPU, memory, battery, disks)');
 }
 
 export { register as registerMatrixModeSystems };

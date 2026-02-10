@@ -68,7 +68,7 @@ function needsMatrixMode(action: string): boolean {
 // These include Matrix Mode subsystems AND file/clipboard/web/project ops
 const MATRIX_MODE_HANDLER_PREFIXES = [
   'memory_', 'scheduler_', 'message_', 'browser_', 'voice_', 'canvas_',
-  'spotify_', 'notion_', 'hue_', 'github_', 'workflow_', 'node'
+  'spotify_', 'notion_', 'hue_', 'github_', 'workflow_', 'node', 'system_'
 ];
 const MATRIX_MODE_HANDLER_ACTIONS = new Set([
   // File operations (use fs directly, not SystemExecutor)
@@ -168,6 +168,55 @@ async function executeMatrixModeAction(action: string, params: any): Promise<{ s
       const scheduler = requireSubsystem(getScheduler(), 'scheduler');
       scheduler.deleteTask(params.taskId);
       return { success: true, message: 'Task deleted' };
+    }
+
+    // System intel actions
+    if (action === 'system_health_snapshot') {
+      const { getSystemIntel } = await import('../matrix-mode/system-intel');
+      const intel = requireSubsystem(getSystemIntel(), 'system-intel');
+      const snapshot = await intel.getHealthSnapshot();
+      return {
+        success: true,
+        message: `CPU ${snapshot.cpuUsagePercent}% | RAM ${snapshot.memory.usedPercent}%`,
+        data: snapshot
+      };
+    }
+    if (action === 'system_battery_health') {
+      const { getSystemIntel } = await import('../matrix-mode/system-intel');
+      const intel = requireSubsystem(getSystemIntel(), 'system-intel');
+      const battery = intel.getBatteryHealth();
+      return {
+        success: true,
+        message: battery.available ? `Battery ${battery.percent ?? 'unknown'}%` : 'Battery data unavailable on this system',
+        data: battery
+      };
+    }
+    if (action === 'system_disk_usage') {
+      const { getSystemIntel } = await import('../matrix-mode/system-intel');
+      const intel = requireSubsystem(getSystemIntel(), 'system-intel');
+      const disks = intel.getDiskUsage();
+      return { success: true, message: `${disks.length} disk(s) scanned`, data: disks };
+    }
+    if (action === 'system_watch_start') {
+      const { getSystemIntel } = await import('../matrix-mode/system-intel');
+      const intel = requireSubsystem(getSystemIntel(), 'system-intel');
+      const status = intel.startTelemetryWatch({
+        intervalMs: params.intervalMs,
+        thresholds: params.thresholds
+      });
+      return { success: true, message: 'System telemetry watch started', data: status };
+    }
+    if (action === 'system_watch_stop') {
+      const { getSystemIntel } = await import('../matrix-mode/system-intel');
+      const intel = requireSubsystem(getSystemIntel(), 'system-intel');
+      const status = intel.stopTelemetryWatch();
+      return { success: true, message: 'System telemetry watch stopped', data: status };
+    }
+    if (action === 'system_watch_status') {
+      const { getSystemIntel } = await import('../matrix-mode/system-intel');
+      const intel = requireSubsystem(getSystemIntel(), 'system-intel');
+      const status = intel.getWatchStatus();
+      return { success: true, message: status.running ? 'Telemetry watch is running' : 'Telemetry watch is stopped', data: status };
     }
 
     // Browser actions
@@ -997,6 +1046,12 @@ function getQuickResponse(action: string, params?: Record<string, any>): string 
     'mute_toggle': 'Toggling mute!',
     'volume_set': (p) => `Setting volume to ${p?.level || 50}%`,
     'system_lock': 'Locking your PC...',
+    'system_health_snapshot': 'Checking system health...',
+    'system_battery_health': 'Checking battery health...',
+    'system_disk_usage': 'Scanning disk usage...',
+    'system_watch_start': 'Starting health monitoring...',
+    'system_watch_stop': 'Stopping health monitoring...',
+    'system_watch_status': 'Checking monitor status...',
     
     // Apps
     'open_app': (p) => `Opening ${p?.app || 'application'}...`,
@@ -1252,14 +1307,24 @@ function detectIntent(message: string): DetectedIntent | null {
   // ═══════════════════════════════════════════════════════════════
   
   // Pattern: "open outlook", "open up outlook", "launch word", etc.
-  // Only matches simple "open X" without complex follow-up actions
+  // Also supports natural "check outlook" phrasing by treating it as app-open.
+  // Only matches simple "open/check X" without complex follow-up actions
   const officeApps = ['outlook', 'word', 'excel', 'powerpoint', 'onenote', 'teams', 'access', 'publisher'];
   const productivityApps = ['notion', 'obsidian', 'todoist', 'trello', 'asana', 'mail', 'calendar', 'notes'];
   const allProductivityApps = [...officeApps, ...productivityApps];
   
-  const officeAppMatch = msg.match(new RegExp(`(?:open|launch|start)\\s+(?:up\\s+)?(${allProductivityApps.join('|')})\\b`, 'i'));
+  const officeAppMatch = msg.match(new RegExp(`(?:open|launch|start|check)\\s+(?:up\\s+)?(?:my\\s+)?(${allProductivityApps.join('|')})\\b`, 'i'));
   if (officeAppMatch) {
     const appName = officeAppMatch[1].toLowerCase();
+    const wantsEmailCount = appName === 'outlook' && /\b(unread|new)\s+emails?\b|\binbox\b|\bhow many\b/i.test(msg);
+    if (wantsEmailCount) {
+      return {
+        action: 'email_unread_count',
+        params: {},
+        confidence: 0.93,
+        response: 'Checking your inbox...'
+      };
+    }
     return {
       action: 'open_app',
       params: { app: appName },
@@ -1683,6 +1748,7 @@ const SAFE_MATRIX_MODE_ACTIONS = [
   'memory_search', 'memory_recall', 'scheduler_list', 'scheduler_status',
   'integration_list', 'integration_status', 'browser_snapshot', 'browser_tabs',
   'canvas_show', 'canvas_hide', 'workflow_list', 'nodes_list', 'node_camera', 'node_screen', 'node_location', 'voice_speak',
+  'system_health_snapshot', 'system_battery_health', 'system_disk_usage', 'system_watch_status',
   // Read-only file ops and safe operations
   'analyze_folder', 'list_folder', 'create_folder', 'clipboard_read', 'clipboard_write'
 ];
@@ -1691,6 +1757,7 @@ const SAFE_MATRIX_MODE_ACTIONS = [
 const MODERATE_MATRIX_MODE_ACTIONS = [
   'browser_navigate', 'browser_click', 'canvas_render', 'integration_execute',
   'scheduler_create', 'message_send', 'workflow_execute', 'node_notify', 'node_canvas',
+  'system_watch_start', 'system_watch_stop',
   // File mutations that could cause data loss — elevated from safe
   'move_file', 'copy_file', 'organize_folder', 'batch_rename', 'rename_file', 'create_file'
 ];
@@ -1781,6 +1848,7 @@ EMAIL: email_send(to,subject,body), email_read(folder,unreadOnly), email_unread_
 CONTACTS: contacts_search(query)
 NOTIFICATIONS: notification_show(title,message), reminder_create(title,message,time/delay,recurring)
 SYSTEM: datetime_get(), system_lock(), volume_set(level), mute_toggle()
+SYSTEM INTEL: system_health_snapshot(), system_battery_health(), system_disk_usage(), system_watch_start(intervalMs?,thresholds?), system_watch_stop(), system_watch_status()
 MOUSE CURSOR (physical mouse pointer on screen):
   - smart_move_mouse(x,y) → move the MOUSE CURSOR to exact coordinates
   - smart_move_mouse_direction(direction,durationMs?,speed?) → move mouse continuously in a direction (left/right/up/down) for a duration. Use for "move right for 5 seconds", "slide left", "push up"
@@ -1828,9 +1896,10 @@ RESPONSE FORMAT:
 RULES:
 1. Just DO stuff - don't ask permission or over-explain
 2. Use launch_game for games, open_app for apps
-3. Chain actions together - open app, wait, type, etc.
-4. Keep responses short and fun
-5. Match the user's vibe - if they're hyped, be hyped back
+3. For direct app-open requests (e.g. "open outlook"), run open_app immediately; do NOT call smart_get_windows first unless user asks what is open
+4. Chain actions together - open app, wait, type, etc.
+5. Keep responses short and fun
+6. Match the user's vibe - if they're hyped, be hyped back
 
 EXAMPLES:
 "Play Elden Ring" → {"actions":[{"action":"launch_game","params":{"target":"elden ring"}}],"response":"Launching!"}

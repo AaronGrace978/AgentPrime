@@ -28,6 +28,7 @@ export * from './canvas';
 export * from './integrations';
 export * from './automation';
 export * from './nodes';
+export * from './system-intel';
 
 // PERFORMANCE: All subsystem imports are now lazy-loaded inside initializeMatrixMode()
 // Type-only imports for interface definitions (no runtime cost)
@@ -40,6 +41,7 @@ import type { CanvasManager } from './canvas';
 import type { IntegrationRegistry } from './integrations';
 import type { WorkflowEngine } from './automation';
 import type { NodeManager } from './nodes';
+import type { SystemIntel } from './system-intel';
 
 export interface MatrixModeConfig {
   memory?: {
@@ -82,6 +84,9 @@ export interface MatrixModeConfig {
     enabled?: boolean;
     port?: number;
   };
+  systemIntel?: {
+    enabled?: boolean;
+  };
 }
 
 export interface MatrixModeInstance {
@@ -94,6 +99,7 @@ export interface MatrixModeInstance {
   integrations: IntegrationRegistry | null;
   automation: WorkflowEngine | null;
   nodes: NodeManager | null;
+  systemIntel: SystemIntel | null;
   initialized: boolean;
 }
 
@@ -107,6 +113,7 @@ let instance: MatrixModeInstance = {
   integrations: null,
   automation: null,
   nodes: null,
+  systemIntel: null,
   initialized: false
 };
 
@@ -166,9 +173,7 @@ export async function initializeMatrixMode(config: MatrixModeConfig = {}): Promi
     if (config.browser?.enabled) {
       try {
         const { initializeBrowserController } = await import('./browser');
-        instance.browser = await initializeBrowserController({
-          headless: config.browser.headless ?? true
-        });
+        instance.browser = await initializeBrowserController();
         console.log('[MatrixMode] ✅ Browser controller initialized');
       } catch (browserError) {
         console.warn('[MatrixMode] Browser init failed (Playwright may not be installed):', browserError);
@@ -238,12 +243,21 @@ export async function initializeMatrixMode(config: MatrixModeConfig = {}): Promi
     if (config.nodes?.enabled) {
       try {
         const { initializeNodeManager } = await import('./nodes');
-        instance.nodes = await initializeNodeManager({
-          port: config.nodes.port || 18792
-        });
+        instance.nodes = await initializeNodeManager(config.nodes.port || 18792);
         console.log('[MatrixMode] ✅ Node manager initialized');
       } catch (nodesError) {
         console.warn('[MatrixMode] Node manager init failed:', nodesError);
+      }
+    }
+
+    // Initialize system intel - lazy import
+    if (config.systemIntel?.enabled !== false) {
+      try {
+        const { initializeSystemIntel } = await import('./system-intel');
+        instance.systemIntel = await initializeSystemIntel();
+        console.log('[MatrixMode] ✅ System intel initialized');
+      } catch (systemIntelError) {
+        console.warn('[MatrixMode] System intel init failed:', systemIntelError);
       }
     }
 
@@ -300,6 +314,11 @@ export async function shutdownMatrixMode(): Promise<void> {
       const { shutdownScheduler } = await import('./scheduler');
       await shutdownScheduler();
     }
+
+    if (instance.systemIntel) {
+      const { shutdownSystemIntel } = await import('./system-intel');
+      shutdownSystemIntel();
+    }
     
     // Memory system shutdown
     const { shutdownMemorySystem } = await import('./memory');
@@ -315,6 +334,7 @@ export async function shutdownMatrixMode(): Promise<void> {
       integrations: null,
       automation: null,
       nodes: null,
+      systemIntel: null,
       initialized: false
     };
 
