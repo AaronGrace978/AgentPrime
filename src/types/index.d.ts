@@ -15,6 +15,7 @@ export interface Settings {
   autoSave: boolean;
   inlineCompletions: boolean;
   dinoBuddyMode: boolean;
+  chatMode?: 'agent' | 'chat' | 'dino';
   activeProvider: string;
   activeModel: string;
   dualOllamaEnabled: boolean;
