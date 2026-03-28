@@ -1,175 +1,162 @@
-# AgentPrime - AI Coding Assistant IDE
+![AgentPrime banner](assets/agentprime-readme-banner.png)
 
-A sophisticated AI-powered desktop IDE that works like Cursor, featuring multiple AI providers, intelligent code assistance, and advanced development tools.
+# AgentPrime
 
-## 🚀 Quick Start
+AgentPrime is an Electron-based AI coding workspace focused on local-first development. It combines a lightweight desktop IDE shell with multi-provider AI chat, workspace tools, file navigation, settings, templates, and Git-aware workflows.
+
+## Why AgentPrime
+
+- Local desktop app with a focused IDE-style interface
+- AI chat and coding assistance inside the workspace
+- Multi-provider model support including Anthropic, OpenAI, Ollama, and OpenRouter
+- Lean core startup profile that avoids booting heavy optional subsystems by default
+- Built with Electron, React, TypeScript, and Webpack
+
+## Current Product Shape
+
+The default app experience is intentionally narrow and practical:
+
+- Editor and workspace navigation
+- AI composer / chat workflow
+- Settings and provider configuration
+- Command palette and keyboard shortcuts
+- Git panel and project actions
+- Template-driven project creation
+
+### Lean Core Profile
+
+- Focused surface area: editor, file explorer, AI composer, settings, command palette, and Git panel
+- No auto-boot heavy subsystems: optional automation, collaboration, and agent-control systems are not started at launch
+- Faster startup path: fewer background services and IPC registrations in the default profile
+
+## Quick Start
 
 ### Prerequisites
+
 - Node.js 16+
-- npm or yarn
+- npm
 - Git
 
-### Installation & Running
-
-1. **Clone and install dependencies:**
-   ```bash
-   git clone <repository-url>
-   cd AgentPrime
-   npm install
-   ```
-
-2. **Quick development start (recommended):**
-   ```bash
-   npm run quick-start
-   ```
-   This builds the project and starts development mode with hot reloading.
-
-3. **Or manually:**
-   ```bash
-   # Build the project
-   npm run build
-
-   # Start in development mode (with hot reloading)
-   npm run start:dev
-
-   # Or just run the built version
-   npm start
-   ```
-
-## 🎯 Features
-
-### 🤖 AI Integration
-- **Multiple AI Providers**: Anthropic Claude, OpenAI GPT, Ollama, OpenRouter
-- **Smart Model Routing**: Automatically selects the best model for each task
-- **Intelligent Context**: Automatic file discovery and context building (Cursor-style)
-- **Streaming Responses**: Real-time AI responses for better UX
-
-### 📝 Code Intelligence
-- **Semantic Search**: Find code by meaning, not just text
-- **Context Compression**: Intelligent summarization for infinite memory
-- **Codebase Introspection**: Automatic dependency analysis and architecture understanding
-- **Inline Completions**: AI-powered code suggestions as you type
-
-### 🛠️ Development Tools
-- **Template System**: Generate projects from templates
-- **Task Management**: Built-in task tracking and project management
-- **Script Execution**: Run and debug scripts directly in the IDE
-- **Git Integration**: Version control right in the interface
-
-### 🎨 Modern UI
-- **Cursor-inspired Design**: Familiar interface similar to VS Code/Cursor
-- **Dark Theme**: Easy on the eyes for long coding sessions
-- **Responsive Layout**: Works on different screen sizes
-- **Activity Bar**: Quick access to different views and tools
-
-## 📋 Development Scripts
+### Install
 
 ```bash
-# Build commands
-npm run build              # Build both main and renderer
-npm run build:main         # Build main process only
-npm run build:renderer     # Build renderer only
+git clone https://github.com/AaronGrace978/AgentPrime.git
+cd AgentPrime
+npm install
+```
 
-# Development commands
-npm run dev                # Start development watchers
-npm run start:dev          # Full dev mode with hot reloading
-npm run quick-start        # Build and start in one command
+### Run
+
+```bash
+# Recommended: build and launch
+npm run quick-start
+
+# Or run the build steps manually
+npm run build
+npm run start:dev
+```
+
+## Core Capabilities
+
+### AI Integration
+
+- Multiple model providers
+- Streaming chat responses
+- Smart routing across available models
+- Context-aware workspace assistance
+
+### Coding Workspace
+
+- File tree and project navigation
+- Monaco-powered editor surface
+- Command palette and keyboard shortcuts
+- Settings-driven provider and UI configuration
+
+### Developer Workflow
+
+- Git integration in the interface
+- Template gallery for fast project setup
+- CLI entry point for agent flows
+- Packaging support for Windows, macOS, and Linux
+
+## Development Scripts
+
+```bash
+# Build
+npm run build
+npm run build:main
+npm run build:renderer
+
+# Development
+npm run dev
+npm run start:dev
+npm run quick-start
 
 # Testing
-npm test                   # Run unit tests
-npm run test:watch         # Run tests in watch mode
-npm run test:coverage      # Run tests with coverage
-npm run test:e2e           # Run end-to-end tests
+npm test
+npm run test:watch
+npm run test:coverage
+npm run test:e2e
 
-# Code quality
-npm run lint               # Run ESLint
-npm run typecheck          # Run TypeScript type checking
+# Quality
+npm run lint
+npm run typecheck
+
+# Distribution
+npm run dist
+npm run dist:win
+npm run dist:mac
+npm run dist:linux
 ```
 
-## 🏗️ Project Structure
+## Project Structure
 
-```
+```text
 AgentPrime/
 ├── src/
-│   ├── main/              # Electron main process
-│   │   ├── ai-providers/  # AI provider implementations
-│   │   ├── core/          # Core business logic
-│   │   ├── ipc-handlers/  # IPC communication handlers
-│   │   ├── mirror/        # AI mirroring system
-│   │   └── tools/         # Utility tools
-│   ├── renderer/          # Electron renderer (UI)
-│   │   ├── components/    # React components
-│   │   └── styles.css     # Main styles
-│   └── types/             # TypeScript type definitions
-├── templates/             # Project templates
-├── scripts/               # Build and utility scripts
-└── dist/                  # Built output
+│   ├── main/        # Electron main process
+│   ├── renderer/    # React UI
+│   └── types/       # Shared type definitions
+├── templates/       # Starter projects and templates
+├── tests/           # Unit, integration, and e2e coverage
+├── scripts/         # Build and utility scripts
+└── dist/            # Build output
 ```
 
-## 🔧 Configuration
+## Configuration
 
-### AI Providers
+Configure model providers from the in-app settings panel.
 
-Configure your AI providers in the settings. Supported providers:
+Supported providers include:
 
-- **Ollama** (local, free): Best for offline development
-- **Anthropic Claude** (cloud): Excellent reasoning capabilities
-- **OpenAI GPT** (cloud): Versatile and reliable
-- **OpenRouter** (cloud): Access to multiple models
+- Ollama for local models
+- Anthropic for Claude models
+- OpenAI for GPT models
+- OpenRouter for multi-model access
 
-### Keyboard Shortcuts
-
-- `Ctrl+Shift+C`: Open Composer (AI chat)
-- `Ctrl+Shift+T`: Open Task Manager
-- `Ctrl+S`: Save current file
-- `Ctrl+B`: Toggle sidebar
-- `Ctrl+``: Toggle terminal panel
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes and add tests
-4. Run the test suite: `npm test`
-5. Commit your changes: `git commit -am 'Add my feature'`
-6. Push to the branch: `git push origin feature/my-feature`
-7. Submit a pull request
-
-## 📝 License
-
-MIT License - see LICENSE file for details.
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Build Issues
-- Make sure Node.js 16+ is installed
-- Clear node_modules and reinstall: `rm -rf node_modules && npm install`
-- Check for TypeScript errors: `npm run typecheck`
+
+- Confirm Node.js 16+ is installed
+- Reinstall dependencies with `npm install`
+- Run `npm run typecheck` to catch TypeScript issues
 
 ### Runtime Issues
-- Check the console for error messages
-- Ensure AI provider API keys are configured correctly
-- Try restarting the application
 
-### Performance Issues
-- Close unused files and panels
-- Restart the application to clear memory
-- Check system resources (RAM, CPU)
+- Check the Electron console output for errors
+- Verify provider keys and settings are configured
+- Rebuild with `npm run build` and relaunch
 
-## Building for Distribution
+## Contributing
 
-```bash
-# Build for all platforms
-npm run dist:all
-
-# Build for specific platform
-npm run dist:win    # Windows
-npm run dist:mac    # macOS
-npm run dist:linux  # Linux
-```
-
-Built packages will be in the `release/` directory.
+1. Fork the repository
+2. Create a branch: `git checkout -b feature/my-change`
+3. Make your changes
+4. Run relevant tests or checks
+5. Commit and push your branch
+6. Open a pull request
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is open source and available under the MIT License. See `LICENSE` for details.
