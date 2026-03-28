@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { DualModelState, BrainConfig, DualMode } from '../types';
-import { DEFAULT_BRAIN_CONFIG, DEFAULT_DUAL_MODEL_STATE, MODEL_OPTIONS } from '../constants';
+import { DEFAULT_BRAIN_CONFIG, DEFAULT_DUAL_MODEL_STATE } from '../constants';
 
 interface UseDualModelReturn {
   dualModel: DualModelState;

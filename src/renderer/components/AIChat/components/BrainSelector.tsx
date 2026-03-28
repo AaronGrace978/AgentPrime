@@ -1,10 +1,15 @@
 /**
- * BrainSelector - Fast/Auto/Deep mode toggle with config popover
+ * BrainSelector - Fast/Auto/Deep mode toggle with organized model configuration
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { DualMode, BrainConfig } from '../types';
-import { MODEL_OPTIONS } from '../constants';
+import {
+  PROVIDER_OPTIONS,
+  getModelLabel,
+  getModelOptionsForProvider,
+  getProviderLabel
+} from '../constants';
 
 interface BrainSelectorProps {
   mode: DualMode;
@@ -13,31 +18,7 @@ interface BrainSelectorProps {
   onConfigChange: (config: Partial<BrainConfig>) => void;
 }
 
-// Build unified model list from all providers
-const buildUnifiedModelList = () => {
-  const models: Array<{ value: string; label: string; provider: string }> = [];
-  const providerEmojis: Record<string, string> = {
-    ollama: '🦙',
-    openai: '🧠',
-    anthropic: '🎭',
-    openrouter: '🌐'
-  };
-
-  // Add models from each provider
-  for (const [provider, options] of Object.entries(MODEL_OPTIONS)) {
-    for (const opt of options) {
-      models.push({
-        value: `${provider}:${opt.value}`,
-        label: `${providerEmojis[provider] || '🤖'} ${opt.label} (${provider})`,
-        provider
-      });
-    }
-  }
-
-  return models;
-};
-
-const UNIFIED_MODELS = buildUnifiedModelList();
+type BrainModelKey = 'fastModel' | 'deepModel';
 
 export const BrainSelector: React.FC<BrainSelectorProps> = ({
   mode,
@@ -47,218 +28,286 @@ export const BrainSelector: React.FC<BrainSelectorProps> = ({
 }) => {
   const [showConfig, setShowConfig] = useState(false);
 
+  const modeButtonStyle = (buttonMode: DualMode) => ({
+    padding: '6px 12px',
+    border: 'none',
+    borderRadius: '7px',
+    fontSize: '12px',
+    fontWeight: mode === buttonMode ? '700' as const : '600' as const,
+    fontFamily: 'inherit',
+    cursor: 'pointer' as const,
+    transition: 'all 0.12s ease',
+    background: mode === buttonMode ? 'var(--prime-accent)' : 'transparent',
+    color: mode === buttonMode ? '#ffffff' : 'var(--prime-text-secondary)',
+    boxShadow: mode === buttonMode ? '0 6px 14px rgba(59, 130, 246, 0.22)' : 'none'
+  });
+
+  const updateModel = (key: BrainModelKey, nextProvider: string, nextModel: string) => {
+    onConfigChange({
+      [key]: {
+        ...brainConfig[key],
+        provider: nextProvider,
+        model: nextModel
+      }
+    });
+  };
+
+  const handleProviderChange = (key: BrainModelKey, nextProvider: string) => {
+    const options = getModelOptionsForProvider(nextProvider);
+    const currentModel = brainConfig[key].model;
+    const nextModel = options.some((option) => option.value === currentModel)
+      ? currentModel
+      : (options[0]?.value || currentModel);
+    updateModel(key, nextProvider, nextModel);
+  };
+
+  const handleModelChange = (key: BrainModelKey, nextModel: string) => {
+    updateModel(key, brainConfig[key].provider, nextModel);
+  };
+
+  const renderModelEditor = (
+    key: BrainModelKey,
+    title: string,
+    description: string,
+    accentColor: string
+  ) => {
+    const current = brainConfig[key];
+    const options = getModelOptionsForProvider(current.provider);
+
+    return (
+      <div style={{
+        border: '1px solid var(--prime-border)',
+        borderRadius: '12px',
+        padding: '14px',
+        background: 'var(--prime-bg)'
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: '12px',
+          marginBottom: '12px'
+        }}>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--prime-text)' }}>
+              {title}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)', marginTop: '4px', lineHeight: 1.4 }}>
+              {description}
+            </div>
+          </div>
+          <div style={{
+            padding: '4px 8px',
+            borderRadius: '999px',
+            background: `${accentColor}1A`,
+            border: `1px solid ${accentColor}40`,
+            color: accentColor,
+            fontSize: '10px',
+            fontWeight: '700',
+            whiteSpace: 'nowrap'
+          }}>
+            {getProviderLabel(current.provider)}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: '8px' }}>
+          <select
+            value={current.provider}
+            onChange={(e) => handleProviderChange(key, e.target.value)}
+            style={{
+              width: '100%',
+              padding: '9px 10px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'var(--prime-surface)',
+              color: 'var(--prime-text)',
+              fontSize: '13px',
+              fontFamily: 'inherit',
+              cursor: 'pointer'
+            }}
+          >
+            {PROVIDER_OPTIONS.map((provider) => (
+              <option key={provider.value} value={provider.value}>
+                {provider.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={current.model}
+            onChange={(e) => handleModelChange(key, e.target.value)}
+            style={{
+              width: '100%',
+              padding: '9px 10px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'var(--prime-surface)',
+              color: 'var(--prime-text)',
+              fontSize: '13px',
+              fontFamily: 'inherit',
+              cursor: 'pointer'
+            }}
+          >
+            {options.map((option) => (
+              <option key={`${current.provider}:${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{
+          marginTop: '10px',
+          fontSize: '11px',
+          color: 'var(--prime-text-muted)',
+          lineHeight: 1.4
+        }}>
+          Current: <span style={{ color: 'var(--prime-text)' }}>{getModelLabel(current.provider, current.model)}</span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div style={{ position: 'relative' }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '4px',
-        background: 'var(--prime-surface-hover)',
-        padding: '4px',
-        borderRadius: '12px',
+        gap: '3px',
+        background: 'var(--prime-surface)',
+        padding: '3px',
+        borderRadius: '10px',
         border: '1px solid var(--prime-border)'
       }}>
         <button
           onClick={() => onModeChange('fast')}
-          style={{
-            padding: '6px 14px',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            background: mode === 'fast' 
-              ? `linear-gradient(135deg, var(--prime-amber), var(--prime-warning))` 
-              : 'transparent',
-            color: mode === 'fast' ? 'white' : 'var(--prime-text-secondary)',
-            boxShadow: mode === 'fast' ? 'var(--prime-shadow-md)' : 'none'
-          }}
-          title={`⚡ Fast: ${brainConfig.fastModel.model.split(':')[0]}`}
+          style={modeButtonStyle('fast')}
+          title={`Fast - ${getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)}`}
         >
-          ⚡ Fast
+          Fast
         </button>
         <button
           onClick={() => onModeChange('auto')}
-          style={{
-            padding: '6px 14px',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            background: mode === 'auto' 
-              ? `linear-gradient(135deg, var(--prime-success), var(--prime-green))` 
-              : 'transparent',
-            color: mode === 'auto' ? 'white' : 'var(--prime-text-secondary)',
-            boxShadow: mode === 'auto' ? 'var(--prime-shadow-md)' : 'none'
-          }}
-          title="🔀 Auto: Smart routing based on task complexity"
+          style={modeButtonStyle('auto')}
+          title={`Auto - routes between ${getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)} and ${getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}`}
         >
-          🔀 Auto
+          Auto
         </button>
         <button
           onClick={() => onModeChange('deep')}
-          style={{
-            padding: '6px 14px',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '12px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            background: mode === 'deep' 
-              ? `linear-gradient(135deg, var(--prime-purple), var(--accent-secondary))` 
-              : 'transparent',
-            color: mode === 'deep' ? 'white' : 'var(--prime-text-secondary)',
-            boxShadow: mode === 'deep' ? 'var(--prime-shadow-md)' : 'none'
-          }}
-          title={`🧠 Deep: ${brainConfig.deepModel.model.split(':')[0]}`}
+          style={modeButtonStyle('deep')}
+          title={`Deep - ${getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}`}
         >
-          🧠 Deep
+          Deep
         </button>
         <button
           onClick={() => setShowConfig(!showConfig)}
           style={{
             padding: '6px 8px',
             border: 'none',
-            borderRadius: '8px',
+            borderRadius: '7px',
             fontSize: '12px',
+            fontWeight: '600',
+            fontFamily: 'inherit',
             cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            background: showConfig ? 'var(--prime-border)' : 'transparent',
-            color: 'var(--prime-text-secondary)'
+            background: showConfig ? 'var(--prime-surface-hover)' : 'transparent',
+            color: showConfig ? 'var(--prime-text)' : 'var(--prime-text-muted)',
+            transition: 'all 0.12s ease'
           }}
-          title="Configure brain models"
+          title="Configure fast and deep models"
         >
-          ⚙️
+          Models
         </button>
       </div>
 
-      {/* Config Popover */}
       {showConfig && (
         <div style={{
           position: 'absolute',
           top: '100%',
-          left: '0',
+          left: 0,
           marginTop: '8px',
           background: 'var(--prime-surface)',
           border: '1px solid var(--prime-border)',
-          borderRadius: '12px',
+          borderRadius: '14px',
           padding: '16px',
-          boxShadow: 'var(--prime-shadow-lg)',
+          boxShadow: '0 16px 40px rgba(0, 0, 0, 0.18)',
           zIndex: 100,
-          minWidth: '320px'
+          minWidth: '360px',
+          maxWidth: '420px'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '600', color: 'var(--prime-text)' }}>
-              🧠 Configure AI Brains
-            </h4>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '14px'
+          }}>
+            <div>
+              <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--prime-text)' }}>
+                Model routing
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)', marginTop: '4px' }}>
+                Keep fast and deep models organized by provider.
+              </div>
+            </div>
             <button
               onClick={() => setShowConfig(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--prime-text-muted)', fontSize: '16px' }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--prime-text-muted)',
+                fontSize: '16px',
+                fontFamily: 'inherit',
+                padding: 0
+              }}
+              aria-label="Close model configuration"
             >
-              ×
+              x
             </button>
           </div>
 
-          {/* Fast Brain Config - Single Unified Dropdown */}
-          <div style={{ marginBottom: '16px', padding: '12px', background: 'var(--prime-accent-light)', borderRadius: '8px', border: '1px solid var(--prime-amber)' }}>
-            <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--prime-amber)', marginBottom: '8px' }}>
-              ⚡ Fast Brain
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '8px',
+            marginBottom: '12px'
+          }}>
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: '10px',
+              background: 'var(--prime-bg)',
+              border: '1px solid var(--prime-border)'
+            }}>
+              <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--prime-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Fast
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--prime-text)', marginTop: '6px' }}>
+                {getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)}
+              </div>
             </div>
-            <select
-              value={`${brainConfig.fastModel.provider}:${brainConfig.fastModel.model}`}
-              onChange={(e) => {
-                const [provider, ...modelParts] = e.target.value.split(':');
-                const model = modelParts.join(':');
-                onConfigChange({ 
-                  fastModel: { ...brainConfig.fastModel, provider, model }
-                });
-              }}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--prime-border)',
-                fontSize: '13px',
-                background: 'var(--prime-surface)',
-                color: 'var(--prime-text)'
-              }}
-            >
-              <optgroup label="🧠 OpenAI">
-                {MODEL_OPTIONS.openai?.map(opt => (
-                  <option key={`openai:${opt.value}`} value={`openai:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="🦙 Ollama">
-                {MODEL_OPTIONS.ollama?.map(opt => (
-                  <option key={`ollama:${opt.value}`} value={`ollama:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="🎭 Anthropic">
-                {MODEL_OPTIONS.anthropic?.map(opt => (
-                  <option key={`anthropic:${opt.value}`} value={`anthropic:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="🌐 OpenRouter">
-                {MODEL_OPTIONS.openrouter?.map(opt => (
-                  <option key={`openrouter:${opt.value}`} value={`openrouter:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-            </select>
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: '10px',
+              background: 'var(--prime-bg)',
+              border: '1px solid var(--prime-border)'
+            }}>
+              <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--prime-text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Deep
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--prime-text)', marginTop: '6px' }}>
+                {getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}
+              </div>
+            </div>
           </div>
 
-          {/* Deep Brain Config - Single Unified Dropdown */}
-          <div style={{ padding: '12px', background: 'var(--prime-accent-light)', borderRadius: '8px', border: '1px solid var(--prime-purple)' }}>
-            <div style={{ fontSize: '12px', fontWeight: '600', color: 'var(--prime-purple)', marginBottom: '8px' }}>
-              🧠 Deep Brain
-            </div>
-            <select
-              value={`${brainConfig.deepModel.provider}:${brainConfig.deepModel.model}`}
-              onChange={(e) => {
-                const [provider, ...modelParts] = e.target.value.split(':');
-                const model = modelParts.join(':');
-                onConfigChange({ 
-                  deepModel: { ...brainConfig.deepModel, provider, model }
-                });
-              }}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '6px',
-                border: '1px solid var(--prime-border)',
-                fontSize: '13px',
-                background: 'var(--prime-surface)',
-                color: 'var(--prime-text)'
-              }}
-            >
-              <optgroup label="🧠 OpenAI">
-                {MODEL_OPTIONS.openai?.map(opt => (
-                  <option key={`openai:${opt.value}`} value={`openai:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="🦙 Ollama">
-                {MODEL_OPTIONS.ollama?.map(opt => (
-                  <option key={`ollama:${opt.value}`} value={`ollama:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="🎭 Anthropic">
-                {MODEL_OPTIONS.anthropic?.map(opt => (
-                  <option key={`anthropic:${opt.value}`} value={`anthropic:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="🌐 OpenRouter">
-                {MODEL_OPTIONS.openrouter?.map(opt => (
-                  <option key={`openrouter:${opt.value}`} value={`openrouter:${opt.value}`}>{opt.label}</option>
-                ))}
-              </optgroup>
-            </select>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {renderModelEditor('fastModel', 'Fast model', 'Best for quick asks, edits, and lightweight code generation.', 'var(--prime-blue)')}
+            {renderModelEditor('deepModel', 'Deep model', 'Best for planning, debugging, larger edits, and deeper reasoning.', 'var(--prime-purple)')}
           </div>
 
           <p style={{ margin: '12px 0 0', fontSize: '11px', color: 'var(--prime-text-muted)', textAlign: 'center' }}>
-            Changes sync automatically with Settings
+            Changes sync with Settings in real time.
           </p>
         </div>
       )}
@@ -267,4 +316,3 @@ export const BrainSelector: React.FC<BrainSelectorProps> = ({
 };
 
 export default BrainSelector;
-

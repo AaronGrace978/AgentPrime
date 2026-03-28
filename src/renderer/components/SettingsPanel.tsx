@@ -1,13 +1,5 @@
 /**
- * SettingsPanel - Comprehensive settings UI for AgentPrime
- * 
- * Features:
- * - Tabbed interface for different settings categories
- * - Editor settings (font, size, theme)
- * - AI configuration
- * - Keyboard shortcuts
- * - Appearance
- * - Extensions
+ * SettingsPanel - Lean core settings UI
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -19,18 +11,21 @@ import {
   IconCode,
   IconSave,
   IconX,
-  IconCheck,
   IconRefresh,
-  IconChevronRight,
-  IconMessage,
-  IconBrain
+  IconChevronRight
 } from './Icons';
 import ThemeSelector from './ThemeSelector';
 import KeyboardShortcuts from './KeyboardShortcuts';
+import {
+  PROVIDER_OPTIONS,
+  getModelLabel,
+  getModelOptionsForProvider,
+  getProviderLabel
+} from './AIChat/constants';
 import { ThemeId } from '../themes';
 import type { Settings } from '../../types';
 
-type SettingsTab = 'general' | 'editor' | 'appearance' | 'ai' | 'collaboration' | 'plugins' | 'system' | 'shortcuts' | 'advanced';
+type SettingsTab = 'general' | 'editor' | 'appearance' | 'ai' | 'shortcuts' | 'advanced';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -40,6 +35,23 @@ interface SettingsPanelProps {
   currentTheme: ThemeId;
   onThemeChange: (themeId: ThemeId) => void;
 }
+
+const DEFAULT_DUAL_MODEL_CONFIG: Settings['dualModelConfig'] = {
+  fastModel: {
+    provider: 'openai',
+    model: 'gpt-5.4-mini',
+    enabled: true
+  },
+  deepModel: {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    enabled: true
+  },
+  autoRoute: true,
+  complexityThreshold: 6,
+  deepModelTriggers: ['analyze', 'debug', 'refactor', 'explain'],
+  fastModelTriggers: ['quick', 'simple', 'format', 'rename']
+};
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   isOpen,
@@ -53,47 +65,166 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Sync with props
   useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
 
-  // Update local settings
   const updateSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
-    setLocalSettings(prev => ({ ...prev, [key]: value }));
+    setLocalSettings((prev) => ({ ...prev, [key]: value }));
     setHasChanges(true);
   }, []);
 
-  // Save all settings and broadcast to other components (BrainSelector, etc.)
+  const getDualModelConfig = useCallback((): Settings['dualModelConfig'] => {
+    return localSettings.dualModelConfig || DEFAULT_DUAL_MODEL_CONFIG;
+  }, [localSettings.dualModelConfig]);
+
   const saveSettings = useCallback(() => {
     onSettingsChange(localSettings);
     setHasChanges(false);
-    
-    // Dispatch event so BrainSelector and other components sync instantly
-    window.dispatchEvent(new CustomEvent('agentprime-settings-changed', { 
-      detail: localSettings 
+    window.dispatchEvent(new CustomEvent('agentprime-settings-changed', {
+      detail: localSettings
     }));
   }, [localSettings, onSettingsChange]);
-  
-  // Listen for settings changes from BrainSelector or other components
+
   useEffect(() => {
     const handleExternalSettingsChange = (event: CustomEvent<Settings>) => {
       if (event.detail) {
         setLocalSettings(event.detail);
       }
     };
-    
+
     window.addEventListener('agentprime-settings-changed', handleExternalSettingsChange as EventListener);
     return () => {
       window.removeEventListener('agentprime-settings-changed', handleExternalSettingsChange as EventListener);
     };
   }, []);
 
-  // Discard changes
   const discardChanges = useCallback(() => {
     setLocalSettings(settings);
     setHasChanges(false);
   }, [settings]);
+
+  const resetAllSettings = useCallback(() => {
+    const defaults: Partial<Settings> = {
+      fontSize: 14,
+      tabSize: 2,
+      wordWrap: 'on',
+      minimap: true,
+      lineNumbers: 'on',
+      autoSave: true,
+      inlineCompletions: true,
+      dinoBuddyMode: false,
+      useSpecializedAgents: false,
+      activeProvider: 'openai',
+      activeModel: 'gpt-5.4',
+      dualOllamaEnabled: false,
+      dualModelEnabled: true,
+      dualModelConfig: DEFAULT_DUAL_MODEL_CONFIG,
+      telemetryEnabled: false,
+      developerMode: false,
+      confirmOnClose: true,
+      autoLockMinutes: 0
+    };
+    setLocalSettings((prev) => ({ ...prev, ...defaults }));
+    setHasChanges(true);
+  }, []);
+
+  const getDefaultModelForProvider = useCallback((provider: string, fallback: string) => {
+    return getModelOptionsForProvider(provider)[0]?.value || fallback;
+  }, []);
+
+  const handleActiveProviderChange = useCallback((provider: string) => {
+    const options = getModelOptionsForProvider(provider);
+    const nextModel = options.some((option) => option.value === localSettings.activeModel)
+      ? localSettings.activeModel
+      : getDefaultModelForProvider(provider, localSettings.activeModel);
+
+    setLocalSettings((prev) => ({
+      ...prev,
+      activeProvider: provider,
+      activeModel: nextModel
+    }));
+    setHasChanges(true);
+  }, [getDefaultModelForProvider, localSettings.activeModel]);
+
+  const handleActiveModelChange = useCallback((model: string) => {
+    updateSetting('activeModel', model);
+  }, [updateSetting]);
+
+  const handleDualModelProviderChange = useCallback((key: 'fastModel' | 'deepModel', provider: string) => {
+    const config = getDualModelConfig();
+    const currentModel = config[key].model;
+    const options = getModelOptionsForProvider(provider);
+    const nextModel = options.some((option) => option.value === currentModel)
+      ? currentModel
+      : getDefaultModelForProvider(provider, currentModel);
+
+    updateSetting('dualModelConfig', {
+      ...config,
+      [key]: {
+        ...config[key],
+        provider,
+        model: nextModel
+      }
+    });
+  }, [getDefaultModelForProvider, getDualModelConfig, updateSetting]);
+
+  const handleDualModelChange = useCallback((key: 'fastModel' | 'deepModel', model: string) => {
+    const config = getDualModelConfig();
+    updateSetting('dualModelConfig', {
+      ...config,
+      [key]: {
+        ...config[key],
+        model
+      }
+    });
+  }, [getDualModelConfig, updateSetting]);
+
+  const renderModelSelectorControls = (
+    provider: string,
+    model: string,
+    onProviderChange: (provider: string) => void,
+    onModelChange: (model: string) => void
+  ) => {
+    const providerMeta = PROVIDER_OPTIONS.find((option) => option.value === provider);
+    const modelOptions = getModelOptionsForProvider(provider);
+
+    return (
+      <div className="setting-model-stack">
+        <div className="setting-model-row">
+          <select
+            value={provider}
+            onChange={(e) => onProviderChange(e.target.value)}
+            className="setting-select setting-select--wide"
+          >
+            {PROVIDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            className="setting-select setting-select--wide"
+          >
+            {modelOptions.map((option) => (
+              <option key={`${provider}:${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="setting-model-meta">
+          <span className="setting-model-badge">{getProviderLabel(provider)}</span>
+          <span>{providerMeta?.description || 'Curated model list'}</span>
+          <span className="setting-model-current">{getModelLabel(provider, model)}</span>
+        </div>
+      </div>
+    );
+  };
 
   if (!isOpen) return null;
 
@@ -102,9 +233,6 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     { id: 'editor', label: 'Editor', icon: <IconCode size="sm" /> },
     { id: 'appearance', label: 'Appearance', icon: <IconPalette size="sm" /> },
     { id: 'ai', label: 'AI Assistant', icon: <IconBot size="sm" /> },
-    { id: 'collaboration', label: 'Collaboration', icon: <IconMessage size="sm" /> },
-    { id: 'plugins', label: 'Plugins', icon: <IconCode size="sm" /> },
-    { id: 'system', label: 'System', icon: <IconBrain size="sm" /> },
     { id: 'shortcuts', label: 'Shortcuts', icon: <IconKeyboard size="sm" /> },
     { id: 'advanced', label: 'Advanced', icon: <IconChevronRight size="sm" /> }
   ];
@@ -112,30 +240,33 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+        <button
+          type="button"
+          className="settings-close-fab"
+          onClick={onClose}
+          aria-label="Close settings"
+        >
+          <IconX size="md" />
+        </button>
         <div className="settings-header">
           <h2><IconSettings size="md" /> Settings</h2>
           <div className="settings-header-actions">
             {hasChanges && (
               <>
-                <button className="btn btn-ghost btn-sm" onClick={discardChanges}>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={discardChanges}>
                   Discard
                 </button>
-                <button className="btn btn-primary btn-sm" onClick={saveSettings}>
+                <button type="button" className="btn btn-primary btn-sm" onClick={saveSettings}>
                   <IconSave size="sm" /> Save
                 </button>
               </>
             )}
-            <button className="btn btn-ghost btn-sm" onClick={onClose}>
-              <IconX size="sm" />
-            </button>
           </div>
         </div>
 
         <div className="settings-body">
-          {/* Sidebar tabs */}
           <div className="settings-tabs">
-            {tabs.map(tab => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
@@ -147,13 +278,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             ))}
           </div>
 
-          {/* Content */}
-          <div className="settings-content">
-            {/* General Settings */}
+          <div className={`settings-content${activeTab === 'shortcuts' ? ' settings-content--shortcuts' : ''}`}>
             {activeTab === 'general' && (
               <div className="settings-section">
                 <h3>General Settings</h3>
-                
+
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Auto Save</span>
@@ -169,8 +298,21 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
                 <div className="setting-group">
                   <label className="setting-label">
-                    <span className="setting-name">Dino Buddy Mode 🦕</span>
-                    <span className="setting-description">Friendly conversational AI persona</span>
+                    <span className="setting-name">Confirm on Close</span>
+                    <span className="setting-description">Show a confirmation prompt before closing the app</span>
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={localSettings.confirmOnClose ?? true}
+                    onChange={(e) => updateSetting('confirmOnClose', e.target.checked)}
+                    className="setting-checkbox"
+                  />
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Dino Buddy Mode</span>
+                    <span className="setting-description">Use the conversational Dino persona in AI chat</span>
                   </label>
                   <input
                     type="checkbox"
@@ -183,7 +325,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Specialized Agents</span>
-                    <span className="setting-description">Use specialized AI agents for different tasks</span>
+                    <span className="setting-description">Route complex tasks through specialized agent workflows</span>
                   </label>
                   <input
                     type="checkbox"
@@ -192,27 +334,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     className="setting-checkbox"
                   />
                 </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Confirm on Close</span>
-                    <span className="setting-description">Show confirmation dialog before closing to prevent accidental data loss</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.confirmOnClose ?? true}
-                    onChange={(e) => updateSetting('confirmOnClose', e.target.checked)}
-                    className="setting-checkbox"
-                  />
-                </div>
               </div>
             )}
 
-            {/* Editor Settings */}
             {activeTab === 'editor' && (
               <div className="settings-section">
                 <h3>Editor Settings</h3>
-                
+
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Font Size</span>
@@ -224,7 +352,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       min="10"
                       max="24"
                       value={localSettings.fontSize}
-                      onChange={(e) => updateSetting('fontSize', parseInt(e.target.value))}
+                      onChange={(e) => updateSetting('fontSize', parseInt(e.target.value, 10))}
                       className="setting-range"
                     />
                     <span className="setting-value">{localSettings.fontSize}px</span>
@@ -234,7 +362,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Inline Completions</span>
-                    <span className="setting-description">Show AI-powered code completions as you type</span>
+                    <span className="setting-description">Show AI-powered code suggestions while typing</span>
                   </label>
                   <input
                     type="checkbox"
@@ -247,11 +375,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Tab Size</span>
-                    <span className="setting-description">Number of spaces per tab</span>
+                    <span className="setting-description">Number of spaces per indentation level</span>
                   </label>
                   <select
                     value={localSettings.tabSize ?? 2}
-                    onChange={(e) => updateSetting('tabSize', parseInt(e.target.value) as 2 | 4 | 8)}
+                    onChange={(e) => updateSetting('tabSize', parseInt(e.target.value, 10) as 2 | 4 | 8)}
                     className="setting-select"
                   >
                     <option value="2">2 spaces</option>
@@ -263,7 +391,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Word Wrap</span>
-                    <span className="setting-description">Wrap long lines in the editor</span>
+                    <span className="setting-description">Wrap long lines in the editor view</span>
                   </label>
                   <select
                     value={localSettings.wordWrap ?? 'on'}
@@ -279,7 +407,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Minimap</span>
-                    <span className="setting-description">Show minimap on the right side</span>
+                    <span className="setting-description">Show code minimap on the right side</span>
                   </label>
                   <input
                     type="checkbox"
@@ -292,7 +420,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Line Numbers</span>
-                    <span className="setting-description">Show line numbers in the gutter</span>
+                    <span className="setting-description">Display line numbers in the gutter</span>
                   </label>
                   <select
                     value={localSettings.lineNumbers ?? 'on'}
@@ -307,11 +435,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             )}
 
-            {/* Appearance Settings */}
             {activeTab === 'appearance' && (
               <div className="settings-section">
                 <h3>Appearance</h3>
-                
+
                 <div className="setting-group full-width">
                   <label className="setting-label">
                     <span className="setting-name">Theme</span>
@@ -325,78 +452,27 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             )}
 
-            {/* AI Settings */}
             {activeTab === 'ai' && (
               <div className="settings-section">
                 <h3>AI Assistant</h3>
-                
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Active Provider</span>
-                    <span className="setting-description">Primary AI provider for chat and completions</span>
-                  </label>
-                  <select
-                    value={localSettings.activeProvider}
-                    onChange={(e) => updateSetting('activeProvider', e.target.value)}
-                    className="setting-select"
-                  >
-                    <option value="ollama">Ollama (Local)</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="openrouter">OpenRouter</option>
-                  </select>
-                </div>
 
-                <div className="setting-group">
+                <div className="setting-group full-width">
                   <label className="setting-label">
                     <span className="setting-name">Active Model</span>
-                    <span className="setting-description">AI model to use for responses</span>
+                    <span className="setting-description">Choose a provider first, then pick from a cleaner curated model list</span>
                   </label>
-                  <select
-                    value={`${localSettings.activeProvider}:${localSettings.activeModel}`}
-                    onChange={(e) => {
-                      const [provider, ...modelParts] = e.target.value.split(':');
-                      const model = modelParts.join(':');
-                      updateSetting('activeProvider', provider);
-                      updateSetting('activeModel', model);
-                    }}
-                    className="setting-select"
-                  >
-                    <optgroup label="🧠 OpenAI">
-                      <option value="openai:gpt-5.2-2025-12-11">🤖 GPT-5.2 (Latest)</option>
-                      <option value="openai:gpt-5.2">🧠 GPT-5.2 (Flagship)</option>
-                      <option value="openai:gpt-4o">🧠 GPT-4o</option>
-                      <option value="openai:gpt-4o-mini">⚡ GPT-4o Mini</option>
-                    </optgroup>
-                    <optgroup label="🦙 Ollama">
-                      <option value="ollama:deepseek-v3.2:cloud">🚀 DeepSeek v3.2</option>
-                      <option value="ollama:glm-4.7:cloud">🌟 GLM-4.7</option>
-                      <option value="ollama:kimi-k2.5:cloud">🖼️ Kimi K2.5 (256K, vision)</option>
-                      <option value="ollama:devstral-small-2:24b-cloud">⚡ Devstral Small (24B)</option>
-                      <option value="ollama:qwen3-coder:480b-cloud">🧠 Qwen 3 Coder (480B)</option>
-                      <option value="ollama:deepseek-v3.1:671b-cloud">🔍 DeepSeek v3.1 (671B)</option>
-                      <option value="ollama:qwen2.5-coder:7b">⚡ Qwen 2.5 Coder (7B)</option>
-                      <option value="ollama:qwen2.5-coder:32b">🧠 Qwen 2.5 Coder (32B)</option>
-                    </optgroup>
-                    <optgroup label="🎭 Anthropic">
-                      <option value="anthropic:claude-opus-4-6">🧠 Claude Opus 4.6 (Flagship)</option>
-                      <option value="anthropic:claude-opus-4-5-20251101">🧠 Claude Opus 4.5 (Frontier)</option>
-                      <option value="anthropic:claude-opus-4-20250514">🧠 Claude Opus 4</option>
-                      <option value="anthropic:claude-sonnet-4-20250514">🎭 Claude Sonnet 4</option>
-                      <option value="anthropic:claude-3-5-haiku-20241022">⚡ Claude 3.5 Haiku</option>
-                    </optgroup>
-                    <optgroup label="🌐 OpenRouter">
-                      <option value="openrouter:anthropic/claude-sonnet-4-20250514">🎭 Claude Sonnet 4</option>
-                      <option value="openrouter:openai/gpt-4o">🧠 GPT-4o</option>
-                      <option value="openrouter:meta-llama/llama-3.3-70b-instruct">🦙 Llama 3.3 70B</option>
-                    </optgroup>
-                  </select>
+                  {renderModelSelectorControls(
+                    localSettings.activeProvider,
+                    localSettings.activeModel,
+                    handleActiveProviderChange,
+                    handleActiveModelChange
+                  )}
                 </div>
 
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Dual Model Mode</span>
-                    <span className="setting-description">Use fast model for quick tasks, deep model for complex reasoning</span>
+                    <span className="setting-description">Use separate fast and deep models with auto-routing</span>
                   </label>
                   <input
                     type="checkbox"
@@ -409,99 +485,46 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 {localSettings.dualModelEnabled && (
                   <div className="setting-subsection">
                     <h4>Dual Model Configuration</h4>
-                    
+
                     <div className="setting-group">
                       <label className="setting-label">
                         <span className="setting-name">Fast Model</span>
-                        <span className="setting-description">Quick responses and simple tasks</span>
+                        <span className="setting-description">Used for quick edits and lightweight requests</span>
                       </label>
-                      <select
-                        value={`${localSettings.dualModelConfig?.fastModel?.provider || 'openai'}:${localSettings.dualModelConfig?.fastModel?.model || ''}`}
-                        onChange={(e) => {
-                          const [provider, ...modelParts] = e.target.value.split(':');
-                          const model = modelParts.join(':');
-                          const config = { ...localSettings.dualModelConfig };
-                          config.fastModel = { ...config.fastModel, provider, model };
-                          updateSetting('dualModelConfig', config);
-                        }}
-                        className="setting-select"
-                      >
-                        <optgroup label="🧠 OpenAI">
-                          <option value="openai:gpt-5.2-2025-12-11">🤖 GPT-5.2 (Latest)</option>
-                          <option value="openai:gpt-5.2">🧠 GPT-5.2 (Flagship)</option>
-                          <option value="openai:gpt-4o">🧠 GPT-4o</option>
-                          <option value="openai:gpt-4o-mini">⚡ GPT-4o Mini</option>
-                        </optgroup>
-                        <optgroup label="🦙 Ollama">
-                          <option value="ollama:deepseek-v3.2:cloud">🚀 DeepSeek v3.2</option>
-                          <option value="ollama:glm-4.7:cloud">🌟 GLM-4.7</option>
-                          <option value="ollama:kimi-k2.5:cloud">🖼️ Kimi K2.5 (256K, vision)</option>
-                          <option value="ollama:devstral-small-2:24b-cloud">⚡ Devstral Small (24B)</option>
-                          <option value="ollama:qwen3-coder:480b-cloud">🧠 Qwen 3 Coder (480B)</option>
-                          <option value="ollama:deepseek-v3.1:671b-cloud">🔍 DeepSeek v3.1 (671B)</option>
-                          <option value="ollama:qwen2.5-coder:7b">⚡ Qwen 2.5 Coder (7B)</option>
-                        </optgroup>
-                        <optgroup label="🎭 Anthropic">
-                          <option value="anthropic:claude-opus-4-6">🧠 Claude Opus 4.6</option>
-                          <option value="anthropic:claude-opus-4-5-20251101">🧠 Claude Opus 4.5</option>
-                          <option value="anthropic:claude-sonnet-4-20250514">🎭 Claude Sonnet 4</option>
-                          <option value="anthropic:claude-3-5-haiku-20241022">⚡ Claude 3.5 Haiku</option>
-                        </optgroup>
-                      </select>
+                      {renderModelSelectorControls(
+                        getDualModelConfig().fastModel.provider,
+                        getDualModelConfig().fastModel.model,
+                        (provider) => handleDualModelProviderChange('fastModel', provider),
+                        (model) => handleDualModelChange('fastModel', model)
+                      )}
                     </div>
 
                     <div className="setting-group">
                       <label className="setting-label">
                         <span className="setting-name">Deep Model</span>
-                        <span className="setting-description">Complex reasoning and analysis</span>
+                        <span className="setting-description">Used for complex reasoning and larger tasks</span>
                       </label>
-                      <select
-                        value={`${localSettings.dualModelConfig?.deepModel?.provider || 'openai'}:${localSettings.dualModelConfig?.deepModel?.model || ''}`}
-                        onChange={(e) => {
-                          const [provider, ...modelParts] = e.target.value.split(':');
-                          const model = modelParts.join(':');
-                          const config = { ...localSettings.dualModelConfig };
-                          config.deepModel = { ...config.deepModel, provider, model };
-                          updateSetting('dualModelConfig', config);
-                        }}
-                        className="setting-select"
-                      >
-                        <optgroup label="🧠 OpenAI">
-                          <option value="openai:gpt-5.2-2025-12-11">🤖 GPT-5.2 (Latest)</option>
-                          <option value="openai:gpt-5.2">🧠 GPT-5.2 (Flagship)</option>
-                          <option value="openai:gpt-4o">🧠 GPT-4o</option>
-                          <option value="openai:gpt-4o-mini">⚡ GPT-4o Mini</option>
-                        </optgroup>
-                        <optgroup label="🦙 Ollama">
-                          <option value="ollama:deepseek-v3.2:cloud">🚀 DeepSeek v3.2</option>
-                          <option value="ollama:glm-4.7:cloud">🌟 GLM-4.7</option>
-                          <option value="ollama:kimi-k2.5:cloud">🖼️ Kimi K2.5 (256K, vision)</option>
-                          <option value="ollama:devstral-small-2:24b-cloud">⚡ Devstral Small (24B)</option>
-                          <option value="ollama:qwen3-coder:480b-cloud">🧠 Qwen 3 Coder (480B)</option>
-                          <option value="ollama:deepseek-v3.1:671b-cloud">🔍 DeepSeek v3.1 (671B)</option>
-                          <option value="ollama:qwen2.5-coder:32b">🧠 Qwen 2.5 Coder (32B)</option>
-                        </optgroup>
-                        <optgroup label="🎭 Anthropic">
-                          <option value="anthropic:claude-opus-4-6">🧠 Claude Opus 4.6 (Flagship)</option>
-                          <option value="anthropic:claude-opus-4-5-20251101">🧠 Claude Opus 4.5 (Frontier)</option>
-                          <option value="anthropic:claude-opus-4-20250514">🧠 Claude Opus 4</option>
-                          <option value="anthropic:claude-sonnet-4-20250514">🎭 Claude Sonnet 4</option>
-                        </optgroup>
-                      </select>
+                      {renderModelSelectorControls(
+                        getDualModelConfig().deepModel.provider,
+                        getDualModelConfig().deepModel.model,
+                        (provider) => handleDualModelProviderChange('deepModel', provider),
+                        (model) => handleDualModelChange('deepModel', model)
+                      )}
                     </div>
 
                     <div className="setting-group">
                       <label className="setting-label">
-                        <span className="setting-name">Auto-Route</span>
-                        <span className="setting-description">Automatically choose model based on task complexity</span>
+                        <span className="setting-name">Auto Route</span>
+                        <span className="setting-description">Automatically pick fast vs deep model based on task complexity</span>
                       </label>
                       <input
                         type="checkbox"
-                        checked={localSettings.dualModelConfig?.autoRoute || false}
+                        checked={getDualModelConfig().autoRoute}
                         onChange={(e) => {
-                          const config = { ...localSettings.dualModelConfig };
-                          config.autoRoute = e.target.checked;
-                          updateSetting('dualModelConfig', config);
+                          updateSetting('dualModelConfig', {
+                            ...getDualModelConfig(),
+                            autoRoute: e.target.checked
+                          });
                         }}
                         className="setting-checkbox"
                       />
@@ -511,266 +534,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
               </div>
             )}
 
-            {/* Collaboration Settings */}
-            {activeTab === 'collaboration' && (
-              <div className="settings-section">
-                <h3>Collaboration</h3>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Real-time Sync</span>
-                    <span className="setting-description">Enable live collaboration features</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.collaboration?.realTimeSync ?? true}
-                    onChange={(e) => {
-                      const defaultCollab = { enabled: true, autoJoin: false, showPresence: true, realTimeCursors: true };
-                      const collab = { ...defaultCollab, ...localSettings.collaboration, realTimeSync: e.target.checked };
-                      updateSetting('collaboration', collab);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Auto-save Interval</span>
-                    <span className="setting-description">How often to auto-save collaborative changes (seconds)</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="5"
-                    max="300"
-                    value={localSettings.collaboration?.autoSaveInterval ?? 30}
-                    onChange={(e) => {
-                      const defaultCollab = { enabled: true, autoJoin: false, showPresence: true, realTimeCursors: true };
-                      const collab = { ...defaultCollab, ...localSettings.collaboration, autoSaveInterval: parseInt(e.target.value) };
-                      updateSetting('collaboration', collab);
-                    }}
-                    className="setting-input"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Conflict Resolution</span>
-                    <span className="setting-description">How to handle conflicting changes</span>
-                  </label>
-                  <select
-                    value={localSettings.collaboration?.conflictResolution ?? 'manual'}
-                    onChange={(e) => {
-                      const defaultCollab = { enabled: true, autoJoin: false, showPresence: true, realTimeCursors: true };
-                      const collab = { ...defaultCollab, ...localSettings.collaboration, conflictResolution: e.target.value as 'manual' | 'automatic' | 'last-writer-wins' };
-                      updateSetting('collaboration', collab);
-                    }}
-                    className="setting-select"
-                  >
-                    <option value="manual">Manual (ask user)</option>
-                    <option value="automatic">Automatic (smart merge)</option>
-                    <option value="last-writer-wins">Last Writer Wins</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* Plugin Settings */}
-            {activeTab === 'plugins' && (
-              <div className="settings-section">
-                <h3>Plugin System</h3>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Auto-update Plugins</span>
-                    <span className="setting-description">Automatically update plugins to latest versions</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.plugins?.autoUpdate ?? true}
-                    onChange={(e) => {
-                      const defaultPlugins = { enabled: true, autoUpdate: true, trustedSources: [] };
-                      const plugins = { ...defaultPlugins, ...localSettings.plugins, autoUpdate: e.target.checked };
-                      updateSetting('plugins', plugins);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Allow Pre-release</span>
-                    <span className="setting-description">Install beta versions of plugins</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.plugins?.allowPreRelease ?? false}
-                    onChange={(e) => {
-                      const defaultPlugins = { enabled: true, autoUpdate: true, trustedSources: [] };
-                      const plugins = { ...defaultPlugins, ...localSettings.plugins, allowPreRelease: e.target.checked };
-                      updateSetting('plugins', plugins);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Trusted Publishers</span>
-                    <span className="setting-description">Only install plugins from verified publishers</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.plugins?.trustedOnly ?? true}
-                    onChange={(e) => {
-                      const defaultPlugins = { enabled: true, autoUpdate: true, trustedSources: [] };
-                      const plugins = { ...defaultPlugins, ...localSettings.plugins, trustedOnly: e.target.checked };
-                      updateSetting('plugins', plugins);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      // Open plugin marketplace
-                      window.agentAPI.openExternal?.('agentprime://plugins/marketplace');
-                    }}
-                  >
-                    Open Plugin Marketplace
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* System Settings */}
-            {activeTab === 'system' && (
-              <div className="settings-section">
-                <h3>System & Performance</h3>
-
-                <h4>Security</h4>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Auto-Lock Screen</span>
-                    <span className="setting-description">Lock screen after inactivity (Matrix mode)</span>
-                  </label>
-                  <select
-                    value={localSettings.autoLockMinutes ?? 0}
-                    onChange={(e) => updateSetting('autoLockMinutes', parseInt(e.target.value))}
-                    className="setting-select"
-                  >
-                    <option value="0">Disabled</option>
-                    <option value="1">1 minute</option>
-                    <option value="5">5 minutes</option>
-                    <option value="10">10 minutes</option>
-                    <option value="15">15 minutes</option>
-                    <option value="30">30 minutes</option>
-                    <option value="60">1 hour</option>
-                  </select>
-                </div>
-
-                <h4>Performance</h4>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Edge AI Enabled</span>
-                    <span className="setting-description">Use local AI models for better privacy and performance</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.system?.edgeAIEnabled ?? true}
-                    onChange={(e) => {
-                      const defaultSystem = { distributedMode: false, scalingEnabled: false, memoryOptimization: true, performanceMonitoring: true };
-                      const system = { ...defaultSystem, ...localSettings.system, edgeAIEnabled: e.target.checked };
-                      updateSetting('system', system);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Memory Optimization</span>
-                    <span className="setting-description">Enable intelligent caching and memory management</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.system?.memoryOptimization ?? true}
-                    onChange={(e) => {
-                      const defaultSystem = { distributedMode: false, scalingEnabled: false, memoryOptimization: true, performanceMonitoring: true };
-                      const system = { ...defaultSystem, ...localSettings.system, memoryOptimization: e.target.checked };
-                      updateSetting('system', system);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Auto-scaling</span>
-                    <span className="setting-description">Automatically scale resources based on usage</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.system?.autoScaling ?? false}
-                    onChange={(e) => {
-                      const defaultSystem = { distributedMode: false, scalingEnabled: false, memoryOptimization: true, performanceMonitoring: true };
-                      const system = { ...defaultSystem, ...localSettings.system, autoScaling: e.target.checked };
-                      updateSetting('system', system);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <label className="setting-label">
-                    <span className="setting-name">Cloud Sync</span>
-                    <span className="setting-description">Synchronize across devices</span>
-                  </label>
-                  <input
-                    type="checkbox"
-                    checked={localSettings.system?.cloudSync ?? false}
-                    onChange={(e) => {
-                      const defaultSystem = { distributedMode: false, scalingEnabled: false, memoryOptimization: true, performanceMonitoring: true };
-                      const system = { ...defaultSystem, ...localSettings.system, cloudSync: e.target.checked };
-                      updateSetting('system', system);
-                    }}
-                    className="setting-checkbox"
-                  />
-                </div>
-
-                <div className="setting-group">
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => {
-                      // Open system monitor
-                      window.agentAPI.openExternal?.('agentprime://system/monitor');
-                    }}
-                  >
-                    View System Monitor
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Keyboard Shortcuts */}
             {activeTab === 'shortcuts' && (
               <div className="settings-section shortcuts-section">
                 <KeyboardShortcuts embedded={true} />
               </div>
             )}
 
-            {/* Advanced Settings */}
             {activeTab === 'advanced' && (
               <div className="settings-section">
                 <h3>Advanced Settings</h3>
-                
+
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Dual Ollama</span>
-                    <span className="setting-description">Use two Ollama instances for parallel processing</span>
+                    <span className="setting-description">Enable secondary Ollama endpoint support</span>
                   </label>
                   <input
                     type="checkbox"
@@ -783,7 +560,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Developer Mode</span>
-                    <span className="setting-description">Show additional debugging information</span>
+                    <span className="setting-description">Show additional diagnostics and debug output</span>
                   </label>
                   <input
                     type="checkbox"
@@ -796,7 +573,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Telemetry</span>
-                    <span className="setting-description">Send anonymous usage data to help improve AgentPrime</span>
+                    <span className="setting-description">Share anonymous usage metrics to improve AgentPrime</span>
                   </label>
                   <input
                     type="checkbox"
@@ -804,9 +581,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     onChange={async (e) => {
                       const enabled = e.target.checked;
                       updateSetting('telemetryEnabled', enabled);
-                      // Also update telemetry service immediately
                       try {
-                        await window.agentAPI.telemetry.setEnabled(enabled);
+                        await window.agentAPI.telemetry?.setEnabled?.(enabled);
                       } catch (err) {
                         console.error('Failed to update telemetry setting:', err);
                       }
@@ -816,32 +592,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 </div>
 
                 <div className="setting-group">
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      const defaults: Partial<Settings> = {
-                        fontSize: 14,
-                        tabSize: 2,
-                        wordWrap: 'on',
-                        minimap: true,
-                        lineNumbers: 'on',
-                        autoSave: true,
-                        inlineCompletions: true,
-                        dinoBuddyMode: false,
-                        activeProvider: 'openai',
-                        activeModel: 'gpt-4o',
-                        dualOllamaEnabled: false,
-                        dualModelEnabled: false,
-                        useSpecializedAgents: false,
-                        telemetryEnabled: false,
-                        developerMode: false,
-                        confirmOnClose: true,
-                        autoLockMinutes: 0,
-                      };
-                      setLocalSettings(prev => ({ ...prev, ...defaults }));
-                      setHasChanges(true);
-                    }}
-                  >
+                  <button className="btn btn-secondary" onClick={resetAllSettings}>
                     <IconRefresh size="sm" /> Reset All Settings
                   </button>
                 </div>
@@ -849,8 +600,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <h4>About AgentPrime</h4>
                   <div className="about-info">
+                    <p><strong>Profile:</strong> Lean Core IDE</p>
                     <p><strong>Version:</strong> 1.0.0</p>
-                    <p><strong>Electron:</strong> 28.0.0</p>
                     <p><strong>Node:</strong> {typeof process !== 'undefined' ? process.version : 'N/A'}</p>
                   </div>
                 </div>
@@ -862,281 +613,406 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <style>{`
           .settings-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 1000;
+            z-index: 1500;
+            animation: settingsFadeIn 0.15s ease;
           }
-          
+
+          @keyframes settingsFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+
+          @keyframes settingsSlideIn {
+            from { opacity: 0; transform: translateY(8px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+          }
+
           .settings-panel {
-            width: 90%;
-            max-width: 900px;
+            position: relative;
+            width: 92%;
+            max-width: 860px;
             height: 80%;
-            max-height: 700px;
-            background: #0f172a;
-            border-radius: var(--border-radius-lg);
+            max-height: 680px;
+            background: var(--prime-bg);
+            border-radius: 14px;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            border: 1px solid #1e293b;
+            box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--prime-border);
+            animation: settingsSlideIn 0.2s ease;
+            color-scheme: light dark;
           }
-          
+
+          .settings-close-fab {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 2;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 0;
+            border: none;
+            border-radius: 10px;
+            background: var(--prime-surface-hover);
+            color: var(--prime-text-secondary);
+            cursor: pointer;
+            transition: background 0.12s ease, color 0.12s ease;
+          }
+
+          .settings-close-fab:hover {
+            background: var(--prime-border);
+            color: var(--prime-text);
+          }
+
           .settings-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: var(--spacing-md) var(--spacing-lg);
-            border-bottom: 1px solid #1e293b;
-            background: #1e293b;
+            gap: 16px;
+            padding: 18px 56px 16px 24px;
+            border-bottom: 1px solid var(--prime-border);
+            background: var(--prime-surface);
           }
-          
+
           .settings-header h2 {
             display: flex;
             align-items: center;
-            gap: var(--spacing-sm);
+            gap: 10px;
             margin: 0;
-            font-size: 1.1rem;
-            color: #f8fafc;
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--prime-text);
+            letter-spacing: -0.01em;
           }
-          
+
           .settings-header-actions {
             display: flex;
-            gap: var(--spacing-sm);
+            gap: 6px;
           }
-          
+
           .settings-body {
             flex: 1;
             display: flex;
             overflow: hidden;
           }
-          
+
           .settings-tabs {
-            width: 200px;
-            padding: var(--spacing-md);
-            background: #0f172a;
-            border-right: 1px solid #1e293b;
+            width: 190px;
+            padding: 12px;
+            background: var(--prime-surface);
+            border-right: 1px solid var(--prime-border);
             display: flex;
             flex-direction: column;
-            gap: var(--spacing-xs);
+            gap: 2px;
+            flex-shrink: 0;
           }
-          
+
           .settings-tab {
             display: flex;
             align-items: center;
-            gap: var(--spacing-sm);
-            padding: var(--spacing-sm) var(--spacing-md);
-            background: none;
+            gap: 10px;
+            padding: 9px 14px;
+            background: transparent;
             border: none;
-            border-radius: var(--border-radius);
-            color: #94a3b8;
-            font-size: 0.85rem;
+            border-radius: 8px;
+            color: var(--prime-text-secondary);
+            font-size: 13px;
+            font-weight: 500;
             text-align: left;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: all 0.12s ease;
           }
-          
+
           .settings-tab:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #e2e8f0;
+            background: var(--prime-surface-hover);
+            color: var(--prime-text);
           }
-          
+
           .settings-tab.active {
-            background: #3b82f6;
-            color: white;
+            background: var(--prime-accent);
+            color: #ffffff;
+            font-weight: 600;
           }
-          
+
           .settings-content {
             flex: 1;
-            padding: var(--spacing-lg);
+            min-height: 0;
+            padding: 28px 32px;
             overflow-y: auto;
-            background: #0f172a;
+            background: var(--prime-bg);
           }
-          
+
+          .settings-content--shortcuts {
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+          }
+
           .settings-section {
-            max-width: 600px;
+            max-width: 560px;
+            background: transparent;
+            padding: 0;
+            border: none;
           }
-          
+
+          .settings-section * {
+            cursor: auto;
+          }
+
+          .settings-panel button,
+          .settings-panel .settings-tab,
+          .settings-panel .setting-checkbox,
+          .settings-panel .setting-select,
+          .settings-panel label.setting-label {
+            cursor: pointer;
+          }
+
           .settings-section h3 {
-            margin: 0 0 var(--spacing-lg) 0;
-            padding-bottom: var(--spacing-sm);
-            border-bottom: 1px solid #334155;
-            font-size: 1rem;
-            color: #f1f5f9;
+            margin: 0 0 20px 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--prime-border);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--prime-text);
+            letter-spacing: -0.01em;
           }
-          
+
           .settings-section h4 {
-            margin: var(--spacing-lg) 0 var(--spacing-md) 0;
-            font-size: 0.85rem;
-            color: #94a3b8;
+            margin: 20px 0 14px 0;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--prime-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
           }
-          
+
           .setting-group {
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
-            gap: var(--spacing-md);
-            padding: var(--spacing-md) 0;
-            border-bottom: 1px solid #1e293b;
+            gap: 16px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--prime-border-light, var(--prime-border));
           }
-          
+
+          .setting-group:last-child {
+            border-bottom: none;
+          }
+
           .setting-group.full-width {
             flex-direction: column;
           }
-          
+
           .setting-label {
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 3px;
           }
-          
+
           .setting-name {
-            font-weight: 500;
-            color: #e2e8f0;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--prime-text);
           }
-          
+
           .setting-description {
-            font-size: 0.75rem;
-            color: #94a3b8;
+            font-size: 12px;
+            color: var(--prime-text-muted);
+            line-height: 1.4;
           }
-          
+
           .setting-checkbox {
-            width: 18px;
-            height: 18px;
-            accent-color: #3b82f6;
+            width: 16px;
+            height: 16px;
+            accent-color: var(--prime-accent);
             cursor: pointer;
+            margin-top: 2px;
           }
-          
+
           .setting-select {
-            padding: var(--spacing-xs) var(--spacing-sm);
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: var(--border-radius-sm);
-            color: #e2e8f0;
-            font-size: 0.85rem;
-            min-width: 150px;
+            padding: 7px 12px;
+            background: var(--prime-surface);
+            border: 1px solid var(--prime-border);
+            border-radius: 8px;
+            color: var(--prime-text);
+            font-size: 13px;
+            font-family: inherit;
+            min-width: 180px;
+            cursor: pointer;
+            transition: border-color 0.12s ease;
           }
-          
+
+          .setting-select--wide {
+            min-width: 0;
+            width: 100%;
+          }
+
           .setting-select:focus {
-            border-color: #3b82f6;
+            border-color: var(--prime-accent);
             outline: none;
+            box-shadow: 0 0 0 2px var(--prime-accent-glow);
           }
-          
-          .setting-input {
-            padding: var(--spacing-xs) var(--spacing-sm);
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: var(--border-radius-sm);
-            color: #e2e8f0;
-            font-size: 0.85rem;
-            min-width: 200px;
+
+          .setting-select option {
+            background: var(--prime-surface);
+            color: var(--prime-text);
           }
-          
-          .setting-input:focus {
-            border-color: #3b82f6;
-            outline: none;
+
+          .setting-model-stack {
+            min-width: 280px;
+            width: min(100%, 360px);
+            display: grid;
+            gap: 8px;
           }
-          
+
+          .setting-model-row {
+            display: grid;
+            gap: 8px;
+          }
+
+          .setting-model-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--prime-text-muted);
+            line-height: 1.4;
+          }
+
+          .setting-model-badge {
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--prime-accent-light);
+            color: var(--prime-accent);
+            font-weight: 700;
+          }
+
+          .setting-model-current {
+            color: var(--prime-text);
+            font-weight: 600;
+          }
+
           .setting-input-group {
             display: flex;
             align-items: center;
-            gap: var(--spacing-sm);
+            gap: 12px;
           }
-          
+
           .setting-range {
-            width: 150px;
-            accent-color: #3b82f6;
+            width: 140px;
+            accent-color: var(--prime-accent);
           }
-          
+
           .setting-value {
-            min-width: 50px;
+            min-width: 44px;
             text-align: right;
-            font-family: var(--font-mono);
-            font-size: 0.8rem;
-            color: #60a5fa;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--prime-accent);
           }
-          
+
           .setting-subsection {
-            margin-top: var(--spacing-md);
-            padding: var(--spacing-md);
-            background: #1e293b;
-            border-radius: var(--border-radius);
-            border: 1px solid #334155;
+            margin-top: 14px;
+            padding: 16px;
+            background: var(--prime-surface);
+            border-radius: 10px;
+            border: 1px solid var(--prime-border);
           }
-          
+
           .setting-subsection h4 {
-            margin: 0 0 var(--spacing-md) 0;
-            color: #60a5fa;
+            margin: 0 0 14px 0;
+            color: var(--prime-accent);
+            text-transform: none;
+            letter-spacing: normal;
+            font-size: 13px;
+            font-weight: 600;
           }
-          
+
           .shortcuts-section {
             max-width: none;
-            height: 100%;
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
           }
-          
+
           .about-info {
-            padding: var(--spacing-md);
-            background: #1e293b;
-            border-radius: var(--border-radius);
-            border: 1px solid #334155;
+            padding: 14px;
+            background: var(--prime-surface);
+            border-radius: 10px;
+            border: 1px solid var(--prime-border);
           }
-          
+
           .about-info p {
-            margin: var(--spacing-xs) 0;
-            font-size: 0.8rem;
-            color: #cbd5e1;
+            margin: 4px 0;
+            font-size: 12px;
+            color: var(--prime-text-secondary);
           }
-          
+
+          .about-info strong {
+            color: var(--prime-text);
+          }
+
           .btn {
             display: inline-flex;
             align-items: center;
-            gap: var(--spacing-xs);
-            padding: var(--spacing-sm) var(--spacing-md);
+            gap: 6px;
+            padding: 8px 14px;
             border: none;
-            border-radius: var(--border-radius);
-            font-size: 0.85rem;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.15s;
+            transition: all 0.12s ease;
           }
-          
+
           .btn-primary {
-            background: #3b82f6;
-            color: white;
+            background: var(--prime-accent);
+            color: #ffffff;
           }
-          
+
           .btn-primary:hover {
-            background: #2563eb;
+            background: var(--prime-accent-hover);
           }
-          
+
           .btn-secondary {
-            background: #334155;
-            color: #e2e8f0;
-            border: 1px solid #475569;
+            background: var(--prime-surface-hover);
+            color: var(--prime-text);
+            border: 1px solid var(--prime-border);
           }
-          
+
           .btn-secondary:hover {
-            background: #475569;
+            border-color: var(--prime-text-muted);
           }
-          
+
           .btn-ghost {
             background: transparent;
-            color: #94a3b8;
+            color: var(--prime-text-secondary);
           }
-          
+
           .btn-ghost:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #e2e8f0;
+            background: var(--prime-surface-hover);
+            color: var(--prime-text);
           }
-          
+
           .btn-sm {
-            padding: var(--spacing-xs) var(--spacing-sm);
-            font-size: 0.8rem;
+            padding: 6px 10px;
+            font-size: 12px;
           }
         `}</style>
       </div>

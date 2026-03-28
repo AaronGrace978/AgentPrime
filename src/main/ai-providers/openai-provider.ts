@@ -98,13 +98,14 @@ export class OpenAIProvider extends BaseProvider {
       console.error('OpenAI getModels error:', e.message);
       // Return default models
       return [
-        { id: 'gpt-5.2-2025-12-11', name: 'GPT-5.2 (Latest - Ultra Advanced)', provider: 'openai' },
-        { id: 'gpt-5.2', name: 'GPT-5.2 (Flagship)', provider: 'openai' },
-        { id: 'gpt-4o', name: 'GPT-4o (Recommended)', provider: 'openai' },
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Cheap)', provider: 'openai' },
-        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', provider: 'openai' },
-        { id: 'gpt-4', name: 'GPT-4', provider: 'openai' },
-        { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', provider: 'openai' }
+        { id: 'gpt-5.4', name: 'GPT-5.4 (Frontier Default)', provider: 'openai' },
+        { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini (Fast Coding)', provider: 'openai' },
+        { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano (Lightweight)', provider: 'openai' },
+        { id: 'gpt-5.3-instant', name: 'GPT-5.3 Instant (Low Latency)', provider: 'openai' },
+        { id: 'gpt-5.2-2025-12-11', name: 'GPT-5.2 (Previous Pinned)', provider: 'openai' },
+        { id: 'gpt-5.2', name: 'GPT-5.2 (Previous Alias)', provider: 'openai' },
+        { id: 'gpt-4o', name: 'GPT-4o (Balanced)', provider: 'openai' },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Legacy Fast)', provider: 'openai' }
       ];
     }
   }
@@ -133,7 +134,7 @@ export class OpenAIProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'gpt-4o') as string;
+    const model = (options.model || this.config.model || 'gpt-5.4') as string;
 
     // Check if this is GPT-5.x which uses the new /responses API
     const isGPT5 = model.startsWith('gpt-5');
@@ -201,7 +202,7 @@ export class OpenAIProvider extends BaseProvider {
       throw new Error('API key not configured');
     }
 
-    const model = (options.model || this.config.model || 'gpt-4o') as string;
+    const model = (options.model || this.config.model || 'gpt-5.4') as string;
     const isGPT5 = model.startsWith('gpt-5');
 
     try {

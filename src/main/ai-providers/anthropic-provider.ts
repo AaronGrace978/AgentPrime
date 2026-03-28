@@ -32,15 +32,16 @@ export class AnthropicProvider extends BaseProvider {
 
   async getModels(): Promise<ModelInfo[]> {
     // Anthropic doesn't have a models endpoint, return known models
-    // Full access: Opus 4.6, 4.5, 4 + Sonnet 4 + Haiku
+    // Current lineup: Opus 4.6 / Sonnet 4.6 / Haiku 4.5 plus older still-supported models
     return [
-      // Opus tier (flagship) - locked in
       { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 (Flagship)', provider: 'anthropic', contextLength: 200000 },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (Best Default)', provider: 'anthropic', contextLength: 200000 },
+      { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5 (Fastest)', provider: 'anthropic', contextLength: 200000 },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5 (Alias)', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5 (Frontier)', provider: 'anthropic', contextLength: 200000 },
+      { id: 'claude-sonnet-4-5-20250929', name: 'Claude Sonnet 4.5', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-opus-4-20250514', name: 'Claude Opus 4 (Legacy)', provider: 'anthropic', contextLength: 200000 },
-      // Sonnet
-      { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4 (Latest & Best)', provider: 'anthropic', contextLength: 200000 },
-      // Fast models
+      { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku (Fast)', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-3-5-haiku-latest', name: 'Claude 3.5 Haiku Latest', provider: 'anthropic', contextLength: 200000 }
@@ -77,7 +78,7 @@ export class AnthropicProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'claude-sonnet-4-20250514') as string;
+    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
     const { systemMessage, userMessages } = this.formatMessages(messages);
 
     // Ensure messages array is valid for Anthropic API
@@ -180,7 +181,7 @@ export class AnthropicProvider extends BaseProvider {
       throw new Error('API key not configured')
     }
 
-    const model = (options.model || this.config.model || 'claude-sonnet-4-20250514') as string;
+    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
     const { systemMessage, userMessages } = this.formatMessages(messages);
 
     // Claude models can output much more - use model-specific limits
@@ -290,7 +291,7 @@ export class AnthropicProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = options.model || this.config.model || 'claude-sonnet-4-20250514';
+    const model = options.model || this.config.model || 'claude-sonnet-4-6';
     const mediaType = options.mediaType || 'image/png';
     const maxTokens = options.maxTokens || 4096;
 

@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import axios from 'axios';
 import type { Settings } from '../types';
+import { getTheme, getTitleBarOverlay, type ThemeId } from '../renderer/themes';
 
 // ============================================================================
 // GLOBAL ERROR HANDLERS - Prevent silent crashes
@@ -116,7 +117,7 @@ import { initializeTelemetry, getTelemetryService } from './core/telemetry-servi
 import { initializeAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getAppVersion } from './core/auto-updater';
 
 // Import Inference Server (shared AI for VibeHub projects)
-import { startInferenceServer, stopInferenceServer, getInferenceEnvVars, getInferenceServer } from './inference-server';
+import { getInferenceEnvVars, getInferenceServer } from './inference-server';
 
 // Import ActivatePrime Integration (Cursor-like AI assistance)
 import { ActivatePrimeIntegration } from './modules/activateprime';
@@ -305,8 +306,8 @@ let settings: Settings = {
   inlineCompletions: true,
   dinoBuddyMode: false,
   confirmOnClose: true,  // Prevent accidental closes (can be disabled in settings)
-  activeProvider: 'openai',  // OpenAI - MIT Hackathon optimized (OpenAI-sponsored!)
-  activeModel: 'gpt-4o',  // GPT-4o - Best balance of quality and speed
+  activeProvider: 'openai',
+  activeModel: 'gpt-5.4',
   dualOllamaEnabled: false,
   
   // Dual Model System - OpenAI optimized for MIT hackathon
@@ -314,12 +315,12 @@ let settings: Settings = {
   dualModelConfig: {
     fastModel: {
       provider: 'openai',
-      model: 'gpt-4o-mini',
+      model: 'gpt-5.4-mini',
       enabled: true
     },
     deepModel: {
-      provider: 'openai',
-      model: 'gpt-4o',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-6',
       enabled: true
     },
     autoRoute: true,
@@ -341,11 +342,11 @@ let settings: Settings = {
     },
     anthropic: {
       apiKey: ANTHROPIC_API_KEY,  // Hard-wired
-      model: 'claude-sonnet-4-20250514'
+      model: 'claude-sonnet-4-6'
     },
     openai: {
       apiKey: OPENAI_API_KEY,  // Hard-wired
-      model: 'gpt-4o'
+      model: 'gpt-5.4'
     },
     openrouter: {
       apiKey: OPENROUTER_API_KEY,  // Hard-wired (or from env)
@@ -625,20 +626,38 @@ function saveSettings(): void {
   }
 }
 
+function resolveThemeIdFromSettings(): ThemeId {
+  if (settings.themeId) {
+    return settings.themeId as ThemeId;
+  }
+  if (settings.theme === 'vs' || settings.theme === 'light') {
+    return 'light';
+  }
+  return 'dark';
+}
+
+function syncMainWindowTitleBar(): void {
+  if (!mainWindow || process.platform === 'darwin') return;
+  try {
+    const overlay = getTitleBarOverlay(getTheme(resolveThemeIdFromSettings()));
+    mainWindow.setTitleBarOverlay(overlay);
+    mainWindow.setBackgroundColor(overlay.color);
+  } catch (e) {
+    console.warn('[Main] Title bar sync failed:', e);
+  }
+}
+
 // Create window
 function createWindow(): void {
+  const initialTitleBar = getTitleBarOverlay(getTheme(resolveThemeIdFromSettings()));
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 600,
-    backgroundColor: '#0d1117',
+    backgroundColor: initialTitleBar.color,
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#0d1117',
-      symbolColor: '#e6edf3',
-      height: 32
-    },
+    titleBarOverlay: initialTitleBar,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -651,14 +670,13 @@ function createWindow(): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
+        'Content-Security-Policy':
           "default-src 'self'; " +
           "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: https:; " +
           "font-src 'self' data:; " +
           "connect-src 'self' http://localhost:* http://127.0.0.1:* https://api.anthropic.com https://api.openai.com https://openrouter.ai https://*.ollama.com ws://localhost:* wss://localhost:*"
-        ]
       }
     });
   });
@@ -676,7 +694,10 @@ function createWindow(): void {
     // Prevent close and show confirmation
     event.preventDefault();
     
-    dialog.showMessageBox(mainWindow, {
+    if (!mainWindow) {
+      return;
+    }
+    const response = dialog.showMessageBoxSync(mainWindow, {
       type: 'question',
       buttons: ['Close', 'Cancel'],
       defaultId: 1,
@@ -684,12 +705,11 @@ function createWindow(): void {
       title: 'Confirm Close',
       message: 'Are you sure you want to close AgentPrime?',
       detail: 'Any unsaved work may be lost.'
-    }).then(({ response }) => {
-      if (response === 0) { // 'Close' button
-        isClosingConfirmed = true;
-        mainWindow?.close();
-      }
     });
+    if (response === 0) { // 'Close' button
+      isClosingConfirmed = true;
+      mainWindow?.close();
+    }
   });
 
   // In production, load from dist/renderer; in dev, use original location
@@ -854,10 +874,16 @@ app.whenReady().then(async () => {
     }
   };
   
-  // Load mirror system in background after a delay (non-blocking)
-  setTimeout(() => {
-    loadMirrorSystem();
-  }, 1000); // Wait 1 second after startup
+  // Load mirror system only when explicitly enabled.
+  // Lean core profile keeps this off by default to reduce startup cost.
+  const mirrorEnabled = process.env.AGENTPRIME_ENABLE_MIRROR === 'true';
+  if (mirrorEnabled) {
+    setTimeout(() => {
+      loadMirrorSystem();
+    }, 1000); // Wait 1 second after startup
+  } else {
+    console.log('[Main] 🧹 Mirror system disabled (set AGENTPRIME_ENABLE_MIRROR=true to enable)');
+  }
 
   // Register IPC handlers
   registerAllHandlers({
@@ -942,157 +968,10 @@ app.whenReady().then(async () => {
   // Initialize auto-updater (only in production)
   initializeAutoUpdater(mainWindow);
   
-  // Start the inference server for VibeHub shared AI
-  // This allows any project launched from VibeHub to use AgentPrime's AI providers
-  try {
-    const inferencePort = await startInferenceServer();
-    console.log(`[Main] 🧠 Inference server started on port ${inferencePort}`);
-    console.log(`[Main] 🧠 Projects can use AI via OPENAI_API_BASE=http://127.0.0.1:${inferencePort}/v1`);
-  } catch (error) {
-    console.warn('[Main] ⚠️ Inference server failed to start:', error);
-    // Non-fatal - app continues without shared inference
-  }
-  
-  // ═══════════════════════════════════════════════════════════════════════════
-  // MATRIX BUDDY DESKTOP BACKEND — Auto-initialize Matrix Mode
-  // Browser, scheduler, automation, nodes — all start at boot.
-  // This gives Matrix Buddy its own Chrome, its own cron, its own hands.
-  // ═══════════════════════════════════════════════════════════════════════════
-  setTimeout(async () => {
-    try {
-      const { initializeMatrixMode, getMatrixMode } = await import('./matrix-mode');
-      const { validateAction } = await import('./core/guardian');
-      
-      console.log('[Main] 🦖 Starting Matrix Buddy Desktop Backend...');
-      
-      const matrixInstance = await initializeMatrixMode({
-        memory: { enabled: true },
-        scheduler: { enabled: true },
-        agents: { enabled: true },
-        gateway: { enabled: false }, // Don't auto-start gateway (user opts in)
-        browser: { enabled: true, headless: true },
-        voice: { enabled: false },   // Don't auto-start voice (user opts in)
-        canvas: { enabled: true },
-        integrations: { enabled: true },
-        automation: { enabled: true },
-        nodes: { enabled: true }
-      });
-      
-      // ─── Wire the scheduler executor ───────────────────────────────
-      // When a scheduled task fires, it needs to actually DO something.
-      // Route task actions through the system executor + Guardian.
-      if (matrixInstance.scheduler) {
-        matrixInstance.scheduler.setTaskExecutor(async (task: any) => {
-          const action = task.action;
-          if (!action) return { executed: false, error: 'No action defined' };
-          
-          console.log(`[DesktopBackend] Executing scheduled task: ${task.name} (${action.type})`);
-          
-          if (action.type === 'command' && action.command) {
-            // Validate through Guardian before executing
-            const verdict = validateAction('run_command', { command: action.command });
-            if (!verdict.allowed) {
-              console.warn(`[DesktopBackend] Guardian blocked scheduled command: ${verdict.reason}`);
-              return { executed: false, error: verdict.reason };
-            }
-            const { exec } = await import('child_process');
-            const { promisify } = await import('util');
-            const execAsync = promisify(exec);
-            const result = await execAsync(action.command, { timeout: 30000 });
-            return { executed: true, stdout: result.stdout, stderr: result.stderr };
-          }
-          
-          if (action.type === 'message' && action.message) {
-            // Log the message (could be wired to channels later)
-            console.log(`[DesktopBackend] Scheduled message: ${action.message}`);
-            return { executed: true, message: action.message };
-          }
-          
-          if (action.type === 'webhook' && action.url) {
-            const verdict = validateAction('open_url', { url: action.url });
-            if (!verdict.allowed) {
-              return { executed: false, error: verdict.reason };
-            }
-            const http = await import('http');
-            const https = await import('https');
-            const client = action.url.startsWith('https') ? https : http;
-            return new Promise((resolve) => {
-              const req = client.request(action.url, { method: action.method || 'POST' }, (res: any) => {
-                resolve({ executed: true, status: res.statusCode });
-              });
-              req.on('error', (e: any) => resolve({ executed: false, error: e.message }));
-              if (action.body) req.write(JSON.stringify(action.body));
-              req.end();
-            });
-          }
-          
-          if (action.type === 'workflow' && action.workflowId && matrixInstance.automation) {
-            const execution = await matrixInstance.automation.executeWorkflow(action.workflowId);
-            return { executed: true, workflowStatus: execution.status };
-          }
-          
-          return { executed: true };
-        });
-        console.log('[Main] 🦖 Scheduler executor wired — background tasks can run');
-      }
-      
-      // ─── Auto-start browser with dedicated profile ─────────────────
-      if (matrixInstance.browser) {
-        try {
-          const browser = matrixInstance.browser as any;
-          if (typeof browser.createProfile === 'function') {
-            // Only create if profile doesn't already exist
-            const existing = typeof browser.getStatus === 'function' && browser.getStatus('matrix-buddy');
-            if (!existing) {
-              await browser.createProfile('matrix-buddy');
-            }
-          }
-          console.log('[Main] 🦖 Browser controller ready (matrix-buddy profile)');
-        } catch (browserErr) {
-          // Non-fatal — browser starts on first use
-          console.log('[Main] 🦖 Browser controller ready (default profile)');
-        }
-      }
-      
-      console.log('[Main] 🦖 Matrix Buddy Desktop Backend initialized');
-      console.log('[Main] 🦖 Subsystems:', {
-        memory: '✅',
-        scheduler: matrixInstance.scheduler ? '✅' : '❌',
-        browser: matrixInstance.browser ? '✅' : '❌',
-        automation: matrixInstance.automation ? '✅' : '❌',
-        nodes: matrixInstance.nodes ? '✅' : '❌',
-        canvas: matrixInstance.canvas ? '✅' : '❌',
-        integrations: matrixInstance.integrations ? '✅' : '❌'
-      });
-      
-    } catch (error: any) {
-      console.warn('[Main] ⚠️ Matrix Buddy Desktop Backend init failed:', error.message);
-      console.warn('[Main] Matrix Agent will lazy-init on first use (fallback)');
-      // Non-fatal — matrix-agent.ts still has its own lazy init
-    }
-  }, 3000); // Delay 3s after window creation so UI loads first
+  // Lean profile: non-core background services remain opt-in and are not auto-started.
 });
 
 app.on('before-quit', async () => {
-  // Shutdown Matrix Buddy Desktop Backend
-  try {
-    const { shutdownMatrixMode, isMatrixModeInitialized } = await import('./matrix-mode');
-    if (isMatrixModeInitialized()) {
-      await shutdownMatrixMode();
-      console.log('[Main] 🦖 Matrix Buddy Desktop Backend shut down');
-    }
-  } catch (e) {
-    console.warn('[Main] Error shutting down Matrix Mode:', e);
-  }
-  
-  // Stop inference server
-  try {
-    await stopInferenceServer();
-    console.log('[Main] Inference server stopped');
-  } catch (e) {
-    console.warn('[Main] Error stopping inference server:', e);
-  }
-  
   // Shutdown telemetry (flushes pending events)
   try {
     const telemetryService = getTelemetryService();
@@ -1123,6 +1002,24 @@ ipcMain.handle('get-settings', () => {
   return settings;
 });
 
+ipcMain.handle(
+  'set-title-bar-overlay',
+  (_event, options: { color: string; symbolColor: string; height?: number }) => {
+    if (!mainWindow || process.platform === 'darwin') return;
+    try {
+      const overlay = {
+        color: options.color,
+        symbolColor: options.symbolColor,
+        height: options.height ?? 32
+      };
+      mainWindow.setTitleBarOverlay(overlay);
+      mainWindow.setBackgroundColor(overlay.color);
+    } catch (e) {
+      console.warn('[Main] set-title-bar-overlay failed:', e);
+    }
+  }
+);
+
 ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
   // Deep merge for nested objects
   if (newSettings.dualModelConfig && settings.dualModelConfig) {
@@ -1150,8 +1047,9 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
   settings = { ...settings, ...newSettings };
   saveSettings();
 
-  if (newSettings.theme && mainWindow) {
-    mainWindow.webContents.send('theme-changed', newSettings.theme);
+  if (mainWindow && (newSettings.themeId !== undefined || newSettings.theme !== undefined)) {
+    mainWindow.webContents.send('theme-changed', resolveThemeIdFromSettings());
+    syncMainWindowTitleBar();
   }
 
   // Reinitialize AI providers when provider settings OR dual model settings change
@@ -1268,9 +1166,11 @@ ipcMain.handle('open-external', async (event, url: string) => {
 ipcMain.handle('inference:status', () => {
   try {
     const server = getInferenceServer();
+    const stats = server.getStats();
+    const { running: _running, ...restStats } = stats as Record<string, any>;
     return {
       running: server.isRunning(),
-      ...server.getStats(),
+      ...restStats,
       envVars: getInferenceEnvVars()
     };
   } catch (error: any) {
