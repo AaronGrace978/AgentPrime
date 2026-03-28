@@ -15,9 +15,24 @@ import https from 'https';
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const CONFIG_FILE = path.join(os.homedir(), '.agentprime', 'config.json');
 const SESSION_DIR = path.join(os.homedir(), '.agentprime', 'sessions');
 const WORKSPACE = process.cwd();
+
+function resolveAnthropicApiKey(): string {
+  const envKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+  if (envKey) return envKey;
+
+  try {
+    if (!fs.existsSync(CONFIG_FILE)) return '';
+    const configRaw = fs.readFileSync(CONFIG_FILE, 'utf-8');
+    const config = JSON.parse(configRaw);
+    const configKey = (config?.ai?.apiKey || '').trim();
+    return configKey;
+  } catch {
+    return '';
+  }
+}
 
 interface AgentOptions {
   message: string;
@@ -841,6 +856,12 @@ async function callClaude(
   onText: (text: string) => void
 ): Promise<{ text: string; toolCalls: any[]; stopReason: string }> {
   return new Promise((resolve, reject) => {
+    const anthropicApiKey = resolveAnthropicApiKey();
+    if (!anthropicApiKey) {
+      reject(new Error('Missing Anthropic API key. Set ANTHROPIC_API_KEY or run "agentprime onboard" to configure one.'));
+      return;
+    }
+
     const body = JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 8192,
@@ -898,7 +919,7 @@ BE PROACTIVE:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
+        'x-api-key': anthropicApiKey,
         'anthropic-version': '2023-06-01',
         'Content-Length': Buffer.byteLength(body)
       }

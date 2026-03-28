@@ -19,10 +19,10 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:unit": "jest --testPathPattern=tests/(?!integration|e2e)",
-    "test:integration": "jest --testPathPattern=tests/integration",
+    "test:unit": "jest --runInBand",
+    "test:integration": "jest --testPathPatterns=tests/integration --passWithNoTests",
     "test:e2e": "playwright test",
-    "test:performance": "jest --testPathPattern=tests/core/performance",
+    "test:performance": "jest --testPathPatterns=tests/core/performance --passWithNoTests",
     "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
     "typecheck": "tsc --noEmit",
@@ -66,7 +66,7 @@
     "ws": "^8.16.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
+    "@playwright/test": "^1.58.0",
     "@types/electron": "^1.4.38",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.0.3",

@@ -23,6 +23,7 @@ export class TimeoutError extends Error {
  * Model size categories for adaptive timeouts
  */
 export type ModelSize = 'tiny' | 'small' | 'medium' | 'large' | 'xlarge' | 'cloud';
+type OperationType = 'chat' | 'completion' | 'analysis' | 'complex' | 'project';
 
 /**
  * Detect model size from model name for adaptive timeouts
@@ -62,7 +63,7 @@ function getModelTimeoutMultiplier(modelSize: ModelSize): number {
     medium: 1.5,
     large: 3,
     xlarge: 6,    // 671B models need 6x timeout
-    cloud: 10     // Cloud models get 10x timeout - they are PRIORITIZED
+    cloud: 4      // Cloud models need extra headroom, but should fail over promptly
   };
   return multipliers[modelSize];
 }
@@ -108,6 +109,18 @@ const BASE_TIMEOUTS = {
 };
 
 /**
+ * Hard caps prevent runaway adaptive timeouts (e.g. 30+ minute cloud waits).
+ * Goal: fail faster so smart fallback can try the next model sooner.
+ */
+const MAX_TIMEOUTS: Record<OperationType, number> = {
+  chat: 120000,       // 2 minutes
+  completion: 15000,  // 15 seconds
+  analysis: 180000,   // 3 minutes
+  complex: 240000,    // 4 minutes
+  project: 420000     // 7 minutes
+};
+
+/**
  * Wrap AI operations with ADAPTIVE timeouts based on model size
  * @param aiPromise AI operation promise
  * @param operationType Type of operation for timeout selection
@@ -116,7 +129,7 @@ const BASE_TIMEOUTS = {
  */
 export async function withAITimeout<T>(
   aiPromise: Promise<T>,
-  operationType: 'chat' | 'completion' | 'analysis' | 'complex' | 'project' = 'chat',
+  operationType: OperationType = 'chat',
   modelName?: string
 ): Promise<T> {
   const baseTimeout = BASE_TIMEOUTS[operationType];
@@ -124,10 +137,16 @@ export async function withAITimeout<T>(
   // Calculate adaptive timeout based on model size
   const modelSize = modelName ? detectModelSize(modelName) : 'medium';
   const multiplier = getModelTimeoutMultiplier(modelSize);
-  const timeout = Math.round(baseTimeout * multiplier);
+  const adaptiveTimeout = Math.round(baseTimeout * multiplier);
+  const timeout = Math.min(adaptiveTimeout, MAX_TIMEOUTS[operationType]);
   
   const errorMsg = `${operationType} operation timed out after ${Math.round(timeout/1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}). Falling back to faster model...`;
 
+  if (timeout < adaptiveTimeout) {
+    console.log(
+      `[Timeout] ${operationType} timeout capped from ${Math.round(adaptiveTimeout / 1000)}s to ${Math.round(timeout / 1000)}s for ${modelSize} model`
+    );
+  }
   console.log(`[Timeout] ${operationType} timeout set to ${Math.round(timeout/1000)}s for ${modelSize} model`);
   
   return withTimeout(aiPromise, timeout, errorMsg);
@@ -250,7 +269,7 @@ export async function withRetry<T>(
  */
 export async function withAITimeoutAndRetry<T>(
   aiOperation: () => Promise<T>,
-  operationType: 'chat' | 'completion' | 'analysis' | 'complex' | 'project' = 'chat',
+  operationType: OperationType = 'chat',
   modelName?: string,
   maxRetries: number = 1
 ): Promise<T> {
@@ -269,9 +288,16 @@ export async function withSmartFallback<T>(
   operation: (provider: string, model: string) => Promise<T>,
   primaryProvider: string,
   primaryModel: string,
-  operationType: 'chat' | 'completion' | 'analysis' | 'complex' | 'project' = 'chat'
+  operationType: OperationType = 'chat'
 ): Promise<RetryResult<T>> {
   let attempts = 0;
+
+  const primaryModelSize = detectModelSize(primaryModel);
+  // For cloud models on long-running operations, skip retry to fail over faster.
+  const primaryRetries =
+    primaryModelSize === 'cloud' && (operationType === 'analysis' || operationType === 'complex' || operationType === 'project')
+      ? 0
+      : 1;
   
   // Try primary model first
   try {
@@ -281,7 +307,7 @@ export async function withSmartFallback<T>(
       () => operation(primaryProvider, primaryModel),
       operationType,
       primaryModel,
-      1 // Only 1 retry on primary
+      primaryRetries
     );
     return { result, usedFallback: false, finalModel: primaryModel, attempts };
   } catch (primaryError) {

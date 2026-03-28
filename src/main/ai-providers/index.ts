@@ -528,6 +528,73 @@ class AIProviderRouter {
   }
 
   /**
+   * Check whether a model id is likely compatible with a provider.
+   * Uses lightweight heuristics to avoid sending provider-specific models
+   * (e.g. claude-* to Ollama fallback).
+   */
+  private isModelCompatibleWithProvider(providerName: string, model: string): boolean {
+    const normalizedProvider = providerName.toLowerCase();
+    const normalizedModel = model.toLowerCase().trim();
+
+    if (!normalizedModel) return false;
+
+    switch (normalizedProvider) {
+      case 'anthropic':
+        return normalizedModel.startsWith('claude-');
+      case 'openai':
+        return normalizedModel.startsWith('gpt-') ||
+               normalizedModel.startsWith('o1') ||
+               normalizedModel.startsWith('o3') ||
+               normalizedModel.startsWith('o4') ||
+               normalizedModel.startsWith('text-');
+      case 'openrouter':
+        return normalizedModel.includes('/');
+      case 'ollama':
+        // Ollama model ids are typically local names (llama3.2, qwen2.5-coder:7b, *:cloud),
+        // and should not look like hosted-provider ids.
+        return !normalizedModel.startsWith('claude-') &&
+               !normalizedModel.startsWith('gpt-') &&
+               !normalizedModel.startsWith('openai/') &&
+               !normalizedModel.startsWith('anthropic/') &&
+               !normalizedModel.includes('/');
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Build safe chat options for fallback calls.
+   * Keeps model override only if it is compatible with fallback provider.
+   */
+  private buildFallbackOptions(fallbackProviderName: string, options: ChatOptions): ChatOptions {
+    const requestedModel = (options.model || this.activeModel || undefined) as string | undefined;
+
+    if (requestedModel && this.isModelCompatibleWithProvider(fallbackProviderName, requestedModel)) {
+      return options;
+    }
+
+    const fallbackConfigModel = this.providers.get(fallbackProviderName)?.config?.model as string | undefined;
+    if (fallbackConfigModel && this.isModelCompatibleWithProvider(fallbackProviderName, fallbackConfigModel)) {
+      if (requestedModel && requestedModel !== fallbackConfigModel) {
+        console.log(
+          `[AI Router] Fallback provider ${fallbackProviderName} replacing incompatible model ` +
+          `'${requestedModel}' with '${fallbackConfigModel}'`
+        );
+      }
+      return { ...options, model: fallbackConfigModel };
+    }
+
+    if (requestedModel) {
+      console.log(
+        `[AI Router] Fallback provider ${fallbackProviderName} ignoring incompatible model '${requestedModel}'`
+      );
+    }
+
+    const { model: _ignoredModel, ...safeOptions } = options;
+    return safeOptions;
+  }
+
+  /**
    * Chat with the active provider (with fallback)
    */
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
@@ -572,7 +639,8 @@ class AIProviderRouter {
         }
         
         const fallback = this.getProvider(this.fallbackProvider);
-        return fallback.chat(messagesWithCreed, options);
+        const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
+        return fallback.chat(messagesWithCreed, fallbackOptions);
       }
 
       return result;
@@ -601,7 +669,8 @@ class AIProviderRouter {
         }
         
         const fallback = this.getProvider(this.fallbackProvider);
-        return fallback.chat(messagesWithCreed, options);
+        const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
+        return fallback.chat(messagesWithCreed, fallbackOptions);
       }
       throw e;
     }
@@ -648,7 +717,8 @@ class AIProviderRouter {
         }
         
         const fallback = this.getProvider(this.fallbackProvider);
-        return fallback.stream(messagesWithCreed, onChunk, options);
+        const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
+        return fallback.stream(messagesWithCreed, onChunk, fallbackOptions);
       }
       throw e;
     }

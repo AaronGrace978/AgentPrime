@@ -4,7 +4,8 @@
  * Run with: node scripts/test-specialized-agents.js
  */
 
-const { routeToSpecialists, AGENT_CONFIGS } = require('../dist/main/agent/specialized-agents');
+require('tsx/cjs');
+const { routeToSpecialists, AGENT_CONFIGS } = require('../src/main/agent/specialized-agents.ts');
 
 // Mock context
 const mockContext = {
