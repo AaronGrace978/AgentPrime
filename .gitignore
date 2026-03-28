@@ -133,6 +133,9 @@ userData/
 
 # Mirror memory data (contains learned patterns)
 data/mirror-memory.json
+data/agentprime-state.json
+data/opus-examples/
+data/fine-tuning/
 
 # Database files
 *.db
@@ -140,3 +143,17 @@ data/mirror-memory.json
 # Cache files
 .cache/
 *.cache
+
+# Private/internal repo content not intended for public distribution
+.cursor/plans/
+.cursor/worktrees.json
+archive/
+training-corpus/
+docs/AGENTPRIME_SYSTEM_ANALYSIS/
+docs/CURSOR_REPLICATION_ANALYSIS.md
+pitch-deck/
+
+# Local artifacts
+crash-log.txt
+Screenshot*.png
+pitch/
