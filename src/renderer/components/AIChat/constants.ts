@@ -107,7 +107,7 @@ export const DEFAULT_DUAL_MODEL_STATE = {
   lastReasoning: ''
 };
 
-// Quick prompts for new users
+// Quick prompts for new users (agent mode)
 export const QUICK_PROMPTS = [
   { text: 'Build a game', prompt: 'Build a simple browser-based game with HTML, CSS, and JavaScript' },
   { text: 'Create a website', prompt: 'Create a modern landing page with responsive design' },
@@ -115,10 +115,38 @@ export const QUICK_PROMPTS = [
   { text: 'Explain code', prompt: 'Explain how this codebase works' }
 ];
 
-// Welcome message
+export const CHAT_QUICK_PROMPTS = [
+  { text: 'Explain something', prompt: 'Can you explain how async/await works in simple terms?' },
+  { text: 'Brainstorm ideas', prompt: 'Help me brainstorm some project ideas for my portfolio' },
+  { text: 'Compare tools', prompt: 'What are the pros and cons of React vs Vue vs Svelte?' },
+  { text: 'Career advice', prompt: 'What skills should a junior dev focus on in 2026?' }
+];
+
+export const DINO_QUICK_PROMPTS = [
+  { text: 'Say hello!', prompt: 'Hey Dino! What\'s up?' },
+  { text: 'Tell me a joke', prompt: 'Tell me your best dinosaur joke!' },
+  { text: 'Motivate me', prompt: 'I need some motivation to keep coding today' },
+  { text: 'Random fun fact', prompt: 'Hit me with a wild fun fact!' }
+];
+
+// Welcome messages per mode
 export const WELCOME_MESSAGE = {
   role: 'assistant' as const,
   content: '**AgentPrime Ready**\n\nAgent Mode is ON. I can autonomously write code, create files, and build projects for you.\n\n**Quick Start:**\n1. Select a workspace folder above\n2. Pick a model mode (Fast, Auto, or Deep)\n3. Tell me what to build\n\n*Example: "Build a todo app with React" or "Create a REST API with Express"*',
+  timestamp: new Date(),
+  type: 'system' as const
+};
+
+export const CHAT_WELCOME_MESSAGE = {
+  role: 'assistant' as const,
+  content: '**Just Chat**\n\nHey! No agent mode, no workspace required — just a conversation. Ask me anything, bounce ideas, get explanations, or just hang out.\n\n*What\'s on your mind?*',
+  timestamp: new Date(),
+  type: 'system' as const
+};
+
+export const DINO_WELCOME_MESSAGE = {
+  role: 'assistant' as const,
+  content: 'ROAAAAR! 🦖✨ **Dino Buddy is HERE!** 💖🦕\n\nHey friend!! I\'m your explosive dino companion and I am SO PUMPED to hang out with you!! 🎉💫\n\nNo coding tasks, no workspace — just PURE DINO ENERGY and good vibes! Talk to me about anything! 🌈🦖✨',
   timestamp: new Date(),
   type: 'system' as const
 };

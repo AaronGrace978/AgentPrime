@@ -1,10 +1,8 @@
 /**
  * AgentPrime - Electron Main Process
- * Native file access like Cursor!
  * 
- * NOTE: This is a TypeScript scaffold. The full migration from main.js
- * will require migrating all IPC handlers and dependencies.
- * For now, this provides the basic structure.
+ * Core entry point: window lifecycle, IPC registration, AI provider
+ * initialization, secure key storage, telemetry, and auto-updates.
  */
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
@@ -109,6 +107,9 @@ import { getSecureKeyStorage } from './security/secureKeyStorage';
 
 // Import State Manager
 import { stateManager } from './core/state-manager';
+
+// Import Feature Flags
+import { resolveFeatureFlags, getFeatureFlags } from './core/feature-flags';
 
 // Import Telemetry Service
 import { initializeTelemetry, getTelemetryService } from './core/telemetry-service';
@@ -746,7 +747,11 @@ app.whenReady().then(async () => {
   initializeAIProviders();
   
   // Initialize backend manager (auto-starts Python backend if needed)
-  await initializeBackendManager();
+  if (getFeatureFlags().pythonBrain) {
+    await initializeBackendManager();
+  } else {
+    console.log('[Main] Python Brain disabled (set AGENTPRIME_ENABLE_BRAIN=true to enable)');
+  }
   
   // Initialize template engine
   try {
@@ -874,15 +879,16 @@ app.whenReady().then(async () => {
     }
   };
   
-  // Load mirror system only when explicitly enabled.
-  // Lean core profile keeps this off by default to reduce startup cost.
-  const mirrorEnabled = process.env.AGENTPRIME_ENABLE_MIRROR === 'true';
-  if (mirrorEnabled) {
+  // Resolve feature flags early so all subsystems can check them
+  const featureFlags = resolveFeatureFlags();
+
+  // Load mirror system when feature flag is enabled
+  if (featureFlags.mirror) {
     setTimeout(() => {
       loadMirrorSystem();
-    }, 1000); // Wait 1 second after startup
+    }, 1000);
   } else {
-    console.log('[Main] 🧹 Mirror system disabled (set AGENTPRIME_ENABLE_MIRROR=true to enable)');
+    console.log('[Main] Mirror system disabled (set AGENTPRIME_ENABLE_MIRROR=true to enable)');
   }
 
   // Register IPC handlers

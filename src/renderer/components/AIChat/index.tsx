@@ -9,8 +9,15 @@ import React, { useState, useEffect } from 'react';
 import { agentLoop, promptBuilder } from '../../agent';
 
 // Types and constants
-import { Message, AIChatProps, OpenFile } from './types';
-import { WELCOME_MESSAGE } from './constants';
+import { Message, AIChatProps, ChatMode } from './types';
+import {
+  WELCOME_MESSAGE,
+  CHAT_WELCOME_MESSAGE,
+  DINO_WELCOME_MESSAGE,
+  QUICK_PROMPTS,
+  CHAT_QUICK_PROMPTS,
+  DINO_QUICK_PROMPTS
+} from './constants';
 
 // Custom hooks
 import { useDualModel, usePythonBrain, useWorkspace } from './hooks';
@@ -24,8 +31,11 @@ import {
   ChatInput,
   WorkspaceSelector,
   SpecializedAgentsToggle,
-  CreateFolderDialog
+  CreateFolderDialog,
+  AIErrorRecovery,
+  classifyAIError
 } from './components';
+import type { AIError } from './components';
 
 // 🦖 DINO BUDDY: Agent Progress Tracker
 import AgentProgressTracker from '../AgentProgressTracker';
@@ -40,17 +50,27 @@ const AIChat: React.FC<AIChatProps> = ({
   onOpenTemplates,
   onApplyCode
 }) => {
+  // Chat mode: agent (default), chat (just talk), dino (Dino Buddy)
+  const [chatMode, setChatMode] = useState<ChatMode>('agent');
+
+  const welcomeForMode = (mode: ChatMode): Message =>
+    mode === 'dino' ? { ...DINO_WELCOME_MESSAGE, timestamp: new Date() }
+    : mode === 'chat' ? { ...CHAT_WELCOME_MESSAGE, timestamp: new Date() }
+    : { ...WELCOME_MESSAGE, timestamp: new Date() };
+
   // Messages state
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>([welcomeForMode('agent')]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
-  const [dinoBuddyMode, setDinoBuddyMode] = useState(false);
   const [selectedModel, setSelectedModel] = useState('gpt-4o');
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(false);
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
-  
-  // 🦖 DINO BUDDY: Progress tracking state
+  const [lastError, setLastError] = useState<AIError | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [lastFailedInput, setLastFailedInput] = useState('');
+
+  // Progress tracking state
   const [currentTask, setCurrentTask] = useState('');
 
   // Load active model from settings
@@ -93,19 +113,23 @@ const AIChat: React.FC<AIChatProps> = ({
     getCursorPosition
   });
 
-  // Load Dino Buddy mode from settings
+  // Load saved chat mode from settings
   useEffect(() => {
-    const loadDinoMode = async () => {
+    const loadChatMode = async () => {
       try {
         const settings = await window.agentAPI.getSettings();
-        if (settings?.dinoBuddyMode) {
-          setDinoBuddyMode(true);
+        if (settings?.chatMode && ['agent', 'chat', 'dino'].includes(settings.chatMode)) {
+          setChatMode(settings.chatMode as ChatMode);
+          setMessages([welcomeForMode(settings.chatMode as ChatMode)]);
+        } else if (settings?.dinoBuddyMode) {
+          setChatMode('dino');
+          setMessages([welcomeForMode('dino')]);
         }
       } catch (error) {
-        console.error('Failed to load dino mode:', error);
+        console.error('Failed to load chat mode:', error);
       }
     };
-    loadDinoMode();
+    loadChatMode();
   }, []);
 
   // Load specialized agents preference from settings
@@ -334,48 +358,121 @@ const AIChat: React.FC<AIChatProps> = ({
 
   // Clear chat
   const handleClearChat = () => {
-    setMessages([{
-      role: 'assistant',
-      content: 'Chat cleared. Ready for a fresh start.\n\n*What would you like to build?*',
-      timestamp: new Date(),
-      type: 'system'
-    }]);
+    setMessages([welcomeForMode(chatMode)]);
+    setLastError(null);
   };
 
-  // Toggle Dino Buddy mode
-  const handleDinoToggle = async () => {
-    const newMode = !dinoBuddyMode;
-    setDinoBuddyMode(newMode);
+  // Switch chat mode
+  const handleModeSwitch = async (mode: ChatMode) => {
+    if (mode === chatMode) return;
+    setChatMode(mode);
+    setMessages([welcomeForMode(mode)]);
+    setLastError(null);
     try {
-      await window.agentAPI.updateSettings({ dinoBuddyMode: newMode });
-      if (newMode) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: '**Dino Buddy Mode enabled.**\n\nFriendly conversational tone is now active for this chat.',
-          timestamp: new Date(),
-          type: 'system'
-        }]);
-      }
+      await window.agentAPI.updateSettings({
+        chatMode: mode,
+        dinoBuddyMode: mode === 'dino'
+      });
     } catch (e) {
-      console.error('Failed to save Dino mode:', e);
+      console.error('Failed to save chat mode:', e);
     }
   };
 
-  // Send message
+  // Send message — branches on chatMode
   const sendMessage = async () => {
     if (!input.trim() || isLoading || agentRunning) return;
 
-    const userMessage: Message = {
-      role: 'user',
-      content: input,
-      timestamp: new Date()
-    };
-
+    const userMessage: Message = { role: 'user', content: input, timestamp: new Date() };
     setMessages(prev => [...prev, userMessage]);
     const currentInput = input;
     setInput('');
 
-    // Check workspace
+    // ── Chat / Dino mode (no workspace needed, streaming) ──
+    if (chatMode === 'chat' || chatMode === 'dino') {
+      setIsLoading(true);
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: chatMode === 'dino' ? '🦖 *thinking...*' : '*thinking...*',
+        timestamp: new Date()
+      }]);
+
+      // Listen for streamed chunks
+      let streamed = '';
+      const handleChunk = (data: any) => {
+        if (data.chunk) {
+          streamed += data.chunk;
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: streamed,
+              timestamp: new Date()
+            };
+            return updated;
+          });
+        }
+      };
+      window.agentAPI.onChatStream(handleChunk);
+
+      try {
+        const result = await window.agentAPI.chat(currentInput, {
+          agent_mode: false,
+          use_agent_loop: false,
+          just_chat_mode: chatMode === 'chat',
+          dino_buddy_mode: chatMode === 'dino',
+          model: selectedModel,
+          dual_mode: dualModel.mode
+        });
+
+        // Streaming may have filled it; fall back to full response if nothing streamed
+        if (!streamed && result.success) {
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: result.response,
+              timestamp: new Date()
+            };
+            return updated;
+          });
+        }
+
+        if (!result.success && result.error) {
+          setLastError(classifyAIError(result.error));
+          setLastFailedInput(currentInput);
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: 'assistant',
+              content: `Something went wrong: ${result.error}`,
+              timestamp: new Date()
+            };
+            return updated;
+          });
+        } else {
+          setLastError(null);
+        }
+      } catch (error: any) {
+        setLastError(classifyAIError(error.message || 'Unknown error'));
+        setLastFailedInput(currentInput);
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: 'assistant',
+            content: `Error: ${error.message}`,
+            timestamp: new Date()
+          };
+          return updated;
+        });
+      } finally {
+        window.agentAPI.removeChatStream();
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // ── Agent mode (existing behaviour) ──
     if (!workspacePath) {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -388,9 +485,8 @@ const AIChat: React.FC<AIChatProps> = ({
 
     setAgentRunning(true);
     setIsLoading(true);
-    setCurrentTask(currentInput); // 🦖 Track current task for progress tracker
+    setCurrentTask(currentInput);
 
-    // Determine model
     let agentModel = selectedModel;
     if (dualModel.enabled) {
       if (dualModel.mode === 'fast' && brainConfig.fastModel.enabled) {
@@ -398,7 +494,6 @@ const AIChat: React.FC<AIChatProps> = ({
       } else if (dualModel.mode === 'deep' && brainConfig.deepModel.enabled) {
         agentModel = brainConfig.deepModel.model;
       } else if (dualModel.mode === 'auto') {
-        // Try Python Brain routing
         if (brainConnected) {
           const routing = await routeMessage(currentInput, {
             workspace: workspacePath,
@@ -415,7 +510,6 @@ const AIChat: React.FC<AIChatProps> = ({
       }
     }
 
-    // Show thinking indicator
     const modeLabel = dualModel.mode === 'fast' ? 'Fast' : dualModel.mode === 'deep' ? 'Deep' : 'Auto';
     setMessages(prev => [...prev, {
       role: 'assistant',
@@ -431,7 +525,7 @@ const AIChat: React.FC<AIChatProps> = ({
         use_specialized_agents: useSpecializedAgents,
         model: agentModel,
         dual_mode: dualModel.mode,
-        dino_buddy_mode: dinoBuddyMode
+        dino_buddy_mode: false
       });
 
       setMessages(prev => {
@@ -443,11 +537,21 @@ const AIChat: React.FC<AIChatProps> = ({
         }];
       });
 
-      // Record outcome
+      if (!result.success && result.error) {
+        setLastError(classifyAIError(result.error));
+        setLastFailedInput(currentInput);
+      } else {
+        setLastError(null);
+      }
+
       if (brainConnected) {
         await recordOutcome(currentInput, result.success, agentModel, (result as any).stepsExecuted || 1);
       }
     } catch (error: any) {
+      const classified = classifyAIError(error.message || 'Unknown error');
+      setLastError(classified);
+      setLastFailedInput(currentInput);
+
       setMessages(prev => {
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
         return [...filtered, {
@@ -464,6 +568,19 @@ const AIChat: React.FC<AIChatProps> = ({
       setAgentRunning(false);
       setIsLoading(false);
     }
+  };
+
+  // Retry last failed message
+  const handleRetry = async () => {
+    if (!lastFailedInput) return;
+    setIsRetrying(true);
+    setLastError(null);
+    setInput(lastFailedInput);
+    setIsRetrying(false);
+    // Re-trigger send by setting input; user can press Enter or we auto-send
+    setTimeout(() => {
+      setInput(lastFailedInput);
+    }, 50);
   };
 
   // Stop agent
@@ -507,7 +624,7 @@ const AIChat: React.FC<AIChatProps> = ({
         {/* Header */}
         <div style={{ background: 'var(--prime-surface)' }}>
           <ChatHeader
-            dinoBuddyMode={dinoBuddyMode}
+            chatMode={chatMode}
             pythonBrainStatus={pythonBrainStatus}
             onClose={onClose}
           />
@@ -523,44 +640,69 @@ const AIChat: React.FC<AIChatProps> = ({
             flexWrap: 'wrap',
             background: 'var(--prime-bg)'
           }}>
-            <WorkspaceSelector
-              workspacePath={workspacePath}
-              onOpenFolder={handleOpenFolder}
-              onCreateFolder={handleCreateFolderClick}
-            />
+            {/* ── Mode switcher ── */}
+            <div style={{
+              display: 'inline-flex',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              overflow: 'hidden',
+              flexShrink: 0
+            }}>
+              {([
+                { mode: 'agent' as ChatMode, label: 'Agent' },
+                { mode: 'chat'  as ChatMode, label: 'Chat' },
+                { mode: 'dino'  as ChatMode, label: '🦖 Dino' },
+              ]).map(({ mode, label }) => (
+                <button
+                  key={mode}
+                  onClick={() => handleModeSwitch(mode)}
+                  disabled={isLoading || agentRunning}
+                  style={{
+                    padding: '5px 12px',
+                    border: 'none',
+                    background: chatMode === mode
+                      ? mode === 'dino' ? 'rgba(245, 158, 11, 0.18)' : 'var(--prime-accent)'
+                      : 'transparent',
+                    color: chatMode === mode
+                      ? mode === 'dino' ? 'var(--prime-amber)' : '#fff'
+                      : 'var(--prime-text-muted)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: isLoading || agentRunning ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.12s ease',
+                    borderRight: mode !== 'dino' ? '1px solid var(--prime-border)' : 'none'
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
-            <BrainSelector
-              mode={dualModel.mode}
-              brainConfig={brainConfig}
-              onModeChange={setMode}
-              onConfigChange={saveBrainConfig}
-            />
-
-            <SpecializedAgentsToggle
-              enabled={useSpecializedAgents}
-              onChange={setUseSpecializedAgents}
-            />
+            {/* Agent-only controls */}
+            {chatMode === 'agent' && (
+              <>
+                <WorkspaceSelector
+                  workspacePath={workspacePath}
+                  onOpenFolder={handleOpenFolder}
+                  onCreateFolder={handleCreateFolderClick}
+                />
+                <BrainSelector
+                  mode={dualModel.mode}
+                  brainConfig={brainConfig}
+                  onModeChange={setMode}
+                  onConfigChange={saveBrainConfig}
+                />
+                <SpecializedAgentsToggle
+                  enabled={useSpecializedAgents}
+                  onChange={setUseSpecializedAgents}
+                />
+              </>
+            )}
 
             <div style={{ flex: 1 }} />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              {dinoBuddyMode && (
-                <button
-                  onClick={handleDinoToggle}
-                  title="Disable Dino Buddy Mode"
-                  className="chat-toolbar-btn chat-toolbar-btn--active"
-                  style={{
-                    padding: '5px 9px', borderRadius: '6px',
-                    border: '1px solid var(--prime-amber)',
-                    background: 'rgba(245, 158, 11, 0.1)',
-                    color: 'var(--prime-amber)',
-                    cursor: 'pointer', fontSize: '11px', fontWeight: '600',
-                    fontFamily: 'inherit'
-                  }}
-                >
-                  Dino
-                </button>
-              )}
               <button
                 onClick={handleClearChat}
                 style={{
@@ -574,7 +716,7 @@ const AIChat: React.FC<AIChatProps> = ({
               >
                 Clear
               </button>
-              {onOpenTemplates && (
+              {onOpenTemplates && chatMode === 'agent' && (
                 <button
                   onClick={onOpenTemplates}
                   style={{
@@ -608,9 +750,24 @@ const AIChat: React.FC<AIChatProps> = ({
           onCreate={handleCreateFolder}
         />
 
+        {/* Error Recovery */}
+        {lastError && !isLoading && !agentRunning && (
+          <div style={{ padding: '0 18px 8px' }}>
+            <AIErrorRecovery
+              error={lastError}
+              onRetry={handleRetry}
+              onDismiss={() => setLastError(null)}
+              isRetrying={isRetrying}
+            />
+          </div>
+        )}
+
         {/* Quick Prompts */}
         {!input.trim() && !isLoading && !agentRunning && messages.length <= 2 && (
-          <QuickPrompts onSelect={setInput} />
+          <QuickPrompts
+            onSelect={setInput}
+            prompts={chatMode === 'dino' ? DINO_QUICK_PROMPTS : chatMode === 'chat' ? CHAT_QUICK_PROMPTS : QUICK_PROMPTS}
+          />
         )}
 
         {/* Input */}
@@ -622,16 +779,19 @@ const AIChat: React.FC<AIChatProps> = ({
           isLoading={isLoading}
           agentRunning={agentRunning}
           mode={dualModel.mode}
+          chatMode={chatMode}
           workspacePath={workspacePath}
         />
       </div>
       
-      {/* 🦖 DINO BUDDY: Agent Progress Tracker */}
-      <AgentProgressTracker
-        isRunning={agentRunning}
-        currentTask={currentTask}
-        onCancel={handleStop}
-      />
+      {/* Agent Progress Tracker (agent mode only) */}
+      {chatMode === 'agent' && (
+        <AgentProgressTracker
+          isRunning={agentRunning}
+          currentTask={currentTask}
+          onCancel={handleStop}
+        />
+      )}
     </div>
   );
 };

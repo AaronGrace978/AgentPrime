@@ -8,13 +8,14 @@ import { QUICK_PROMPTS } from '../constants';
 
 interface QuickPromptsProps {
   onSelect: (prompt: string) => void;
+  prompts?: Array<{ text: string; prompt: string }>;
 }
 
-export const QuickPrompts: React.FC<QuickPromptsProps> = ({ onSelect }) => {
+export const QuickPrompts: React.FC<QuickPromptsProps> = ({ onSelect, prompts = QUICK_PROMPTS }) => {
   return (
     <div className="quick-prompts">
       <span className="quick-prompts-label">Try:</span>
-      {QUICK_PROMPTS.map((item, i) => (
+      {prompts.map((item, i) => (
         <button
           key={i}
           onClick={() => onSelect(item.prompt)}

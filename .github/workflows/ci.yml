@@ -44,8 +44,10 @@ jobs:
         run: npm test
 
   e2e:
-    name: Electron E2E (manual opt-in)
-    if: github.event_name == 'workflow_dispatch' && (inputs.run_e2e == true || inputs.run_e2e == 'true')
+    name: Electron E2E
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.run_e2e == true || inputs.run_e2e == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: checks
@@ -62,6 +64,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
 
       - name: Install Playwright browser dependencies
         run: npx playwright install --with-deps chromium

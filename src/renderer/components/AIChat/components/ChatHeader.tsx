@@ -4,38 +4,41 @@
  */
 
 import React from 'react';
-import { PythonBrainStatus } from '../types';
+import { ChatMode, PythonBrainStatus } from '../types';
 
 interface ChatHeaderProps {
-  dinoBuddyMode: boolean;
+  chatMode: ChatMode;
   pythonBrainStatus: PythonBrainStatus;
   onClose: () => void;
 }
 
+const MODE_META: Record<ChatMode, { icon: string; title: string; subtitle: string }> = {
+  agent: { icon: 'A', title: 'AgentPrime', subtitle: 'Agent Mode' },
+  chat:  { icon: '💬', title: 'AgentPrime', subtitle: 'Just Chat' },
+  dino:  { icon: '🦖', title: 'Dino Buddy', subtitle: 'Dino Buddy Mode' },
+};
+
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
-  dinoBuddyMode,
+  chatMode,
   pythonBrainStatus,
   onClose
 }) => {
+  const meta = MODE_META[chatMode];
+
   return (
     <div className="chat-header">
       <div className="chat-header-left">
-        <div className="chat-header-icon">
-          A
+        <div className="chat-header-icon" style={chatMode !== 'agent' ? { fontSize: '16px' } : undefined}>
+          {meta.icon}
         </div>
         <div className="chat-header-info">
-          <h3 className="chat-header-title">AgentPrime</h3>
+          <h3 className="chat-header-title">{meta.title}</h3>
           <div className="chat-header-badges">
             <span className="chat-header-subtitle">
-              {dinoBuddyMode ? 'Dino Buddy + Agent Mode' : 'Agent Mode'}
+              {meta.subtitle}
             </span>
-            {dinoBuddyMode && (
-              <span 
-                title="Dino Buddy Mode is enabled"
-                className="badge badge-rawr"
-              >
-                Dino Mode
-              </span>
+            {chatMode === 'dino' && (
+              <span className="badge badge-rawr">RAWR</span>
             )}
             {pythonBrainStatus.connected && (
               <span 

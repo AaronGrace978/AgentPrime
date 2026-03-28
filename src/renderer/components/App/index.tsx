@@ -42,6 +42,11 @@ import {
 
 const AIChat = React.lazy(() => import('../AIChat'));
 const GitPanel = React.lazy(() => import('../GitPanel'));
+const Terminal = React.lazy(() => import('../Terminal'));
+const LivePreview = React.lazy(() => import('../LivePreview'));
+const DeployPanel = React.lazy(() => import('../DeployPanel'));
+const InlineEditDialog = React.lazy(() => import('../InlineEditDialog'));
+const MultiFileDiffReview = React.lazy(() => import('../MultiFileDiffReview'));
 
 import { OpenFile, FileItem, Command } from './types';
 import {
@@ -112,6 +117,11 @@ function App() {
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [fileExplorerOpen, setFileExplorerOpen] = useState(true);
   const [searchReplaceOpen, setSearchReplaceOpen] = useState(false);
+  const [livePreviewOpen, setLivePreviewOpen] = useState(false);
+  const [livePreviewUrl, setLivePreviewUrl] = useState('http://localhost:3000');
+  const [deployPanelOpen, setDeployPanelOpen] = useState(false);
+  const [inlineEditRequest, setInlineEditRequest] = useState<any>(null);
+  const [inlineEditProcessing, setInlineEditProcessing] = useState(false);
   const [codeIssues] = useState<any[]>([]);
   const [appSettings, setAppSettings] = useState<any>({
     theme: 'dark',
@@ -248,6 +258,51 @@ function App() {
     };
   }, [activeFile]);
 
+  // Listen for Cmd+K inline edit events from Monaco
+  useEffect(() => {
+    const handleInlineEdit = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setInlineEditRequest(detail);
+    };
+    window.addEventListener('agentprime:inlineEdit', handleInlineEdit);
+    return () => window.removeEventListener('agentprime:inlineEdit', handleInlineEdit);
+  }, []);
+
+  const handleInlineEditSubmit = useCallback(async (instruction: string, request: any) => {
+    setInlineEditProcessing(true);
+    try {
+      const result = await window.agentAPI.quickAction(
+        'edit',
+        request.selectedText,
+        request.language
+      );
+      if (result?.code) {
+        handleContentChange(
+          fileContent.split('\n')
+            .map((line: string, i: number) => {
+              const lineNum = i + 1;
+              if (lineNum >= request.startLine && lineNum <= request.endLine) {
+                return null;
+              }
+              return line;
+            })
+            .filter((l: string | null) => l !== null)
+            .join('\n')
+            .replace(
+              fileContent.split('\n')[request.startLine - 1] || '',
+              result.code
+            )
+        );
+        toast.success('Inline Edit Applied', instruction.substring(0, 40));
+      }
+    } catch (error: any) {
+      toast.error('Inline Edit Failed', error.message);
+    } finally {
+      setInlineEditProcessing(false);
+      setInlineEditRequest(null);
+    }
+  }, [fileContent, handleContentChange, toast]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
@@ -321,7 +376,7 @@ function App() {
         return;
       }
 
-      if (mod && key === 'k') {
+      if (mod && e.shiftKey && key === 'k') {
         e.preventDefault();
         setCommandPaletteOpen(true);
         return;
@@ -336,6 +391,18 @@ function App() {
       if (mod && e.shiftKey && key === 'g') {
         e.preventDefault();
         setGitPanelOpen((prev) => !prev);
+        return;
+      }
+
+      if (mod && e.shiftKey && key === 'p') {
+        e.preventDefault();
+        setLivePreviewOpen((prev) => !prev);
+        return;
+      }
+
+      if (mod && e.shiftKey && key === 'd') {
+        e.preventDefault();
+        setDeployPanelOpen(true);
         return;
       }
 
@@ -465,6 +532,22 @@ function App() {
       category: 'navigation',
       shortcut: 'F5',
       action: runScript
+    },
+    {
+      id: 'live-preview',
+      title: 'Live Preview',
+      description: 'Open live preview panel for web projects',
+      icon: <IconPlay size="sm" />,
+      category: 'view',
+      action: () => setLivePreviewOpen(true)
+    },
+    {
+      id: 'deploy',
+      title: 'Deploy Project',
+      description: 'Deploy to Vercel or Netlify',
+      icon: <IconPlay size="sm" />,
+      category: 'navigation',
+      action: () => setDeployPanelOpen(true)
     }
   ];
 
@@ -535,7 +618,8 @@ function App() {
               </div>
             )}
 
-            <div className="app-content">
+            <div className="app-content" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               {!useSplitView && (
                 <TabBar
                   openFiles={openFiles}
@@ -593,11 +677,24 @@ function App() {
                     </>
                   )}
 
-                  {(terminalVisible || runOutput.length > 0) && (
-                    <OutputPanel
-                      runOutput={runOutput}
-                      onClose={() => setTerminalVisible(false)}
-                    />
+                  {terminalVisible && (
+                    <div style={{ height: '280px', flexShrink: 0 }}>
+                      <ErrorBoundary>
+                        <Suspense fallback={<div className="loading-placeholder">Loading Terminal...</div>}>
+                          <Terminal
+                            onClose={() => setTerminalVisible(false)}
+                            onFixError={(error) => {
+                              setComposerOpen(true);
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent('agentprime:prefill-message', {
+                                  detail: `Fix this terminal error:\n\`\`\`\n${error.line}\n\`\`\`\n\nError type: ${error.type}\nMessage: ${error.message}`
+                                }));
+                              }, 200);
+                            }}
+                          />
+                        </Suspense>
+                      </ErrorBoundary>
+                    </div>
                   )}
                 </div>
               ) : (
@@ -613,6 +710,22 @@ function App() {
                   onOpenRecentProject={loadDirectory}
                   onOpenUserGuide={openUserGuide}
                 />
+              )}
+              </div>
+
+              {/* Live Preview Panel */}
+              {livePreviewOpen && (
+                <div style={{ width: '50%', minWidth: '300px', flexShrink: 0 }}>
+                  <ErrorBoundary>
+                    <Suspense fallback={<div className="loading-placeholder">Loading Preview...</div>}>
+                      <LivePreview
+                        url={livePreviewUrl}
+                        onClose={() => setLivePreviewOpen(false)}
+                        onUrlChange={setLivePreviewUrl}
+                      />
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
               )}
             </div>
           </div>
@@ -733,6 +846,36 @@ function App() {
           gitBranch={null}
           theme={themeType}
         />
+
+        {/* Inline Edit Dialog (Cmd+K) */}
+        <Suspense fallback={null}>
+          <InlineEditDialog
+            request={inlineEditRequest}
+            onSubmit={handleInlineEditSubmit}
+            onClose={() => setInlineEditRequest(null)}
+            isProcessing={inlineEditProcessing}
+          />
+        </Suspense>
+
+        {/* Deploy Panel */}
+        {deployPanelOpen && (
+          <div style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            zIndex: 9998,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.3)',
+            backdropFilter: 'blur(2px)',
+          }} onClick={() => setDeployPanelOpen(false)}>
+            <div onClick={e => e.stopPropagation()}>
+              <Suspense fallback={null}>
+                <DeployPanel onClose={() => setDeployPanelOpen(false)} />
+              </Suspense>
+            </div>
+          </div>
+        )}
 
         <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
       </div>

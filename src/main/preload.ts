@@ -171,6 +171,35 @@ const agentAPI: AgentAPI = {
     ipcRenderer.invoke('template:create', templateId, targetDir, variables),
   selectDirectory: () => ipcRenderer.invoke('template:select-directory'),
 
+  // Durable Chat Threads
+  threadsList: () => ipcRenderer.invoke('threads:list'),
+  threadsGet: (threadId: string) => ipcRenderer.invoke('threads:get', threadId),
+  threadsCreate: (options?: any) => ipcRenderer.invoke('threads:create', options),
+  threadsAddMessage: (threadId: string, message: any) => ipcRenderer.invoke('threads:addMessage', threadId, message),
+  threadsDelete: (threadId: string) => ipcRenderer.invoke('threads:delete', threadId),
+  threadsRename: (threadId: string, title: string) => ipcRenderer.invoke('threads:rename', threadId, title),
+
+  // Terminal (full PTY)
+  terminalCreate: (options?: any) => ipcRenderer.invoke('terminal:create', options),
+  terminalInput: (data: { id: string; data: string }) => ipcRenderer.send('terminal:input', data),
+  terminalResize: (data: { id: string; cols: number; rows: number }) => ipcRenderer.send('terminal:resize', data),
+  terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
+  terminalList: () => ipcRenderer.invoke('terminal:list'),
+
+  // Live Preview
+  previewOpen: (url: string) => ipcRenderer.invoke('preview:open', url),
+  previewClose: () => ipcRenderer.invoke('preview:close'),
+
+  // Deploy
+  deploy: (provider: string, options?: any) => ipcRenderer.invoke('deploy:run', provider, options),
+  deployStatus: () => ipcRenderer.invoke('deploy:status'),
+
+  // Project Memory
+  getProjectMemory: () => ipcRenderer.invoke('project-memory:get'),
+  updateProjectMemory: (key: string, value: any) => ipcRenderer.invoke('project-memory:update', key, value),
+  recordDecision: (decision: { context: string; choice: string; reason?: string }) =>
+    ipcRenderer.invoke('project-memory:record-decision', decision),
+
   // Misc
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
 

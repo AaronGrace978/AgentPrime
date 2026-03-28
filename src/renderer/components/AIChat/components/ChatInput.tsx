@@ -1,9 +1,10 @@
 /**
- * ChatInput - Message input area with send controls
+ * ChatInput - Message input area with send controls and @-mentions
  */
 
-import React, { useRef, useEffect } from 'react';
-import { DualMode } from '../types';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { ChatMode, DualMode } from '../types';
+import MentionAutocomplete, { MentionItem } from './MentionAutocomplete';
 
 interface ChatInputProps {
   input: string;
@@ -13,8 +14,15 @@ interface ChatInputProps {
   isLoading: boolean;
   agentRunning: boolean;
   mode: DualMode;
+  chatMode: ChatMode;
   workspacePath: string | null;
 }
+
+const PLACEHOLDERS: Record<ChatMode, string> = {
+  agent: 'Describe what you want to build... (@ to mention files)',
+  chat: 'Ask anything, brainstorm, or just chat...',
+  dino: 'Talk to Dino Buddy! 🦖',
+};
 
 export const ChatInput: React.FC<ChatInputProps> = ({
   input,
@@ -24,9 +32,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   isLoading,
   agentRunning,
   mode,
+  chatMode,
   workspacePath
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+  const mentionStartRef = useRef<number>(-1);
 
   useEffect(() => {
     if (!isLoading && !agentRunning && textareaRef.current) {
@@ -35,11 +48,50 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, [isLoading, agentRunning]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (showMentions) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       onSend();
     }
   };
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart;
+    setInput(value);
+
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+
+    if (atMatch) {
+      mentionStartRef.current = cursorPos - atMatch[0].length;
+      setMentionQuery(atMatch[1]);
+
+      if (textareaRef.current) {
+        const rect = textareaRef.current.getBoundingClientRect();
+        setMentionPosition({
+          top: window.innerHeight - rect.top + 8,
+          left: rect.left + 16,
+        });
+      }
+      setShowMentions(true);
+    } else {
+      setShowMentions(false);
+    }
+  }, [setInput]);
+
+  const handleMentionSelect = useCallback((item: MentionItem) => {
+    const start = mentionStartRef.current;
+    if (start >= 0) {
+      const before = input.substring(0, start);
+      const cursorPos = textareaRef.current?.selectionStart || input.length;
+      const after = input.substring(cursorPos);
+      setInput(before + item.value + ' ' + after);
+    }
+    setShowMentions(false);
+    mentionStartRef.current = -1;
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [input, setInput]);
 
   const isDisabled = !input.trim() || isLoading || agentRunning;
 
@@ -47,16 +99,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     <div style={{
       padding: '12px 16px 14px',
       borderTop: '1px solid var(--prime-border)',
-      background: 'var(--prime-surface)'
+      background: 'var(--prime-surface)',
+      position: 'relative'
     }}>
+      <MentionAutocomplete
+        query={mentionQuery}
+        position={mentionPosition}
+        onSelect={handleMentionSelect}
+        onClose={() => setShowMentions(false)}
+        visible={showMentions}
+      />
+
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyPress={handleKeyPress}
-            placeholder="Describe what you want to build..."
+            placeholder={PLACEHOLDERS[chatMode]}
             rows={1}
             style={{
               width: '100%',
@@ -90,14 +151,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             right: '10px',
             bottom: '10px',
             fontSize: '10px',
-            color: 'var(--prime-text-muted)',
+            color: chatMode === 'dino' ? 'var(--prime-amber)' : 'var(--prime-text-muted)',
             background: 'var(--prime-surface-hover)',
             padding: '2px 6px',
             borderRadius: '4px',
             textTransform: 'capitalize',
             fontWeight: 600
           }}>
-            {mode}
+            {chatMode === 'agent' ? mode : chatMode === 'dino' ? '🦖 dino' : 'chat'}
           </div>
         </div>
 
@@ -179,23 +240,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             border: '1px solid var(--prime-border)', fontSize: '10px'
           }}>Shift+Enter</kbd> new line
         </span>
-        {workspacePath && (
+        <span style={{
+          color: 'var(--prime-success)',
+          fontSize: '10px',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
           <span style={{
-            color: 'var(--prime-success)',
-            fontSize: '10px',
-            fontWeight: 600,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}>
-            <span style={{
-              width: '5px', height: '5px',
-              borderRadius: '50%',
-              background: 'var(--prime-success)'
-            }} />
-            Ready
-          </span>
-        )}
+            width: '5px', height: '5px',
+            borderRadius: '50%',
+            background: chatMode !== 'agent' || workspacePath ? 'var(--prime-success)' : 'var(--prime-text-muted)'
+          }} />
+          {chatMode !== 'agent' ? 'Ready' : workspacePath ? 'Ready' : 'No workspace'}
+        </span>
       </div>
 
       <style>{`

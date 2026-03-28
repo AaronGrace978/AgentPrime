@@ -1,12 +1,15 @@
 # AgentPrime - AI Coding Assistant IDE - Cursor Rules
 
 ## Project Overview
-AgentPrime is a sophisticated AI-powered desktop IDE built with Electron, featuring:
+AgentPrime is a local-first AI coding workspace built with Electron, featuring:
 - Multiple AI providers (Anthropic Claude, OpenAI GPT, Ollama, OpenRouter)
-- Template system for project generation
-- VibeCoder - specialized IDE for AI-assisted development
-- Python backend with FastAPI
-- Modular architecture with IPC communication
+- Dual Model System with fast/deep/auto routing
+- Template system for project generation (11 starter templates)
+- Agent loop with tool-calling for autonomous coding tasks
+- Python backend with FastAPI ("The Brain") for memory/orchestration
+- Ghost text / inline completions via CompletionService
+- Mirror Intelligence System for pattern learning
+- Modular architecture with typed IPC communication
 
 ## Code Style & Conventions
 
@@ -120,18 +123,21 @@ AgentPrime is a sophisticated AI-powered desktop IDE built with Electron, featur
 
 ### Main Application (src/)
 - `main/` - Electron main process code
-  - `ai-providers/` - AI provider implementations
-  - `core/` - Core business logic
-  - `ipc-handlers/` - IPC communication handlers
-  - `mirror/` - AI mirroring functionality
+  - `ai-providers/` - AI provider implementations (Ollama, Anthropic, OpenAI, OpenRouter)
+  - `core/` - Core business logic (state, telemetry, backend manager, budget, transactions)
+  - `ipc-handlers/` - IPC communication handlers (files, git, templates, agent, search, etc.)
+  - `mirror/` - Mirror Intelligence System (pattern memory, extraction, feedback loops)
+  - `agent/` - Agent subsystem (validators, self-critique, tool verification, backup)
+  - `agent-loop.ts` - Main tool-calling agent loop
+  - `security/` - Secure key storage, IPC validation, workspace protection
   - `tools/` - Utility tools and helpers
-- `renderer/` - Electron renderer process (UI)
-- `types/` - TypeScript type definitions
-
-### VibeCoder (vibecoder/src/)
-- `main.js` - Electron main process
-- `renderer/` - React UI components
-- `preload.js` - Secure IPC bridge
+  - `modules/` - ActivatePrime and other opt-in modules
+- `renderer/` - React UI (components, hooks, agent client, services)
+  - `components/` - App, AIChat, MonacoEditor, FileTree, SettingsPanel, etc.
+  - `agent/` - Client-side agent loop, prompt builder, context manager
+  - `services/` - CompletionService (ghost text)
+- `cli/` - Commander-based CLI (agent, doctor, onboard, status)
+- `types/` - Shared TypeScript type definitions
 
 ### Templates (templates/)
 - Each template in its own directory
@@ -139,17 +145,18 @@ AgentPrime is a sophisticated AI-powered desktop IDE built with Electron, featur
 - Follow consistent structure and naming
 
 ### Backend (backend/)
-- `app/` - FastAPI application
-  - `api/` - API endpoints
-  - `core/` - Core business logic
-  - `config.py` - Configuration management
+- `app/` - FastAPI application ("The Brain")
+  - `main.py` - App entry point with routers for files, chat, terminal, brain, team patterns
+  - `core/` - Memory, orchestrator, analyzer
+- `run.py` - Dev launcher
+- `requirements.txt` - Python dependencies
 
 ## Build & Deployment
 
 ### Development
-- Use `npm run dev` for main app development
-- Use `cd vibecoder && npm run dev` for VibeCoder development
-- Use `npm run start:dev` for backend development
+- Use `npm run dev` for main app development (concurrent webpack watch)
+- Use `npm run quick-start` or `npm run start:dev` for build-then-run
+- Backend starts automatically via backend-manager when configured
 - Test on Windows, macOS, and Linux when possible
 
 ### Production Builds

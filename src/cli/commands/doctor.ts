@@ -148,6 +148,71 @@ export async function runDoctor() {
   });
   
   // ═══════════════════════════════════════════════════════════
+  // PYTHON BACKEND ("THE BRAIN")
+  // ═══════════════════════════════════════════════════════════
+  console.log('');
+  console.log(chalk.cyan('🧠 Python Backend'));
+  
+  check('Python', () => {
+    const version = getVersion('python', ['--version']) || getVersion('python3', ['--version']);
+    if (version) {
+      const majorMinor = version.match(/(\d+)\.(\d+)/);
+      if (majorMinor) {
+        const major = parseInt(majorMinor[1]);
+        const minor = parseInt(majorMinor[2]);
+        if (major >= 3 && minor >= 10) {
+          return { status: 'pass', message: version };
+        }
+        return { status: 'warn', message: `${version} (recommended: >=3.10)` };
+      }
+      return { status: 'pass', message: version };
+    }
+    return { status: 'warn', message: 'Not found (needed for Python Brain backend)' };
+  });
+
+  check('pip', () => {
+    const version = getVersion('pip', ['--version']) || getVersion('pip3', ['--version']);
+    if (version) {
+      return { status: 'pass', message: version.split(' from ')[0] };
+    }
+    return { status: 'warn', message: 'Not found' };
+  });
+
+  check('Backend requirements', () => {
+    const reqPath = path.join(process.cwd(), 'backend', 'requirements.txt');
+    if (fs.existsSync(reqPath)) {
+      return { status: 'pass', message: 'backend/requirements.txt found' };
+    }
+    const parentReqPath = path.resolve(process.cwd(), '..', 'backend', 'requirements.txt');
+    if (fs.existsSync(parentReqPath)) {
+      return { status: 'pass', message: 'backend/requirements.txt found (parent)' };
+    }
+    return { status: 'warn', message: 'backend/requirements.txt not found in cwd' };
+  });
+
+  check('Backend venv', () => {
+    const venvPaths = [
+      path.join(process.cwd(), 'backend', 'venv'),
+      path.join(process.cwd(), 'backend', '.venv'),
+      path.join(process.cwd(), 'venv'),
+      path.join(process.cwd(), '.venv'),
+    ];
+    for (const vp of venvPaths) {
+      if (fs.existsSync(vp)) {
+        return { status: 'pass', message: `Found at ${path.relative(process.cwd(), vp) || vp}` };
+      }
+    }
+    return { status: 'warn', message: 'No virtualenv found (run: python -m venv backend/venv)' };
+  });
+
+  check('uvicorn', () => {
+    if (commandExists('uvicorn')) {
+      return { status: 'pass', message: 'Installed' };
+    }
+    return { status: 'warn', message: 'Not found (run: pip install uvicorn)' };
+  });
+  
+  // ═══════════════════════════════════════════════════════════
   // MESSAGING CHANNELS
   // ═══════════════════════════════════════════════════════════
   console.log('');

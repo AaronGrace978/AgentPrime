@@ -35,6 +35,9 @@ export interface AIChatProps {
   onApplyCode?: (code: string, filePath?: string) => void;
 }
 
+// Chat interaction mode
+export type ChatMode = 'agent' | 'chat' | 'dino';
+
 // Dual model mode type
 export type DualMode = 'fast' | 'deep' | 'auto';
 

@@ -37,6 +37,10 @@ interface FeedbackResult {
 const recentTasks: Map<string, { task: string; filesCreated: string[]; timestamp: number }> = new Map();
 const MAX_RECENT_TASKS = 50;
 
+// Track feedback ratings for real positiveRate calculation
+const feedbackLog: Array<{ rating: number; timestamp: number }> = [];
+const MAX_FEEDBACK_LOG = 500;
+
 /**
  * Register a task for potential feedback
  */
@@ -70,6 +74,12 @@ export function registerFeedbackHandlers(): void {
   ipcMain.handle('feedback:submit', async (_, data: FeedbackData): Promise<FeedbackResult> => {
     try {
       console.log(`[Feedback] Received rating ${data.rating}/5 for task: "${data.task.substring(0, 50)}..."`);
+      
+      // Record rating for aggregation
+      feedbackLog.push({ rating: data.rating, timestamp: Date.now() });
+      if (feedbackLog.length > MAX_FEEDBACK_LOG) {
+        feedbackLog.splice(0, feedbackLog.length - MAX_FEEDBACK_LOG);
+      }
       
       let patternsStored = 0;
       let antiPatternsStored = 0;
@@ -169,6 +179,11 @@ export function registerFeedbackHandlers(): void {
       const taskData = recentTasks.get(taskId);
       const task = taskData?.task || `Task ${taskId}`;
       
+      feedbackLog.push({ rating: thumbsUp ? 5 : 1, timestamp: Date.now() });
+      if (feedbackLog.length > MAX_FEEDBACK_LOG) {
+        feedbackLog.splice(0, feedbackLog.length - MAX_FEEDBACK_LOG);
+      }
+      
       if (thumbsUp) {
         const patterns = [{
           id: `thumbs_up_${Date.now()}`,
@@ -210,9 +225,13 @@ export function registerFeedbackHandlers(): void {
       const mirrorMemory = getMirrorMemory();
       const stats = mirrorMemory?.getStats?.() || { totalFeedbackLoops: 0 };
       
+      const totalLogged = feedbackLog.length;
+      const positiveCount = feedbackLog.filter(f => f.rating >= 4).length;
+      const positiveRate = totalLogged > 0 ? positiveCount / totalLogged : 0;
+
       return {
-        totalFeedback: stats.totalFeedbackLoops || 0,
-        positiveRate: 0.75, // TODO: Calculate from actual data
+        totalFeedback: Math.max(stats.totalFeedbackLoops || 0, totalLogged),
+        positiveRate,
         recentTasks: recentTasks.size
       };
     } catch (error) {

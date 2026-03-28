@@ -5,7 +5,8 @@
 ### Infrastructure
 - [x] TypeScript configuration (tsconfig.json, tsconfig.main.json, tsconfig.renderer.json)
 - [x] Webpack configuration (webpack.main.config.js, webpack.renderer.config.js)
-- [x] Dependencies installed (TypeScript, webpack, ts-loader, etc.)
+- [x] Dependencies installed (TypeScript 5.9, webpack 5, ts-loader, esbuild)
+- [x] CI pipeline (lint, typecheck, build, test, e2e on PRs)
 
 ### Type Definitions
 - [x] Core types (`src/types/index.d.ts`)
@@ -13,112 +14,93 @@
 - [x] AI Provider types (`src/types/ai-providers.d.ts`)
 
 ### Main Process
-- [x] AI Providers migrated (base-provider.ts, ollama-provider.ts, anthropic-provider.ts, openai-provider.ts, openrouter-provider.ts, index.ts)
-- [x] IPC Handlers migrated (files.ts, git.ts, templates.ts, index.ts)
-- [x] Preload script migrated (preload.ts)
-- [x] Tools migrated (base-tool.ts, tool-registry.ts)
-- [x] Main process scaffold (main.ts) - basic structure created
+- [x] Main entry point (`main.ts`) — fully migrated with secure key storage, telemetry, auto-updater
+- [x] AI Providers (base-provider, ollama, anthropic, openai, openrouter, router index)
+- [x] IPC Handlers (files, git, templates, commands, scripts, analysis, search, agent, brain, feedback, completions, telemetry, project-registry)
+- [x] Preload script (`preload.ts`)
+- [x] Tools (base-tool, tool-registry)
+- [x] Agent loop (`agent-loop.ts`) — full tool-calling agent with task mode detection
+- [x] Agent pipeline (`agent-pipeline.ts`) — state-machine abstraction over agent loop
+- [x] Agent subsystem (task-mode, command-security, validators, self-critique, tool verification, backup)
+- [x] Core utilities (state-manager, backend-manager, telemetry-service, auto-updater, budget-manager, transaction-manager, timeout-utils, error-recovery, feature-flags)
+- [x] Security (secureKeyStorage, ipcValidation, workspaceProtection)
 
 ### Mirror Intelligence System
-- [x] mirror-memory.ts - Stores and retrieves learned patterns with temporal awareness
-- [x] mirror-pattern-extractor.ts - Analyzes Opus 4.5 MAX code examples and extracts patterns
-- [x] mirror-feedback-loop.ts - Implements the Mirror Paradox - creates recursive learning loops
-- [x] intelligence-expansion.ts - Implements I(n+1) = I(n) + (Q/R) × E equation
-- [x] adaptive-code-generator.ts - Generates code using learned patterns with adaptation
-- [x] mirror-knowledge-ingester.ts - Fetches code examples from online sources and feeds them into the mirror system
+- [x] mirror-memory.ts
+- [x] mirror-pattern-extractor.ts
+- [x] mirror-feedback-loop.ts
+- [x] intelligence-expansion.ts
+- [x] adaptive-code-generator.ts
+- [x] mirror-knowledge-ingester.ts
+- [x] mirror-singleton.ts (global accessor)
+- [x] opus-reasoning-engine.ts
+
+### Renderer (React UI)
+- [x] App component (modular: index.tsx, hooks, sub-components)
+- [x] AIChat component (modular: index.tsx, hooks, sub-components)
+- [x] MonacoEditor, FileTree, TabBar, SettingsPanel, CommandPalette
+- [x] TemplateGallery, TemplateModal, CreateModal
+- [x] AgentProgressTracker, ErrorBoundary, InlineDiff
+- [x] GitPanel, GitStatus, CommitDialog
+- [x] CompletionService, GhostTextManager
+- [x] Client-side agent (enhancedAgentLoop, promptBuilder, contextManager, smartRouter)
+- [x] Theme system (themes.ts, ThemeSelector)
+
+### CLI
+- [x] Commander-based CLI (agent, doctor, onboard, status, config, send)
+- [x] Doctor command with Python backend diagnostics
 
 ### Testing
-- [x] Jest configured for TypeScript (jest.config.ts)
-- [x] ts-jest installed
+- [x] Jest 30 + ts-jest configured
+- [x] Security tests (ipcValidation, commandSecurity, secureKeyStorage, workspaceProtection)
+- [x] Agent tests (task-mode, command-security, tool-validation, projectPatterns)
+- [x] Core tests (feature-flags, agent-coordinator, task-orchestrator)
+- [x] AI provider tests (model-router, anthropic)
+- [x] IPC handler tests (files)
+- [x] Playwright e2e smoke tests
+- [x] Coverage thresholds with per-component guardrails
 
 ### Build System
-- [x] Package.json scripts updated for TypeScript workflow
-- [x] App builds successfully with `npm run build`
+- [x] Webpack 5 for main + renderer bundles
+- [x] electron-builder for Windows/macOS/Linux packaging
+- [x] GitHub Actions CI (lint, typecheck, build, test, e2e on PRs)
 
-## 🔄 In Progress / Pending
+## 🔄 Remaining (Low Priority)
 
-### Renderer (13+ files)
-- [x] app.ts (scaffold created)
-- [ ] modules/editor.ts
-- [ ] modules/file-icons.ts
-- [ ] modules/git.ts
-- [ ] modules/lock-screen.ts
-- [ ] modules/search.ts
-- [ ] modules/terminal.ts
-- [ ] utils/dom.ts
-- [ ] utils/state.ts
-- [ ] vibe-coder-effects.ts
-- [ ] composer-celebration.ts
-- [ ] composer-progress.ts
-- [ ] composer-quality.ts
+### Legacy JS → TS Migrations
+- [ ] `legacy/template-engine.js` → template-engine.ts (works via require())
+- [ ] `legacy/action-executor.js` → action-executor.ts (works via require())
 
-### Core Modules (still in JS, can be migrated incrementally)
-- [ ] template-engine.js → template-engine.ts
-- [ ] codebase-indexer.js → codebase-indexer.ts
-- [ ] action-executor.js → action-executor.ts
-- [ ] agent-mode.js → agent-mode.ts
-
-## 📝 Notes
-
-1. **Main.ts**: A basic scaffold has been created. The full migration from `main.js` (~2300 lines) will require:
-   - Migrating all IPC handlers (many are still in main.js)
-   - Migrating Mirror Intelligence initialization
-   - Migrating all chat/agent handlers
-   - This can be done incrementally
-
-2. **Renderer**: The renderer files can be migrated incrementally. The webpack build is set up to handle both .js and .ts files during migration.
-
-3. **Build Process**:
-   - Run `npm run build` to compile TypeScript
-   - Run `npm run dev` for watch mode during development
-   - Run `npm start` to build and launch Electron
-
-4. **Type Safety**: The migration uses moderate strictness:
-   - `strict: false`
-   - `noImplicitAny: false` (initially)
-   - `strictNullChecks: true`
-   - This allows gradual migration without breaking everything
-
-## 🚀 Next Steps
-
-1. **Incremental Migration**: Continue migrating files one at a time
-2. **Testing**: Update test files to TypeScript as you migrate
-3. **Type Refinement**: Gradually add more specific types and remove `any`
-4. **Build Verification**: Test the build process after each major migration
+### Gradual Type Strictness
+- [ ] Enable `strict: true` in tsconfig (currently moderate strictness)
+- [ ] Replace remaining `any` types with proper interfaces
+- [ ] Add exhaustive type coverage for IPC message payloads
 
 ## 📦 File Structure
 
 ```
 src/
-├── main/              # Electron main process (TypeScript)
-│   ├── main.ts
-│   ├── preload.ts
-│   ├── ai-providers/
-│   ├── ipc-handlers/
-│   ├── tools/
-│   └── mirror/        # Mirror Intelligence System
-│       ├── mirror-memory.ts
-│       ├── mirror-pattern-extractor.ts
-│       ├── mirror-feedback-loop.ts
-│       ├── intelligence-expansion.ts
-│       ├── adaptive-code-generator.ts
-│       └── mirror-knowledge-ingester.ts
-├── renderer/          # Frontend (TypeScript)
-│   └── js/
-└── types/             # Type definitions
-    ├── index.d.ts
-    ├── ipc.d.ts
-    └── ai-providers.d.ts
+├── main/                  # Electron main process
+│   ├── main.ts            # Entry point
+│   ├── preload.ts         # Secure IPC bridge
+│   ├── agent-loop.ts      # Tool-calling agent loop
+│   ├── agent-pipeline.ts  # State-machine pipeline abstraction
+│   ├── ai-providers/      # Ollama, Anthropic, OpenAI, OpenRouter
+│   ├── ipc-handlers/      # All IPC channel handlers
+│   ├── core/              # State, telemetry, backend, budget, feature-flags
+│   ├── agent/             # Task mode, validators, critique, security
+│   ├── mirror/            # Pattern learning system
+│   ├── security/          # Key storage, validation, workspace protection
+│   ├── tools/             # Tool definitions
+│   ├── modules/           # ActivatePrime (opt-in)
+│   └── legacy/            # JS modules pending TS migration
+├── renderer/              # React UI
+│   ├── components/        # App, AIChat, Editor, FileTree, Settings, etc.
+│   ├── agent/             # Client-side agent loop and context
+│   ├── services/          # CompletionService
+│   ├── hooks/             # Shared React hooks
+│   └── js/app.ts          # Webpack entry
+├── cli/                   # CLI commands
+│   └── commands/          # agent, doctor, onboard, status, send
+└── types/                 # Shared type definitions
 ```
-
-## ✅ Major Achievement
-
-**All core infrastructure and the complete Mirror Intelligence System have been successfully migrated to TypeScript!** This includes:
-
-- **6 AI Providers** with proper type safety
-- **4 IPC Handlers** with typed interfaces
-- **6 Mirror Intelligence modules** with complex interdependencies
-- **Complete type definitions** for the entire system
-- **Working build system** that compiles everything correctly
-
-The app builds and launches successfully. The remaining work is incremental migration of renderer files and remaining core modules.

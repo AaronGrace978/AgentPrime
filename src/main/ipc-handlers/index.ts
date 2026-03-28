@@ -19,6 +19,10 @@ import { registerFeedbackHandlers } from './feedback';
 import { registerProjectRegistryHandlers } from './project-registry';
 import { registerCompletionHandlers } from './completions';
 import { registerTelemetryHandlers } from './telemetry';
+import { registerTerminalHandlers } from './terminal';
+import { registerProjectMemoryHandlers } from './project-memory';
+import { registerDeployHandlers } from './deploy';
+import { registerChatThreadHandlers } from './chat-threads';
 
 interface HandlerDeps {
   ipcMain: any;
@@ -112,11 +116,39 @@ export function registerAllHandlers(deps: HandlerDeps): void {
     });
   }
 
+  // Register terminal handlers (full PTY via node-pty)
+  registerTerminalHandlers({
+    ipcMain: deps.ipcMain,
+    mainWindow: deps.mainWindow,
+    getWorkspacePath: deps.getWorkspacePath
+  });
+
+  // Register project memory handlers (per-workspace intelligence)
+  registerProjectMemoryHandlers({
+    ipcMain: deps.ipcMain,
+    getWorkspacePath: deps.getWorkspacePath
+  });
+
+  // Register deploy handlers (one-click deploy)
+  registerDeployHandlers({
+    ipcMain: deps.ipcMain,
+    mainWindow: deps.mainWindow,
+    getWorkspacePath: deps.getWorkspacePath
+  });
+
+  // Register durable chat threads
+  registerChatThreadHandlers({
+    ipcMain: deps.ipcMain,
+    getWorkspacePath: deps.getWorkspacePath
+  });
+
   console.log('✅ All modular IPC handlers registered');
   console.log('🧠 Python Brain handlers connected');
   console.log('📊 User feedback system active');
   console.log('✨ Ghost text completions ready');
-  console.log('🧹 Lean profile active: optional subsystems not auto-registered');
+  console.log('>_ Terminal PTY ready');
+  console.log('📂 Project memory active');
+  console.log('🚀 Deploy integrations loaded');
 }
 
 export { registerFiles as filesHandlers };
