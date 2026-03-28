@@ -950,7 +950,7 @@ app.whenReady().then(async () => {
   registerChat({
     ipcMain,
     getWorkspacePath: () => workspacePath,
-    getCurrentFile: () => null, // TODO: Track current file
+    getCurrentFile: () => activeFilePath,
     getCurrentFolder: () => focusedFolderPath,
     getConversationHistory: () => conversationHistory,
     addToConversationHistory: (role: 'user' | 'assistant', content: string) => {

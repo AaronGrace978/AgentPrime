@@ -2,24 +2,22 @@
 
 ## 🔴 Critical Security Concerns
 
-### 1. Use of `eval()` in Main Process
-**Location:** `src/main/main.ts:147`
+### 1. Dynamic Module Loading in Main Process (Status Update)
+**Location:** `src/main/main.ts` (`loadModules()`)
 
-```typescript
-const nodeRequire = eval('require');
-```
+**Current State:**
+- Historical `eval('require')` usage is no longer present in `main.ts`
+- Modules are loaded with direct `require(...)` calls from known project paths
+- Runtime fallback behavior still exists to keep optional modules from hard-failing startup
 
-**Risk:** HIGH
-- `eval()` is a security vulnerability that can execute arbitrary code
-- Bypasses static analysis and security checks
-- Could be exploited if user input reaches this code path
+**Risk:** MEDIUM
+- Dynamic loading still broadens the runtime surface area
+- Optional module failures may hide problems until a feature is used
 
 **Recommendation:**
-- Use `require` directly or `Function` constructor if dynamic loading is truly needed
-- Add input validation if dynamic module loading is required
-- Consider using `import()` for dynamic ES modules instead
-
-**Impact:** If an attacker could control the module path, they could execute arbitrary code.
+- Continue migrating high-use modules to static TypeScript imports where possible
+- Keep dynamic loading scoped to explicit, trusted local module paths
+- Add targeted startup diagnostics for optional module load failures
 
 ---
 
@@ -47,17 +45,16 @@ const nodeRequire = eval('require');
 ---
 
 ### 3. API Key Storage
-**Location:** `src/main/main.ts:207-260`
+**Location:** `src/main/security/secureKeyStorage.ts`, `src/main/main.ts:500+`
 
 **Current State:**
-- API keys stored in plain text in `settings.json`
-- No encryption at rest
-- Keys visible in user data directory
+- API keys are stored in OS keychain when available (`keytar`)
+- Fallback storage uses AES-256-GCM encrypted file storage
+- Legacy plain-text keys are migrated from `settings.json` into secure storage at startup
 
 **Recommendations:**
-- Encrypt API keys using OS keychain (Windows Credential Manager, macOS Keychain, Linux Secret Service)
-- Use environment variables for sensitive keys
-- Implement key rotation mechanism
+- Keep favoring secure storage + environment variables for bootstrapping
+- Add key rotation/expiration support for enterprise workflows
 - Never log API keys (even partially)
 
 ---
@@ -117,14 +114,14 @@ const nodeRequire = eval('require');
 - Event listeners may not be removed
 
 **B. Large Components**
-- `AIChat.tsx` is 1,632 lines - too large
-- `App.tsx` is 1,134 lines - needs refactoring
-- No code splitting implemented
-- All components loaded upfront
+- `AIChat.tsx` is now a lightweight re-export to modular files in `src/renderer/components/AIChat/`
+- Root `App` shell is still a larger component and should be split further over time
+- Partial code splitting is in place (`React.lazy` for heavy panels like AI chat / git)
 
 **C. State Management**
 - No state persistence limits
-- Conversation history grows unbounded
+- Main chat conversation history is capped in memory (last 20 messages)
+- Additional agent/memory paths should still be audited for long-session growth
 - No cleanup of old data
 
 **D. File Operations**

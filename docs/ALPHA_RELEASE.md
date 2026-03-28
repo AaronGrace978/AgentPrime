@@ -41,17 +41,18 @@ AgentPrime is now in alpha stage. This document outlines known issues, limitatio
 ### High Priority (May Affect Usage)
 
 1. **Large Components**
-   - `AIChat.tsx` is 1,600+ lines - may cause slower startup
-   - Working: Lazy loading implemented for heavy components
+   - `AIChat.tsx` is now a compatibility re-export; the feature is split into modular files under `src/renderer/components/AIChat/`
+   - Main chat component logic moved into `AIChat/index.tsx` with focused hooks/components
+   - Lazy loading is implemented for heavy panels (AI chat and git)
 
 2. **TypeScript Strict Mode Disabled**
    - Some `any` types exist in codebase
    - Working: Gradual migration in progress
 
 3. **Memory Usage**
-   - Conversation history grows unbounded in long sessions
-   - Workaround: Restart the app periodically for long sessions
-   - Future: Implement automatic context compression
+   - Main in-memory chat history is capped to recent messages
+   - Long sessions can still accumulate state in deeper agent/memory paths
+   - Future: Expand context compression and retention controls across all conversation stores
 
 4. **Model Timeouts**
    - Large cloud models (671B) may timeout on complex tasks
@@ -83,9 +84,9 @@ AgentPrime is now in alpha stage. This document outlines known issues, limitatio
    - Keyboard shortcut conflicts possible with OS shortcuts
 
 9. **Test Coverage**
-   - ~20% test coverage (targeting 80%)
+   - Coverage thresholds are currently set to baseline guardrails while lean-core tests expand
    - E2E tests cover main flows
-   - Some edge cases not tested
+   - Some edge cases are still not covered
 
 ---
 

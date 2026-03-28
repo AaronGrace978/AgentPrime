@@ -873,6 +873,33 @@
           "prompt": "WOOOOHOOOO ITS GET THIS, I WANT A THREE.JS space game<3"
         }
       ]
+    },
+    {
+      "id": "proj_1774668242150_96fkiv7rd",
+      "name": "Cards",
+      "path": "G:\\Cards",
+      "type": "web",
+      "description": "Build me a BostonAi",
+      "createdAt": "2026-03-28T03:24:02.150Z",
+      "updatedAt": "2026-03-28T03:24:02.150Z",
+      "files": [],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-28T03:24:02.150Z",
+          "action": "create",
+          "description": "Build me a BostonAi",
+          "filesChanged": [],
+          "prompt": "Build me a BostonAi.io "
+        }
+      ]
     }
   ]
 }

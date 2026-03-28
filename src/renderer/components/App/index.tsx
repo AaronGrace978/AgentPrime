@@ -178,6 +178,19 @@ function App() {
     }
   }, [selectedFile, executeScript]);
 
+  const openUserGuide = useCallback(async () => {
+    const userGuideUrl = 'https://github.com/AaronGrace978/AgentPrime/blob/main/docs/USER_GUIDE.md';
+    try {
+      const result = await window.agentAPI.openExternal(userGuideUrl);
+      if (!result?.success) {
+        throw new Error(result?.error || 'Failed to open user guide');
+      }
+    } catch (error) {
+      console.error('Failed to open user guide:', error);
+      toast.error('Unable to Open User Guide', `Open ${userGuideUrl} in your browser.`);
+    }
+  }, [toast]);
+
   const handleSplitViewOpenFile = useCallback(async (file: FileItem): Promise<OpenFile | null> => {
     if (file.is_dir) return null;
     try {
@@ -598,6 +611,7 @@ function App() {
                   }}
                   onNewProject={() => setTemplateModalOpen(true)}
                   onOpenRecentProject={loadDirectory}
+                  onOpenUserGuide={openUserGuide}
                 />
               )}
             </div>

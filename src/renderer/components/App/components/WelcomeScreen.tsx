@@ -13,6 +13,7 @@ interface WelcomeScreenProps {
   onNewFile: () => void;
   onOpenRecentProject: (path: string) => void;
   onNewProject: () => void;
+  onOpenUserGuide: () => void;
 }
 
 // Helpful keyboard tips that rotate
@@ -30,7 +31,8 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   onOpenComposer,
   onNewFile,
   onOpenRecentProject,
-  onNewProject
+  onNewProject,
+  onOpenUserGuide
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [currentTip, setCurrentTip] = useState(0);
@@ -164,8 +166,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           </div>
         )}
 
-        <div className="welcome-pro-keyboard-hint">
-          Press <kbd>Ctrl</kbd>+<kbd>K</kbd> for Command Palette. Open Settings for full shortcuts.
+        <div className="welcome-pro-footer">
+          <div className="welcome-pro-keyboard-hint">
+            Press <kbd>Ctrl</kbd>+<kbd>K</kbd> for Command Palette. Open Settings for full shortcuts.
+          </div>
+          <button type="button" className="welcome-pro-guide-link" onClick={onOpenUserGuide}>
+            Open User Guide
+          </button>
         </div>
       </div>
     </div>

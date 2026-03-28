@@ -308,6 +308,36 @@
   font-size: 12px;
 }
 
+.welcome-pro-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.welcome-pro-guide-link {
+  border: 1px solid var(--prime-border);
+  border-radius: 999px;
+  background: var(--prime-surface);
+  color: var(--prime-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.welcome-pro-guide-link:hover {
+  border-color: var(--prime-accent);
+  color: var(--prime-text);
+  background: var(--prime-surface-hover);
+}
+
+.welcome-pro-guide-link:focus-visible {
+  outline: 2px solid var(--prime-accent);
+  outline-offset: 2px;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {
