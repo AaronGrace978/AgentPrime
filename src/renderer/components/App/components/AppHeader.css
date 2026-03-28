@@ -1,0 +1,153 @@
+/* AppHeader */
+
+.app-header-pro {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--prime-border);
+  background: var(--prime-surface);
+  -webkit-app-region: drag;
+}
+
+.app-header-pro button,
+.app-header-pro a,
+.app-header-pro select {
+  -webkit-app-region: no-drag;
+}
+
+.app-header-pro-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.app-header-pro-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffffff;
+  background: var(--prime-accent);
+}
+
+.app-header-pro-title-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header-pro-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--prime-text);
+}
+
+.app-header-pro-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.app-header-pro-workspace {
+  max-width: 360px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--prime-border);
+  border-radius: 6px;
+  background: var(--prime-bg);
+}
+
+.app-header-pro-workspace-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--prime-text-muted);
+  flex-shrink: 0;
+}
+
+.app-header-pro-workspace-name {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--prime-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-header-pro-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  /* Keep header actions clear of Windows caption buttons */
+  margin-right: 140px;
+}
+
+.app-header-pro-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--prime-border);
+  background: transparent;
+  color: var(--prime-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  white-space: nowrap;
+}
+
+.app-header-pro-btn svg {
+  flex-shrink: 0;
+}
+
+.app-header-pro-btn:hover:not(:disabled) {
+  border-color: var(--prime-text-muted);
+  color: var(--prime-text);
+  background: var(--prime-surface-hover);
+}
+
+.app-header-pro-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.app-header-pro-btn.is-active {
+  border-color: var(--prime-accent);
+  color: var(--prime-accent);
+  background: var(--prime-accent-light);
+}
+
+.app-header-pro-btn-primary {
+  border-color: var(--prime-accent);
+  background: var(--prime-accent);
+  color: #ffffff;
+}
+
+.app-header-pro-btn-primary:hover:not(:disabled) {
+  background: var(--prime-accent-hover);
+  border-color: var(--prime-accent-hover);
+  color: #ffffff;
+}
+
+@media (max-width: 800px) {
+  .app-header-pro-center {
+    display: none;
+  }
+}
