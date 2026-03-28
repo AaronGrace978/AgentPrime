@@ -114,35 +114,35 @@ export async function runDoctor() {
   console.log(chalk.cyan('🤖 AI Providers'));
   
   // API keys from environment
-  const HARDWIRED_ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
-  const HARDWIRED_OPENAI_KEY = process.env.OPENAI_API_KEY || '';
-  const HARDWIRED_OLLAMA_KEY = process.env.OLLAMA_API_KEY || '';
+  const configuredAnthropicKey = process.env.ANTHROPIC_API_KEY || '';
+  const configuredOpenAIKey = process.env.OPENAI_API_KEY || '';
+  const configuredOllamaKey = process.env.OLLAMA_API_KEY || '';
   
   // Anthropic API Key
   check('Anthropic API', () => {
-    if (process.env.ANTHROPIC_API_KEY || HARDWIRED_ANTHROPIC_KEY) {
-      return { status: 'pass', message: 'API key configured (hard-wired)' };
+    if (process.env.ANTHROPIC_API_KEY || configuredAnthropicKey) {
+      return { status: 'pass', message: 'API key configured' };
     }
     return { status: 'warn', message: 'No API key (set ANTHROPIC_API_KEY)' };
   });
   
   // OpenAI API Key
   check('OpenAI API', () => {
-    if (process.env.OPENAI_API_KEY || HARDWIRED_OPENAI_KEY) {
-      return { status: 'pass', message: 'API key configured (hard-wired)' };
+    if (process.env.OPENAI_API_KEY || configuredOpenAIKey) {
+      return { status: 'pass', message: 'API key configured' };
     }
     return { status: 'warn', message: 'No API key (set OPENAI_API_KEY)' };
   });
   
   // Ollama
   check('Ollama', () => {
-    const hasOllamaKey = process.env.OLLAMA_API_KEY || HARDWIRED_OLLAMA_KEY;
+    const hasOllamaKey = process.env.OLLAMA_API_KEY || configuredOllamaKey;
     if (commandExists('ollama')) {
       const version = getVersion('ollama', ['-v']);
       return { status: 'pass', message: `${version || 'Installed'}${hasOllamaKey ? ' + Cloud API key' : ''}` };
     }
     if (hasOllamaKey) {
-      return { status: 'pass', message: 'Cloud API key configured (hard-wired)' };
+      return { status: 'pass', message: 'Cloud API key configured' };
     }
     return { status: 'warn', message: 'Not installed (optional local AI)' };
   });
@@ -276,7 +276,7 @@ export async function runDoctor() {
   
   for (const result of results) {
     let icon: string;
-    let color: typeof chalk;
+    let color: (text: string) => string;
     
     switch (result.status) {
       case 'pass':

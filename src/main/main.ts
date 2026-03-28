@@ -257,7 +257,7 @@ if (fs.existsSync(dotenvPath)) {
 // Cloud models can use various endpoints - check env vars or detect from model name
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder:480b-cloud';
 const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'deepseek-v3.1:671b-cloud';
-// Hard-wired Ollama API Keys (primary + desktop fallback)
+// Ollama API keys from environment (primary + desktop fallback)
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
 const OLLAMA_API_KEY_DESKTOP = process.env.OLLAMA_API_KEY_DESKTOP || '';
 
@@ -341,15 +341,15 @@ let settings: Settings = {
       model: OLLAMA_MODEL_FALLBACK
     },
     anthropic: {
-      apiKey: ANTHROPIC_API_KEY,  // Hard-wired
+      apiKey: ANTHROPIC_API_KEY,
       model: 'claude-sonnet-4-6'
     },
     openai: {
-      apiKey: OPENAI_API_KEY,  // Hard-wired
+      apiKey: OPENAI_API_KEY,
       model: 'gpt-5.4'
     },
     openrouter: {
-      apiKey: OPENROUTER_API_KEY,  // Hard-wired (or from env)
+      apiKey: OPENROUTER_API_KEY,
       model: 'anthropic/claude-sonnet-4'
     }
   }
@@ -503,8 +503,8 @@ async function loadSecureApiKeys(): Promise<void> {
     const secureStorage = getSecureKeyStorage();
     console.log(`[Security] 🔐 Loading API keys from ${secureStorage.getBackendType()}`);
     
-    // Hard-wired providers - these keys are embedded in code and should not be overridden
-    const hardWiredProviders = ['ollama', 'ollamaSecondary', 'anthropic', 'openai'];
+    // Providers primarily configured from environment variables for startup convenience
+    const envConfiguredProviders = ['ollama', 'ollamaSecondary', 'anthropic', 'openai'];
     
     // Map of .env variable names to provider names
     const envKeyMap: Record<string, string> = {
@@ -519,9 +519,9 @@ async function loadSecureApiKeys(): Promise<void> {
     const providers = settings.providers as Record<string, any>;
     for (const provider of Object.keys(providers)) {
       try {
-        // Skip hard-wired providers - use the hard-wired values from constants
-        if (hardWiredProviders.includes(provider)) {
-          // Ensure hard-wired values are set (they're already set in settings initialization)
+        // Prefer environment-configured providers during startup initialization
+        if (envConfiguredProviders.includes(provider)) {
+          // Ensure environment values are set (they're already set in settings initialization)
           if (provider === 'ollama') {
             providers[provider].apiKey = OLLAMA_API_KEY;
           } else if (provider === 'ollamaSecondary') {
@@ -531,11 +531,11 @@ async function loadSecureApiKeys(): Promise<void> {
           } else if (provider === 'openai') {
             providers[provider].apiKey = OPENAI_API_KEY;
           }
-          console.log(`[Security] ✅ Using hard-wired API key for ${provider}`);
+          console.log(`[Security] ✅ Using environment-configured API key for ${provider}`);
           continue;
         }
         
-        // For non-hard-wired providers (e.g., openrouter), load from secure storage or env
+        // For other providers, load from secure storage or environment
         const storedKey = await secureStorage.getApiKey(provider);
         const envVarName = envKeyMap[provider];
         const envKey = envVarName ? process.env[envVarName] : undefined;

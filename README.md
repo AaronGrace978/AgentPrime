@@ -12,6 +12,10 @@
   Built with Electron, React, TypeScript, and a lean desktop-first workflow.
 </p>
 
+<p align="center">
+  Owned and maintained by <a href="https://BostonAI.io">BostonAI.io</a>.
+</p>
+
 ## Overview
 
 AgentPrime is an AI coding workspace designed around a simple idea: keep the desktop app focused, fast, and useful. Instead of booting every experimental subsystem by default, the current public build centers on the core tools you actually use while coding:
@@ -137,6 +141,16 @@ Supported providers:
 - OpenAI
 - OpenRouter
 
+## Build With AgentPrime
+
+AgentPrime is proprietary software owned by Aaron Alexander Grace / BostonAI.io, but builders are welcome in the ecosystem.
+
+- You can build integrations, extensions, automations, connectors, plugins, and compatible tooling that work with AgentPrime
+- You can build into AgentPrime workflows and connect your own systems or services to it
+- You can contribute improvements to the project
+- You cannot copy, repackage, resell, or create derivative commercial versions of the AgentPrime source code without permission
+- AgentPrime, BostonAI.io, and related branding remain owned by Aaron Alexander Grace / BostonAI.io
+
 ## Troubleshooting
 
 ### Build Issues
@@ -160,6 +174,13 @@ Supported providers:
 5. Commit and push your branch
 6. Open a pull request
 
+Contributions are welcome. By submitting a contribution, you affirm that you have the right to submit it and agree that it may be used, modified, and distributed as part of AgentPrime under this project's ownership and license terms.
+
 ## License
 
-This project is open source and available under the MIT License. See `LICENSE` for details.
+This repository is source-available for evaluation and review, but it is not open source.
+
+- Copyright remains with Aaron Alexander Grace / BostonAI.io
+- Builders are welcome to create integrations, extensions, plugins, and compatible tooling around AgentPrime
+- No right is granted to copy, modify, redistribute, sublicense, sell, or create derivative commercial works without prior written permission
+- See `LICENSE` for the full proprietary license terms
