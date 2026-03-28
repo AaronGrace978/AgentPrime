@@ -1,7 +1,0 @@
-CALENDAR REMINDER
-================
-
-Date: February 7th, 2026
-Event: The Hack
-
-Don't forget to add this to your calendar!

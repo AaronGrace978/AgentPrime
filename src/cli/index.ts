@@ -3,7 +3,6 @@
  * AgentPrime CLI - Your AI assistant from the command line
  * 
  * Usage:
- *   agentprime gateway [--port 18789]     Start the gateway server
  *   agentprime agent --message "..."      Send a message to the agent
  *   agentprime send --to <target> "..."   Send a message via channel
  *   agentprime doctor                     Run diagnostics
@@ -75,31 +74,6 @@ program
   .name('agentprime')
   .description('AgentPrime CLI - Your AI assistant from the command line')
   .version(VERSION);
-
-// Gateway command
-program
-  .command('gateway')
-  .description('Start the gateway server')
-  .option('-p, --port <port>', 'Gateway port', '18789')
-  .option('-v, --verbose', 'Verbose logging')
-  .option('--no-channels', 'Disable messaging channels')
-  .action(async (options) => {
-    console.log(BANNER);
-    console.log(chalk.green(`[Gateway] Starting on port ${options.port}...`));
-    
-    try {
-      // Dynamic import to avoid loading everything at startup
-      const { startGateway } = await import('./commands/gateway');
-      await startGateway({
-        port: parseInt(options.port),
-        verbose: options.verbose,
-        enableChannels: options.channels
-      });
-    } catch (error: any) {
-      console.error(chalk.red(`[Gateway] Failed to start: ${error.message}`));
-      process.exit(1);
-    }
-  });
 
 // Agent command
 program
@@ -203,22 +177,6 @@ program
     }
   });
 
-// Channels command
-program
-  .command('channels')
-  .description('Manage messaging channels')
-  .argument('<action>', 'Action: list|login|logout|status')
-  .option('--channel <channel>', 'Specific channel')
-  .action(async (action, options) => {
-    try {
-      const { manageChannels } = await import('./commands/channels');
-      await manageChannels({ action, channel: options.channel });
-    } catch (error: any) {
-      console.error(chalk.red(`[Channels] Error: ${error.message}`));
-      process.exit(1);
-    }
-  });
-
 // Config command
 program
   .command('config')
@@ -236,7 +194,9 @@ program
     
     if (value === undefined) {
       // Get value
-      const val = key.split('.').reduce((obj, k) => obj?.[k], config);
+      const val = key
+        .split('.')
+        .reduce((obj: Record<string, any> | undefined, k: string) => obj?.[k], config as Record<string, any>);
       console.log(val !== undefined ? val : chalk.yellow('(not set)'));
     } else {
       // Set value

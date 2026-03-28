@@ -18,53 +18,28 @@ interface AIStatus {
   dualModelEnabled: boolean;
 }
 
-interface Phase2Status {
-  collaborationUsers: number;
-  pluginsInstalled: number;
-  memoryUsage: number;
-  syncStatus: 'synced' | 'syncing' | 'error' | 'offline';
-  systemHealth: 'healthy' | 'warning' | 'critical';
-}
-
 const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) => {
   const [aiStatus, setAiStatus] = useState<AIStatus>({
-    provider: 'ollama',
+    provider: 'openai',
     model: 'loading...',
     connected: false,
     dualModelEnabled: false
   });
-  const [phase2Status, setPhase2Status] = useState<Phase2Status>({
-    collaborationUsers: 0,
-    pluginsInstalled: 0,
-    memoryUsage: 0,
-    syncStatus: 'offline',
-    systemHealth: 'healthy'
-  });
   const [time, setTime] = useState(new Date());
 
-  // Load AI and Phase 2 status from settings
+  // Load AI status from settings
   useEffect(() => {
     const loadStatus = async () => {
       try {
-        // Load AI status
         const settings = await window.agentAPI.getSettings();
-        const providerStatus = await window.agentAPI.testProvider(settings?.activeProvider || 'anthropic');
+        const activeProvider = settings?.activeProvider || 'openai';
+        const providerStatus = await window.agentAPI.testProvider(activeProvider);
 
         setAiStatus({
-          provider: settings?.activeProvider || 'anthropic',
-          model: settings?.activeModel || 'claude-sonnet-4-20250514',
+          provider: activeProvider,
+          model: settings?.activeModel || 'gpt-4o',
           connected: providerStatus?.success || false,
           dualModelEnabled: settings?.dualModelEnabled || false
-        });
-
-        // Load Phase 2 status (minimal implementation for now)
-        // In full implementation, these would call actual backend APIs
-        setPhase2Status({
-          collaborationUsers: 1, // Current user
-          pluginsInstalled: 0, // Would call plugin API
-          memoryUsage: Math.floor(Math.random() * 30 + 20), // Mock 20-50%
-          syncStatus: Math.random() > 0.8 ? 'syncing' : 'synced', // Mostly synced
-          systemHealth: Math.random() > 0.9 ? 'warning' : 'healthy' // Mostly healthy
         });
       } catch (error) {
         console.error('Failed to load status:', error);
@@ -87,17 +62,17 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
 
   const getLanguageIcon = (lang: string) => {
     const icons: Record<string, string> = {
-      typescript: '🔷',
-      javascript: '🟨',
-      python: '🐍',
-      rust: '🦀',
-      go: '🐹',
-      java: '☕',
-      html: '🌐',
-      css: '🎨',
-      json: '📋',
-      markdown: '📝',
-      default: '📄'
+      typescript: 'TS',
+      javascript: 'JS',
+      python: 'PY',
+      rust: 'RS',
+      go: 'GO',
+      java: 'JV',
+      html: 'HT',
+      css: 'CS',
+      json: 'JSN',
+      markdown: 'MD',
+      default: 'TXT'
     };
     return icons[lang.toLowerCase()] || icons.default;
   };
@@ -117,7 +92,7 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
         {/* Git Branch */}
         {gitBranch && (
           <div className="status-item git-branch" title={`Git branch: ${gitBranch}`}>
-            <span className="status-icon">🌿</span>
+            <span className="status-icon">BR</span>
             <span className="status-text">{gitBranch}</span>
           </div>
         )}
@@ -133,44 +108,11 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
 
         {/* Current Model */}
         <div className="status-item model" title={`Model: ${aiStatus.model}`}>
-          <span className="status-icon">🤖</span>
+          <span className="status-icon">AI</span>
           <span className="status-text">{formatModel(aiStatus.model)}</span>
           {aiStatus.dualModelEnabled && (
-            <span className="dual-badge" title="Dual Model System Active">⚡🧠</span>
+            <span className="dual-badge" title="Dual Model System Active">Dual</span>
           )}
-        </div>
-
-        {/* Phase 2 Status Indicators - Minimal & Subtle */}
-        {phase2Status.collaborationUsers > 0 && (
-          <div className="status-item collaboration" title={`${phase2Status.collaborationUsers} user(s) online`}>
-            <span className="status-icon">👥</span>
-            <span className="status-text">{phase2Status.collaborationUsers}</span>
-          </div>
-        )}
-
-        {phase2Status.pluginsInstalled > 0 && (
-          <div className="status-item plugins" title={`${phase2Status.pluginsInstalled} plugins installed`}>
-            <span className="status-icon">🔌</span>
-            <span className="status-text">{phase2Status.pluginsInstalled}</span>
-          </div>
-        )}
-
-        <div
-          className={`status-item memory ${phase2Status.memoryUsage > 80 ? 'warning' : ''}`}
-          title={`Memory: ${phase2Status.memoryUsage}%`}
-        >
-          <span className="status-icon">🧠</span>
-          <span className="status-text">{phase2Status.memoryUsage}%</span>
-        </div>
-
-        <div
-          className={`status-item sync ${phase2Status.syncStatus}`}
-          title={`Sync: ${phase2Status.syncStatus}`}
-        >
-          <span className={`status-icon ${phase2Status.syncStatus === 'syncing' ? 'spinning' : ''}`}>
-            {phase2Status.syncStatus === 'syncing' ? '🔄' :
-             phase2Status.syncStatus === 'error' ? '❌' : '✅'}
-          </span>
         </div>
       </div>
 
@@ -189,7 +131,7 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
               <span className="status-text">{currentFile.language}</span>
             </div>
             <div className="status-item lines" title="Lines of code">
-              <span className="status-icon">📊</span>
+              <span className="status-icon">LOC</span>
               <span className="status-text">{currentFile.lines} lines</span>
             </div>
           </>

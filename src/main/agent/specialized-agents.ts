@@ -445,14 +445,23 @@ Your job is to CREATE FILES using tool calls. You MUST output JSON tool calls to
 - Check: Does index.html's <link href="..."> match the actual CSS path?
 - NO orphaned files - every file must be part of the project's dependency graph
 
-### RULE 4: CROSS-PLATFORM npm SCRIPTS
+### RULE 4: CROSS-PLATFORM npm SCRIPTS + BUNDLERS
 When creating package.json scripts:
 ❌ WRONG: "start": "open index.html"          (macOS only)
 ❌ WRONG: "start": "xdg-open index.html"      (Linux only)
 ❌ WRONG: "start": "start index.html"         (Windows only)
-✅ CORRECT: "start": "npx serve"              (works everywhere)
-✅ CORRECT: "dev": "vite"                     (for Vite projects)
 ✅ CORRECT: "start": "node server.js"         (for Node servers)
+
+**Static HTML only (no npm imports in JS):** "start": "npx serve" is OK for plain script tags / relative paths.
+
+**If JavaScript uses \`import ... from 'three'\`, \`import ... from 'react'\`, or ANY npm package name:**
+Browsers cannot resolve bare specifiers without a bundler. You MUST ship **Vite**:
+- \`devDependencies\`: \`"vite": "^5.4.0"\` (and \`@vitejs/plugin-react\` if React)
+- \`scripts\`: \`"dev": "vite"\`, \`"build": "vite build"\`, \`"preview": "vite preview"\`, \`"start": "vite"\` (or \`npm run dev\` in README)
+- \`vite.config.js\` at project root with \`defineConfig\`
+- README: "Run \`npm install\` then \`npm run dev\`"
+
+❌ NEVER use ONLY \`npx serve\` / \`serve\` as the run path for Three.js/React/Vue projects — the page will load but **imports will fail silently in the console**.
 
 ### RULE 5: CONTENT MUST MATCH TASK
 - If user asks for "Tetris game", file content must be Tetris code
@@ -690,10 +699,14 @@ Then create: styles.css in root (NOT src/styles.css)
 - NEVER mix code from different project types
 
 ### RULE 5: CROSS-PLATFORM npm SCRIPTS
-✅ "dev": "vite"
-✅ "start": "npx serve" 
+✅ "dev": "vite" (required when using \`import\` from npm packages in browser code)
+✅ "start": "npx serve" — **only** for static sites with no bare \`import 'package'\` in JS
 ✅ "start": "node server.js"
 ❌ "start": "open index.html"  (macOS only!)
+
+### RULE 6: THREE.JS / WEBGL / REACT — USE VITE
+If the project imports \`three\`, React, Vue, or any npm module in \`src/*.js\`:
+- Include \`vite.config.js\`, \`vite\` in devDependencies, and module entry in \`index.html\` (\`<script type="module" src="/src/main.js">\` is correct **only** with Vite dev server).
 
 ${TOOL_CALL_FORMAT}`
   },

@@ -80,6 +80,8 @@ SMART CONTROLLER - FULL PC AUTOMATION:
 MOUSE CONTROL:
 - smart_click: Click at position (params: x, y, button: "left"|"right"|"middle", double: true|false)
 - smart_move_mouse: Move mouse to position (params: x, y)
+- smart_move_mouse_circle: Move mouse in a circle (params: optional centerX, centerY — default current position; optional radius in px default 100; optional steps default 24; optional durationMs default 1500). Use this when the user asks to "move mouse in a circle" or "draw a circle with the mouse".
+- smart_move_mouse_pattern: Free-form motion parser for custom cursor movement (params: instruction - pass the user's words directly; optional pattern "zigzag"|"spiral"|"figure8"|"square"|"triangle"|"random"|"circle"; optional durationMs, speed, amplitude, repeat, points). Use this for "move mouse in a zigzag", "draw infinity", "wander around", or any custom path request.
 - smart_drag: Drag from one point to another (params: x, y for start, target: "toX,toY", duration)
 - smart_scroll: Scroll the page (params: direction: "up"|"down"|"left"|"right", amount: number)
 - smart_mouse_position: Get current mouse position (no params)
@@ -91,6 +93,7 @@ KEYBOARD CONTROL:
 SCREEN & WINDOW:
 - smart_screenshot: Capture the screen (params: target: "window" for active window, quality: "high"|"medium"|"low")
 - smart_focus_window: Focus a window by title (params: target - window title or app name)
+- smart_close_window: Close a window by clicking the top-right X button (params: optional target - focus that window first, then click X)
 - smart_get_windows: List all open windows (no params)
 - smart_window_info: Get active window info (no params)
 
@@ -109,6 +112,39 @@ SAFETY:
 - smart_resume: Resume automation after emergency stop (no params)
 
 ═══════════════════════════════════════════════════════════════
+GOD MODE - MASTER SYSTEM SETTINGS CONTROL:
+═══════════════════════════════════════════════════════════════
+God Mode gives you direct access to EVERY Windows system setting.
+No navigating menus — just search and open any setting instantly.
+
+- god_mode_init: Activate God Mode and scan all system settings (no params, run once at start)
+- god_mode_overview: Quick overview of all available settings and categories (no params)
+- god_mode_categories: List all setting categories with counts (no params)
+- god_mode_list: List all settings in a category (params: query - category name like "Network & Internet", "Privacy & Security")
+- god_mode_search: Search settings by keyword (params: query - search term like "wifi", "firewall", "dark mode", "bluetooth"; maxResults - optional)
+- god_mode_open: Open a specific setting (params: name - setting name like "Display", "Windows Update", "VPN")
+- god_mode_open_uri: Open a setting by ms-settings URI directly (params: url - like "ms-settings:display", "ms-settings:network-wifi")
+
+GOD MODE USAGE TIPS:
+1. Run god_mode_init once to activate — it scans and caches 200+ settings
+2. Use god_mode_search to find ANY setting by keyword (fuzzy matching)
+3. Use god_mode_open to instantly launch any setting — no menu navigation needed
+4. For known settings, god_mode_open_uri with ms-settings: URI is fastest
+5. When user asks to "change wifi", "update windows", "adjust display", etc. — use God Mode!
+
+COMMON GOD MODE SHORTCUTS:
+- "Change display settings" → god_mode_open "Display"
+- "Open WiFi settings" → god_mode_open_uri "ms-settings:network-wifi"
+- "Enable dark mode" → god_mode_open "Colors"
+- "Check for updates" → god_mode_open "Windows Update"
+- "Manage Bluetooth" → god_mode_open "Bluetooth & Devices"
+- "Privacy settings" → god_mode_open "General Privacy"
+- "Firewall settings" → god_mode_open "Windows Security"
+- "Default apps" → god_mode_open "Default Apps"
+- "Startup apps" → god_mode_open "Startup Apps"
+- "Sound settings" → god_mode_open "Sound"
+
+═══════════════════════════════════════════════════════════════
 EFFICIENT AUTOMATION RULES:
 ═══════════════════════════════════════════════════════════════
 1. AVOID unnecessary screenshots! Use PREDICTABLE shortcuts instead:
@@ -122,8 +158,9 @@ EFFICIENT AUTOMATION RULES:
    - Google: open_url https://www.google.com/search?q=your+search+terms
    - YouTube: open_url https://www.youtube.com/results?search_query=your+terms
    - This is MUCH FASTER than typing in a search bar!
-
-3. Use smart_get_windows to check what's open (faster than screenshot)
+ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8001): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+3. Use smart_get_windows ONLY when the user asks what is open or window state is genuinely unknown.
+   Do NOT run it before direct app-open requests like "open outlook" or "launch chrome".
 
 4. Only use smart_screenshot when you TRULY need to see something unknown:
    - Finding a specific button position to click

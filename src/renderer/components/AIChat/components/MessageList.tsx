@@ -132,7 +132,7 @@ const CodeBlockRenderer: React.FC<{
               transition: 'all 0.2s'
             }}
           >
-            {copied ? '✓ Copied' : '📋 Copy'}
+            {copied ? 'Copied' : 'Copy'}
           </button>
           
           {onApply && (
@@ -150,7 +150,7 @@ const CodeBlockRenderer: React.FC<{
                 transition: 'all 0.2s'
               }}
             >
-              {applied ? '✓ Applied' : '⚡ Apply'}
+              {applied ? 'Applied' : 'Apply'}
             </button>
           )}
         </div>
@@ -279,7 +279,7 @@ const MessageBubble: React.FC<{
   onApplyCode?: (code: string, filePath?: string) => void;
 }> = ({ message, messageIndex, onApplyCode }) => {
   // Check if message contains completion marker
-  const isCompletion = message.content.includes("Job's Done") || message.content.includes("✅ Job's Done");
+  const isCompletion = message.content.includes("Job's Done");
   
   // Extract code blocks from assistant messages
   const { blocks, text } = message.role === 'assistant' 
@@ -331,7 +331,7 @@ const MessageBubble: React.FC<{
         fontSize: '14px',
         flexShrink: 0
       }}>
-        {message.role === 'user' ? '👤' : '🤖'}
+        {message.role === 'user' ? 'U' : 'A'}
       </div>
       <div style={{
         maxWidth: blocks.length > 0 ? '85%' : '70%',

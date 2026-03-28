@@ -39,6 +39,13 @@ interface ComplexityAnalysis {
   triggers: string[];      // Matched trigger keywords
 }
 
+interface LegacyRouterSettings {
+  activeProvider?: string;
+  fallbackProvider?: string;
+  activeModel?: string;
+  providers?: Record<string, ProviderConfig & { model?: string }>;
+}
+
 class AIProviderRouter {
   private providers: Map<string, ProviderEntry>;
   private activeProvider: string | null;
@@ -455,6 +462,29 @@ class AIProviderRouter {
    */
   setFallbackProvider(providerName: string | null): void {
     this.fallbackProvider = providerName;
+  }
+
+  /**
+   * Backward-compatible settings setter used by legacy tests/callers.
+   */
+  setSettings(settings: LegacyRouterSettings): void {
+    if (!settings) return;
+
+    if (settings.providers) {
+      for (const [providerName, providerConfig] of Object.entries(settings.providers)) {
+        this.configureProvider(providerName, providerConfig);
+      }
+    }
+
+    if (settings.activeProvider || settings.activeModel) {
+      const activeProvider = settings.activeProvider ?? this.activeProvider;
+      const activeModel = settings.activeModel ?? settings.providers?.[activeProvider || '']?.model ?? this.activeModel;
+      this.setActiveProvider(activeProvider || null, activeModel || null);
+    }
+
+    if (settings.fallbackProvider !== undefined) {
+      this.setFallbackProvider(settings.fallbackProvider || null);
+    }
   }
 
   /**

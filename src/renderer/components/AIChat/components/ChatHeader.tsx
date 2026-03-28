@@ -21,20 +21,20 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     <div className="chat-header">
       <div className="chat-header-left">
         <div className="chat-header-icon">
-          🤖
+          A
         </div>
         <div className="chat-header-info">
           <h3 className="chat-header-title">AgentPrime</h3>
           <div className="chat-header-badges">
             <span className="chat-header-subtitle">
-              {dinoBuddyMode ? '🦖 Dino Buddy + Agent Mode' : '🤖 Agent Mode'}
+              {dinoBuddyMode ? 'Dino Buddy + Agent Mode' : 'Agent Mode'}
             </span>
             {dinoBuddyMode && (
               <span 
-                title="Dino Buddy Mode - Friendly, bubbly personality! 🦕💖"
+                title="Dino Buddy Mode is enabled"
                 className="badge badge-rawr"
               >
-                💖 RAWR!
+                Dino Mode
               </span>
             )}
             {pythonBrainStatus.connected && (
@@ -42,7 +42,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 title={`Python Brain: ${pythonBrainStatus.memories} memories, ${pythonBrainStatus.patterns} patterns`}
                 className="badge badge-brain"
               >
-                🧠 Brain
+                Brain
               </span>
             )}
           </div>

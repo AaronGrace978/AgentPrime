@@ -161,7 +161,10 @@ export async function withFileTimeout<T>(
  * Using Anthropic/OpenAI since they're confirmed working!
  */
 export const FALLBACK_MODEL_CHAIN = [
-  // Cloud providers - CONFIRMED WORKING!
+  // Cloud providers - CONFIRMED WORKING! (newest first)
+  { provider: 'anthropic', model: 'claude-opus-4-6', size: 'cloud' as ModelSize },
+  { provider: 'openai', model: 'gpt-5.2-2025-12-11', size: 'cloud' as ModelSize },
+  { provider: 'openai', model: 'gpt-5.2', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-sonnet-4-20250514', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-4o', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
@@ -169,6 +172,7 @@ export const FALLBACK_MODEL_CHAIN = [
 
   // Ollama Cloud as last resort (if configured correctly)
   { provider: 'ollama', model: 'qwen3-coder:480b-cloud', size: 'cloud' as ModelSize },
+  { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },
 ];
 
 /**

@@ -6,8 +6,6 @@ import React from 'react';
 import { FileItem } from '../types';
 import {
   IconGitBranch,
-  IconBrain,
-  IconMessage,
   IconSettings,
   IconSave,
   IconPlay,
@@ -15,8 +13,9 @@ import {
   IconBot,
   IconSplit,
   IconColumns,
-  IconSparkles
+  IconFolder
 } from '../../Icons';
+import './AppHeader.css';
 
 interface AppHeaderProps {
   workspaceName: string;
@@ -25,20 +24,13 @@ interface AppHeaderProps {
   isRunning: boolean;
   useSplitView: boolean;
   gitPanelOpen: boolean;
-  mirrorPanelOpen: boolean;
-  vibeHubOpen?: boolean;
-  agentModeOpen?: boolean;
   onOpenFolder: () => void;
   onOpenComposer: () => void;
-  onOpenJustChat: () => void;
   onOpenSettings: () => void;
   onSaveFile: () => void;
   onRunScript: () => void;
   onToggleSplitView: () => void;
   onToggleGitPanel: () => void;
-  onToggleMirrorPanel: () => void;
-  onToggleVibeHub?: () => void;
-  onToggleAgentMode?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -48,159 +40,102 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   isRunning,
   useSplitView,
   gitPanelOpen,
-  mirrorPanelOpen,
-  vibeHubOpen,
-  agentModeOpen,
   onOpenFolder,
   onOpenComposer,
-  onOpenJustChat,
   onOpenSettings,
   onSaveFile,
   onRunScript,
   onToggleSplitView,
-  onToggleGitPanel,
-  onToggleMirrorPanel,
-  onToggleVibeHub,
-  onToggleAgentMode
+  onToggleGitPanel
 }) => {
   return (
-    <div className="header-stunning app-header">
-      <div className="header-left">
-        <div className="app-logo">
-          <span className="logo glow-accent">A</span>
-          <span className="app-title logo-stunning">AgentPrime</span>
+    <header className="app-header-pro">
+      <div className="app-header-pro-brand">
+        <div className="app-header-pro-mark" aria-hidden="true">A</div>
+        <div className="app-header-pro-title-wrap">
+          <span className="app-header-pro-title">AgentPrime</span>
         </div>
       </div>
 
-      <div className="header-center">
-        <div className="workspace-info">
+      <div className="app-header-pro-center">
+        <div className="app-header-pro-workspace">
+          <span className="app-header-pro-workspace-label">Workspace</span>
           {workspaceName && workspaceName !== 'AgentPrime' ? (
-            <span>Current workspace: {workspaceName}</span>
+            <span className="app-header-pro-workspace-name">{workspaceName}</span>
           ) : (
-            <span>AgentPrime</span>
+            <span className="app-header-pro-workspace-name">No project open</span>
           )}
         </div>
       </div>
 
-      <div className="header-right">
+      <div className="app-header-pro-actions">
         {!selectedFile ? (
           <>
-            {/* Welcome screen has action cards for Open Project and AI Chat, so just show utility buttons here */}
+            <button
+              onClick={onOpenFolder}
+              className="app-header-pro-btn"
+              title="Open Project"
+            >
+              <IconFolder size="sm" /> Open
+            </button>
+            <button
+              onClick={onOpenComposer}
+              className="app-header-pro-btn app-header-pro-btn-primary"
+              title="Open AI Composer"
+            >
+              <IconBot size="sm" /> Ask AI
+            </button>
             <button
               onClick={onToggleGitPanel}
-              className={`btn secondary ${gitPanelOpen ? 'active' : ''}`}
+              className={`app-header-pro-btn ${gitPanelOpen ? 'is-active' : ''}`}
               title="Source Control"
             >
               <IconGitBranch size="sm" /> Git
             </button>
-            {onToggleVibeHub && (
-              <button
-                onClick={onToggleVibeHub}
-                className={`btn secondary vibehub-btn ${vibeHubOpen ? 'active' : ''}`}
-                title="VibeHub - Version Control for Humans"
-              >
-                <IconSparkles size="sm" /> VibeHub
-              </button>
-            )}
-            <button
-              onClick={onToggleMirrorPanel}
-              className={`btn secondary ${mirrorPanelOpen ? 'active' : ''}`}
-              title="Mirror Intelligence - Learn from code"
-            >
-              <IconBrain size="sm" /> Mirror
-            </button>
-            <button
-              onClick={onOpenJustChat}
-              className="btn secondary just-chat-trigger"
-              title="Just Chat - No code, just vibes"
-            >
-              <IconMessage size="sm" /> Chat
-            </button>
-            {onToggleAgentMode && (
-              <button
-                onClick={onToggleAgentMode}
-                className={`btn secondary agent-mode-btn ${agentModeOpen ? 'active' : ''}`}
-                title="Agent Mode - Matrix Computer Control (Ctrl+Shift+A)"
-              >
-                <IconBot size="sm" /> Agent
-              </button>
-            )}
             <button
               onClick={onOpenSettings}
-              className="btn secondary"
-              title="Settings - Configure AI models & dual model system"
+              className="app-header-pro-btn"
+              title="Settings - Configure AI models and editor behavior"
             >
               <IconSettings size="sm" /> Settings
             </button>
           </>
         ) : (
           <>
-            <button onClick={onSaveFile} disabled={!hasChanges} className="btn-stunning btn-primary-stunning">
+            <button onClick={onSaveFile} disabled={!hasChanges} className="app-header-pro-btn app-header-pro-btn-primary">
               <IconSave size="sm" /> Save
             </button>
-            <button onClick={onRunScript} disabled={isRunning} className="btn-stunning btn-primary-stunning">
+            <button onClick={onRunScript} disabled={isRunning} className="app-header-pro-btn app-header-pro-btn-primary">
               {isRunning ? <><IconStop size="sm" /> Stop</> : <><IconPlay size="sm" /> Run</>}
             </button>
-            <button onClick={onOpenComposer} className="btn-stunning btn-secondary-stunning glow-pulse">
+            <button onClick={onOpenComposer} className="app-header-pro-btn">
               <IconBot size="sm" /> Ask AI
             </button>
             <button
               onClick={onToggleSplitView}
-              className={`btn secondary ${useSplitView ? 'active' : ''}`}
+              className={`app-header-pro-btn ${useSplitView ? 'is-active' : ''}`}
               title={useSplitView ? 'Single View' : 'Split View'}
             >
               {useSplitView ? <IconColumns size="sm" /> : <IconSplit size="sm" />} Split
             </button>
             <button
               onClick={onToggleGitPanel}
-              className={`btn secondary ${gitPanelOpen ? 'active' : ''}`}
+              className={`app-header-pro-btn ${gitPanelOpen ? 'is-active' : ''}`}
               title="Source Control"
             >
               <IconGitBranch size="sm" /> Git
             </button>
-            {onToggleVibeHub && (
-              <button
-                onClick={onToggleVibeHub}
-                className={`btn secondary vibehub-btn ${vibeHubOpen ? 'active' : ''}`}
-                title="VibeHub - Version Control for Humans"
-              >
-                <IconSparkles size="sm" /> VibeHub
-              </button>
-            )}
-            <button
-              onClick={onToggleMirrorPanel}
-              className={`btn secondary ${mirrorPanelOpen ? 'active' : ''}`}
-              title="Mirror Intelligence - Learn from code"
-            >
-              <IconBrain size="sm" /> Mirror
-            </button>
-            <button
-              onClick={onOpenJustChat}
-              className="btn secondary just-chat-trigger"
-              title="Just Chat - No code, just vibes"
-            >
-              <IconMessage size="sm" /> Chat
-            </button>
-            {onToggleAgentMode && (
-              <button
-                onClick={onToggleAgentMode}
-                className={`btn secondary agent-mode-btn ${agentModeOpen ? 'active' : ''}`}
-                title="Agent Mode - Matrix Computer Control (Ctrl+Shift+A)"
-              >
-                <IconBot size="sm" /> Agent
-              </button>
-            )}
             <button
               onClick={onOpenSettings}
-              className="btn secondary"
+              className="app-header-pro-btn"
               title="Settings"
             >
-              <IconSettings size="sm" />
+              <IconSettings size="sm" /> Settings
             </button>
           </>
         )}
       </div>
-    </div>
+    </header>
   );
 };
 

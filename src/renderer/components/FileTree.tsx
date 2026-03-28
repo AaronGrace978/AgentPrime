@@ -32,7 +32,7 @@ interface FileTreeProps {
   workspacePath?: string;
 }
 
-const FileTreeItem: React.FC<{
+const FileTreeNode: React.FC<{
   item: FileTreeItem;
   level: number;
   selectedPath?: string;
@@ -105,7 +105,7 @@ const FileTreeItem: React.FC<{
       {item.is_dir && isExpanded && item.children && (
         <div>
           {item.children.map((child, index) => (
-            <FileTreeItem
+            <FileTreeNode
               key={`${child.path}-${index}`}
               item={child}
               level={level + 1}
@@ -151,7 +151,6 @@ const FileTree: React.FC<FileTreeProps> = ({
     }
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (workspacePath) {
       loadFiles();
@@ -220,7 +219,7 @@ const FileTree: React.FC<FileTreeProps> = ({
         )}
 
         {!loading && files.map((file, index) => (
-          <FileTreeItem
+          <FileTreeNode
             key={`${file.path}-${index}`}
             item={file}
             level={0}

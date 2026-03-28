@@ -23,6 +23,7 @@ interface MonacoEditorProps {
   filePath?: string;
   workspacePath?: string;
   editorSettings?: EditorSettings;
+  inlineCompletions?: boolean;
   issues?: Array<{
     line: number;
     column: number;
@@ -49,6 +50,7 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
   filePath,
   workspacePath,
   editorSettings = {},
+  inlineCompletions = true,
   issues = []
 }, ref) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
@@ -252,6 +254,13 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
   useEffect(() => {
     updateMarkers();
   }, [issues]);
+
+  // Toggle completion service when the setting changes at runtime
+  useEffect(() => {
+    if (completionServiceRef.current) {
+      completionServiceRef.current.setEnabled(inlineCompletions);
+    }
+  }, [inlineCompletions]);
 
   // Cleanup completion service on unmount
   useEffect(() => {

@@ -243,9 +243,10 @@ describe('CollaborationEngine', () => {
       await engine.joinSession(session.id, 'user');
       await engine.leaveSession(session.id, 'user');
 
-      expect(events).toHaveLength(2);
-      expect(events[0].type).toBe('user_joined');
-      expect(events[1].type).toBe('user_left');
+      expect(events).toHaveLength(3);
+      expect(events[0].type).toBe('session_created');
+      expect(events[1].type).toBe('user_joined');
+      expect(events[2].type).toBe('user_left');
     });
 
     test('should emit change events', async () => {

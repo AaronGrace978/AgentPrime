@@ -1,0 +1,97 @@
+.template-gallery .category-icon {
+  min-width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--prime-surface-hover);
+  border: 1px solid var(--prime-border);
+  color: var(--prime-text-secondary);
+  text-transform: uppercase;
+}
+
+.template-gallery .category-btn.active .category-icon {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+/* Give "All Templates" a neutral, premium treatment (not bright blue). */
+.template-gallery .category-btn[data-category="all"].active {
+  background: var(--prime-surface-hover) !important;
+  border-color: var(--prime-border) !important;
+  color: var(--prime-text) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.template-gallery .category-btn[data-category="all"].active .category-icon {
+  background: var(--prime-surface) !important;
+  border-color: var(--prime-border) !important;
+  color: var(--prime-text-secondary) !important;
+}
+
+.template-gallery .template-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--prime-accent-light);
+  border: 1px solid var(--prime-border);
+  color: var(--prime-accent);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.template-modal-content .template-icon-large {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--prime-accent-light);
+  border: 1px solid var(--prime-border);
+  color: var(--prime-accent);
+  text-transform: uppercase;
+}
+
+.template-modal-content .info-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: var(--prime-surface-hover);
+  border: 1px solid var(--prime-border);
+  color: var(--prime-text-secondary);
+}
+
+.template-modal-content .complexity-btn.primary,
+.template-modal-content .ai-composer-btn {
+  background: var(--prime-accent);
+  border-color: var(--prime-accent);
+  box-shadow: none;
+}
+
+.template-modal-content .complexity-btn.primary:hover:not(:disabled),
+.template-modal-content .ai-composer-btn:hover {
+  background: var(--prime-accent-hover);
+  border-color: var(--prime-accent-hover);
+  box-shadow: var(--prime-shadow-md);
+}

@@ -22,7 +22,6 @@ import {
   MessageList,
   QuickPrompts,
   ChatInput,
-  StatusBar,
   WorkspaceSelector,
   SpecializedAgentsToggle,
   CreateFolderDialog
@@ -67,6 +66,21 @@ const AIChat: React.FC<AIChatProps> = ({
       }
     };
     loadActiveModel();
+  }, []);
+
+  // Prefill chat input when templates route a request here.
+  useEffect(() => {
+    const handlePrefillMessage = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      if (typeof customEvent.detail === 'string' && customEvent.detail.trim()) {
+        setInput(customEvent.detail);
+      }
+    };
+
+    window.addEventListener('agentprime:prefill-message', handlePrefillMessage as EventListener);
+    return () => {
+      window.removeEventListener('agentprime:prefill-message', handlePrefillMessage as EventListener);
+    };
   }, []);
 
   // Custom hooks
@@ -148,19 +162,19 @@ const AIChat: React.FC<AIChatProps> = ({
   useEffect(() => {
     const handleStepComplete = (data: { type: string; title: string; success: boolean }) => {
       if (!agentRunning) return;
-      const icon = data.success ? '✅' : '⚠️';
-      const typeIcons: Record<string, string> = {
-        'write_file': '📝', 'read_file': '📖', 'run_command': '⚙️',
-        'list_dir': '📂', 'patch_file': '🔧', 'search': '🔍',
+      const statusTag = data.success ? '[ok]' : '[warn]';
+      const typeTags: Record<string, string> = {
+        'write_file': '[write]', 'read_file': '[read]', 'run_command': '[cmd]',
+        'list_dir': '[list]', 'patch_file': '[patch]', 'search': '[search]',
       };
-      const stepIcon = typeIcons[data.type] || icon;
+      const stepTag = typeTags[data.type] || statusTag;
       setMessages(prev => {
         // Find the "Working..." message and append progress
         const workingIdx = prev.findIndex(m => m.content.includes('Working on your request'));
         if (workingIdx >= 0) {
           const updated = [...prev];
           const current = updated[workingIdx].content;
-          const progressLine = `\n${stepIcon} ${data.title}`;
+          const progressLine = `\n${stepTag} ${data.title}`;
           // Avoid duplicates
           if (!current.includes(data.title)) {
             updated[workingIdx] = {
@@ -182,8 +196,8 @@ const AIChat: React.FC<AIChatProps> = ({
           const updated = [...prev];
           const current = updated[workingIdx].content;
           const fileName = data.path.split(/[/\\]/).pop() || data.path;
-          const actionIcon = data.action === 'created' ? '🆕' : '📝';
-          const progressLine = `\n${actionIcon} ${data.action}: \`${fileName}\``;
+          const actionTag = data.action === 'created' ? '[new]' : '[updated]';
+          const progressLine = `\n${actionTag} ${data.action}: \`${fileName}\``;
           if (!current.includes(fileName)) {
             updated[workingIdx] = {
               ...updated[workingIdx],
@@ -243,7 +257,7 @@ const AIChat: React.FC<AIChatProps> = ({
             if (!error.includes('Iteration')) {
               setMessages(prev => [...prev, {
                 role: 'assistant',
-                content: `❌ ${error}`,
+                content: `Error: ${error}`,
                 timestamp: new Date()
               }]);
             }
@@ -252,7 +266,7 @@ const AIChat: React.FC<AIChatProps> = ({
           onComplete: (message) => {
             setMessages(prev => [...prev, {
               role: 'assistant',
-              content: `✅ Done! ${message}`,
+              content: `Done: ${message}`,
               timestamp: new Date()
             }]);
             setAgentRunning(false);
@@ -272,7 +286,7 @@ const AIChat: React.FC<AIChatProps> = ({
     if (folderPath) {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `📂 Workspace opened: **${folderPath.split(/[/\\]/).pop()}**\n\nI can now access all files in this project. What would you like me to do?`,
+        content: `Workspace opened: **${folderPath.split(/[/\\]/).pop()}**\n\nI can now access all files in this project. What would you like me to do?`,
         timestamp: new Date(),
         type: 'system'
       }]);
@@ -303,7 +317,7 @@ const AIChat: React.FC<AIChatProps> = ({
         
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: `📂 **New project folder created: ${folderName}**\n\nLocation: \`${folderPath}\`\n\n✅ This folder is now your workspace. All files will be created here. Ready to build!`,
+          content: `New project folder created: **${folderName}**\n\nLocation: \`${folderPath}\`\n\nThis folder is now your workspace. All files will be created here.`,
           timestamp: new Date(),
           type: 'system'
         }]);
@@ -322,7 +336,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const handleClearChat = () => {
     setMessages([{
       role: 'assistant',
-      content: '🧹 Chat cleared! Ready for a fresh start.\n\n*What would you like to build?*',
+      content: 'Chat cleared. Ready for a fresh start.\n\n*What would you like to build?*',
       timestamp: new Date(),
       type: 'system'
     }]);
@@ -337,7 +351,7 @@ const AIChat: React.FC<AIChatProps> = ({
       if (newMode) {
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: '🦖✨ **RAWR! DINO BUDDY MODE ACTIVATED!** 💖\n\nHey buddy! Your favorite explosive dinosaur companion is HERE! 🦕💫\n\nI\'m ready to vibe, create, and have the BEST time coding together! Let\'s make something AMAZING! 🔥✨',
+          content: '**Dino Buddy Mode enabled.**\n\nFriendly conversational tone is now active for this chat.',
           timestamp: new Date(),
           type: 'system'
         }]);
@@ -365,7 +379,7 @@ const AIChat: React.FC<AIChatProps> = ({
     if (!workspacePath) {
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `📂 **Workspace Required**\n\nAgent mode needs a workspace to operate. Click the **📂 Select Folder** button above to choose your project directory.`,
+        content: `**Workspace required**\n\nAgent mode needs a workspace to operate. Click **Select Folder** above to choose your project directory.`,
         timestamp: new Date(),
         type: 'system'
       }]);
@@ -402,10 +416,10 @@ const AIChat: React.FC<AIChatProps> = ({
     }
 
     // Show thinking indicator
-    const brainEmoji = dualModel.mode === 'fast' ? '⚡' : dualModel.mode === 'deep' ? '🧠' : '🔀';
+    const modeLabel = dualModel.mode === 'fast' ? 'Fast' : dualModel.mode === 'deep' ? 'Deep' : 'Auto';
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: `🤖 ${brainEmoji} Working on your request using **${agentModel}**...`,
+      content: `Working on your request using **${agentModel}** (${modeLabel} mode)...`,
       timestamp: new Date()
     }]);
 
@@ -424,7 +438,7 @@ const AIChat: React.FC<AIChatProps> = ({
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
         return [...filtered, {
           role: 'assistant',
-          content: result.success ? result.response : `❌ Agent failed${result.error ? `: ${result.error}` : ''}`,
+          content: result.success ? result.response : `Agent failed${result.error ? `: ${result.error}` : ''}`,
           timestamp: new Date()
         }];
       });
@@ -438,7 +452,7 @@ const AIChat: React.FC<AIChatProps> = ({
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
         return [...filtered, {
           role: 'assistant',
-          content: `❌ Agent error: ${error.message}`,
+          content: `Agent error: ${error.message}`,
           timestamp: new Date()
         }];
       });
@@ -458,7 +472,7 @@ const AIChat: React.FC<AIChatProps> = ({
     setAgentRunning(false);
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: '🛑 Agent stopped',
+      content: 'Agent stopped',
       timestamp: new Date(),
       type: 'system'
     }]);
@@ -467,55 +481,53 @@ const AIChat: React.FC<AIChatProps> = ({
   return (
     <div style={{
       position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0, 0, 0, 0.4)',
-      backdropFilter: 'blur(8px)',
+      top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0, 0, 0, 0.5)',
+      backdropFilter: 'blur(4px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 1000
+      zIndex: 1000,
+      animation: 'chatOverlayIn 0.15s ease'
     }} onClick={onClose}>
       <div style={{
-        background: 'var(--prime-surface)',
+        background: 'var(--prime-bg)',
         border: '1px solid var(--prime-border)',
-        borderRadius: '20px',
+        borderRadius: '14px',
         width: '90%',
-        maxWidth: '850px',
+        maxWidth: '800px',
         height: '80%',
+        maxHeight: '700px',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: 'var(--prime-shadow-xl)',
-        overflow: 'hidden'
+        boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.3)',
+        overflow: 'hidden',
+        animation: 'chatModalIn 0.2s ease'
       }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div style={{
-          borderBottom: '1px solid var(--prime-border)',
-          background: `linear-gradient(180deg, var(--prime-bg) 0%, var(--prime-surface) 100%)`
-        }}>
+        <div style={{ background: 'var(--prime-surface)' }}>
           <ChatHeader
             dinoBuddyMode={dinoBuddyMode}
             pythonBrainStatus={pythonBrainStatus}
             onClose={onClose}
           />
 
-          {/* Command Bar */}
+          {/* Toolbar */}
           <div style={{
-            padding: '12px 20px',
+            padding: '8px 18px 10px',
             display: 'flex',
-            gap: '12px',
             alignItems: 'center',
-            flexWrap: 'wrap'
+            gap: '8px',
+            borderTop: '1px solid var(--prime-border)',
+            borderBottom: '1px solid var(--prime-border)',
+            flexWrap: 'wrap',
+            background: 'var(--prime-bg)'
           }}>
             <WorkspaceSelector
               workspacePath={workspacePath}
               onOpenFolder={handleOpenFolder}
               onCreateFolder={handleCreateFolderClick}
             />
-
-            <div style={{ width: '1px', height: '28px', background: 'var(--prime-border)' }} />
 
             <BrainSelector
               mode={dualModel.mode}
@@ -524,99 +536,61 @@ const AIChat: React.FC<AIChatProps> = ({
               onConfigChange={saveBrainConfig}
             />
 
-            <div style={{ width: '1px', height: '28px', background: 'var(--prime-border)' }} />
-
             <SpecializedAgentsToggle
               enabled={useSpecializedAgents}
               onChange={setUseSpecializedAgents}
             />
 
-            <div style={{ width: '1px', height: '28px', background: 'var(--prime-border)' }} />
-
-            {/* Agent Mode Indicator */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: '10px',
-              border: '1px solid var(--prime-accent)',
-              background: 'var(--prime-accent-light)',
-              color: 'var(--prime-accent)',
-              fontSize: '13px',
-              fontWeight: '600'
-            }}>
-              🤖 Agent Mode
-              <div style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: 'var(--prime-success)',
-                border: '1px solid var(--prime-green)'
-              }} />
-            </div>
-
             <div style={{ flex: 1 }} />
 
-            {/* Quick Actions */}
-            <div style={{ display: 'flex', gap: '6px' }}>
-              <button
-                onClick={handleDinoToggle}
-                title={dinoBuddyMode ? 'Disable Dino Buddy Mode' : 'Enable Dino Buddy Mode 🦖'}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: dinoBuddyMode ? `2px solid var(--prime-amber)` : '1px solid var(--prime-border)',
-                  background: dinoBuddyMode ? 'var(--prime-accent-light)' : 'var(--prime-surface)',
-                  color: dinoBuddyMode ? 'var(--prime-amber)' : 'var(--prime-text-secondary)',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  fontWeight: '500'
-                }}
-              >
-                🦖 {dinoBuddyMode ? 'Dino ON!' : 'Dino'}
-              </button>
-              
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {dinoBuddyMode && (
+                <button
+                  onClick={handleDinoToggle}
+                  title="Disable Dino Buddy Mode"
+                  className="chat-toolbar-btn chat-toolbar-btn--active"
+                  style={{
+                    padding: '5px 9px', borderRadius: '6px',
+                    border: '1px solid var(--prime-amber)',
+                    background: 'rgba(245, 158, 11, 0.1)',
+                    color: 'var(--prime-amber)',
+                    cursor: 'pointer', fontSize: '11px', fontWeight: '600',
+                    fontFamily: 'inherit'
+                  }}
+                >
+                  Dino
+                </button>
+              )}
               <button
                 onClick={handleClearChat}
                 style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
+                  padding: '5px 9px', borderRadius: '6px',
                   border: '1px solid var(--prime-border)',
-                  background: 'var(--prime-surface)',
-                  color: 'var(--prime-text-secondary)',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  fontWeight: '500'
+                  background: 'transparent',
+                  color: 'var(--prime-text-muted)',
+                  cursor: 'pointer', fontSize: '11px', fontWeight: '600',
+                  fontFamily: 'inherit'
                 }}
               >
-                🧹 Clear
+                Clear
               </button>
-              
               {onOpenTemplates && (
                 <button
                   onClick={onOpenTemplates}
                   style={{
-                    padding: '8px 12px',
-                    borderRadius: '8px',
+                    padding: '5px 9px', borderRadius: '6px',
                     border: '1px solid var(--prime-border)',
-                    background: 'var(--prime-surface)',
-                    color: 'var(--prime-text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: '500'
+                    background: 'transparent',
+                    color: 'var(--prime-text-muted)',
+                    cursor: 'pointer', fontSize: '11px', fontWeight: '600',
+                    fontFamily: 'inherit'
                   }}
                 >
-                  📋 Templates
+                  Templates
                 </button>
               )}
             </div>
           </div>
-
-          <StatusBar
-            currentModel={dualModel.currentModel}
-            complexity={dualModel.lastComplexity}
-          />
         </div>
 
         {/* Messages */}

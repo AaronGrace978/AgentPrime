@@ -7,6 +7,7 @@ import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import { completionOptimizer } from '../core/completion-optimizer';
 import { getContextManager } from '../core/context-manager';
 import { getCompletionPatternRecognizer } from '../core/completion-pattern-recognizer';
+import { getIntentOrchestrator } from '../consciousness/intent-orchestrator';
 import type { CompletionRequest, CompletionResponse } from '../../types/completions';
 
 let workspacePathGetter: (() => string | null) | null = null;
@@ -159,10 +160,23 @@ export function registerCompletionHandlers(deps?: CompletionHandlerDeps | (() =>
     return activeFilePathGetter ? activeFilePathGetter() : null;
   });
 
-  // Set active file path when editor focus changes
+  // Set active file path when editor focus changes.
+  // Also nudge the consciousness orchestrator so code context stays fresh.
   ipcMain.on('file:active-changed', (event, filePath: string | null) => {
     if (activeFilePathSetter) {
       activeFilePathSetter(filePath);
+    }
+
+    if (filePath) {
+      try {
+        const orchestrator = getIntentOrchestrator();
+        orchestrator.process({
+          userMessage: `editing ${filePath}`,
+          projectFiles: filePath ? [filePath] : undefined
+        }).catch(() => {});
+      } catch {
+        // Consciousness not ready yet — skip
+      }
     }
   });
 

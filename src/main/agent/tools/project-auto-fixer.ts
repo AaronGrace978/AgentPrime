@@ -183,6 +183,60 @@ export class ProjectAutoFixer {
         modified = true;
       }
 
+      // Bare npm imports in browser JS (e.g. import from 'three') require Vite — not plain "npx serve"
+      const allPkgDeps = { ...(packageJson.dependencies || {}), ...(packageJson.devDependencies || {}) };
+      const browserBundlerDeps = [
+        'three',
+        'react',
+        'react-dom',
+        'vue',
+        'svelte',
+        '@react-three/fiber',
+        'pixi.js'
+      ];
+      const listsBrowserNpm = browserBundlerDeps.some((n) => Boolean(packageJson.dependencies?.[n]));
+      const hasBareImport =
+        listsBrowserNpm || this.sourceFilesUseBareNpmImports(workspacePath);
+      const hasBundler =
+        Boolean(
+          packageJson.devDependencies?.vite ||
+            packageJson.devDependencies?.webpack ||
+            packageJson.devDependencies?.parcel ||
+            packageJson.dependencies?.vite
+        );
+      if (hasBareImport && !hasBundler) {
+        commonDevDeps.vite = commonDevDeps.vite || '^5.4.0';
+        if (!packageJson.scripts) packageJson.scripts = {};
+        if (!packageJson.scripts.dev || String(packageJson.scripts.dev).includes('serve')) {
+          packageJson.scripts.dev = 'vite';
+        }
+        if (!packageJson.scripts.start || String(packageJson.scripts.start).includes('serve')) {
+          packageJson.scripts.start = 'vite';
+        }
+        if (!packageJson.scripts.build) packageJson.scripts.build = 'vite build';
+        if (!packageJson.scripts.preview) packageJson.scripts.preview = 'vite preview';
+        fixes.push(
+          'Added Vite and scripts — projects that import npm packages in the browser must use a bundler (not static serve alone)'
+        );
+        modified = true;
+        const viteJs = path.join(workspacePath, 'vite.config.js');
+        const viteTs = path.join(workspacePath, 'vite.config.ts');
+        if (!fs.existsSync(viteJs) && !fs.existsSync(viteTs)) {
+          fs.writeFileSync(
+            viteJs,
+            `import { defineConfig } from 'vite';
+
+export default defineConfig({
+  root: '.',
+  server: { port: 5173, open: true }
+});
+`,
+            'utf-8'
+          );
+          fixes.push('Created vite.config.js for ES module / npm resolution');
+        }
+      }
+
       // Add React types if React is used
       if (hasReact && hasTypeScript) {
         if (!packageJson.devDependencies?.['@types/react']) {
@@ -1870,6 +1924,24 @@ npm-debug.log*
       } catch {
         // Ignore
       }
+    }
+    return false;
+  }
+
+  /** True if any source file uses `from 'pkg'` where pkg is not a relative path — needs a bundler in the browser */
+  private static sourceFilesUseBareNpmImports(workspacePath: string): boolean {
+    const files = [
+      ...this.findFiles(workspacePath, '.js'),
+      ...this.findFiles(workspacePath, '.ts'),
+      ...this.findFiles(workspacePath, '.jsx'),
+      ...this.findFiles(workspacePath, '.tsx')
+    ];
+    const bareFrom = /from\s+['"](?!\.{0,2}\/)(@[^'"]+|[^'"/]+)['"]/;
+    for (const file of files) {
+      if (file.includes(`${path.sep}node_modules${path.sep}`)) continue;
+      const content = this.safeReadFileSync(file, 'utf-8');
+      if (!content) continue;
+      if (bareFrom.test(content)) return true;
     }
     return false;
   }

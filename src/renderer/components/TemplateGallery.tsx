@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './TemplateGallery.css';
 
 interface Template {
   id: string;
@@ -21,21 +22,21 @@ interface TemplateGalleryProps {
   onSelectTemplate: (template: Template) => void;
 }
 
-// Helper to get category icon by ID
-  const getCategoryIconById = (categoryId: string): string => {
+// Helper to create compact text badges without emoji.
+const getCategoryIconById = (categoryId: string): string => {
   const iconMap: Record<string, string> = {
-    desktop: '🖥️',
-    fullstack: '🌐',
-    frontend: '💻',
-    backend: '🔗',
-    web: '🌐',
-    cli: '🐚',
-    mobile: '📱',
-    game: '🎮',
-    games: '🎮',
-    all: '📚'
+    desktop: 'DS',
+    fullstack: 'FS',
+    frontend: 'FE',
+    backend: 'BE',
+    web: 'WB',
+    cli: 'CL',
+    mobile: 'MB',
+    game: 'GM',
+    games: 'GM',
+    all: 'AL'
   };
-  return iconMap[categoryId] || '📄';
+  return iconMap[categoryId] || 'TM';
 };
 
 const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) => {
@@ -75,7 +76,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'react-app',
       name: 'React App',
       description: 'Full-stack React application with modern tooling',
-      icon: '⚡',
+      icon: 'RA',
       category: 'web',
       difficulty: 'intermediate',
       tech: ['React', 'TypeScript', 'Vite']
@@ -84,7 +85,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'express-api',
       name: 'Express API',
       description: 'RESTful API with Express.js and database integration',
-      icon: '🔗',
+      icon: 'AP',
       category: 'backend',
       difficulty: 'intermediate',
       tech: ['Node.js', 'Express', 'MongoDB']
@@ -93,7 +94,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'python-cli',
       name: 'Python CLI Tool',
       description: 'Command-line tool with argument parsing and rich output',
-      icon: '🐍',
+      icon: 'PY',
       category: 'cli',
       difficulty: 'beginner',
       tech: ['Python', 'Click', 'Rich']
@@ -102,7 +103,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'electron-app',
       name: 'Electron Desktop App',
       description: 'Cross-platform desktop application',
-      icon: '💻',
+      icon: 'EL',
       category: 'desktop',
       difficulty: 'advanced',
       tech: ['Electron', 'React', 'Node.js']
@@ -111,7 +112,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'vue-spa',
       name: 'Vue.js SPA',
       description: 'Single-page application with Vue 3 and Composition API',
-      icon: '💚',
+      icon: 'VU',
       category: 'web',
       difficulty: 'intermediate',
       tech: ['Vue.js', 'Vue Router', 'Pinia']
@@ -120,7 +121,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'fastapi-backend',
       name: 'FastAPI Backend',
       description: 'High-performance Python web API with automatic docs',
-      icon: '🚀',
+      icon: 'FA',
       category: 'backend',
       difficulty: 'intermediate',
       tech: ['Python', 'FastAPI', 'SQLAlchemy']
@@ -129,7 +130,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'react-native-app',
       name: 'React Native App',
       description: 'Cross-platform mobile application',
-      icon: '📱',
+      icon: 'RN',
       category: 'mobile',
       difficulty: 'advanced',
       tech: ['React Native', 'Expo', 'TypeScript']
@@ -138,7 +139,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
       id: 'game-html5',
       name: 'HTML5 Game',
       description: 'Browser-based game with Canvas API',
-      icon: '🎮',
+      icon: 'GM',
       category: 'game',
       difficulty: 'intermediate',
       tech: ['HTML5', 'Canvas', 'JavaScript']
@@ -146,13 +147,13 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
   ];
 
   const allCategories = categories.length > 0 
-    ? [{ id: 'all', name: 'All Templates', icon: '📚' }, ...categories]
+    ? [{ id: 'all', name: 'All Templates', icon: 'AL' }, ...categories]
     : [
-        { id: 'all', name: 'All Templates', icon: '📚' },
-        { id: 'desktop', name: 'Desktop', icon: '🖥️' },
-        { id: 'fullstack', name: 'Full-Stack', icon: '🌐' },
-        { id: 'frontend', name: 'Frontend', icon: '💻' },
-        { id: 'backend', name: 'Backend', icon: '🔗' }
+        { id: 'all', name: 'All Templates', icon: 'AL' },
+        { id: 'desktop', name: 'Desktop', icon: 'DS' },
+        { id: 'fullstack', name: 'Full-Stack', icon: 'FS' },
+        { id: 'frontend', name: 'Frontend', icon: 'FE' },
+        { id: 'backend', name: 'Backend', icon: 'BE' }
       ];
 
   const displayTemplates = templates.length > 0 ? templates : fallbackTemplates;
@@ -160,21 +161,22 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
     ? displayTemplates
     : displayTemplates.filter(t => t.category === selectedCategory);
 
-  const getCategoryIcon = (categoryId: string) => {
-    const category = allCategories.find(c => c.id === categoryId);
-    return category?.icon || '📄';
-  };
-
   const getTemplateIcon = (template: Template) => {
-    if (template.icon) return template.icon;
-    // Map category to icon
+    const safeTemplateIcon = (template.icon || '').replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase();
+    if (safeTemplateIcon) return safeTemplateIcon;
+
+    // Map category to badge text
     const iconMap: Record<string, string> = {
-      desktop: '💻',
-      fullstack: '🌐',
-      frontend: '⚛️',
-      backend: '🔗'
+      desktop: 'DS',
+      fullstack: 'FS',
+      frontend: 'FE',
+      backend: 'BE',
+      web: 'WB',
+      cli: 'CL',
+      mobile: 'MB',
+      game: 'GM'
     };
-    return iconMap[template.category] || '📄';
+    return iconMap[template.category] || 'TM';
   };
 
   if (loading) {
@@ -188,7 +190,7 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
   return (
     <div className="template-gallery">
       <div className="gallery-header">
-        <h2>🚀 Project Templates</h2>
+        <h2>Project Templates</h2>
         <span className="gallery-subtitle">Choose a starting point for your project</span>
       </div>
 
@@ -197,9 +199,12 @@ const TemplateGallery: React.FC<TemplateGalleryProps> = ({ onSelectTemplate }) =
           <button
             key={category.id}
             className={`category-btn ${selectedCategory === category.id ? 'active' : ''}`}
+            data-category={category.id}
             onClick={() => setSelectedCategory(category.id)}
           >
-            <span className="category-icon">{category.icon || '📄'}</span>
+            {category.id !== 'all' && (
+              <span className="category-icon">{category.icon || 'TM'}</span>
+            )}
             <span className="category-name">{category.name}</span>
           </button>
         ))}

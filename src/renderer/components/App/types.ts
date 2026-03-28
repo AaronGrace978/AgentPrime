@@ -2,6 +2,8 @@
  * App Types - Shared type definitions
  */
 
+import type { ReactNode } from 'react';
+
 export interface FileItem {
   name: string;
   path: string;
@@ -40,7 +42,7 @@ export interface Command {
   id: string;
   title: string;
   description: string;
-  icon: string;
+  icon: ReactNode;
   category: 'file' | 'ai' | 'view' | 'git' | 'settings' | 'navigation';
   shortcut?: string;
   action: () => void;

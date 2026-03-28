@@ -946,6 +946,33 @@ export function validatePackageJson(content: string): ValidationResult {
         }
       }
     }
+
+    // Bundler required when browser npm packages are used (bare imports are not resolved by static servers)
+    const browserPackagesNeedingBundler = [
+      'three',
+      'react',
+      'react-dom',
+      'vue',
+      'svelte',
+      '@react-three/fiber',
+      'pixi.js',
+      '@pixi/react'
+    ];
+    const hasBrowserNpmDep = browserPackagesNeedingBundler.some((name) => Boolean(pkg.dependencies?.[name]));
+    const hasBundler =
+      Boolean(
+        pkg.devDependencies?.vite ||
+          pkg.devDependencies?.webpack ||
+          pkg.devDependencies?.parcel ||
+          pkg.devDependencies?.rollup ||
+          pkg.dependencies?.vite
+      );
+    if (hasBrowserNpmDep && !hasBundler) {
+      errors.push(
+        `🚨 Browser npm dependencies (e.g. three, react) require a bundler. Plain "npx serve" / "serve" only serves static files — the browser cannot resolve bare imports like import * as THREE from 'three'. ` +
+          `Add devDependencies: { "vite": "^5.4.0" }, scripts: { "dev": "vite", "build": "vite build", "preview": "vite preview", "start": "vite" }, and a root vite.config.js. README must say: npm install && npm run dev.`
+      );
+    }
     
     if (errors.length > 0) {
       return {
@@ -1051,6 +1078,45 @@ export function autoFixPackageJsonScripts(content: string): {
           modified = true;
         }
       }
+    }
+
+    // If package.json lists browser npm packages but no bundler, add Vite (fixes broken "serve + three" projects)
+    try {
+      const browserPkgs = [
+        'three',
+        'react',
+        'react-dom',
+        'vue',
+        'svelte',
+        '@react-three/fiber',
+        'pixi.js',
+        '@pixi/react'
+      ];
+      const hasBrowserDep = browserPkgs.some((n) => Boolean(pkg.dependencies?.[n]));
+      const hasBundler =
+        Boolean(
+          pkg.devDependencies?.vite ||
+            pkg.devDependencies?.webpack ||
+            pkg.devDependencies?.parcel ||
+            pkg.dependencies?.vite
+        );
+      if (hasBrowserDep && !hasBundler) {
+        if (!pkg.devDependencies) pkg.devDependencies = {};
+        pkg.devDependencies.vite = pkg.devDependencies.vite || '^5.4.0';
+        pkg.scripts = pkg.scripts || {};
+        const devCmd = String(pkg.scripts.dev || '');
+        const startCmd = String(pkg.scripts.start || '');
+        if (!pkg.scripts.dev || devCmd.includes('serve')) pkg.scripts.dev = 'vite';
+        if (!pkg.scripts.start || startCmd.includes('serve') || startCmd === 'npx serve') pkg.scripts.start = 'vite';
+        if (!pkg.scripts.build) pkg.scripts.build = 'vite build';
+        if (!pkg.scripts.preview) pkg.scripts.preview = 'vite preview';
+        changes.push(
+          'Added Vite and aligned scripts — npm packages in browser code need a bundler; "npx serve" alone cannot resolve bare imports'
+        );
+        modified = true;
+      }
+    } catch {
+      // ignore
     }
     
     return {

@@ -1,0 +1,13 @@
+{
+  "name": "agentprime-server-node",
+  "version": "1.0.0",
+  "description": "Always-on hub node for Matrix Agent - runs on Raspberry Pi, server, or spare PC",
+  "main": "run.js",
+  "scripts": {
+    "start": "node run.js",
+    "pair": "node run.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  }
+}

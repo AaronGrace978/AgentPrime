@@ -382,7 +382,10 @@ async function executeTool(name: string, input: any): Promise<string> {
         }
         
         try {
-          execSync(cmd, { stdio: 'ignore', shell: true });
+          execSync(cmd, {
+            stdio: 'ignore',
+            shell: os.platform() === 'win32' ? 'powershell.exe' : '/bin/bash'
+          });
           return `✅ Opened ${target}`;
         } catch (e: any) {
           return `Error opening: ${e.message}`;
@@ -505,7 +508,7 @@ async function executeTool(name: string, input: any): Promise<string> {
           .replace(/[:\-_]/g, ' ')  // Normalize punctuation
           .replace(/\s+/g, ' ')     // Normalize spaces
           .trim();
-        const searchTerms = appName.split(/\s+/).filter(t => t.length > 1);
+        const searchTerms = appName.split(/\s+/).filter((t: string) => t.length > 1);
         
         // Known game/app aliases for fuzzy matching
         const aliases: Record<string, string[]> = {

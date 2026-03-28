@@ -16,6 +16,7 @@ import type {
   ConflictResolution,
   AgentConflict
 } from '../../types/agent-coordination';
+import type { MirrorPattern } from '../../types';
 import { getRelevantPatterns, storeTaskLearning } from '../mirror/mirror-singleton';
 import * as crypto from 'crypto';
 
@@ -52,9 +53,11 @@ export class AgentCoordinator {
     }
   ): Promise<{
     success: boolean;
+    taskId: string;
     results: Map<AgentRole, SubtaskResult>;
     conflicts: AgentConflict[];
     outcome: TaskOutcome;
+    error?: string;
   }> {
     const taskId = this.generateTaskId();
     const startTime = Date.now();
@@ -116,6 +119,7 @@ export class AgentCoordinator {
 
       return {
         success: outcome.overallSuccess,
+        taskId,
         results: aggregatedResults,
         conflicts,
         outcome
@@ -144,7 +148,14 @@ export class AgentCoordinator {
       this.activeTasks.delete(taskId);
       this.taskHistory.push(outcome);
 
-      throw error;
+      return {
+        success: false,
+        taskId,
+        results: new Map<AgentRole, SubtaskResult>(),
+        conflicts: coordinatedTask.conflicts,
+        outcome,
+        error: error?.message || 'Task orchestration failed'
+      };
     }
   }
 
@@ -633,10 +644,17 @@ export class AgentCoordinator {
    */
   private async learnFromOutcome(outcome: TaskOutcome): Promise<void> {
     try {
+      const normalizedPatterns: MirrorPattern[] = (outcome.patternsUsed || []).map((patternId, index) => ({
+        id: `${patternId}-${index}`,
+        type: 'task-pattern',
+        category: 'problemSolving',
+        description: patternId,
+        confidence: 0.7
+      }));
       await storeTaskLearning(
         outcome.originalTask,
         outcome.overallSuccess,
-        outcome.patternsUsed || [],
+        normalizedPatterns,
         outcome.mistakes || []
       );
     } catch (error) {

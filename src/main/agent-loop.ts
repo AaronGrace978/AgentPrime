@@ -3127,10 +3127,12 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       ];
       console.log('[Agent] 📋 Configured Anthropic model escalation chain (with incremental fallback)');
     } else if (isOpenAIModel) {
-      // OpenAI escalation chain
+      // OpenAI escalation chain (GPT-5.2 → GPT-4o → fallback)
       this.modelChain = [
         { name: 'GPT-4o Mini', provider: 'openai', model: 'gpt-4o-mini', tier: 'fast' },
         { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
+        { name: 'GPT-5.2', provider: 'openai', model: 'gpt-5.2', tier: 'premium' },
+        { name: 'GPT-5.2 (Latest)', provider: 'openai', model: 'gpt-5.2-2025-12-11', tier: 'premium' },
         { name: 'Ollama Fallback', provider: 'ollama', model: 'qwen3-coder:480b-cloud', tier: 'fallback' }
       ];
       console.log('[Agent] 📋 Configured OpenAI model escalation chain');

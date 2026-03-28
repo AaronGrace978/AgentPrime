@@ -5,7 +5,13 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { ThemeId, Theme, getTheme, applyTheme, themes } from '../../../themes';
+import { ThemeId, Theme, getTheme, applyTheme, themes, getTitleBarOverlay } from '../../../themes';
+
+function syncNativeTitleBar(theme: Theme): void {
+  if (typeof window.agentAPI?.setTitleBarOverlay === 'function') {
+    void window.agentAPI.setTitleBarOverlay(getTitleBarOverlay(theme));
+  }
+}
 
 interface UseThemeReturn {
   currentTheme: ThemeId;
@@ -41,20 +47,23 @@ export function useTheme(): UseThemeReturn {
         const theme = getTheme(themeId);
         setCurrentTheme(themeId);
         applyTheme(theme);
+        syncNativeTitleBar(theme);
       } catch (error) {
         console.error('Failed to load theme:', error);
-        // Apply default dark theme
-        applyTheme(getTheme('dark'));
+        const fallback = getTheme('dark');
+        applyTheme(fallback);
+        syncNativeTitleBar(fallback);
       }
     };
     loadTheme();
     
     // Listen for theme changes
     if (window.agentAPI && window.agentAPI.on) {
-      window.agentAPI.on('theme-changed', (event: any, newThemeId: string) => {
+      window.agentAPI.on('theme-changed', (_event: unknown, newThemeId: string) => {
         const theme = getTheme(newThemeId as ThemeId);
         setCurrentTheme(newThemeId as ThemeId);
         applyTheme(theme);
+        syncNativeTitleBar(theme);
       });
     }
     
@@ -78,6 +87,7 @@ export function useTheme(): UseThemeReturn {
     });
     setCurrentTheme(newTheme.id);
     applyTheme(newTheme);
+    syncNativeTitleBar(newTheme);
   }, [currentTheme]);
 
   // Set specific theme by ID
@@ -89,6 +99,7 @@ export function useTheme(): UseThemeReturn {
     });
     setCurrentTheme(themeId);
     applyTheme(theme);
+    syncNativeTitleBar(theme);
   }, []);
 
   // Get Monaco editor theme name

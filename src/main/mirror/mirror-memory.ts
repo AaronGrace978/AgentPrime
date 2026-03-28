@@ -329,7 +329,8 @@ export class MirrorMemory extends EventEmitter {
     // Build set of IDs to remove
     const removeIds = new Set<string>();
     for (let i = 0; i < all.length - MAX_TOTAL_PATTERNS; i++) {
-      if (all[i].pattern.id) removeIds.add(all[i].pattern.id);
+      const id = all[i]?.pattern.id;
+      if (id) removeIds.add(id);
     }
 
     // Remove from each category

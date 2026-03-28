@@ -92,7 +92,6 @@ async function sendTelegram(options: SendOptions) {
     throw new Error('TELEGRAM_BOT_TOKEN not set');
   }
   
-  const fetch = (await import('node-fetch')).default;
   const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -116,7 +115,6 @@ async function sendDiscord(options: SendOptions) {
     throw new Error('DISCORD_BOT_TOKEN not set');
   }
   
-  const fetch = (await import('node-fetch')).default;
   const response = await fetch(`https://discord.com/api/v10/channels/${options.to}/messages`, {
     method: 'POST',
     headers: { 
@@ -142,7 +140,6 @@ async function sendSlack(options: SendOptions) {
     throw new Error('SLACK_BOT_TOKEN not set');
   }
   
-  const fetch = (await import('node-fetch')).default;
   const response = await fetch('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: { 

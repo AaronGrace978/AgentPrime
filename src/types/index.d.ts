@@ -232,7 +232,7 @@ export interface CodebaseIndexStats {
 }
 
 export interface MirrorPattern {
-  id: string;
+  id?: string;
   category?: string;
   pattern?: string;
   examples?: string[];
@@ -242,14 +242,17 @@ export interface MirrorPattern {
   description?: string;
   // Additional properties used by mirror subsystem
   type?: string;
+  source?: string;
   successRate?: number;
   useCount?: number;
   lastUsed?: number;
   created?: number;
+  stepsCompleted?: number;
   metadata?: Record<string, any>;
   sourceType?: string;
   task?: string;
   evaluationScore?: number;
+  timestamp?: number | string;
 }
 
 export interface MirrorMetrics {

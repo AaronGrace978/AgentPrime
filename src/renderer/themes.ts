@@ -721,6 +721,23 @@ export function applyTheme(theme: Theme): void {
   }
 }
 
+/** Windows/Linux caption buttons (titleBarOverlay) — match app chrome */
+export function getTitleBarOverlay(theme: Theme): { color: string; symbolColor: string; height: number } {
+  const height = 32;
+  if (theme.type === 'light') {
+    return {
+      color: theme.colors.surface,
+      symbolColor: theme.colors.textSecondary,
+      height
+    };
+  }
+  return {
+    color: theme.colors.bgSecondary,
+    symbolColor: theme.colors.textMuted,
+    height
+  };
+}
+
 // Get grouped themes by type
 export function getThemesByType(): { light: Theme[]; dark: Theme[] } {
   return {

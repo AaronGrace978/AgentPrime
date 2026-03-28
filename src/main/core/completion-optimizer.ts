@@ -9,6 +9,7 @@
  */
 
 import type { ChatMessage, ChatOptions } from '../../types/ai-providers';
+import { getIntentOrchestrator } from '../consciousness/intent-orchestrator';
 
 /**
  * Dedicated fast completion models (ordered by preference)
@@ -514,14 +515,31 @@ export class CompletionOptimizer {
       Math.max(0, context.beforeCursor.length - 200)
     );
 
+    // ActivatePrime consciousness: inject lightweight project hints
+    // so completions match the user's tech stack and code style
+    let consciousnessHint = '';
+    try {
+      const orchestrator = getIntentOrchestrator();
+      const state = orchestrator.getState();
+      const hints: string[] = [];
+      if (state.codeContext.projectType) hints.push(state.codeContext.projectType);
+      if (state.codeContext.hasTypes) hints.push('TypeScript');
+      if (state.codeContext.techStack.length > 0) hints.push(state.codeContext.techStack.slice(0, 2).join('+'));
+      if (hints.length > 0) {
+        consciousnessHint = `// ${hints.join(' | ')}\n`;
+      }
+    } catch {
+      // Consciousness not yet initialised — no-op
+    }
+
     // Build minimal completion prompt - optimized for FIM (fill-in-middle) models
-    // Using a format that works well with coder models
+    const contextWithHint = consciousnessHint + reducedContext;
     const completionPrompt = context.language 
-      ? `<|fim_prefix|>${reducedContext}<|fim_suffix|>${context.afterCursor?.substring(0, 50) || ''}<|fim_middle|>`
-      : `Complete: ${reducedContext}`;
+      ? `<|fim_prefix|>${contextWithHint}<|fim_suffix|>${context.afterCursor?.substring(0, 50) || ''}<|fim_middle|>`
+      : `Complete: ${contextWithHint}`;
     
     // Fallback to simpler prompt if model doesn't support FIM
-    const simpleFallback = reducedContext;
+    const simpleFallback = contextWithHint;
 
     // Get AI completion with optimized settings
     // Use FIM prompt for supported models, simple prompt as fallback

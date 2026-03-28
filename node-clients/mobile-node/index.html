@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Matrix Agent – Mobile Node</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+    h1 { font-size: 1.25rem; margin: 0 0 16px; color: #58a6ff; }
+    label { display: block; margin-top: 12px; color: #8b949e; font-size: 0.875rem; }
+    input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #30363d; border-radius: 6px; background: #161b22; color: #e6edf3; font-size: 1rem; }
+    button { width: 100%; margin-top: 16px; padding: 12px; border: none; border-radius: 6px; background: #238636; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: #21262d; margin-top: 8px; }
+    .status { margin-top: 16px; padding: 12px; border-radius: 6px; background: #161b22; font-size: 0.875rem; }
+    .status.ok { border-left: 4px solid #238636; }
+    .status.err { border-left: 4px solid #f85149; }
+    .log { margin-top: 8px; max-height: 120px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: #8b949e; }
+  </style>
+</head>
+<body>
+  <h1>Matrix Agent – Mobile Node</h1>
+  <p style="color:#8b949e;font-size:0.875rem;">Use this on your phone for camera, location, and notifications. Same Wi‑Fi as your PC.</p>
+  <form id="form">
+    <label>AgentPrime host (PC IP:port)</label>
+    <input id="host" placeholder="192.168.1.100:18792" value="" />
+    <label>Pairing code</label>
+    <input id="code" placeholder="e.g. A1B2C3" maxlength="6" />
+    <label>Node name</label>
+    <input id="name" placeholder="My Phone" value="My Phone" />
+    <button type="submit" id="btn">Pair & connect</button>
+  </form>
+  <div id="status" class="status" style="display:none;"></div>
+  <div id="log" class="log"></div>
+  <button id="disconnect" class="secondary" style="display:none;">Disconnect</button>
+
+  <script>
+    let ws = null;
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const form = document.getElementById('form');
+    const disconnectBtn = document.getElementById('disconnect');
+
+    function log(msg) {
+      const line = document.createElement('div');
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function setStatus(ok, text) {
+      statusEl.style.display = 'block';
+      statusEl.textContent = text;
+      statusEl.className = 'status ' + (ok ? 'ok' : 'err');
+    }
+
+    async function requestPerms() {
+      if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+    }
+
+    async function handleCommand(payload, commandId) {
+      const { type, params } = payload || {};
+      let result = { success: false, data: null, error: null };
+      try {
+        if (type === 'camera.capture') {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: params?.facing || 'environment' } });
+          const video = document.createElement('video');
+          video.srcObject = stream;
+          video.play();
+          await new Promise(r => video.onloadeddata = r);
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext('2d').drawImage(video, 0, 0);
+          stream.getTracks().forEach(t => t.stop());
+          result.success = true;
+          result.data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        } else if (type === 'location.get') {
+          const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 }));
+          result.success = true;
+          result.data = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        } else if (type === 'notification.send') {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(params?.title || 'Matrix Agent', { body: params?.body || '' });
+            result.success = true;
+          } else {
+            result.error = 'Notification permission not granted';
+          }
+        } else {
+          result.error = 'Unknown command: ' + type;
+        }
+      } catch (e) {
+        result.error = e.message;
+      }
+      send({ type: 'response', payload: { commandId, success: result.success, data: result.data, error: result.error } });
+    }
+
+    function send(obj) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ ...obj, timestamp: Date.now() }));
+      }
+    }
+
+    function connect(host, code, nodeName) {
+      const wsUrl = `ws://${host}`;
+      log('Connecting ' + wsUrl);
+      ws = new WebSocket(wsUrl);
+      ws.onopen = async () => {
+        await requestPerms();
+        send({
+          type: 'pair',
+          payload: {
+            code: code.toUpperCase(),
+            nodeInfo: {
+              name: nodeName || 'Mobile',
+              type: 'mobile',
+              platform: /iPhone|iPad|Android/i.test(navigator.userAgent) ? 'mobile' : 'web',
+              capabilities: ['camera', 'location', 'notifications']
+            }
+          }
+        });
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'pair') {
+            if (msg.payload?.success) {
+              setStatus(true, 'Paired as mobile node. You can close this tab or leave it open.');
+              form.style.display = 'none';
+              disconnectBtn.style.display = 'block';
+              log('Paired.');
+            } else {
+              setStatus(false, msg.payload?.error || 'Pairing failed');
+            }
+          } else if (msg.type === 'command') {
+            const pl = msg.payload || {};
+            log('Command: ' + (pl.type || '?'));
+            handleCommand(pl, pl.id);
+          } else if (msg.type === 'ping') {
+            send({ type: 'pong', payload: {} });
+          }
+        } catch (e) {
+          log('Error: ' + e.message);
+        }
+      };
+      ws.onclose = () => {
+        setStatus(false, 'Disconnected');
+        log('Disconnected');
+      };
+      ws.onerror = () => setStatus(false, 'Connection error');
+    }
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const host = document.getElementById('host').value.trim();
+      const code = document.getElementById('code').value.trim();
+      const name = document.getElementById('name').value.trim();
+      if (!host || !code) {
+        setStatus(false, 'Enter host and pairing code');
+        return;
+      }
+      const h = host.includes(':') ? host : host + ':18792';
+      try {
+        const r = await fetch(`http://${h}/pair/${code.toUpperCase()}`);
+        if (!r.ok) throw new Error(await r.text());
+        const data = await r.json();
+        connect(h, code, name || 'Mobile');
+      } catch (err) {
+        setStatus(false, 'Pairing failed: ' + err.message);
+        log(err.message);
+      }
+    };
+    disconnectBtn.onclick = () => {
+      if (ws) ws.close();
+      ws = null;
+      form.style.display = 'block';
+      disconnectBtn.style.display = 'none';
+    };
+  </script>
+</body>
+</html>

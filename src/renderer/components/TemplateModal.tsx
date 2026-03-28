@@ -31,6 +31,13 @@ const detectComplexity = (description: string): 'simple' | 'complex' => {
   return 'simple';
 };
 
+const getTemplateBadge = (template: Template | null): string => {
+  if (!template) return 'TM';
+  const source = template.category || template.name;
+  const compact = source.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase();
+  return compact || 'TM';
+};
+
 interface TemplateModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -150,7 +157,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
     <div className="modal-overlay" onClick={onClose}>
       <div className="template-modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="template-modal-header">
-          <h2>🚀 Create New Project</h2>
+          <h2>Create New Project</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -158,7 +165,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
           {showComplexityCheck ? (
             <div className="complexity-check">
               <div className="complexity-header">
-                <h3>🤔 Tell me about your project</h3>
+                <h3>Tell me about your project</h3>
                 <p>Describe what you want to build, and I'll help you choose the right approach.</p>
               </div>
 
@@ -178,7 +185,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
                   onClick={handleDescriptionSubmit}
                   disabled={!projectDescription.trim()}
                 >
-                  🚀 Analyze & Create
+                  Analyze & Create
                 </button>
                 <button
                   className="complexity-btn secondary"
@@ -190,11 +197,11 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
 
               <div className="complexity-info">
                 <div className="info-item">
-                  <span className="info-icon">📄</span>
+                  <span className="info-icon">S</span>
                   <span><strong>Simple Projects:</strong> Basic websites, forms, simple apps</span>
                 </div>
                 <div className="info-item">
-                  <span className="info-icon">🤖</span>
+                  <span className="info-icon">C</span>
                   <span><strong>Complex Projects:</strong> Audio-reactive visualizations, 3D graphics, advanced features</span>
                 </div>
               </div>
@@ -208,7 +215,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
                   className="ai-composer-btn"
                   onClick={() => setShowComplexityCheck(true)}
                 >
-                  🤖 Try AI Composer for Complex Projects
+                  Use AI Composer for Complex Projects
                 </button>
               </div>
               <TemplateGallery onSelectTemplate={handleSelectTemplate} />
@@ -224,7 +231,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
                   ← Back to Templates
                 </button>
                 <div className="selected-template-info">
-                  <span className="template-icon-large">{selectedTemplate.icon || '📄'}</span>
+                  <span className="template-icon-large">{getTemplateBadge(selectedTemplate)}</span>
                   <div>
                     <h3>{selectedTemplate.name}</h3>
                     <p>{selectedTemplate.description}</p>
@@ -275,7 +282,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
 
                 {error && (
                   <div className="error-message">
-                    ❌ {error}
+                    Error: {error}
                   </div>
                 )}
 

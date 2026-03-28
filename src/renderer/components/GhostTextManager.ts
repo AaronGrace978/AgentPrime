@@ -152,7 +152,7 @@ export class GhostTextManager {
       range,
       options: {
         after: {
-          content: ' Tab',
+          content: ' 🦕 Tab',
           inlineClassName: 'ghost-completion-hint',
           inlineClassNameAffectsLetterSpacing: true
         },

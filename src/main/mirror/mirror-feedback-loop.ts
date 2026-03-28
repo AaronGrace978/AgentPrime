@@ -376,10 +376,13 @@ export class MirrorFeedbackLoop {
 
     // Store feedback loop in memory
     await this.mirrorMemory.addFeedbackLoop({
-      ...loop,
+      loopId: loop.loopId,
+      task: loop.task,
+      timestamp: Date.now(),
       duration,
       finalImprovement,
-      lessonsLearned
+      lessonsLearned,
+      iterations
     });
 
     // Remove from active loops

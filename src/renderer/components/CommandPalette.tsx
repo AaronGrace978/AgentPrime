@@ -18,7 +18,7 @@ interface Command {
   id: string;
   title: string;
   description?: string;
-  icon: string;
+  icon: React.ReactNode;
   shortcut?: string;
   category: 'file' | 'ai' | 'view' | 'git' | 'settings' | 'navigation';
   action: () => void | Promise<void>;

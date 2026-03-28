@@ -95,7 +95,20 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
           padding: '20px',
           borderBottom: '1px solid #e5e7eb'
         }}>
-          <span style={{ fontSize: '20px' }}>📁</span>
+          <span style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: '6px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11px',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            color: '#1f6feb',
+            background: '#eaf2ff',
+            border: '1px solid #c9dcff'
+          }}>FD</span>
           <h3 style={{
             flex: 1,
             margin: 0,
@@ -194,7 +207,7 @@ export const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
                 fontSize: '13px',
                 marginBottom: '16px'
               }}>
-                ❌ {error}
+                Error: {error}
               </div>
             )}
 

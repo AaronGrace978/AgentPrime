@@ -537,7 +537,7 @@ export class TeamMirror {
     // In production, this would sync to backend
     // For now, also store in mirror memory
     const mirrorMemory = getMirrorMemory();
-w    if (mirrorMemory) {
+    if (mirrorMemory) {
       await mirrorMemory.storePattern(pattern, pattern.type || 'team');
     }
   }

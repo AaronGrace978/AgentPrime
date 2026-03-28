@@ -7388,84 +7388,83 @@ button:active:not(:disabled) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   CHAT HEADER - Premium Styling
+   CHAT HEADER
    ═══════════════════════════════════════════════════════════════════ */
 
 .chat-header {
-  padding: 16px 20px;
+  padding: 12px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--prime-border);
   background: var(--prime-surface);
 }
 
 .chat-header-left {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .chat-header-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--prime-accent) 0%, #ff8a6b 100%);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--prime-accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
-  box-shadow: 0 4px 12px var(--prime-accent-glow);
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
 }
 
 .chat-header-info {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
 }
 
 .chat-header-title {
   margin: 0;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--prime-text);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.01em;
 }
 
 .chat-header-badges {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .chat-header-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--prime-text-muted);
   font-weight: 500;
 }
 
 .badge {
-  font-size: 10px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-weight: 600;
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
   color: #fff;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.03em;
 }
 
 .badge-rawr {
-  background: linear-gradient(135deg, #f59e0b, #ef4444);
-  animation: pulse 2s infinite;
+  background: var(--prime-amber);
 }
 
 .badge-brain {
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  background: var(--prime-purple);
 }
 
 .chat-header-close {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7473,14 +7472,14 @@ button:active:not(:disabled) {
   border: 1px solid var(--prime-border);
   color: var(--prime-text-muted);
   cursor: pointer;
-  font-size: 20px;
-  border-radius: var(--prime-radius-sm);
-  transition: all 0.15s ease;
+  font-size: 16px;
+  border-radius: 6px;
+  transition: all 0.1s ease;
 }
 
 .chat-header-close:hover {
   color: var(--prime-error);
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(239, 68, 68, 0.08);
   border-color: var(--prime-error);
 }
 
@@ -7489,35 +7488,33 @@ button:active:not(:disabled) {
    ═══════════════════════════════════════════════════════════════════ */
 
 .quick-prompts {
-  padding: 14px 20px;
-  border-top: 1px solid var(--prime-border);
-  background: var(--prime-surface-hover);
+  padding: 8px 16px 10px;
   display: flex;
-  gap: 10px;
+  gap: 6px;
   flex-wrap: wrap;
   align-items: center;
 }
 
 .quick-prompts-label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--prime-text-muted);
-  font-weight: 500;
-  margin-right: 4px;
+  font-weight: 600;
+  margin-right: 2px;
 }
 
 .quick-prompt-chip {
-  padding: 8px 16px;
-  border-radius: 20px;
+  padding: 6px 14px;
+  border-radius: 999px;
   border: 1px solid var(--prime-border);
   background: var(--prime-surface);
   color: var(--prime-text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: all 150ms ease;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .quick-prompt-chip:hover {
@@ -7525,7 +7522,6 @@ button:active:not(:disabled) {
   border-color: var(--prime-accent);
   color: var(--prime-accent);
   transform: translateY(-1px);
-  box-shadow: var(--prime-shadow-sm);
 }
 
 .quick-prompt-chip:active {
@@ -7535,6 +7531,16 @@ button:active:not(:disabled) {
 /* ═══════════════════════════════════════════════════════════════════
    AICHAT CONTAINER - Overall Layout
    ═══════════════════════════════════════════════════════════════════ */
+
+@keyframes chatOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes chatModalIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 .aichat-container {
   display: flex;
@@ -12127,7 +12133,8 @@ button:active:not(:disabled) {
   -webkit-app-region: no-drag !important;
 }
 
-.settings-close {
+/* Matrix dropdown only — do not use bare .settings-* (breaks Settings modal) */
+.settings-dropdown .settings-close {
   background: #002000;
   border: 2px solid #00cc00;
   border-radius: 4px;
@@ -12142,7 +12149,7 @@ button:active:not(:disabled) {
   text-shadow: 0 0 8px #00ff41;
 }
 
-.settings-close:hover {
+.settings-dropdown .settings-close:hover {
   background: #330000;
   border-color: #ff4444;
   color: #ff4444;
@@ -12150,7 +12157,7 @@ button:active:not(:disabled) {
   text-shadow: 0 0 10px #ff4444;
 }
 
-.settings-section {
+.settings-dropdown .settings-section {
   padding: 18px 20px;
   background: #000000;
   border-bottom: 1px solid #004400;
@@ -12158,18 +12165,18 @@ button:active:not(:disabled) {
   -webkit-app-region: no-drag !important;
 }
 
-.settings-section:last-child {
+.settings-dropdown .settings-section:last-child {
   border-bottom: none;
   border-radius: 0 0 5px 5px;
 }
 
-.settings-section * {
+.settings-dropdown .settings-section * {
   pointer-events: auto !important;
   -webkit-app-region: no-drag !important;
   cursor: pointer;
 }
 
-.settings-label {
+.settings-dropdown .settings-label {
   font-size: 12px;
   letter-spacing: 2px;
   color: #00ff41;
@@ -12178,12 +12185,12 @@ button:active:not(:disabled) {
   font-weight: bold;
 }
 
-.settings-options {
+.settings-dropdown .settings-options {
   display: flex;
   gap: 12px;
 }
 
-.settings-option {
+.settings-dropdown .settings-option {
   flex: 1;
   padding: 14px 18px;
   font-size: 13px;
@@ -12202,14 +12209,14 @@ button:active:not(:disabled) {
   text-shadow: 0 0 8px rgba(0, 255, 65, 0.6);
 }
 
-.settings-option:hover {
+.settings-dropdown .settings-option:hover {
   background: #002800;
   border-color: #00ff41;
   color: #00ff41;
   box-shadow: 0 0 15px rgba(0, 255, 65, 0.4);
 }
 
-.settings-option.active {
+.settings-dropdown .settings-option.active {
   background: #003d00;
   border-color: #00ff41;
   color: #00ff41;

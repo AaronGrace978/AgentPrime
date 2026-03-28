@@ -7,8 +7,6 @@
 
 import { IpcMain } from 'electron';
 import { CommandExecutor, CommandExecutionContext } from '../core/command-executor';
-import { systemExecutor, SystemAction } from '../system-executor';
-import aiRouter from '../ai-providers';
 import { validateCommand, ipcRateLimiter } from '../security/ipcValidation';
 
 interface CommandHandlersDeps {
@@ -121,85 +119,5 @@ export function register(deps: CommandHandlersDeps): void {
     }
   });
 
-  // Voice command processing - converts speech to system actions
-  ipcMain.handle('voice:process-command', async (event, speechText: string) => {
-    try {
-      console.log('🎤 Processing voice command:', speechText);
-
-      // Use AI to convert speech to structured action
-      const messages = [
-        {
-          role: 'system' as const,
-          content: `You are a voice command interpreter. Convert user speech into structured JSON actions.
-
-Available actions:
-- open_app: { action: "open_app", app: "chrome|firefox|safari|vscode|calculator|terminal|spotify|slack|discord" }
-- open_url: { action: "open_url", url: "https://example.com" }
-- run_command: { action: "run_command", command: "system command" }
-- type_text: { action: "type_text", text: "text to type" }
-- open_file: { action: "open_file", path: "/path/to/file" }
-- get_weather: { action: "get_weather", target: "city name" }
-
-Examples:
-"open chrome" → { action: "open_app", app: "chrome" }
-"google something" → { action: "open_url", url: "https://google.com/search?q=something" }
-"open terminal" → { action: "open_app", app: "terminal" }
-
-Always respond with valid JSON only. No explanations.`
-        },
-        {
-          role: 'user' as const,
-          content: speechText
-        }
-      ];
-
-      const aiResponse = await aiRouter.chat(messages, {
-        model: 'qwen3-coder:480b-cloud',
-        temperature: 0.1 // Low temperature for consistent JSON output
-      });
-
-      if (!aiResponse.success || !aiResponse.content) {
-        throw new Error('AI failed to process voice command');
-      }
-
-      // Parse the JSON response
-      let action: SystemAction;
-      try {
-        // Extract JSON from the response (AI might add extra text)
-        const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error('No JSON found in AI response');
-        }
-        action = JSON.parse(jsonMatch[0]);
-      } catch (parseError) {
-        console.error('Failed to parse AI action JSON:', aiResponse.content);
-        return {
-          success: false,
-          error: 'Could not understand voice command',
-          originalSpeech: speechText
-        };
-      }
-
-      console.log('🎯 Executing system action:', action);
-
-      // Execute the system action
-      const result = await systemExecutor.execute(action);
-
-      return {
-        success: result.success,
-        message: result.message,
-        action,
-        originalSpeech: speechText
-      };
-
-    } catch (error: any) {
-      console.error('Voice command processing error:', error);
-      return {
-        success: false,
-        error: error.message || 'Voice command processing failed',
-        originalSpeech: speechText
-      };
-    }
-  });
 }
 

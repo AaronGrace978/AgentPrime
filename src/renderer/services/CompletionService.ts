@@ -25,6 +25,9 @@ export class CompletionService {
   private lastRequestPosition: { line: number; col: number } | null = null;
   private pendingRequest: boolean = false;
 
+  // Enable/disable toggle (respects user settings)
+  private enabled: boolean = true;
+
   constructor(editor: monaco.editor.IStandaloneCodeEditor) {
     this.ghostManager = new GhostTextManager(editor);
     this.setupEditorListeners(editor);
@@ -238,7 +241,7 @@ export class CompletionService {
    * Optimized for fast response with streaming support
    */
   private async requestCompletion(editorInstance: editor.IStandaloneCodeEditor): Promise<void> {
-    if (!editorInstance) return;
+    if (!editorInstance || !this.enabled) return;
 
     const position = editorInstance.getPosition();
     if (!position) return;
@@ -267,6 +270,7 @@ export class CompletionService {
     }
 
     const filePath = await this.getCurrentFilePath();
+    const context = await this.buildContext(model, position);
     const request: CompletionRequest = {
       beforeCursor: beforeCursor,
       afterCursor: this.getTextAfterCursor(model, position),
@@ -274,7 +278,7 @@ export class CompletionService {
       column: position.column,
       language: model.getLanguageId(),
       filePath,
-      context: this.buildContext(model, position)
+      context
     };
 
     try {
@@ -342,14 +346,16 @@ export class CompletionService {
   }
 
   /**
-   * Build additional context for better completions
+   * Build additional context for better completions.
+   * Async because semantic context requires an IPC round-trip.
    */
-  private buildContext(model: monaco.editor.ITextModel, position: monaco.IPosition) {
+  private async buildContext(model: monaco.editor.ITextModel, position: monaco.IPosition) {
+    const semanticContext = await this.getSemanticContext(model, position);
     return {
       recentEdits: this.recentEdits,
       visibleRange: this.getVisibleRange(),
       imports: this.extractImports(model),
-      semanticContext: this.getSemanticContext(model, position)
+      semanticContext
     };
   }
 
@@ -460,6 +466,30 @@ export class CompletionService {
    */
   getCurrentCompletion(): string | null {
     return this.ghostManager.getCurrentCompletion();
+  }
+
+  /**
+   * Enable or disable inline completions at runtime.
+   * When disabled, any active ghost text is cleared and new requests are suppressed.
+   */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) {
+      this.clearCompletion();
+      if (this.completionTimeout) {
+        clearTimeout(this.completionTimeout);
+        this.completionTimeout = null;
+      }
+      if (this.abortController) {
+        this.abortController.abort();
+        this.abortController = null;
+      }
+      this.pendingRequest = false;
+    }
+  }
+
+  isEnabled(): boolean {
+    return this.enabled;
   }
 
   /**

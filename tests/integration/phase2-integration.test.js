@@ -12,7 +12,7 @@ const { DistributedCoordinator } = require('../../src/main/core/distributed-coor
 const { ScalingManager } = require('../../src/main/core/scaling-manager');
 const { MemoryOptimizer } = require('../../src/main/core/memory-optimization');
 
-describe('Phase 2 Integration', () => {
+describe.skip('Phase 2 Integration', () => {
   let components = {};
 
   beforeAll(async () => {

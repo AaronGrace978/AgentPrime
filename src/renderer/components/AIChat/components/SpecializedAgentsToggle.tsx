@@ -14,67 +14,54 @@ export const SpecializedAgentsToggle: React.FC<SpecializedAgentsToggleProps> = (
   onChange
 }) => {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '6px 12px',
-      background: enabled ? 'var(--prime-accent-light)' : 'var(--prime-surface-hover)',
-      borderRadius: '8px',
-      border: `1px solid ${enabled ? 'var(--prime-blue)' : 'var(--prime-border)'}`,
-      cursor: 'pointer',
-      transition: 'all 0.2s ease'
-    }}
-    onClick={() => onChange(!enabled)}
-    title={enabled 
-      ? 'Specialized Agents: Uses domain experts (JS specialist, Python specialist, etc.)' 
-      : 'Monolithic Agent: Uses single agent for all tasks'}
+    <button
+      onClick={() => onChange(!enabled)}
+      title={enabled
+        ? 'Specialized Agents: Uses domain experts'
+        : 'Single Agent: Uses one agent for all tasks'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '7px',
+        padding: '5px 10px',
+        background: enabled ? 'var(--prime-accent-light)' : 'var(--prime-surface)',
+        borderRadius: '6px',
+        border: `1px solid ${enabled ? 'var(--prime-accent)' : 'var(--prime-border)'}`,
+        cursor: 'pointer',
+        transition: 'all 0.12s ease',
+        fontFamily: 'inherit'
+      }}
     >
       <div style={{
-        width: '40px',
-        height: '20px',
-        borderRadius: '10px',
-        background: enabled ? 'var(--prime-blue)' : 'var(--prime-border)',
+        width: '32px',
+        height: '16px',
+        borderRadius: '8px',
+        background: enabled ? 'var(--prime-accent)' : 'var(--prime-border)',
         position: 'relative',
-        transition: 'all 0.2s ease',
+        transition: 'background 0.15s ease',
         flexShrink: 0
       }}>
         <div style={{
-          width: '16px',
-          height: '16px',
+          width: '12px',
+          height: '12px',
           borderRadius: '50%',
-          background: 'var(--prime-surface)',
+          background: '#fff',
           position: 'absolute',
           top: '2px',
-          left: enabled ? '22px' : '2px',
-          transition: 'all 0.2s ease',
-          boxShadow: 'var(--prime-shadow-sm)'
+          left: enabled ? '18px' : '2px',
+          transition: 'left 0.15s ease'
         }} />
       </div>
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px'
+      <span style={{
+        fontSize: '11px',
+        fontWeight: '600',
+        color: enabled ? 'var(--prime-accent)' : 'var(--prime-text-muted)',
+        whiteSpace: 'nowrap'
       }}>
-        <span style={{
-          fontSize: '11px',
-          fontWeight: '600',
-          color: enabled ? 'var(--prime-blue)' : 'var(--prime-text-secondary)',
-          lineHeight: '1.2'
-        }}>
-          {enabled ? '👥 Specialized' : '🤖 Monolithic'}
-        </span>
-        <span style={{
-          fontSize: '9px',
-          color: enabled ? 'var(--prime-blue)' : 'var(--prime-text-muted)',
-          lineHeight: '1.2'
-        }}>
-          {enabled ? 'Domain experts' : 'Single agent'}
-        </span>
-      </div>
-    </div>
+        {enabled ? 'Specialized' : 'Single Agent'}
+      </span>
+    </button>
   );
 };
 
 export default SpecializedAgentsToggle;
-

@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "AI-powered desktop IDE that works like Cursor - featuring multiple AI providers, intelligent code assistance, and advanced development tools",
   "main": "dist/main/main.js",
-  "author": "Aaron Alexander Grace (BostonAi.io)",
-  "homepage": "https://BostonAi.io",
-  "license": "UNLICENSED",
+  "author": "Aaron Alexander Grace (BostonAI.io)",
+  "homepage": "https://BostonAI.io",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "start": "electron .",
     "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
@@ -45,10 +45,8 @@
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "@xenova/transformers": "^2.17.1",
-    "adm-zip": "^0.5.10",
     "axios": "^1.6.0",
     "chalk": "^4.1.2",
-    "chroma-js": "^2.4.2",
     "commander": "^12.1.0",
     "diff": "^5.1.0",
     "diff-match-patch": "^1.0.5",
@@ -56,7 +54,6 @@
     "electron-updater": "^6.6.2",
     "eslint": "^8.57.0",
     "keytar": "^7.9.0",
-    "lib0": "^0.2.88",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.11.0",
     "node-fetch": "^2.7.0",
@@ -66,9 +63,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "schema-utils": "^4.3.3",
-    "ws": "^8.16.0",
-    "y-protocols": "^1.0.6",
-    "yjs": "^13.6.10"
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
@@ -103,7 +98,7 @@
   "build": {
     "appId": "com.agentprime.ide",
     "productName": "AgentPrime",
-    "copyright": "Copyright © 2025 AgentPrime",
+    "copyright": "Copyright © 2026 BostonAI.io",
     "directories": {
       "output": "release",
       "buildResources": "build"

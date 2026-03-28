@@ -2,7 +2,7 @@
  * WorkspaceSelector - Button to select workspace folder and create new folders
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 
 interface WorkspaceSelectorProps {
   workspacePath: string | null;
@@ -15,38 +15,36 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
   onOpenFolder,
   onCreateFolder
 }) => {
-  const handleCreateFolder = () => {
-    if (!onCreateFolder) return;
-    onCreateFolder();
-  };
-
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
       <button
         onClick={onOpenFolder}
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          padding: '8px 14px',
-          borderRadius: '10px',
-          border: workspacePath ? '1px solid var(--prime-success)' : '1px dashed var(--prime-border)',
-          background: workspacePath ? 'var(--prime-accent-light)' : 'var(--prime-bg)',
+          gap: '6px',
+          padding: '5px 10px',
+          borderRadius: '6px',
+          border: `1px solid ${workspacePath ? 'var(--prime-success)' : 'var(--prime-border)'}`,
+          background: workspacePath ? 'rgba(16, 185, 129, 0.08)' : 'var(--prime-surface)',
           color: workspacePath ? 'var(--prime-success)' : 'var(--prime-text-secondary)',
           cursor: 'pointer',
-          fontSize: '13px',
-          fontWeight: '500',
-          transition: 'all 0.2s ease',
-          maxWidth: '200px'
+          fontSize: '12px',
+          fontWeight: '600',
+          fontFamily: 'inherit',
+          maxWidth: '180px',
+          transition: 'all 0.12s ease'
         }}
-        title={workspacePath || 'Click to select a workspace folder'}
+        title={workspacePath || 'Select a workspace folder'}
       >
-        <span style={{ fontSize: '16px' }}>📂</span>
-        <span style={{ 
-          overflow: 'hidden', 
-          textOverflow: 'ellipsis', 
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+        <span style={{
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          maxWidth: '140px'
+          maxWidth: '120px'
         }}>
           {workspacePath ? workspacePath.split(/[/\\]/).pop() : 'Select Folder'}
         </span>
@@ -54,25 +52,25 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
 
       {onCreateFolder && (
         <button
-          onClick={handleCreateFolder}
+          onClick={onCreateFolder}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '6px',
-            padding: '8px 12px',
-            borderRadius: '10px',
-            border: '1px solid var(--prime-blue)',
-            background: `linear-gradient(135deg, var(--prime-blue) 0%, var(--accent-primary) 100%)`,
+            padding: '5px 9px',
+            borderRadius: '6px',
+            border: '1px solid var(--prime-accent)',
+            background: 'var(--prime-accent)',
             color: '#ffffff',
             cursor: 'pointer',
-            fontSize: '13px',
-            fontWeight: '500',
-            transition: 'all 0.2s ease'
+            fontSize: '12px',
+            fontWeight: '600',
+            fontFamily: 'inherit',
+            gap: '4px',
+            transition: 'all 0.12s ease'
           }}
-          title="Create and name a new project folder"
+          title="Create a new project folder"
         >
-          <span style={{ fontSize: '14px' }}>➕</span>
-          <span>New Folder...</span>
+          + New
         </button>
       )}
     </div>
@@ -80,4 +78,3 @@ export const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({
 };
 
 export default WorkspaceSelector;
-
