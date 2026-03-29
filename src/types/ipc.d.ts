@@ -147,6 +147,8 @@ export interface AgentAPI {
 
   // Search and symbol navigation
   globalSearch: (query: string, options?: any) => Promise<any>;
+  searchSymbols: (query: string, maxResults?: number) => Promise<any>;
+  refreshSymbolIndex: () => Promise<{ success: boolean; error?: string }>;
   findDefinition: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) => Promise<any>;
   findReferences: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) => Promise<any>;
 

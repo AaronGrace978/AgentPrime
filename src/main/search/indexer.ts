@@ -48,6 +48,11 @@ export class CodebaseIndexer {
     this.oneDriveSkipped = 0;
 
     try {
+      const embeddingsReady = await embeddings.initialize();
+      if (!embeddingsReady) {
+        console.warn('[CodebaseIndexer] Embeddings unavailable; semantic indexing disabled for this session');
+        return;
+      }
       console.log(`[CodebaseIndexer] Starting indexing for workspace: ${this.workspacePath}`);
       await this.walkDirectory(this.workspacePath);
       console.log(`[CodebaseIndexer] Indexed ${this.chunks.length} code chunks from ${this.workspacePath}`);
@@ -184,8 +189,15 @@ export class CodebaseIndexer {
   }
 
   async searchCodebase(query: string, topK: number = 5): Promise<SearchResult[]> {
+    const embeddingsReady = await embeddings.initialize();
+    if (!embeddingsReady) {
+      return [];
+    }
     if (this.chunks.length === 0) {
       await this.indexCodebase();
+    }
+    if (this.chunks.length === 0) {
+      return [];
     }
 
     const queryEmbedding = await embeddings.embedText(query);

@@ -11,9 +11,10 @@ import * as fs from 'fs';
 import axios from 'axios';
 import type { Settings } from '../types';
 import { getTheme, getTitleBarOverlay, type ThemeId } from '../renderer/themes';
+import { initAppLogging, initOptionalSentry, logCrash } from './core/app-logger';
 
 // ============================================================================
-// GLOBAL ERROR HANDLERS - Prevent silent crashes
+// GLOBAL ERROR HANDLERS — structured logs + crashes.jsonl (+ optional Sentry)
 // ============================================================================
 process.on('uncaughtException', (error: Error, origin: string) => {
   console.error('================== UNCAUGHT EXCEPTION ==================');
@@ -21,45 +22,14 @@ process.on('uncaughtException', (error: Error, origin: string) => {
   console.error(`Error: ${error.name}: ${error.message}`);
   console.error(`Stack: ${error.stack}`);
   console.error('=========================================================');
-  
-  // Log to file for post-mortem analysis
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const logPath = path.join(process.cwd(), 'crash-log.txt');
-    const logEntry = `[${new Date().toISOString()}] UNCAUGHT EXCEPTION\n` +
-      `Origin: ${origin}\n` +
-      `Error: ${error.name}: ${error.message}\n` +
-      `Stack: ${error.stack}\n` +
-      '---\n';
-    fs.appendFileSync(logPath, logEntry);
-  } catch (e) {
-    // Ignore logging errors
-  }
-  
-  // Don't exit immediately - give the app a chance to recover
-  // For truly fatal errors, the app will exit anyway
+  logCrash('uncaughtException', error, origin);
 });
 
-process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+process.on('unhandledRejection', (reason: unknown) => {
   console.error('================== UNHANDLED REJECTION ==================');
   console.error('Reason:', reason);
-  console.error('Promise:', promise);
   console.error('=========================================================');
-  
-  // Log to file for post-mortem analysis
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const logPath = path.join(process.cwd(), 'crash-log.txt');
-    const logEntry = `[${new Date().toISOString()}] UNHANDLED REJECTION\n` +
-      `Reason: ${reason}\n` +
-      `Stack: ${reason?.stack || 'N/A'}\n` +
-      '---\n';
-    fs.appendFileSync(logPath, logEntry);
-  } catch (e) {
-    // Ignore logging errors
-  }
+  logCrash('unhandledRejection', reason);
 });
 
 // Configure cache directories to prevent Windows permission errors
@@ -92,6 +62,10 @@ import { register as registerChat } from './ipc-handlers/chat';
 
 // Import CodebaseIndexer
 import { CodebaseIndexer } from './search/indexer';
+import {
+  WorkspaceSymbolIndex,
+  setWorkspaceSymbolIndexForAgents
+} from './search/symbol-index';
 
 // Import Mirror Knowledge Ingester
 import { MirrorKnowledgeIngester } from './mirror/mirror-knowledge-ingester';
@@ -125,6 +99,7 @@ import { ActivatePrimeIntegration } from './modules/activateprime';
 
 // ActivatePrime instance (initialized when workspace is set)
 let activatePrime: ActivatePrimeIntegration | null = null;
+let workspaceSymbolIndex: WorkspaceSymbolIndex | null = null;
 
 // Lazy-loaded modules (will be migrated to TypeScript)
 let TemplateEngine: any = null;
@@ -728,6 +703,9 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  initAppLogging();
+  initOptionalSentry();
+
   loadSettings();
 
   // Load API keys from secure storage (migrates from plain text if needed)
@@ -902,6 +880,11 @@ app.whenReady().then(async () => {
       // Initialize codebase indexer when workspace is set
       if (workspacePath) {
         try {
+          workspaceSymbolIndex = new WorkspaceSymbolIndex(workspacePath);
+          setWorkspaceSymbolIndexForAgents(workspaceSymbolIndex);
+          workspaceSymbolIndex.ensureRebuilding();
+          workspaceSymbolIndex.whenReady().catch(() => {});
+
           codebaseIndexer = new CodebaseIndexer(workspacePath);
           console.log(`[Main] ✅ CodebaseIndexer initialized for workspace: ${workspacePath}`);
           
@@ -931,6 +914,11 @@ app.whenReady().then(async () => {
         } catch (error: any) {
           console.error(`[Main] ❌ Failed to initialize CodebaseIndexer: ${error.message}`);
         }
+      } else {
+        workspaceSymbolIndex = null;
+        setWorkspaceSymbolIndexForAgents(null);
+        codebaseIndexer = null;
+        activatePrime = null;
       }
     },
     getFocusedFolder: () => focusedFolderPath,
@@ -940,6 +928,7 @@ app.whenReady().then(async () => {
     getPatternExtractor: () => patternExtractor,
     getIntelligenceExpansion: () => intelligenceExpansion,
     getCodebaseIndexer: () => codebaseIndexer,
+    getSymbolIndex: () => workspaceSymbolIndex,
     getKnowledgeIngester: () => knowledgeIngester,
     getActivatePrime: () => activatePrime,
     getActiveFilePath: () => activeFilePath,

@@ -1,6 +1,7 @@
 import { FileTools } from '../agent/tools/fileTools';
 import { spawn } from 'child_process';
 import * as path from 'path';
+import { searchWithRipgrep } from '../core/ripgrep-runner';
 import type { IpcMainInvokeEvent } from 'electron';
 
 interface HandlerDeps {
@@ -233,96 +234,62 @@ export function register(deps: HandlerDeps): void {
     }
   });
 
-  // Search codebase - Use ripgrep or fallback to simple search
-  ipcMain.handle('agent:search-codebase', async (_event: IpcMainInvokeEvent, query: string, options?: { includePattern?: string; excludePattern?: string; maxResults?: number }) => {
-    try {
-      const workspacePath = getWorkspacePath();
-      if (!workspacePath) {
-        return { success: false, error: 'No workspace loaded' };
-      }
+  // Search codebase — @vscode/ripgrep (JSON protocol), PATH fallback
+  ipcMain.handle(
+    'agent:search-codebase',
+    async (
+      _event: IpcMainInvokeEvent,
+      query: string,
+      options?: { includePattern?: string; excludePattern?: string; maxResults?: number }
+    ) => {
+      try {
+        const workspacePath = getWorkspacePath();
+        if (!workspacePath) {
+          return { success: false, error: 'No workspace loaded' };
+        }
 
-      const { includePattern, excludePattern, maxResults = 20 } = options || {};
+        const { includePattern, excludePattern, maxResults = 20 } = options || {};
 
-      // Build ripgrep command
-      const args = ['--line-number', '--no-heading', '--color', 'never'];
-      if (includePattern) args.push('--glob', includePattern);
-      if (excludePattern) args.push('--glob', `!${excludePattern}`);
-      args.push('--', query);
-
-      return new Promise((resolve) => {
-        const isWindows = process.platform === 'win32';
-        const rgCmd = isWindows ? 'rg.exe' : 'rg';
-
-        const child = spawn(rgCmd, args, {
-          cwd: workspacePath,
-          stdio: ['pipe', 'pipe', 'pipe']
+        const rg = await searchWithRipgrep(workspacePath, query, {
+          includePattern,
+          excludePattern,
+          maxResults,
+          timeoutMs: 25_000
         });
 
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout.on('data', (data) => { stdout += data.toString(); });
-        child.stderr.on('data', (data) => { stderr += data.toString(); });
-
-        const timer = setTimeout(() => {
-          child.kill();
-          resolve({ success: true, query, matches: [], total: 0, message: 'Search timed out' });
-        }, 10000);
-
-        child.on('close', (code) => {
-          clearTimeout(timer);
-          
-          if (stdout) {
-            const lines = stdout.split('\n').filter(line => line.trim());
-            const matches = lines.slice(0, maxResults).map((line: string) => {
-              const colonIndex = line.indexOf(':');
-              const secondColon = line.indexOf(':', colonIndex + 1);
-              if (colonIndex > -1 && secondColon > -1) {
-                return {
-                  file: line.substring(0, colonIndex),
-                  line: parseInt(line.substring(colonIndex + 1, secondColon), 10),
-                  content: line.substring(secondColon + 1).trim()
-                };
-              }
-              return { file: 'unknown', line: 0, content: line };
-            });
-
-            resolve({
-              success: true,
-              query,
-              matches,
-              total: lines.length
-            });
-          } else {
-            resolve({
-              success: true,
-              query,
-              matches: [],
-              total: 0,
-              message: 'No matches found'
-            });
-          }
-        });
-
-        child.on('error', (err) => {
-          clearTimeout(timer);
-          // Ripgrep not found, return empty results
-          console.warn('ripgrep not available:', err.message);
-          resolve({
-            success: true,
+        if (!rg.success) {
+          return {
+            success: false,
             query,
             matches: [],
             total: 0,
-            message: 'Search tool (ripgrep) not available. Install with: winget install BurntSushi.ripgrep.MSVC'
-          });
-        });
-      });
-    } catch (error) {
-      console.error('Agent search-codebase failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to search codebase'
-      };
+            error: rg.message || 'Search failed',
+            usedBundledRg: rg.usedBundledRg
+          };
+        }
+
+        const matches = rg.matches.map((m) => ({
+          file: m.file,
+          line: m.line,
+          column: m.column,
+          content: m.content
+        }));
+
+        return {
+          success: true,
+          query,
+          matches,
+          total: matches.length,
+          ...(rg.message ? { message: rg.message } : {}),
+          usedBundledRg: rg.usedBundledRg
+        };
+      } catch (error) {
+        console.error('Agent search-codebase failed:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to search codebase'
+        };
+      }
     }
-  });
+  );
 }

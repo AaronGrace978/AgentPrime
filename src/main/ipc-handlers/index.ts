@@ -39,6 +39,8 @@ interface HandlerDeps {
   getPatternExtractor?: () => any;
   getIntelligenceExpansion?: () => any;
   getCodebaseIndexer?: () => any;
+  /** TypeScript/JS AST symbol index for workspace */
+  getSymbolIndex?: () => any;
   getKnowledgeIngester?: () => any;
   getActivatePrime?: () => any;
   getActiveFilePath?: () => string | null;
@@ -81,7 +83,8 @@ export function registerAllHandlers(deps: HandlerDeps): void {
     ipcMain: deps.ipcMain,
     getWorkspacePath: deps.getWorkspacePath,
     getCodebaseIndexer: deps.getCodebaseIndexer,
-    getActivatePrime: deps.getActivatePrime
+    getActivatePrime: deps.getActivatePrime,
+    getSymbolIndex: deps.getSymbolIndex
   });
   registerSearch({
     ipcMain: deps.ipcMain,

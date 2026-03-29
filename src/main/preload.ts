@@ -168,6 +168,9 @@ const agentAPI: AgentAPI = {
 
   // Search and symbol navigation
   globalSearch: (query: string, options?: any) => ipcRenderer.invoke('global-search', query, options),
+  searchSymbols: (query: string, maxResults?: number) =>
+    ipcRenderer.invoke('analysis:symbol-search', query, maxResults),
+  refreshSymbolIndex: () => ipcRenderer.invoke('analysis:refresh-symbol-index'),
   findDefinition: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) =>
     ipcRenderer.invoke('find-definition', params),
   findReferences: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) =>

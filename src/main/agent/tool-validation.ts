@@ -282,6 +282,28 @@ export function validateToolCall(toolCall: any, workspacePath: string, taskConte
     return validateScaffoldProject(toolCall, workspacePath);
   }
 
+  if (toolCall.name === 'search_codebase') {
+    const q = toolCall.arguments?.query;
+    if (!q || typeof q !== 'string') {
+      return { valid: false, error: 'search_codebase: missing query' };
+    }
+    if (q.length > 4000) {
+      return { valid: false, error: 'search_codebase: query too long' };
+    }
+    return { valid: true };
+  }
+
+  if (toolCall.name === 'find_symbols') {
+    const q = toolCall.arguments?.query;
+    if (!q || typeof q !== 'string') {
+      return { valid: false, error: 'find_symbols: missing query' };
+    }
+    if (q.length > 500) {
+      return { valid: false, error: 'find_symbols: query too long' };
+    }
+    return { valid: true };
+  }
+
   return { valid: true };
 }
 

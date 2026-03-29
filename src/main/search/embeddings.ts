@@ -8,22 +8,40 @@ import { pipeline, Pipeline } from '@xenova/transformers';
 export class SemanticEmbeddings {
   private extractor: any = null;
   private readonly modelName = 'Xenova/all-MiniLM-L6-v2';
+  private initPromise: Promise<boolean> | null = null;
+  private unavailableReason: string | null = null;
 
-  async initialize(): Promise<void> {
-    if (this.extractor) return;
-
-    try {
-      const { pipeline } = await import('@xenova/transformers');
-      this.extractor = await pipeline('feature-extraction', this.modelName);
-    } catch (error) {
-      console.error('Failed to initialize embeddings model:', error);
-      throw error;
+  async initialize(): Promise<boolean> {
+    if (this.extractor) return true;
+    if (this.unavailableReason) return false;
+    if (!this.initPromise) {
+      this.initPromise = (async () => {
+        try {
+          const { pipeline } = await import('@xenova/transformers');
+          this.extractor = await pipeline('feature-extraction', this.modelName);
+          return true;
+        } catch (error) {
+          this.unavailableReason = error instanceof Error ? error.message : String(error);
+          console.warn(`Embeddings unavailable: ${this.unavailableReason}`);
+          return false;
+        } finally {
+          this.initPromise = null;
+        }
+      })();
     }
+    return this.initPromise;
+  }
+
+  getUnavailableReason(): string | null {
+    return this.unavailableReason;
   }
 
   async embedText(text: string): Promise<number[]> {
     if (!this.extractor) {
-      await this.initialize();
+      const ready = await this.initialize();
+      if (!ready || !this.extractor) {
+        throw new Error(this.unavailableReason || 'Embeddings unavailable');
+      }
     }
 
     try {

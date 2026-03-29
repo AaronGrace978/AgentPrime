@@ -33,6 +33,7 @@ module.exports = {
   externals: {
     'electron': 'commonjs electron',
     'electron-log': 'commonjs electron-log',
+    '@sentry/electron/main': 'commonjs @sentry/electron/main',
     'onnxruntime-node': 'commonjs onnxruntime-node',
     'sharp': 'commonjs sharp',
     'keytar': 'commonjs keytar',
@@ -49,7 +50,9 @@ module.exports = {
     '@picovoice/porcupine-node': 'commonjs @picovoice/porcupine-node',
     'whisper-node': 'commonjs whisper-node',
     // Document parsing - has dynamic requires
-    'pdf-parse': 'commonjs pdf-parse'
+    'pdf-parse': 'commonjs pdf-parse',
+    '@vscode/ripgrep': 'commonjs @vscode/ripgrep',
+    'typescript': 'commonjs typescript'
   },
   devtool: 'source-map'
 };

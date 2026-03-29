@@ -28,13 +28,15 @@ export function register(deps: HandlerDeps): void {
   const { ipcMain, getWorkspacePath } = deps;
 
   // Initialize embeddings on startup
-  embeddings.initialize().catch(error => {
-    console.error('Failed to initialize embeddings:', error);
-  });
+  void embeddings.initialize();
 
   // Embed query
   ipcMain.handle('search:embed-query', async (_event: IpcMainInvokeEvent, query: string) => {
     try {
+      const ready = await embeddings.initialize();
+      if (!ready) {
+        return [];
+      }
       return await embeddings.embedText(query);
     } catch (error) {
       console.error('Embed query failed:', error);

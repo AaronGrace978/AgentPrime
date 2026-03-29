@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createPatch, applyPatch } from 'diff';
+import { scheduleWorkspaceSymbolIndexRebuildForAgents } from '../../search/symbol-index';
 
 export interface FileToolResult {
   success: boolean;
@@ -54,6 +55,7 @@ export class FileTools {
       await fs.mkdir(dir, { recursive: true });
 
       await fs.writeFile(fullPath, content, 'utf-8');
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
 
       return { success: true, data: { path: relativePath, written: true } };
     } catch (error) {
@@ -91,6 +93,7 @@ export class FileTools {
       const dir = path.dirname(fullPath);
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(fullPath, patchedContent, 'utf-8');
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
 
       return {
         success: true,

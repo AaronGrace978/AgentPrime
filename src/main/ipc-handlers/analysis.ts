@@ -15,6 +15,11 @@ interface AnalysisHandlersDeps {
   getWorkspacePath: () => string | null;
   getCodebaseIndexer?: () => any;
   getActivatePrime?: () => any;
+  getSymbolIndex?: () => {
+    search: (q: string, max?: number) => unknown[];
+    whenReady: () => Promise<void>;
+    refresh?: () => Promise<void>;
+  } | null;
 }
 
 // Helper function for language detection
@@ -185,7 +190,7 @@ export async function examineCodebaseInternal(workspacePath: string, options: { 
  * Register analysis-related IPC handlers
  */
 export function register(deps: AnalysisHandlersDeps): void {
-  const { ipcMain, getWorkspacePath, getCodebaseIndexer, getActivatePrime } = deps;
+  const { ipcMain, getWorkspacePath, getCodebaseIndexer, getActivatePrime, getSymbolIndex } = deps;
 
   // Import completion optimizer for <100ms inline completions
   const { completionOptimizer } = require('../core/completion-optimizer');
@@ -228,6 +233,41 @@ export function register(deps: AnalysisHandlersDeps): void {
       });
     } catch (error: any) {
       return { success: false, error: error.message };
+    }
+  });
+
+  // AST / export symbol search (TypeScript parser; complements text search)
+  ipcMain.handle(
+    'analysis:symbol-search',
+    async (_event, query: string, maxResults: number = 50) => {
+      const idx = getSymbolIndex?.();
+      if (!idx) {
+        return { success: false, error: 'Symbol index not available', symbols: [] };
+      }
+      try {
+        await idx.whenReady();
+        const symbols = idx.search(query, maxResults);
+        return { success: true, symbols };
+      } catch (e: any) {
+        return { success: false, error: e?.message || 'symbol search failed', symbols: [] };
+      }
+    }
+  );
+
+  ipcMain.handle('analysis:refresh-symbol-index', async () => {
+    const idx = getSymbolIndex?.();
+    if (!idx) {
+      return { success: false, error: 'Symbol index not available' };
+    }
+    try {
+      if (idx.refresh) {
+        await idx.refresh();
+      } else {
+        await idx.whenReady();
+      }
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message || 'symbol index refresh failed' };
     }
   });
 

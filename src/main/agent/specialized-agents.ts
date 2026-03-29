@@ -27,6 +27,12 @@ import { transactionManager } from '../core/transaction-manager';
 import { validateToolCall, fixToolCall, resetFileTracker, populateFileTracker, validatePackageJson, validateIndexHtml, validateJavaScriptFile, detectOrphanedFiles, getFileTrackerState, FileTrackerMode } from './tool-validation';
 import { sanitizeFileName } from '../security/ipcValidation';
 import { spawn } from 'child_process';
+import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
+import { searchWithRipgrep } from '../core/ripgrep-runner';
+import {
+  getWorkspaceSymbolIndexForAgents,
+  scheduleWorkspaceSymbolIndexRebuildForAgents
+} from '../search/symbol-index';
 
 interface AgentPendingFileChange {
   filePath: string;
@@ -47,40 +53,8 @@ interface AgentCommandOutputEvent {
  * Get all project files from a workspace directory
  * Used to populate file tracker in FIX/ENHANCE mode
  */
-function getAllProjectFiles(workspacePath: string, maxDepth: number = 4): string[] {
-  const files: string[] = [];
-  const ignoreDirs = ['node_modules', '.git', '__pycache__', 'venv', 'dist', 'build', '.next', '.cache'];
-  const sourceExts = ['.js', '.ts', '.tsx', '.jsx', '.html', '.css', '.json', '.py', '.md', '.scss', '.sass'];
-  
-  function scan(dir: string, depth: number): void {
-    if (depth > maxDepth) return;
-    
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') && entry.name !== '.env.example') continue;
-        if (ignoreDirs.includes(entry.name)) continue;
-        
-        const fullPath = path.join(dir, entry.name);
-        const relativePath = path.relative(workspacePath, fullPath).replace(/\\/g, '/');
-        
-        if (entry.isDirectory()) {
-          scan(fullPath, depth + 1);
-        } else if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-          if (sourceExts.includes(ext)) {
-            files.push(relativePath);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore permission errors
-    }
-  }
-  
-  scan(workspacePath, 0);
-  return files;
+function getAllProjectFiles(workspacePath: string, _maxDepth: number = 4): string[] {
+  return listWorkspaceSourceFilesSync(workspacePath, 4000);
 }
 
 /**
@@ -409,6 +383,10 @@ EXAMPLE for a simple project:
 {"name": "write_file", "arguments": {"path": "package.json", "content": "{\\n  \\"name\\": \\"my-project\\",\\n  \\"version\\": \\"1.0.0\\"\\n}"}}
 {"name": "write_file", "arguments": {"path": "src/index.js", "content": "console.log('Hello World');"}}
 {"name": "write_file", "arguments": {"path": "README.md", "content": "# My Project\\n\\nA cool project."}}
+
+DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
+{"name": "search_codebase", "arguments": {"query": "patternOrRegex", "include_pattern": "**/*.ts", "exclude_pattern": "**/node_modules/**", "max_results": 40}}
+{"name": "find_symbols", "arguments": {"query": "SymbolName", "max_results": 40}}
 `;
 
 /**
@@ -1294,6 +1272,7 @@ async function executeTool(
       const existedBefore = fs.existsSync(filePath);
       const oldContent = existedBefore ? fs.readFileSync(filePath, 'utf-8') : null;
       fs.writeFileSync(filePath, args.content || '', 'utf-8');
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
       callbacks?.onFileChange?.({
         filePath: sanitizedPath.replace(/\\/g, '/'),
         oldContent: oldContent ?? '',
@@ -1408,6 +1387,39 @@ async function executeTool(
           rejectOnce(error);
         });
       });
+    }
+
+    case 'search_codebase': {
+      const query = (args.query as string) || '';
+      const include_pattern = args.include_pattern as string | undefined;
+      const exclude_pattern = (args.exclude_pattern as string) || '**/node_modules/**';
+      const max_results =
+        typeof args.max_results === 'number' && args.max_results > 0 ? args.max_results : 40;
+      const rg = await searchWithRipgrep(workspacePath, query, {
+        includePattern: include_pattern,
+        excludePattern: exclude_pattern,
+        maxResults: max_results,
+        timeoutMs: 25_000
+      });
+      return {
+        action: 'search_codebase',
+        success: rg.success,
+        matches: rg.matches,
+        total: rg.matches.length,
+        message: rg.message,
+        usedBundledRg: rg.usedBundledRg
+      };
+    }
+
+    case 'find_symbols': {
+      const idx = getWorkspaceSymbolIndexForAgents();
+      if (!idx) {
+        return { action: 'find_symbols', success: false, error: 'Symbol index not ready', symbols: [] };
+      }
+      await idx.whenReady();
+      const max = typeof args.max_results === 'number' && args.max_results > 0 ? args.max_results : 40;
+      const symbols = idx.search((args.query as string) || '', max);
+      return { action: 'find_symbols', success: true, symbols };
     }
 
     default:

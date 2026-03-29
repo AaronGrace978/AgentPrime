@@ -35,6 +35,7 @@ import { verifyToolResult, type VerificationResult } from './agent/tool-result-v
 import { summarizeIfNeeded, conversationSummarizer } from './agent/conversation-summarizer';
 import { backupBeforeOperation, restoreLatestBackup } from './agent/project-backup';
 import { EventEmitter } from 'events';
+import { searchWithRipgrep } from './core/ripgrep-runner';
 
 // 🧠 CONSCIOUSNESS SYSTEM - Deep Intent Understanding (ported from ActivatePrime)
 import { processWithConsciousness, type ConsciousnessState, type ConsciousnessInjection } from './consciousness';
@@ -1793,48 +1794,41 @@ Use read_file first to see the exact content you want to replace.`,
       required: ['query']
     },
     execute: async ({ query, include_pattern, exclude_pattern, max_results = 20 }, context) => {
-      // Use the existing run_command tool to execute ripgrep
-      const args = ['--line-number', '--no-heading'];
-
-      if (include_pattern) args.push('--glob', include_pattern);
-      if (exclude_pattern) args.push('--glob', `!${exclude_pattern}`);
-
-      args.push('--', query);
-
       try {
-        const result = await tools.run_command.execute({
-          command: `rg ${args.join(' ')}`,
-          cwd: context.workspacePath,
-          timeout: 10
-        }, context);
+        const rg = await searchWithRipgrep(context.workspacePath, query, {
+          includePattern: include_pattern,
+          excludePattern: exclude_pattern,
+          maxResults: max_results,
+          timeoutMs: 25_000
+        });
 
-        if (result.success && result.stdout) {
-          const lines = result.stdout.split('\n').filter((line: string) => line.trim());
-          const matches = lines.slice(0, max_results).map((line: string) => {
-            const match = line.match(/^([^:]+):(\d+):(.*)$/);
-            if (match) {
-              return {
-                file: match[1],
-                line: parseInt(match[2], 10),
-                content: match[3].trim()
-              };
-            }
-            return null;
-          }).filter(Boolean);
-
+        if (!rg.success) {
           return {
             query,
-            matches,
-            total: lines.length,
-            truncated: lines.length > max_results
+            matches: [],
+            total: 0,
+            error: rg.message || 'ripgrep failed',
+            usedBundledRg: rg.usedBundledRg
           };
         }
 
-        return { query, matches: [], total: 0 };
+        const matches = rg.matches.map((m) => ({
+          file: m.file,
+          line: m.line,
+          column: m.column,
+          content: m.content
+        }));
+
+        return {
+          query,
+          matches,
+          total: matches.length,
+          truncated: !!rg.message?.includes('limited'),
+          usedBundledRg: rg.usedBundledRg
+        };
       } catch (e) {
-        // ripgrep not available, fallback to basic search
-        console.warn('ripgrep not available, using basic search');
-        return { query, matches: [], total: 0, error: 'ripgrep not available' };
+        console.warn('search_codebase failed:', e);
+        return { query, matches: [], total: 0, error: String(e) };
       }
     }
   },

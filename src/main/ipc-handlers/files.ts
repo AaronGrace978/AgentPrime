@@ -16,6 +16,7 @@ import {
   sanitizeFolderName
 } from '../security/ipcValidation';
 import { completionOptimizer } from '../core/completion-optimizer';
+import { scheduleWorkspaceSymbolIndexRebuildForAgents } from '../search/symbol-index';
 
 /**
  * Build directory tree recursively
@@ -389,6 +390,7 @@ export function register(deps: FileHandlersDeps): void {
       // Invalidate completion cache for this file (smart invalidation)
       const relativePath = path.relative(workspacePath, fullPath).replace(/\\/g, '/');
       completionOptimizer.onFileSaved(relativePath, content);
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
 
       // Verify the file was actually written
       const fileExists = fs.existsSync(fullPath);
@@ -437,6 +439,7 @@ export function register(deps: FileHandlersDeps): void {
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, '', 'utf-8');
       }
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
       return { success: true };
     } catch (e: any) {
       return { error: e.message };
@@ -490,6 +493,7 @@ export function register(deps: FileHandlersDeps): void {
     try {
       console.log(`[File Delete] Deleting: ${fullPath}`);
       fs.rmSync(fullPath, { recursive: true, force: true });
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
       return { success: true };
     } catch (e: any) {
       return { error: e.message };
