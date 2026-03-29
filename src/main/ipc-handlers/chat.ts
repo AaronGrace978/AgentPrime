@@ -14,6 +14,7 @@ import { createAgent, AgentLoop } from '../agent-loop';
 import { SpecializedAgentLoop } from '../agent/specialized-agent-loop';
 import type { AgentContext } from '../agent-loop';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
+import { parseChatIpcContext } from '../security/chat-ipc-context';
 import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN } from '../core/timeout-utils';
 import { stateManager } from '../core/state-manager';
 import axios from 'axios';
@@ -258,7 +259,7 @@ export function register(deps: ChatHandlerDeps): void {
     }
   });
 
-  ipcMain.handle('chat', async (event: any, message: string, context: any) => {
+  ipcMain.handle('chat', async (event: any, message: string, contextRaw: unknown) => {
     const requestId = Date.now().toString();
 
     // === SECURITY: Rate limiting ===
@@ -285,6 +286,8 @@ export function register(deps: ChatHandlerDeps): void {
     
     // Use sanitized message
     message = messageValidation.sanitized || message;
+
+    const context = parseChatIpcContext(contextRaw);
 
     try {
       // Check if agent mode is enabled
@@ -465,6 +468,25 @@ export function register(deps: ChatHandlerDeps): void {
             return {
               success: true,
               response,
+              requestId,
+              agent_mode: true,
+              specialized_mode: false
+            };
+          } catch (agentErr: unknown) {
+            const msg =
+              agentErr instanceof Error
+                ? agentErr.message
+                : typeof agentErr === 'string'
+                  ? agentErr
+                  : 'Agent execution failed';
+            console.error('[Chat] Monolithic agent error:', agentErr);
+            event.sender.send('dino:reaction', {
+              expression: 'error',
+              message: 'Oof! Something went sideways — want to try again? 🦕'
+            });
+            return {
+              success: false,
+              error: msg,
               requestId,
               agent_mode: true,
               specialized_mode: false
@@ -723,7 +745,33 @@ Separate files with blank lines.
 
       // Use AI router to stream response
       let fullResponse = '';
-      
+      let streamTerminalError: string | undefined;
+
+      const processStreamChunk = (chunk: { content?: string; done?: boolean; error?: unknown }) => {
+        if (chunk.error != null && chunk.error !== '') {
+          const e = chunk.error;
+          streamTerminalError =
+            typeof e === 'string' ? e : e instanceof Error ? e.message : String(e);
+        }
+        if (chunk.content) {
+          fullResponse += chunk.content;
+          event.sender.send('chat-stream', {
+            requestId,
+            chunk: chunk.content,
+            done: false
+          });
+        }
+
+        if (chunk.done || chunk.error) {
+          event.sender.send('chat-stream', {
+            requestId,
+            chunk: '',
+            done: true,
+            error: chunk.error
+          });
+        }
+      };
+
       // Check for dual model configuration
       const dualModelEnabled = settings?.dualModelEnabled && settings?.dualModelConfig;
       const dualMode = context.dual_mode || 'auto'; // 'fast', 'deep', or 'auto'
@@ -742,25 +790,7 @@ Separate files with blank lines.
         aiRouter.configureDualModel(settings.dualModelConfig);
         
         // Use dual-model streaming with smart routing
-        await aiRouter.dualStream(messagesWithSystem, (chunk) => {
-          if (chunk.content) {
-            fullResponse += chunk.content;
-            event.sender.send('chat-stream', {
-              requestId,
-              chunk: chunk.content,
-              done: false
-            });
-          }
-          
-          if (chunk.done || chunk.error) {
-            event.sender.send('chat-stream', {
-              requestId,
-              chunk: '',
-              done: true,
-              error: chunk.error
-            });
-          }
-        }, {
+        await aiRouter.dualStream(messagesWithSystem, processStreamChunk, {
           model: activeModel,
           maxTokens: maxTokens,
           dualMode: dualMode,
@@ -783,33 +813,57 @@ Separate files with blank lines.
         });
       } else {
         // Standard single-model streaming
-        await aiRouter.stream(messagesWithSystem, (chunk) => {
-          if (chunk.content) {
-            fullResponse += chunk.content;
-            event.sender.send('chat-stream', {
-              requestId,
-              chunk: chunk.content,
-              done: false
-            });
-          }
-          
-          if (chunk.done || chunk.error) {
-            event.sender.send('chat-stream', {
-              requestId,
-              chunk: '',
-              done: true,
-              error: chunk.error
-            });
-          }
-        }, {
+        await aiRouter.stream(messagesWithSystem, processStreamChunk, {
           model: activeModel,
           maxTokens: maxTokens
         });
       }
+
+      if (streamTerminalError) {
+        event.sender.send('chat-error', {
+          requestId,
+          error: streamTerminalError,
+          model: activeModel,
+          provider: activeProvider
+        });
+        event.sender.send('dino:reaction', {
+          expression: 'error',
+          message: 'Let me help fix that! 🦕'
+        });
+        return {
+          success: false,
+          error: streamTerminalError,
+          requestId,
+          model: activeModel,
+          provider: activeProvider
+        };
+      }
+
+      if (!fullResponse.trim()) {
+        const emptyMsg =
+          'The model returned an empty response. Try again, shorten your message, or switch models.';
+        event.sender.send('chat-error', {
+          requestId,
+          error: emptyMsg,
+          model: activeModel,
+          provider: activeProvider
+        });
+        event.sender.send('dino:reaction', {
+          expression: 'error',
+          message: 'Let me help fix that! 🦕'
+        });
+        return {
+          success: false,
+          error: emptyMsg,
+          requestId,
+          model: activeModel,
+          provider: activeProvider
+        };
+      }
       
       // Store in history
       addToConversationHistory('user', message);
-      addToConversationHistory('assistant', fullResponse || '[No response]');
+      addToConversationHistory('assistant', fullResponse);
       
       // Send success reaction to Dino Buddy
       event.sender.send('dino:reaction', {
@@ -819,12 +873,21 @@ Separate files with blank lines.
       
       return {
         success: true,
-        response: fullResponse || '[No response]',
+        response: fullResponse,
         requestId
       };
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Chat error:', error);
+
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : error != null && typeof error === 'object' && 'message' in error
+              ? String((error as { message: unknown }).message)
+              : 'Unknown error';
       
       // Get model and provider info for error context
       const settings = getSettings();
@@ -833,7 +896,7 @@ Separate files with blank lines.
       
       event.sender.send('chat-error', {
         requestId,
-        error: error.message || 'Unknown error',
+        error: errorMessage,
         model: activeModel,
         provider: activeProvider
       });
@@ -846,7 +909,7 @@ Separate files with blank lines.
       
       return {
         success: false,
-        error: error.message || 'Unknown error',
+        error: errorMessage,
         requestId,
         model: activeModel,
         provider: activeProvider

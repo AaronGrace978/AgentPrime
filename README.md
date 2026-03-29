@@ -5,11 +5,11 @@
 <h1 align="center">AgentPrime</h1>
 
 <p align="center">
-  Private, local-first coding workspace with integrated AI assistance.
+  Local-first AI coding workspace for desktop.
 </p>
 
 <p align="center">
-  Built with Electron, React, TypeScript, and a lean desktop-first workflow.
+  Built with Electron, React, TypeScript, Monaco, and an optional Python "Brain" backend.
 </p>
 
 <p align="center">
@@ -18,52 +18,116 @@
 
 ## Overview
 
-AgentPrime is an AI coding workspace designed around a simple idea: keep the desktop app focused, fast, and useful. Instead of booting every experimental subsystem by default, the current public build centers on the core tools you actually use while coding:
+AgentPrime is a desktop IDE designed to keep AI assistance close to the real coding workflow instead of turning the product into a generic chat shell.
 
-- File navigation and editor workflow
-- AI chat with fast / auto / deep model routing
-- Curated model selection across OpenAI, Anthropic, Ollama, and OpenRouter
-- Settings, keyboard shortcuts, command palette, and Git-aware actions
-- Template-driven project setup for quick starts
+It combines:
 
-## Why It Exists
+- A lean Electron desktop app with workspace, tabs, file tree, terminal, search, settings, and command palette
+- AI chat, agent execution, inline edit, and model routing across multiple providers
+- Template-based project starts, Git-aware workflows, live preview, and deployment helpers
+- Secure renderer-to-main IPC with a preload bridge and desktop-first privacy defaults
 
-AgentPrime aims to feel closer to a practical local coding tool than a bloated AI dashboard.
+The goal is simple: give you a practical local coding environment that feels fast, workspace-aware, and useful from the first launch.
 
-- Local desktop app with a familiar IDE-style shell
-- Faster startup through a lean core profile
-- Private, workspace-aware AI assistance
-- Multi-provider model support instead of locking into one vendor
-- Cleaner model routing for quick edits, deeper reasoning, and everyday coding tasks
+## What AgentPrime Can Do
 
-## Current AI Stack
+- Open a project and work in a full desktop IDE shell with Monaco editor, tabs, file tree, terminal, and search/replace
+- Talk to AI in chat mode or let the agent operate on a workspace with file context, open tabs, and terminal history
+- Route requests through fast, deep, or auto model selection
+- Use multiple providers without locking the app to a single vendor
+- Run specialized agents for more structured multi-step work
+- Review streamed agent progress and capture file changes for review
+- Apply inline AI edits directly from the editor
+- Use ghost text completions and contextual coding assistance
+- Generate projects from built-in templates
+- Preview and deploy projects from inside the app
+- Work with Git actions and VibeHub-style repository workflows
 
-The in-app model selectors are organized around current provider families and curated defaults.
+## Recent Upgrades
 
-- OpenAI: GPT-5.4, GPT-5.4 Mini, GPT-5.4 Nano, GPT-5.3 Instant, GPT-4o
-- Anthropic: Claude Opus 4.6, Claude Sonnet 4.6, Claude Haiku 4.5, older 4.5 and 4.0 fallbacks
-- Ollama: local models plus newer Ollama Cloud picks such as Qwen 3.5, Qwen 3 Coder Next, DeepSeek v3.2, GLM-5, MiniMax M2.7, Devstral 2, and more
-- OpenRouter: multi-provider access for teams that prefer a single routing layer
+- Better AI Composer stability. Once the composer has been opened, it stays mounted when collapsed so in-flight work is not reset.
+- Faster, richer chat rendering with a virtualized message list and improved code blocks with copy/apply actions.
+- Safer chat payload handling through schema-validated IPC context with stricter bounds on incoming data.
+- Faster workspace source discovery with new glob-based helpers for agent context, verification, and indexing.
+- Better specialized-agent execution with bounded parallel tool work and stronger review/verification plumbing.
+- Improved Ollama handling so cloud-style endpoints do not get treated like a local daemon health check path.
+- Shortcut behavior aligned with the UI: `Ctrl+K` opens the command palette outside the editor, while `Ctrl+K` in Monaco remains inline AI edit.
 
-Default routing is tuned around:
+## Core Features
 
-- Fast model: `gpt-5.4-mini`
-- Deep model: `claude-sonnet-4-6`
-- Active default model: `gpt-5.4`
+### AI Workspace
 
-## Lean Core Profile
+- AI chat with streaming responses
+- Agent mode for workspace-aware autonomous tasks
+- Chat, agent, and alternate assistant modes in the composer
+- File mentions and focused workspace context
+- Error recovery UI for auth, context, and provider failures
 
-The current public-facing app intentionally keeps the default experience tight:
+### Model Routing
 
-- Focused surface area: editor, workspace tools, AI composer, settings, command palette, and Git panel
-- No auto-boot heavy subsystems at launch
-- Better startup behavior with fewer background services and IPC registrations
+- Multi-provider support: OpenAI, Anthropic, Ollama, and OpenRouter
+- Fast, deep, and auto routing modes
+- In-app model selection and settings persistence
+- Local-model friendly workflows through Ollama
+
+### Coding Tools
+
+- Monaco editor with inline AI edit
+- Ghost text completions
+- Command palette
+- Search and replace
+- Symbol and analysis plumbing for deeper workspace awareness
+- Keyboard shortcuts editor
+
+### Project Workflow
+
+- Integrated terminal
+- Git panel and repository helpers
+- Template-driven project creation
+- Live preview
+- Deploy helpers for common frontend hosting workflows
+- Recent projects and workspace-aware startup flow
+
+### Optional Brain Backend
+
+- FastAPI-based Python backend for extended orchestration and memory-style workflows
+- Backend manager support from the Electron app
+- Packaged backend resources for desktop builds
+
+## Architecture
+
+```text
+AgentPrime
+├── src/main          Electron main process, IPC, providers, security, backend manager
+├── src/renderer      React UI, IDE shell, AI chat, editor, panels
+├── src/types         Shared types
+├── src/cli           CLI entrypoints and commands
+├── src/main/agent    Agent loop, specialist orchestration, tool validation
+├── src/main/ipc-handlers
+│                     Files, git, search, chat, analysis, terminal, deploy, completions
+├── src/main/security Secure storage and IPC validation
+├── src/main/search   Symbol and codebase indexing
+├── backend           Python Brain service
+├── templates         Starter templates
+└── tests             Unit, integration, and e2e coverage
+```
+
+## Security Model
+
+AgentPrime is desktop-first, but it still treats the renderer like an untrusted surface.
+
+- `nodeIntegration` is disabled
+- `contextIsolation` is enabled
+- Renderer access flows through a preload bridge
+- Chat IPC context is validated before it reaches the main process
+- API keys are stored through secure storage mechanisms with encrypted fallback handling
+- CSP rules and backend origin restrictions are applied to reduce unsafe surface area
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 16+
+- Node.js LTS, 18+ recommended
 - npm
 - Git
 
@@ -75,104 +139,174 @@ cd AgentPrime
 npm install
 ```
 
-### Run
+### Run The App
 
 ```bash
-# Recommended
+# Recommended local run
 npm run quick-start
 
-# Or manually
+# Or build then launch
 npm run build
-npm run start:dev
+npm start
 ```
 
-## Development Scripts
+### Development Watch Mode
 
 ```bash
+npm run dev
+```
+
+That runs webpack watch tasks for the main and renderer bundles. When you want to launch the desktop app from the built output, use `npm start`.
+
+## Scripts
+
+```bash
+# App
+npm start
+npm run dev
+npm run quick-start
+npm run start:dev
+
 # Build
 npm run build
 npm run build:main
 npm run build:renderer
 
-# Development
-npm run dev
-npm run start:dev
-npm run quick-start
-
-# Testing
-npm test
-npm run test:watch
-npm run test:coverage
-npm run test:e2e
-
 # Quality
 npm run lint
 npm run typecheck
+
+# Tests
+npm test
+npm run test:watch
+npm run test:coverage
+npm run test:unit
+npm run test:integration
+npm run test:e2e
+npm run test:performance
+npm run test:all
 
 # Distribution
 npm run dist
 npm run dist:win
 npm run dist:mac
 npm run dist:linux
+npm run dist:all
+
+# CLI
+npm run cli
+npm run cli:build
+npm run agent
+npm run chat
 ```
 
-## Project Structure
+## CLI
 
-```text
-AgentPrime/
-├── src/
-│   ├── main/        # Electron main process
-│   ├── renderer/    # React UI
-│   └── types/       # Shared types
-├── templates/       # Starter templates and project scaffolds
-├── tests/           # Unit, integration, and e2e coverage
-├── scripts/         # Build and utility scripts
-└── dist/            # Build output
+AgentPrime also ships a CLI-oriented surface for local workflows.
+
+- `agentprime agent`
+- `agentprime doctor`
+- `agentprime onboard`
+- `agentprime status`
+
+You can build the CLI with:
+
+```bash
+npm run cli:build
 ```
 
 ## Configuration
 
-Provider and model selection live in the in-app settings panel.
+Provider selection and most app configuration live in the in-app settings panel.
 
 Supported providers:
 
-- Ollama
-- Anthropic
 - OpenAI
+- Anthropic
+- Ollama
 - OpenRouter
+
+Typical setup flow:
+
+1. Launch the app.
+2. Open Settings.
+3. Configure your provider keys or local model endpoint.
+4. Choose an active model and dual-model routing preferences.
+
+## Keyboard Shortcuts
+
+- `Ctrl+K`: Command palette outside the editor
+- `Ctrl+K`: Inline AI edit when Monaco editor focus owns the shortcut
+- `Ctrl+L`: Toggle AI composer
+- `Ctrl+O`: Open project
+- `Ctrl+S`: Save current file
+- `Ctrl+B`: Toggle sidebar
+- `Ctrl+Shift+F`: Search and replace in files
+- `Ctrl+Shift+G`: Toggle Git panel
+- `Ctrl+Shift+P`: Toggle live preview
+- `F5`: Run current file
+
+The app also includes a keyboard shortcuts editor for reviewing and adjusting bindings.
+
+## Templates
+
+The `templates/` directory includes starter project scaffolds for common stacks and workflows so you can create a new project without starting from a blank folder.
+
+Examples include frontend, backend, desktop, and full-stack starters such as Vite, Next.js, Electron, Tauri, and FastAPI-oriented setups.
+
+## Packaging
+
+Desktop packaging is handled through Electron Builder.
+
+- Windows: NSIS and portable targets
+- macOS: DMG and ZIP targets
+- Linux: AppImage, DEB, and RPM targets
+
+Build outputs are emitted under the configured release directory during distribution builds.
+
+## Troubleshooting
+
+### Build Issues
+
+- Reinstall dependencies with `npm install`
+- Run `npm run typecheck`
+- Run `npm run lint`
+- Rebuild with `npm run build`
+
+### App Launch Issues
+
+- Make sure `dist/main/main.js` exists by running `npm run build`
+- Relaunch with `npm start`
+- Check terminal output for Electron or webpack errors
+
+### Provider Issues
+
+- Verify API keys in Settings
+- Confirm Ollama is running if you are using local models
+- Recheck the selected model and routing mode
+
+### Backend Issues
+
+- If you use the optional Brain backend, verify the Python service is available
+- Rebuild and relaunch if packaged resources or startup wiring changed
 
 ## Build With AgentPrime
 
 AgentPrime is proprietary software owned by Aaron Alexander Grace / BostonAI.io, but builders are welcome in the ecosystem.
 
 - You can build integrations, extensions, automations, connectors, plugins, and compatible tooling that work with AgentPrime
-- You can build into AgentPrime workflows and connect your own systems or services to it
+- You can connect your own systems or services into AgentPrime workflows
 - You can contribute improvements to the project
 - You cannot copy, repackage, resell, or create derivative commercial versions of the AgentPrime source code without permission
 - AgentPrime, BostonAI.io, and related branding remain owned by Aaron Alexander Grace / BostonAI.io
 
-## Troubleshooting
-
-### Build Issues
-
-- Confirm Node.js 16+ is installed
-- Reinstall dependencies with `npm install`
-- Run `npm run typecheck` to catch TypeScript issues
-
-### Runtime Issues
-
-- Check the Electron console output for errors
-- Verify provider keys and settings are configured
-- Rebuild with `npm run build` and relaunch
-
 ## Contributing
 
-1. Fork the repository
-2. Create a branch: `git checkout -b feature/my-change`
-3. Make your changes
-4. Run relevant tests or checks
-5. Commit and push your branch
-6. Open a pull request
+1. Fork the repository.
+2. Create a branch such as `git checkout -b feature/my-change`.
+3. Make your changes.
+4. Run relevant checks.
+5. Open a pull request.
 
 Contributions are welcome. By submitting a contribution, you affirm that you have the right to submit it and agree that it may be used, modified, and distributed as part of AgentPrime under this project's ownership and license terms.
 

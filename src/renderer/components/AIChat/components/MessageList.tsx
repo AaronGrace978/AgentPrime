@@ -7,7 +7,8 @@
  * - Inline diff preview support
  */
 
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { Message } from '../types';
 
 interface MessageListProps {
@@ -397,30 +398,47 @@ export const MessageList: React.FC<MessageListProps> = ({
   agentRunning,
   onApplyCode
 }) => {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const computeKey = useCallback((index: number, item: Message) => {
+    const t = item.timestamp instanceof Date ? item.timestamp.getTime() : 0;
+    return `${t}-${index}-${item.role}`;
+  }, []);
 
   return (
-    <div style={{
-      flex: 1,
-      overflow: 'auto',
-      padding: '20px',
-      background: 'var(--prime-bg)'
-    }}>
-      {messages.map((message, index) => (
-        <MessageBubble 
-          key={index} 
-          message={message}
-          messageIndex={index}
-          onApplyCode={onApplyCode}
-        />
-      ))}
-      {isLoading && <LoadingIndicator agentRunning={agentRunning} />}
-      <div ref={messagesEndRef} />
-      
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--prime-bg)'
+      }}
+    >
+      <Virtuoso
+        style={{ flex: 1 }}
+        data={messages}
+        computeItemKey={computeKey}
+        initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+        followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
+        increaseViewportBy={{ top: 400, bottom: 600 }}
+        itemContent={(index, message) => (
+          <div style={{ padding: '0 20px' }}>
+            <MessageBubble
+              message={message}
+              messageIndex={index}
+              onApplyCode={onApplyCode}
+            />
+          </div>
+        )}
+        components={{
+          Footer: () =>
+            isLoading ? (
+              <div style={{ padding: '0 20px 20px' }}>
+                <LoadingIndicator agentRunning={agentRunning} />
+              </div>
+            ) : null
+        }}
+      />
+
       <style>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }

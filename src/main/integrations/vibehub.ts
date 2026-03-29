@@ -20,6 +20,7 @@
 import { exec, spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import chokidar, { type FSWatcher } from 'chokidar';
 import { promisify } from 'util';
 import { ProjectRunner, ProjectInfo } from '../agent/tools/projectRunner';
 import { EventEmitter } from 'events';
@@ -164,7 +165,7 @@ export class VibeHubIntegration extends EventEmitter {
   private runningProjectInfo: RunningProject | null = null;
   private gitAvailable: boolean | null = null;
   private gitPath: string = 'git';
-  private fileWatcher: fs.FSWatcher | null = null;
+  private fileWatcher: FSWatcher | null = null;
   private aiProvider: any = null;  // Will be set externally
   private projectLogs: string[] = [];
   private maxLogs: number = 500;
@@ -1521,22 +1522,32 @@ Thumbs.db
     }
 
     try {
-      this.fileWatcher = fs.watch(
-        this.workspacePath,
-        { recursive: true },
-        (eventType, filename) => {
-          // Ignore .git directory changes
-          if (filename && !filename.startsWith('.git')) {
-            this.emit('file-changed', { type: eventType, file: filename });
-          }
-        }
-      );
+      this.fileWatcher = chokidar.watch(this.workspacePath, {
+        ignored: [
+          '**/node_modules/**',
+          '**/.git/**',
+          '**/dist/**',
+          '**/build/**',
+          '**/.next/**',
+          '**/target/**',
+          '**/release/**'
+        ],
+        ignoreInitial: true,
+        awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 50 }
+      });
+
+      this.fileWatcher.on('all', (event, filepath) => {
+        if (!filepath) return;
+        const norm = filepath.replace(/\\/g, '/');
+        if (norm.includes('/.git/') || norm.endsWith('/.git')) return;
+        this.emit('file-changed', { type: event, file: filepath });
+      });
 
       this.fileWatcher.on('error', (error) => {
         console.error('[VibeHub] File watcher error:', error);
       });
 
-      console.log('[VibeHub] File watcher started');
+      console.log('[VibeHub] File watcher started (chokidar)');
     } catch (error) {
       console.error('[VibeHub] Failed to start file watcher:', error);
     }
@@ -1547,7 +1558,7 @@ Thumbs.db
    */
   stopFileWatcher(): void {
     if (this.fileWatcher) {
-      this.fileWatcher.close();
+      void this.fileWatcher.close().catch(() => {});
       this.fileWatcher = null;
       console.log('[VibeHub] File watcher stopped');
     }

@@ -12,6 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import pLimit from 'p-limit';
 
 // ============================================================
 // 1. PARALLEL TOOL EXECUTION
@@ -36,40 +37,30 @@ export interface ParallelExecutionResult {
 /**
  * Execute multiple independent tool calls in parallel
  * This is how Cursor feels fast - it batches operations
+ * Concurrency is capped with p-limit so the agent cannot stampede disk / IPC.
  */
 export async function executeToolsInParallel(
   calls: ParallelToolCall[],
   toolExecutor: (tool: string, args: any) => Promise<any>,
   maxConcurrency: number = 5
 ): Promise<ParallelExecutionResult[]> {
-  const results: ParallelExecutionResult[] = [];
-  const pending = new Map<string, Promise<ParallelExecutionResult>>();
-  const completed = new Set<string>();
-  
-  // Sort by priority
+  const limit = pLimit(Math.max(1, maxConcurrency));
+
   const sortedCalls = [...calls].sort((a, b) => {
     const priorityOrder = { high: 0, normal: 1, low: 2 };
     return priorityOrder[a.priority] - priorityOrder[b.priority];
   });
-  
+
+  const taskPromises = new Map<string, Promise<ParallelExecutionResult>>();
+
   for (const call of sortedCalls) {
-    // Wait for dependencies
-    if (call.dependencies) {
-      const depsToWait = call.dependencies.filter(d => !completed.has(d));
-      if (depsToWait.length > 0) {
-        const depPromises = depsToWait.map(d => pending.get(d)).filter(Boolean);
-        await Promise.all(depPromises);
+    const p = limit(async (): Promise<ParallelExecutionResult> => {
+      if (call.dependencies?.length) {
+        await Promise.all(
+          call.dependencies.map((depId) => taskPromises.get(depId) ?? Promise.resolve(undefined))
+        );
       }
-    }
-    
-    // Limit concurrency
-    while (pending.size >= maxConcurrency) {
-      await Promise.race(pending.values());
-    }
-    
-    // Execute tool
-    const startTime = Date.now();
-    const promise = (async (): Promise<ParallelExecutionResult> => {
+      const startTime = Date.now();
       try {
         const result = await toolExecutor(call.tool, call.args);
         return {
@@ -87,21 +78,11 @@ export async function executeToolsInParallel(
           error: error.message
         };
       }
-    })();
-    
-    pending.set(call.id, promise);
-    
-    promise.then(result => {
-      results.push(result);
-      completed.add(call.id);
-      pending.delete(call.id);
     });
+    taskPromises.set(call.id, p);
   }
-  
-  // Wait for all remaining
-  await Promise.all(pending.values());
-  
-  return results;
+
+  return Promise.all(sortedCalls.map((c) => taskPromises.get(c.id)!));
 }
 
 // ============================================================

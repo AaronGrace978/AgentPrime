@@ -21,6 +21,7 @@ import { EventEmitter } from 'events';
 import { withAITimeoutAndRetry, TimeoutError } from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
 import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
+import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
 
 const MAX_RETRIES = 2;
 
@@ -551,28 +552,10 @@ export class SpecializedAgentLoop extends EventEmitter {
   }
 
   /**
-   * Get all files in workspace recursively
+   * Get all source files in workspace (fast glob, ignores node_modules / .git / build dirs)
    */
-  private getAllFiles(dir: string, baseDir: string = dir): string[] {
-    const files: string[] = [];
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-        
-        const fullPath = path.join(dir, entry.name);
-        const relativePath = path.relative(baseDir, fullPath).replace(/\\/g, '/');
-        
-        if (entry.isFile()) {
-          files.push(relativePath);
-        } else if (entry.isDirectory()) {
-          files.push(...this.getAllFiles(fullPath, baseDir));
-        }
-      }
-    } catch {
-      // Directory doesn't exist or can't be read
-    }
-    return files;
+  private getAllFiles(dir: string, _baseDir: string = dir): string[] {
+    return listWorkspaceSourceFilesSync(dir, 8000);
   }
 
   /**

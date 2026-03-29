@@ -407,6 +407,8 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
+      const target = e.target as HTMLElement | null;
+      const isMonacoEvent = !!target?.closest?.('.monaco-editor');
 
       const consume = () => { e.preventDefault(); e.stopPropagation(); };
 
@@ -478,7 +480,8 @@ function App() {
         return;
       }
 
-      if (mod && e.shiftKey && key === 'k') {
+      // Keep Ctrl/Cmd+K available for Monaco inline edit when the editor owns focus.
+      if (mod && key === 'k' && (!isMonacoEvent || e.shiftKey)) {
         consume();
         setCommandPaletteOpen(true);
         return;

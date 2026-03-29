@@ -6,7 +6,15 @@
 import React, { useState } from 'react';
 
 export interface AIError {
-  type: 'network' | 'timeout' | 'rate_limit' | 'credits' | 'model' | 'unknown';
+  type:
+    | 'network'
+    | 'timeout'
+    | 'rate_limit'
+    | 'credits'
+    | 'auth'
+    | 'context_limit'
+    | 'model'
+    | 'unknown';
   message: string;
   originalMessage?: string;
   timestamp: Date;
@@ -23,9 +31,57 @@ export interface AIErrorRecoveryProps {
 // Classify error from message
 export function classifyAIError(errorMessage: string): AIError {
   const lowerMessage = errorMessage.toLowerCase();
-  
-  if (lowerMessage.includes('network') || lowerMessage.includes('fetch') || 
-      lowerMessage.includes('econnrefused') || lowerMessage.includes('offline')) {
+
+  if (
+    lowerMessage.includes('401') ||
+    lowerMessage.includes('403') ||
+    lowerMessage.includes('unauthorized') ||
+    lowerMessage.includes('authentication failed') ||
+    lowerMessage.includes('invalid api key') ||
+    lowerMessage.includes('invalid key') ||
+    lowerMessage.includes('api key not configured') ||
+    lowerMessage.includes('incorrect api key')
+  ) {
+    return {
+      type: 'auth',
+      message: 'API key or sign-in problem',
+      originalMessage: errorMessage,
+      timestamp: new Date()
+    };
+  }
+
+  if (
+    lowerMessage.includes('context length') ||
+    lowerMessage.includes('maximum context') ||
+    lowerMessage.includes('token limit') ||
+    lowerMessage.includes('too many tokens') ||
+    lowerMessage.includes('prompt is too long') ||
+    lowerMessage.includes('context window') ||
+    lowerMessage.includes('exceeds the context') ||
+    lowerMessage.includes('input is too long')
+  ) {
+    return {
+      type: 'context_limit',
+      message: 'Conversation or prompt is too long for this model',
+      originalMessage: errorMessage,
+      timestamp: new Date()
+    };
+  }
+
+  if (
+    lowerMessage.includes('network') ||
+    lowerMessage.includes('fetch') ||
+    lowerMessage.includes('econnrefused') ||
+    lowerMessage.includes('econnreset') ||
+    lowerMessage.includes('enotfound') ||
+    lowerMessage.includes('enetunreach') ||
+    lowerMessage.includes('eai_again') ||
+    lowerMessage.includes('socket hang up') ||
+    lowerMessage.includes('getaddrinfo') ||
+    lowerMessage.includes('offline') ||
+    lowerMessage.includes('failed to fetch') ||
+    lowerMessage.includes('network error')
+  ) {
     return {
       type: 'network',
       message: 'Unable to connect to AI service',
@@ -43,8 +99,11 @@ export function classifyAIError(errorMessage: string): AIError {
     };
   }
   
-  if (lowerMessage.includes('rate') || lowerMessage.includes('429') || 
-      lowerMessage.includes('too many requests')) {
+  if (
+    lowerMessage.includes('rate') ||
+    lowerMessage.includes('429') ||
+    lowerMessage.includes('too many requests')
+  ) {
     return {
       type: 'rate_limit',
       message: 'Too many requests - please wait',
@@ -53,8 +112,12 @@ export function classifyAIError(errorMessage: string): AIError {
     };
   }
   
-  if (lowerMessage.includes('credit') || lowerMessage.includes('billing') ||
-      lowerMessage.includes('insufficient') || lowerMessage.includes('quota')) {
+  if (
+    lowerMessage.includes('credit') ||
+    lowerMessage.includes('billing') ||
+    lowerMessage.includes('insufficient') ||
+    lowerMessage.includes('quota')
+  ) {
     return {
       type: 'credits',
       message: 'API credits exhausted',
@@ -63,8 +126,15 @@ export function classifyAIError(errorMessage: string): AIError {
     };
   }
   
-  if (lowerMessage.includes('model') || lowerMessage.includes('not found') ||
-      lowerMessage.includes('unavailable')) {
+  if (
+    lowerMessage.includes('model') ||
+    lowerMessage.includes('not found') ||
+    lowerMessage.includes('unavailable') ||
+    lowerMessage.includes('503') ||
+    lowerMessage.includes('502') ||
+    lowerMessage.includes('overloaded') ||
+    lowerMessage.includes('bad gateway')
+  ) {
     return {
       type: 'model',
       message: 'AI model unavailable',
@@ -136,6 +206,32 @@ function getErrorDetails(type: AIError['type']): {
         title: 'Credits Exhausted',
         suggestion: 'Add credits to your API account or use a local model',
         color: 'var(--prime-error)'
+      };
+    case 'auth':
+      return {
+        icon: (
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        ),
+        title: 'Authentication',
+        suggestion: 'Check API keys in Settings, or sign in again for cloud providers',
+        color: 'var(--prime-error)'
+      };
+    case 'context_limit':
+      return {
+        icon: (
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14,2 14,8 20,8"/>
+            <line x1="8" y1="13" x2="16" y2="13"/>
+            <line x1="8" y1="17" x2="14" y2="17"/>
+          </svg>
+        ),
+        title: 'Context Too Large',
+        suggestion: 'Start a new chat, clear history, or attach less code',
+        color: 'var(--prime-warning)'
       };
     case 'model':
       return {
@@ -214,7 +310,7 @@ const AIErrorRecovery: React.FC<AIErrorRecoveryProps> = ({
           )}
         </button>
 
-        {error.type === 'model' && onSwitchModel && (
+        {(error.type === 'model' || error.type === 'context_limit') && onSwitchModel && (
           <button className="ai-error-btn secondary" onClick={onSwitchModel}>
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
               <polyline points="16,3 21,3 21,8"/>

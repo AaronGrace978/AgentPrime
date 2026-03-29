@@ -416,6 +416,11 @@ const AIChat: React.FC<AIChatProps> = ({
             return updated;
           });
         }
+        if (data.done && data.error) {
+          const errText = String(data.error);
+          setLastError(classifyAIError(errText));
+          setLastFailedInput(currentInput);
+        }
       };
       window.agentAPI.onChatStream(handleChunk);
 
@@ -443,13 +448,14 @@ const AIChat: React.FC<AIChatProps> = ({
         }
 
         if (!result.success && result.error) {
-          setLastError(classifyAIError(result.error));
+          const classified = classifyAIError(result.error);
+          setLastError(classified);
           setLastFailedInput(currentInput);
           setMessages(prev => {
             const updated = [...prev];
             updated[updated.length - 1] = {
               role: 'assistant',
-              content: `Something went wrong: ${result.error}`,
+              content: classified.message,
               timestamp: new Date()
             };
             return updated;
@@ -458,13 +464,15 @@ const AIChat: React.FC<AIChatProps> = ({
           setLastError(null);
         }
       } catch (error: any) {
-        setLastError(classifyAIError(error.message || 'Unknown error'));
+        const raw = error?.message || 'Unknown error';
+        const classified = classifyAIError(raw);
+        setLastError(classified);
         setLastFailedInput(currentInput);
         setMessages(prev => {
           const updated = [...prev];
           updated[updated.length - 1] = {
             role: 'assistant',
-            content: `Error: ${error.message}`,
+            content: classified.message,
             timestamp: new Date()
           };
           return updated;
@@ -551,9 +559,10 @@ const AIChat: React.FC<AIChatProps> = ({
 
       setMessages(prev => {
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
+        const failMsg = result.error ? classifyAIError(result.error).message : 'Agent run failed';
         return [...filtered, {
           role: 'assistant',
-          content: result.success ? result.response : `Agent failed${result.error ? `: ${result.error}` : ''}`,
+          content: result.success ? result.response : failMsg,
           timestamp: new Date()
         }];
       });
@@ -596,7 +605,8 @@ const AIChat: React.FC<AIChatProps> = ({
         await recordOutcome(currentInput, result.success, agentModel, (result as any).stepsExecuted || 1);
       }
     } catch (error: any) {
-      const classified = classifyAIError(error.message || 'Unknown error');
+      const raw = error?.message || 'Unknown error';
+      const classified = classifyAIError(raw);
       setLastError(classified);
       setLastFailedInput(currentInput);
 
@@ -604,7 +614,7 @@ const AIChat: React.FC<AIChatProps> = ({
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
         return [...filtered, {
           role: 'assistant',
-          content: `Agent error: ${error.message}`,
+          content: classified.message,
           timestamp: new Date()
         }];
       });

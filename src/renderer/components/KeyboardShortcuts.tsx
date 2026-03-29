@@ -43,7 +43,7 @@ export interface KeyboardShortcut {
 // Default shortcuts — kept in sync with App/index.tsx and MonacoEditor.tsx
 export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
   // General
-  { id: 'command-palette', name: 'Command Palette', description: 'Open command palette', category: 'general', defaultKeybinding: 'Ctrl+Shift+K', currentKeybinding: 'Ctrl+Shift+K' },
+  { id: 'command-palette', name: 'Command Palette', description: 'Open command palette', category: 'general', defaultKeybinding: 'Ctrl+K', currentKeybinding: 'Ctrl+K', when: '!editorFocus' },
   { id: 'open-project', name: 'Open Project', description: 'Open a workspace folder', category: 'general', defaultKeybinding: 'Ctrl+O', currentKeybinding: 'Ctrl+O' },
   { id: 'save', name: 'Save', description: 'Save current file', category: 'general', defaultKeybinding: 'Ctrl+S', currentKeybinding: 'Ctrl+S' },
   { id: 'new-project', name: 'New Project From Template', description: 'Open project templates', category: 'general', defaultKeybinding: 'Ctrl+Shift+N', currentKeybinding: 'Ctrl+Shift+N' },
