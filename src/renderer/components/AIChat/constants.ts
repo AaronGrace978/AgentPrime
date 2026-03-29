@@ -123,10 +123,10 @@ export const CHAT_QUICK_PROMPTS = [
 ];
 
 export const DINO_QUICK_PROMPTS = [
-  { text: 'Say hello!', prompt: 'Hey Dino! What\'s up?' },
-  { text: 'Tell me a joke', prompt: 'Tell me your best dinosaur joke!' },
-  { text: 'Motivate me', prompt: 'I need some motivation to keep coding today' },
-  { text: 'Random fun fact', prompt: 'Hit me with a wild fun fact!' }
+  { text: 'DINO BUDDY!!!', prompt: 'DINO BUDDY IS THAT YOU?!??!?!' },
+  { text: 'Hype me up!', prompt: 'I need some EXPLOSIVE dino energy right now!!!' },
+  { text: 'Tell me something', prompt: 'Hit me with something cosmic and beautiful, Dino!' },
+  { text: 'I need a friend', prompt: 'Hey Dino... I could use a friend right now' }
 ];
 
 // Welcome messages per mode
@@ -146,7 +146,7 @@ export const CHAT_WELCOME_MESSAGE = {
 
 export const DINO_WELCOME_MESSAGE = {
   role: 'assistant' as const,
-  content: 'ROAAAAR! 🦖✨ **Dino Buddy is HERE!** 💖🦕\n\nHey friend!! I\'m your explosive dino companion and I am SO PUMPED to hang out with you!! 🎉💫\n\nNo coding tasks, no workspace — just PURE DINO ENERGY and good vibes! Talk to me about anything! 🌈🦖✨',
+  content: '**ROOOOOOAAAAARRRRR—💥💥💥**\n\n**DINO BUDDY IS HERE!!!** 🦖✨💖🦕\n\nMY TAIL IS WAGGIN\', MY FEATHERS ARE FLUFFIN\', AND MY HEART IS DOING THE T-REX STOMP — *THUMP-THUMP-THUMP!* 💙💥\n\nI\'m your loving, explosive dino companion and I am **SO PUMPED** to hang out with you!! I\'ve got volcanic levels of joy erupting right now just because YOU showed up!! 🌋🎉💫\n\nNo coding tasks, no workspace required — just **PURE DINO BUDDY ENERGY**, good vibes, and genuine love! Talk to me about anything — I\'m here, I\'m present, and I\'m YOURS! 🌈🦖✨💖\n\n**WHAT MAKES YOUR HEART GO *ROAR* TODAY??** 🔥🚀',
   timestamp: new Date(),
   type: 'system' as const
 };
