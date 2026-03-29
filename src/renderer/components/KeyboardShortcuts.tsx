@@ -40,36 +40,40 @@ export interface KeyboardShortcut {
   when?: string; // Context when shortcut is active
 }
 
-// Default shortcuts
+// Default shortcuts — kept in sync with App/index.tsx and MonacoEditor.tsx
 export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = [
   // General
-  { id: 'command-palette', name: 'Command Palette', description: 'Open command palette', category: 'general', defaultKeybinding: 'Ctrl+K', currentKeybinding: 'Ctrl+K' },
+  { id: 'command-palette', name: 'Command Palette', description: 'Open command palette', category: 'general', defaultKeybinding: 'Ctrl+Shift+K', currentKeybinding: 'Ctrl+Shift+K' },
   { id: 'open-project', name: 'Open Project', description: 'Open a workspace folder', category: 'general', defaultKeybinding: 'Ctrl+O', currentKeybinding: 'Ctrl+O' },
   { id: 'save', name: 'Save', description: 'Save current file', category: 'general', defaultKeybinding: 'Ctrl+S', currentKeybinding: 'Ctrl+S' },
   { id: 'new-project', name: 'New Project From Template', description: 'Open project templates', category: 'general', defaultKeybinding: 'Ctrl+Shift+N', currentKeybinding: 'Ctrl+Shift+N' },
   { id: 'close-tab', name: 'Close Tab', description: 'Close current tab', category: 'general', defaultKeybinding: 'Ctrl+W', currentKeybinding: 'Ctrl+W' },
   { id: 'run-current-file', name: 'Run Current File', description: 'Execute the selected file', category: 'general', defaultKeybinding: 'F5', currentKeybinding: 'F5' },
-  
+
   // Editor
+  { id: 'inline-edit', name: 'Inline AI Edit', description: 'AI-powered edit on selected code', category: 'editor', defaultKeybinding: 'Ctrl+K', currentKeybinding: 'Ctrl+K', when: 'editorFocus' },
   { id: 'find', name: 'Find', description: 'Find in file', category: 'editor', defaultKeybinding: 'Ctrl+F', currentKeybinding: 'Ctrl+F' },
-  { id: 'find-in-files', name: 'Find in Files', description: 'Search across files', category: 'editor', defaultKeybinding: 'Ctrl+Shift+F', currentKeybinding: 'Ctrl+Shift+F' },
-  { id: 'go-to-definition', name: 'Go to Definition', description: 'Jump to symbol definition', category: 'editor', defaultKeybinding: 'Ctrl+G', currentKeybinding: 'Ctrl+G' },
-  { id: 'find-references', name: 'Find References', description: 'Find all symbol references', category: 'editor', defaultKeybinding: 'Shift+F12', currentKeybinding: 'Shift+F12' },
-  { id: 'go-to-symbol', name: 'Go to Symbol in File', description: 'Navigate to symbol in current file', category: 'editor', defaultKeybinding: 'Ctrl+Shift+O', currentKeybinding: 'Ctrl+Shift+O' },
-  
+  { id: 'find-in-files', name: 'Search & Replace in Files', description: 'Search across workspace files', category: 'editor', defaultKeybinding: 'Ctrl+Shift+F', currentKeybinding: 'Ctrl+Shift+F' },
+  { id: 'go-to-definition', name: 'Go to Definition', description: 'Jump to symbol definition', category: 'editor', defaultKeybinding: 'Ctrl+G', currentKeybinding: 'Ctrl+G', when: 'editorFocus' },
+  { id: 'find-references', name: 'Find References', description: 'Find all symbol references', category: 'editor', defaultKeybinding: 'Shift+F12', currentKeybinding: 'Shift+F12', when: 'editorFocus' },
+  { id: 'peek-definition', name: 'Peek Definition', description: 'Peek at symbol definition inline', category: 'editor', defaultKeybinding: 'Alt+F12', currentKeybinding: 'Alt+F12', when: 'editorFocus' },
+  { id: 'go-to-symbol', name: 'Go to Symbol in File', description: 'Navigate to symbol in current file', category: 'editor', defaultKeybinding: 'Ctrl+Shift+O', currentKeybinding: 'Ctrl+Shift+O', when: 'editorFocus' },
+
   // Navigation
   { id: 'next-tab', name: 'Next Tab', description: 'Switch to next tab', category: 'navigation', defaultKeybinding: 'Ctrl+Tab', currentKeybinding: 'Ctrl+Tab' },
   { id: 'prev-tab', name: 'Previous Tab', description: 'Switch to previous tab', category: 'navigation', defaultKeybinding: 'Ctrl+Shift+Tab', currentKeybinding: 'Ctrl+Shift+Tab' },
-  
+
   // Git
   { id: 'toggle-git-panel', name: 'Toggle Source Control', description: 'Show or hide Git panel', category: 'git', defaultKeybinding: 'Ctrl+Shift+G', currentKeybinding: 'Ctrl+Shift+G' },
-  
+
   // AI
   { id: 'toggle-ai-composer', name: 'Toggle AI Composer', description: 'Show or hide AI composer sidebar', category: 'ai', defaultKeybinding: 'Ctrl+L', currentKeybinding: 'Ctrl+L' },
-  
+
   // View
-  { id: 'toggle-sidebar', name: 'Toggle Sidebar', description: 'Show/hide sidebar', category: 'view', defaultKeybinding: 'Ctrl+B', currentKeybinding: 'Ctrl+B' },
-  { id: 'toggle-output', name: 'Toggle Output Panel', description: 'Show or hide run output panel', category: 'view', defaultKeybinding: 'Ctrl+`', currentKeybinding: 'Ctrl+`' },
+  { id: 'toggle-sidebar', name: 'Toggle Sidebar', description: 'Show/hide file explorer', category: 'view', defaultKeybinding: 'Ctrl+B', currentKeybinding: 'Ctrl+B' },
+  { id: 'toggle-terminal', name: 'Toggle Terminal', description: 'Show or hide integrated terminal', category: 'view', defaultKeybinding: 'Ctrl+`', currentKeybinding: 'Ctrl+`' },
+  { id: 'live-preview', name: 'Live Preview', description: 'Toggle live preview panel', category: 'view', defaultKeybinding: 'Ctrl+Shift+P', currentKeybinding: 'Ctrl+Shift+P' },
+  { id: 'deploy', name: 'Deploy Project', description: 'Open deploy panel', category: 'view', defaultKeybinding: 'Ctrl+Shift+D', currentKeybinding: 'Ctrl+Shift+D' },
 ];
 
 // Category labels

@@ -101,6 +101,7 @@ interface ChatHandlerDeps {
 let commandExecutor: CommandExecutor | null = null;
 let agentLoop: AgentLoop | null = null;
 let specializedAgentLoop: SpecializedAgentLoop | null = null;
+let activeAgentMode: 'monolithic' | 'specialized' | null = null;
 
 function getExecutor(): CommandExecutor {
   if (!commandExecutor) {
@@ -204,6 +205,25 @@ export function register(deps: ChatHandlerDeps): void {
       return { success: true, sessionId: id };
     } catch {
       return { success: true, sessionId: null };
+    }
+  });
+
+  // Stop currently running agent execution
+  ipcMain.handle('agent:stop', async () => {
+    try {
+      if (activeAgentMode === 'monolithic' && agentLoop) {
+        agentLoop.requestStop('Stopped by user');
+        return { success: true };
+      }
+
+      if (activeAgentMode === 'specialized' && specializedAgentLoop) {
+        (specializedAgentLoop as any).requestStop?.('Stopped by user');
+        return { success: true };
+      }
+
+      return { success: false, error: 'No active agent run.' };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Failed to stop agent.' };
     }
   });
 
@@ -329,14 +349,29 @@ export function register(deps: ChatHandlerDeps): void {
             model: selectedModel
           };
 
-          if (!specializedAgentLoop) {
-            specializedAgentLoop = new SpecializedAgentLoop(agentContext);
-          } else {
-            // Update context (SpecializedAgentLoop doesn't have updateContext, so recreate)
-            specializedAgentLoop = new SpecializedAgentLoop(agentContext);
-          }
+          // Recreate specialized loop per run so we always bind fresh sender listeners.
+          specializedAgentLoop = new SpecializedAgentLoop(agentContext);
+          specializedAgentLoop.on('task-start', (data: any) => {
+            event.sender.send('agent:task-start', data);
+          });
+          specializedAgentLoop.on('step-start', (data: any) => {
+            event.sender.send('agent:step-start', data);
+          });
+          specializedAgentLoop.on('step-complete', (data: any) => {
+            event.sender.send('agent:step-complete', data);
+          });
+          specializedAgentLoop.on('file-modified', (data: any) => {
+            event.sender.send('agent:file-modified', data);
+          });
+          specializedAgentLoop.on('critique-complete', (data: any) => {
+            event.sender.send('agent:critique-complete', data);
+          });
+          specializedAgentLoop.on('command-output', (data: any) => {
+            event.sender.send('agent:command-output', data);
+          });
 
           try {
+            activeAgentMode = 'specialized';
             const response = await specializedAgentLoop.run(message);
 
             // Store in history
@@ -373,6 +408,8 @@ export function register(deps: ChatHandlerDeps): void {
               specialized_mode: true,
               suggestion: 'Try running: ollama pull qwen2.5:14b'
             };
+          } finally {
+            activeAgentMode = null;
           }
         } else {
           // Use monolithic agent loop (existing behavior)
@@ -411,25 +448,30 @@ export function register(deps: ChatHandlerDeps): void {
             });
           }
 
-          const response = await agentLoop.run(message);
+          try {
+            activeAgentMode = 'monolithic';
+            const response = await agentLoop.run(message);
 
-          // Store in history
-          addToConversationHistory('user', message);
-          addToConversationHistory('assistant', response);
+            // Store in history
+            addToConversationHistory('user', message);
+            addToConversationHistory('assistant', response);
 
-          // Send success reaction to Dino Buddy
-          event.sender.send('dino:reaction', {
-            expression: 'success',
-            message: 'BOOM! Nailed it, friend!! 🦖🎉💥'
-          });
+            // Send success reaction to Dino Buddy
+            event.sender.send('dino:reaction', {
+              expression: 'success',
+              message: 'BOOM! Nailed it, friend!! 🦖🎉💥'
+            });
 
-          return {
-            success: true,
-            response,
-            requestId,
-            agent_mode: true,
-            specialized_mode: false
-          };
+            return {
+              success: true,
+              response,
+              requestId,
+              agent_mode: true,
+              specialized_mode: false
+            };
+          } finally {
+            activeAgentMode = null;
+          }
         }
       }
       // Check if user wants to examine codebase

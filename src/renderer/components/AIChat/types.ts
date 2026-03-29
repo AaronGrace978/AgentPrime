@@ -24,7 +24,16 @@ export interface Message {
   type?: 'system' | 'action' | 'result' | 'chat';
 }
 
+export interface AgentFileChange {
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+  action: 'modified' | 'created' | 'deleted';
+}
+
 export interface AIChatProps {
+  /** When false, the chat stays mounted but is hidden (preserves in-flight agent state when the sidebar is collapsed). */
+  isVisible?: boolean;
   onClose: () => void;
   openFiles?: OpenFile[];
   activeFileIndex?: number;
@@ -33,6 +42,7 @@ export interface AIChatProps {
   onOpenFolder?: () => void;
   onOpenTemplates?: () => void;
   onApplyCode?: (code: string, filePath?: string) => void;
+  onAgentChangesReady?: (changes: AgentFileChange[], taskDescription: string) => void;
 }
 
 // Chat interaction mode

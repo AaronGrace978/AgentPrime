@@ -29,6 +29,7 @@ interface AppHeaderProps {
   onOpenSettings: () => void;
   onSaveFile: () => void;
   onRunScript: () => void;
+  onStopScript: () => void;
   onToggleSplitView: () => void;
   onToggleGitPanel: () => void;
 }
@@ -45,6 +46,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onOpenSettings,
   onSaveFile,
   onRunScript,
+  onStopScript,
   onToggleSplitView,
   onToggleGitPanel
 }) => {
@@ -105,7 +107,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             <button onClick={onSaveFile} disabled={!hasChanges} className="app-header-pro-btn app-header-pro-btn-primary">
               <IconSave size="sm" /> Save
             </button>
-            <button onClick={onRunScript} disabled={isRunning} className="app-header-pro-btn app-header-pro-btn-primary">
+            <button
+              onClick={isRunning ? onStopScript : onRunScript}
+              className={`app-header-pro-btn ${isRunning ? 'app-header-pro-btn-danger' : 'app-header-pro-btn-primary'}`}
+            >
               {isRunning ? <><IconStop size="sm" /> Stop</> : <><IconPlay size="sm" /> Run</>}
             </button>
             <button onClick={onOpenComposer} className="app-header-pro-btn">

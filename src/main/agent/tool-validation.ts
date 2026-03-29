@@ -356,47 +356,68 @@ function validateWriteFile(toolCall: any, workspacePath: string, taskContext?: s
   const fileDir = path.dirname(filePath);
   
   // ==========================================
-  // CHECK 1: Duplicate File Detection (ENHANCED)
-  // FIXED: Now blocks ALL duplicate basenames, not just root vs src/
+  // CHECK 1: Duplicate File Detection
+  // Blocks true clones (script.js in root AND src/script.js) but allows
+  // config files that legitimately appear in multiple workspace packages
+  // (package.json, tsconfig.json, index.ts, README.md, etc.)
   // ==========================================
   const existingPaths = sessionFileTracker.get(fileName) || [];
-  
-  // Detect problematic duplicates (same basename in different locations)
+
+  // Files that naturally exist in multiple directories in monorepos/workspaces
+  const MULTI_LOCATION_FILES = new Set([
+    'package.json', 'tsconfig.json', 'tsconfig.build.json',
+    '.eslintrc.js', '.eslintrc.json', '.eslintrc.cjs',
+    'eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs',
+    '.prettierrc', '.prettierrc.json', '.prettierrc.js',
+    'jest.config.ts', 'jest.config.js', 'vitest.config.ts', 'vitest.config.js',
+    'index.ts', 'index.tsx', 'index.js', 'index.mjs',
+    'readme.md', 'changelog.md', 'license', 'license.md',
+    '.gitignore', '.env', '.env.example', '.env.local',
+    'dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
+    'vite.config.ts', 'vite.config.js', 'webpack.config.js',
+    'tailwind.config.js', 'tailwind.config.ts', 'postcss.config.js',
+    'main.ts', 'main.tsx', 'main.js', 'app.ts', 'app.tsx', 'app.js',
+  ]);
+
+  const isMultiLocationAllowed = MULTI_LOCATION_FILES.has(fileName);
+
   for (const existingPath of existingPaths) {
+    if (existingPath === filePath) continue;
+
     const existingDir = path.dirname(existingPath);
-    
-    // Block if same file exists in ANY different location
-    if (existingPath !== filePath) {
-      // Normalize directories for comparison
-      const normalizedFileDir = fileDir === '' ? '.' : fileDir;
-      const normalizedExistingDir = existingDir === '' ? '.' : existingDir;
-      
-      // Check for root vs src/ pattern (most common)
-      const isRootVsSrc = 
-        (normalizedFileDir === '.' && normalizedExistingDir.startsWith('src')) ||
-        (normalizedExistingDir === '.' && normalizedFileDir.startsWith('src'));
-      
-      // Check for any different directory
-      const isDifferentDir = normalizedFileDir !== normalizedExistingDir;
-      
-      if (isRootVsSrc || isDifferentDir) {
-        console.error(`[ToolValidation] 🚨 DUPLICATE FILE BLOCKED: "${fileName}"`);
-        console.error(`[ToolValidation]   Already exists at: "${existingPath}"`);
-        console.error(`[ToolValidation]   Attempted to create at: "${filePath}"`);
-        
-        return {
-          valid: false,
-          error: `🚨 DUPLICATE FILE DETECTED!\n\n` +
-                 `"${fileName}" already exists at "${existingPath}".\n` +
-                 `You're trying to create it AGAIN at "${filePath}".\n\n` +
-                 `⛔ BLOCKED: Do NOT create the same file in multiple locations!\n\n` +
-                 `RULE: Each file name should exist in exactly ONE location.\n` +
-                 `- If you put files in src/, put ALL files there\n` +
-                 `- If you put files in root, put ALL files there\n` +
-                 `- NEVER create both script.js AND src/script.js\n\n` +
-                 `The file at "${existingPath}" is the correct one. Do NOT create another.`
-        };
-      }
+    const normalizedFileDir = fileDir === '' ? '.' : fileDir;
+    const normalizedExistingDir = existingDir === '' ? '.' : existingDir;
+
+    if (normalizedFileDir === normalizedExistingDir) continue;
+
+    // Allow config/entry files in different packages
+    if (isMultiLocationAllowed) {
+      console.log(`[ToolValidation] ℹ️ Allowing "${fileName}" in multiple locations: "${existingPath}" and "${filePath}"`);
+      continue;
+    }
+
+    // Block true duplicates (same custom file in root vs src/, etc.)
+    const isRootVsSrc =
+      (normalizedFileDir === '.' && normalizedExistingDir.startsWith('src')) ||
+      (normalizedExistingDir === '.' && normalizedFileDir.startsWith('src'));
+
+    if (isRootVsSrc) {
+      console.error(`[ToolValidation] 🚨 DUPLICATE FILE BLOCKED: "${fileName}"`);
+      console.error(`[ToolValidation]   Already exists at: "${existingPath}"`);
+      console.error(`[ToolValidation]   Attempted to create at: "${filePath}"`);
+
+      return {
+        valid: false,
+        error: `🚨 DUPLICATE FILE DETECTED!\n\n` +
+               `"${fileName}" already exists at "${existingPath}".\n` +
+               `You're trying to create it AGAIN at "${filePath}".\n\n` +
+               `⛔ BLOCKED: Do NOT create the same file in multiple locations!\n\n` +
+               `RULE: Each file name should exist in exactly ONE location.\n` +
+               `- If you put files in src/, put ALL files there\n` +
+               `- If you put files in root, put ALL files there\n` +
+               `- NEVER create both script.js AND src/script.js\n\n` +
+               `The file at "${existingPath}" is the correct one. Do NOT create another.`
+      };
     }
   }
   

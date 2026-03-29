@@ -14,7 +14,17 @@ import { AnthropicProvider } from './anthropic-provider';
 import { OpenAIProvider } from './openai-provider';
 import { OpenRouterProvider } from './openrouter-provider';
 import { BaseProvider } from './base-provider';
-import type { ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback } from '../../types/ai-providers';
+import type {
+  ProviderConfig,
+  ChatMessage,
+  ChatOptions,
+  ChatResult,
+  ModelInfo,
+  StreamCallback,
+  Tool,
+  ToolUseBlock,
+  ChatWithToolsResult
+} from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
 import { injectCreed } from '../core/dino-buddy-creed';
 
@@ -46,6 +56,13 @@ interface LegacyRouterSettings {
   providers?: Record<string, ProviderConfig & { model?: string }>;
 }
 
+interface ProviderCapabilityProfile {
+  nativeToolCalling: boolean;
+  streaming: boolean;
+  contextWindowHint?: number;
+  notes?: string;
+}
+
 class AIProviderRouter {
   private providers: Map<string, ProviderEntry>;
   private activeProvider: string | null;
@@ -55,6 +72,32 @@ class AIProviderRouter {
   // Dual Model System
   private dualModelEnabled: boolean = false;
   private dualModelConfig: DualModelConfig | null = null;
+  private providerCapabilities: Record<string, ProviderCapabilityProfile> = {
+    ollama: {
+      nativeToolCalling: true,
+      streaming: true,
+      contextWindowHint: 128000,
+      notes: 'Supports native tool loop adapter.'
+    },
+    anthropic: {
+      nativeToolCalling: false,
+      streaming: true,
+      contextWindowHint: 200000,
+      notes: 'Uses provider-agnostic JSON tool-call fallback.'
+    },
+    openai: {
+      nativeToolCalling: false,
+      streaming: true,
+      contextWindowHint: 128000,
+      notes: 'Uses provider-agnostic JSON tool-call fallback.'
+    },
+    openrouter: {
+      nativeToolCalling: false,
+      streaming: true,
+      contextWindowHint: 128000,
+      notes: 'Uses provider-agnostic JSON tool-call fallback.'
+    }
+  };
 
   constructor() {
     this.providers = new Map();
@@ -511,6 +554,193 @@ class AIProviderRouter {
       });
     }
     return info;
+  }
+
+  /**
+   * Capability matrix for provider-specific features.
+   */
+  getProviderCapabilities(providerName?: string): ProviderCapabilityProfile | Record<string, ProviderCapabilityProfile> {
+    if (!providerName) {
+      return { ...this.providerCapabilities };
+    }
+    return this.providerCapabilities[providerName] || {
+      nativeToolCalling: false,
+      streaming: true,
+      notes: 'Unknown provider; assuming generic fallback support.'
+    };
+  }
+
+  private extractToolCallsFromText(content: string, tools: Tool[]): ToolUseBlock[] {
+    const toolNames = new Set((tools || []).map(tool => tool.name));
+    if (!content || toolNames.size === 0) {
+      return [];
+    }
+
+    const results: ToolUseBlock[] = [];
+    const maybeCandidates: string[] = [];
+    const trimmed = content.trim();
+
+    if (
+      (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+    ) {
+      maybeCandidates.push(trimmed);
+    }
+
+    const fencedJsonMatches = content.match(/```json[\s\S]*?```/gi) || [];
+    for (const fenced of fencedJsonMatches) {
+      maybeCandidates.push(
+        fenced.replace(/```json/i, '').replace(/```$/, '').trim()
+      );
+    }
+
+    const tryCollect = (parsed: any) => {
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for (const item of items) {
+        const name = item?.name || item?.function?.name;
+        const args = item?.arguments || item?.function?.arguments || item?.input;
+        if (!name || !toolNames.has(name)) continue;
+        const input = typeof args === 'string' ? (() => {
+          try {
+            return JSON.parse(args);
+          } catch {
+            return {};
+          }
+        })() : (args || {});
+
+        results.push({
+          type: 'tool_use',
+          id: item?.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          input
+        });
+      }
+    };
+
+    for (const candidate of maybeCandidates) {
+      try {
+        const parsed = JSON.parse(candidate);
+        tryCollect(parsed);
+      } catch {
+        // ignore malformed candidates
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Provider-agnostic tool-calling adapter.
+   * Uses native provider tool-calling when available, then falls back to
+   * structured JSON-in-text parsing for providers without native support.
+   */
+  async chatWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult & { adapter: 'native' | 'fallback'; provider: string }> {
+    const providerName = this.activeProvider || 'ollama';
+    const provider = this.getActiveProvider() as any;
+    const model = (options.model || this.activeModel) as string | undefined;
+    const profile = this.getProviderCapabilities(providerName) as ProviderCapabilityProfile;
+
+    if (profile.nativeToolCalling && typeof provider.chatWithTools === 'function') {
+      const nativeResult: ChatWithToolsResult = await provider.chatWithTools(messages, tools, {
+        ...options,
+        model
+      });
+      return {
+        ...nativeResult,
+        adapter: 'native',
+        provider: providerName
+      };
+    }
+
+    const fallbackResult = await this.chat(messages, {
+      ...options,
+      model,
+      tools
+    });
+    const content = fallbackResult.content || '';
+    const toolCalls = this.extractToolCallsFromText(content, tools);
+
+    return {
+      ...fallbackResult,
+      stopReason: toolCalls.length > 0 ? 'tool_use' : 'end_turn',
+      toolCalls,
+      contentBlocks: content ? [{ type: 'text', text: content }] : [],
+      adapter: 'fallback',
+      provider: providerName
+    };
+  }
+
+  /**
+   * Provider-agnostic tool loop adapter.
+   */
+  async runToolLoop(
+    messages: ChatMessage[],
+    tools: Tool[],
+    executeTool: (toolName: string, args: Record<string, any>) => Promise<any>,
+    options: ChatOptions = {},
+    maxRounds = 8
+  ): Promise<ChatResult & { toolCallsExecuted: number; adapter: 'native' | 'fallback'; provider: string }> {
+    let workingMessages = [...messages];
+    let totalToolCalls = 0;
+    let lastAdapter: 'native' | 'fallback' = 'fallback';
+    let lastProvider = this.activeProvider || 'ollama';
+
+    for (let round = 0; round < maxRounds; round++) {
+      const result = await this.chatWithTools(workingMessages, tools, options);
+      lastAdapter = result.adapter;
+      lastProvider = result.provider;
+
+      if (!result.success) {
+        return {
+          ...result,
+          toolCallsExecuted: totalToolCalls,
+          adapter: lastAdapter,
+          provider: lastProvider
+        };
+      }
+
+      const toolCalls = result.toolCalls || [];
+      if (toolCalls.length === 0) {
+        return {
+          ...result,
+          toolCallsExecuted: totalToolCalls,
+          adapter: lastAdapter,
+          provider: lastProvider
+        };
+      }
+
+      totalToolCalls += toolCalls.length;
+      const toolResults: string[] = [];
+
+      for (const call of toolCalls) {
+        try {
+          const output = await executeTool(call.name, call.input || {});
+          toolResults.push(`Tool ${call.name} succeeded:\n${JSON.stringify(output)}`);
+        } catch (error: any) {
+          toolResults.push(`Tool ${call.name} failed:\n${error?.message || String(error)}`);
+        }
+      }
+
+      if (result.content) {
+        workingMessages.push({ role: 'assistant', content: result.content });
+      }
+      workingMessages.push({
+        role: 'user',
+        content: `Tool results:\n${toolResults.join('\n\n')}`
+      });
+    }
+
+    return {
+      success: false,
+      error: `Tool loop exceeded max rounds (${maxRounds})`,
+      toolCallsExecuted: totalToolCalls,
+      adapter: lastAdapter,
+      provider: lastProvider
+    };
   }
 
   /**

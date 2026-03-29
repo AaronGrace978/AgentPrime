@@ -71,16 +71,24 @@ const agentAPI: AgentAPI = {
 
   // Agent progress events
   onAgentTaskStart: (callback: (data: { task: string }) => void) => {
-    ipcRenderer.on('agent:task-start', (_event, data) => callback(data));
+    const listener = (_event: any, data: { task: string }) => callback(data);
+    ipcRenderer.on('agent:task-start', listener);
+    return () => ipcRenderer.removeListener('agent:task-start', listener);
   },
   onAgentStepComplete: (callback: (data: { type: string; title: string; success: boolean }) => void) => {
-    ipcRenderer.on('agent:step-complete', (_event, data) => callback(data));
+    const listener = (_event: any, data: { type: string; title: string; success: boolean }) => callback(data);
+    ipcRenderer.on('agent:step-complete', listener);
+    return () => ipcRenderer.removeListener('agent:step-complete', listener);
   },
-  onAgentFileModified: (callback: (data: { path: string; action: string }) => void) => {
-    ipcRenderer.on('agent:file-modified', (_event, data) => callback(data));
+  onAgentFileModified: (callback: (data: { path: string; action: string; oldContent?: string; newContent?: string }) => void) => {
+    const listener = (_event: any, data: { path: string; action: string; oldContent?: string; newContent?: string }) => callback(data);
+    ipcRenderer.on('agent:file-modified', listener);
+    return () => ipcRenderer.removeListener('agent:file-modified', listener);
   },
   onAgentCritiqueComplete: (callback: (data: any) => void) => {
-    ipcRenderer.on('agent:critique-complete', (_event, data) => callback(data));
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:critique-complete', listener);
+    return () => ipcRenderer.removeListener('agent:critique-complete', listener);
   },
   removeAgentListeners: () => {
     ipcRenderer.removeAllListeners('agent:task-start');
@@ -146,6 +154,7 @@ const agentAPI: AgentAPI = {
   undoCommand: () => ipcRenderer.invoke('command:undo'),
 
   // Agent tooling
+  stopAgent: () => ipcRenderer.invoke('agent:stop'),
   listFiles: (path: string) => ipcRenderer.invoke('agent:list-files', path),
   agentReadFile: (path: string) => ipcRenderer.invoke('agent:read-file', path),
   agentWriteFile: (path: string, content: string) => ipcRenderer.invoke('agent:write-file', path, content),
@@ -185,6 +194,7 @@ const agentAPI: AgentAPI = {
   terminalResize: (data: { id: string; cols: number; rows: number }) => ipcRenderer.send('terminal:resize', data),
   terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
   terminalList: () => ipcRenderer.invoke('terminal:list'),
+  terminalGetHistory: (id?: string, maxChars?: number) => ipcRenderer.invoke('terminal:get-history', id, maxChars),
 
   // Live Preview
   previewOpen: (url: string) => ipcRenderer.invoke('preview:open', url),

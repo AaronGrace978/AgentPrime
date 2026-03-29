@@ -87,34 +87,24 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
 
   // Listen for agent progress events
   useEffect(() => {
-    const handleStepStart = (data: any) => {
-      const newStep: AgentStep = {
-        id: `step-${Date.now()}`,
-        type: data.type || 'thinking',
-        status: 'in_progress',
-        title: data.title || 'Processing...',
-        description: data.description,
-        startTime: Date.now()
-      };
-      
-      setCurrentStep(newStep);
-      setSteps(prev => [...prev, newStep]);
-    };
-
     const handleStepComplete = (data: any) => {
-      setSteps(prev => prev.map(step => {
-        if (step.id === currentStep?.id) {
-          return {
-            ...step,
-            status: data.success ? 'completed' : 'failed',
-            endTime: Date.now(),
-            result: data.result,
-            error: data.error
-          };
-        }
-        return step;
-      }));
-      
+      const typeMap: Record<string, AgentStep['type']> = {
+        read_file: 'file_read',
+        write_file: 'file_write',
+        run_command: 'command',
+        patch_file: 'file_write'
+      };
+      const completedStep: AgentStep = {
+        id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: typeMap[data?.type] || 'tool_call',
+        status: data?.success ? 'completed' : 'failed',
+        title: data?.title || 'Processing step',
+        startTime: Date.now(),
+        endTime: Date.now(),
+        result: data?.result,
+        error: data?.error
+      };
+      setSteps(prev => [...prev, completedStep]);
       setCurrentStep(null);
     };
 
@@ -125,18 +115,24 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
       });
     };
 
-
-    // Register listeners (these would connect to IPC in real implementation)
-    window.agentAPI?.onAgentTaskStart?.((data) => {
-      // Task start - could update the current task if needed
+    const removeTaskStart = window.agentAPI?.onAgentTaskStart?.((_data) => {
+      setCurrentStep({
+        id: `step-${Date.now()}`,
+        type: 'thinking',
+        status: 'in_progress',
+        title: 'Planning task...',
+        startTime: Date.now()
+      });
     });
-    window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
-    window.agentAPI?.onAgentFileModified?.(handleFileModified);
+    const removeStepComplete = window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
+    const removeFileModified = window.agentAPI?.onAgentFileModified?.(handleFileModified);
 
     return () => {
-      window.agentAPI?.removeAgentListeners?.();
+      if (typeof removeTaskStart === 'function') removeTaskStart();
+      if (typeof removeStepComplete === 'function') removeStepComplete();
+      if (typeof removeFileModified === 'function') removeFileModified();
     };
-  }, [currentStep]);
+  }, []);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);

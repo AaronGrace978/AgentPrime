@@ -89,35 +89,33 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
       });
     }
 
-    // Cmd+K / Ctrl+K — Inline AI Edit (the feature that makes Cursor famous)
+    // Ctrl+K — Inline AI Edit
+    // addCommand overrides Monaco's built-in Ctrl+K chord prefix (Ctrl+K,Ctrl+C etc.)
+    const triggerInlineEdit = () => {
+      const selection = editor.getSelection();
+      const model = editor.getModel();
+      if (!selection || !model) return;
+
+      const selectedText = selection.isEmpty()
+        ? model.getLineContent(selection.startLineNumber)
+        : model.getValueInRange(selection);
+
+      const startLine = selection.startLineNumber;
+      const endLine = selection.isEmpty() ? selection.startLineNumber : selection.endLineNumber;
+
+      window.dispatchEvent(new CustomEvent('agentprime:inlineEdit', {
+        detail: { selectedText, startLine, endLine, filePath, language }
+      }));
+    };
+
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, triggerInlineEdit);
+
     editor.addAction({
       id: 'agentprime.inlineEdit',
       label: 'AI: Edit Selection Inline',
-      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK],
       contextMenuGroupId: 'ai',
       contextMenuOrder: 0,
-      run: () => {
-        const selection = editor.getSelection();
-        const model = editor.getModel();
-        if (!selection || !model) return;
-
-        const selectedText = selection.isEmpty()
-          ? model.getLineContent(selection.startLineNumber)
-          : model.getValueInRange(selection);
-
-        const startLine = selection.startLineNumber;
-        const endLine = selection.isEmpty() ? selection.startLineNumber : selection.endLineNumber;
-
-        window.dispatchEvent(new CustomEvent('agentprime:inlineEdit', {
-          detail: {
-            selectedText,
-            startLine,
-            endLine,
-            filePath,
-            language,
-          }
-        }));
-      }
+      run: triggerInlineEdit
     });
 
     // Setup ghost text completions using CompletionService

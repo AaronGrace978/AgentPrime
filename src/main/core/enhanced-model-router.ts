@@ -1,646 +1,249 @@
 /**
- * AgentPrime - Enhanced Model Router
- * Routes requests to best model based on task complexity
- * Ported from ActivatePrime's enhanced_model_router.py
+ * Canonical enhanced model router wrapper with legacy API compatibility.
+ *
+ * The modern routing implementation lives in ActivatePrime. This wrapper keeps
+ * backward-compatible method names so older call sites and tests continue to
+ * work while still routing through the canonical implementation.
  */
 
-interface ModelTier {
-  name: string;
-  provider: 'ollama' | 'anthropic' | 'openai' | 'openrouter';
+import {
+  EnhancedModelRouter as ActivatePrimeEnhancedModelRouter,
+  type ModelCapability,
+  type TaskAnalysis,
+  type RoutingDecision,
+  type PerformanceRecord
+} from '../modules/activateprime/enhanced-model-router';
+
+export type {
+  ModelCapability,
+  TaskAnalysis,
+  RoutingDecision,
+  PerformanceRecord
+};
+
+type LegacyTier = 'fast' | 'deep';
+
+interface LegacySelection {
+  provider: string;
   model: string;
-  tier: 'fast' | 'deep' | 'fallback';
-  capabilities: string[];
-  costPerToken?: number;
-  maxTokens: number;
-  contextWindow: number;
-}
-
-interface TaskComplexity {
-  level: 'simple_questions' | 'basic_coding' | 'complex_reasoning' | 'advanced_coding' | 'architectural_design';
-  confidence: number;
-  indicators: string[];
-  estimatedTokens: number;
-  requiresCreativity: boolean;
-  requiresPrecision: boolean;
-  timeSensitive: boolean;
-}
-
-interface RoutingDecision {
-  model: ModelTier;
+  tier: LegacyTier;
   reasoning: string;
-  alternatives: ModelTier[];
-  costEstimate: number;
-  performance: 'fast' | 'balanced' | 'thorough';
-  fallbackStrategy: string;
 }
 
-interface PerformanceMetrics {
-  modelName: string;
+interface LegacyPerformanceMetric {
+  provider: string;
+  model: string;
   responseTime: number;
-  tokenUsage: number;
-  successRate: number;
-  cost: number;
-  timestamp: number;
+  success: boolean;
+  timestamp: Date;
 }
 
-interface LegacySelectionOptions {
+interface LegacySelectOptions {
   preferredModel?: string;
+  preferredProvider?: string;
 }
 
-export class EnhancedModelRouter {
-  private modelChain: ModelTier[] = [
-    // Fast tier - for quick responses
-    {
-      name: 'Fast Local',
-      provider: 'ollama',
-      model: 'mistral:7b',
-      tier: 'fast',
-      capabilities: ['quick_responses', 'basic_coding', 'explanations'],
-      maxTokens: 4096,
-      contextWindow: 8192
-    },
-    {
-      name: 'Fast Local Advanced',
-      provider: 'ollama',
-      model: 'llama3.1:8b',
-      tier: 'fast',
-      capabilities: ['coding', 'analysis', 'debugging'],
-      maxTokens: 4096,
-      contextWindow: 8192
-    },
-    // Deep tier - for complex tasks
-    {
-      name: 'Deep Local',
-      provider: 'ollama',
-      model: 'llama3.1:70b',
-      tier: 'deep',
-      capabilities: ['complex_reasoning', 'advanced_coding', 'architecture'],
-      maxTokens: 4096,
-      contextWindow: 8192
-    },
-    // Cloud models as fallback
-    {
-      name: 'Claude Haiku',
-      provider: 'anthropic',
-      model: 'claude-3-haiku-20240307',
-      tier: 'deep',
-      capabilities: ['all_tasks', 'fast_responses', 'cost_effective'],
-      costPerToken: 0.00025,
-      maxTokens: 4096,
-      contextWindow: 200000
-    },
-    {
-      name: 'Claude Sonnet',
-      provider: 'anthropic',
-      model: 'claude-3-sonnet-20240229',
-      tier: 'deep',
-      capabilities: ['all_tasks', 'high_quality', 'complex_reasoning'],
-      costPerToken: 0.003,
-      maxTokens: 4096,
-      contextWindow: 200000
-    },
-    // Fallback
-    {
-      name: 'GPT-4',
-      provider: 'openai',
-      model: 'gpt-4',
-      tier: 'fallback',
-      capabilities: ['all_tasks', 'high_quality', 'maximum_capability'],
-      costPerToken: 0.03,
-      maxTokens: 4096,
-      contextWindow: 8192
-    }
-  ];
-
-  private performanceHistory: PerformanceMetrics[] = [];
+export class EnhancedModelRouter extends ActivatePrimeEnhancedModelRouter {
+  private legacyPerformance: LegacyPerformanceMetric[] = [];
   private totalCost = 0;
-  private routingRules: { [key: string]: { preferred: string[], avoid: string[] } } = {
-    simple_questions: {
-      preferred: ['fast'],
-      avoid: ['deep', 'fallback']
-    },
-    basic_coding: {
-      preferred: ['fast', 'deep'],
-      avoid: ['fallback']
-    },
-    complex_reasoning: {
-      preferred: ['deep'],
-      avoid: ['fast']
-    },
-    advanced_coding: {
-      preferred: ['deep', 'claude-3-haiku-20240307'],
-      avoid: ['fast']
-    },
-    architectural_design: {
-      preferred: ['deep', 'claude-3-sonnet-20240229'],
-      avoid: ['fast']
-    }
-  };
 
-  /**
-   * Analyze task complexity to determine routing requirements
-   */
-  analyzeTaskComplexity(prompt: string): TaskComplexity {
-    const promptLower = prompt.toLowerCase();
-    const indicators: string[] = [];
-    let complexityScore = 0;
-    let estimatedTokens = Math.ceil(prompt.length / 4); // Rough estimate
-
-    // Simple questions
-    const simplePatterns = [
-      'what is', 'how do', 'explain', 'tell me about', 'what does',
-      'can you', 'please explain', 'how to', 'what\'s the difference'
-    ];
-    for (const pattern of simplePatterns) {
-      if (promptLower.includes(pattern)) {
-        indicators.push(pattern);
-        complexityScore += 0.1;
-      }
-    }
-
-    // Basic coding
-    const basicCodingPatterns = [
-      'write a function', 'create a class', 'simple script', 'basic implementation',
-      'hello world', 'print statement', 'variable assignment'
-    ];
-    for (const pattern of basicCodingPatterns) {
-      if (promptLower.includes(pattern)) {
-        indicators.push(pattern);
-        complexityScore += 0.3;
-      }
-    }
-
-    // Complex reasoning
-    const complexReasoningPatterns = [
-      'analyze', 'design', 'architecture', 'system', 'optimize', 'refactor',
-      'complex', 'advanced', 'enterprise', 'scalability', 'performance'
-    ];
-    for (const pattern of complexReasoningPatterns) {
-      if (promptLower.includes(pattern)) {
-        indicators.push(pattern);
-        complexityScore += 0.6;
-      }
-    }
-
-    // Advanced coding
-    const advancedCodingPatterns = [
-      'implement algorithm', 'data structure', 'async programming', 'api integration',
-      'database design', 'authentication', 'security', 'testing framework'
-    ];
-    for (const pattern of advancedCodingPatterns) {
-      if (promptLower.includes(pattern)) {
-        indicators.push(pattern);
-        complexityScore += 0.8;
-      }
-    }
-
-    // Architectural design
-    const architecturalPatterns = [
-      'microservices', 'distributed system', 'cloud architecture', 'design patterns',
-      'system design', 'scalability', 'high availability', 'load balancing'
-    ];
-    for (const pattern of architecturalPatterns) {
-      if (promptLower.includes(pattern)) {
-        indicators.push(pattern);
-        complexityScore += 1.0;
-      }
-    }
-
-    // Length-based complexity
-    if (prompt.length > 1000) {
-      complexityScore += 0.3;
-      estimatedTokens += 200;
-    }
-
-    // Code indicators
-    const codeIndicators = ['function', 'class', 'import', 'export', 'const', 'let', 'var'];
-    const codeMatches = codeIndicators.filter(indicator => promptLower.includes(indicator)).length;
-    if (codeMatches > 3) {
-      complexityScore += 0.4;
-    }
-
-    // Determine task level
-    let level: TaskComplexity['level'];
-    if (complexityScore >= 1.5) level = 'architectural_design';
-    else if (complexityScore >= 1.0) level = 'advanced_coding';
-    else if (complexityScore >= 0.6) level = 'complex_reasoning';
-    else if (complexityScore >= 0.3) level = 'basic_coding';
-    else level = 'simple_questions';
-
-    // Additional analysis
-    const requiresCreativity = promptLower.includes('creative') || promptLower.includes('design') || promptLower.includes('innovative');
-    const requiresPrecision = promptLower.includes('accurate') || promptLower.includes('precise') || promptLower.includes('exact');
-    const timeSensitive = promptLower.includes('urgent') || promptLower.includes('asap') || promptLower.includes('deadline');
-
-    return {
-      level,
-      confidence: Math.min(1.0, complexityScore / 2.0),
-      indicators,
-      estimatedTokens,
-      requiresCreativity,
-      requiresPrecision,
-      timeSensitive
-    };
-  }
-
-  /**
-   * Route request to best model based on task analysis
-   */
-  routeRequest(
-    prompt: string,
-    userPreferences?: { preferredProvider?: string; maxCost?: number; prioritizeSpeed?: boolean }
-  ): RoutingDecision {
-    const taskComplexity = this.analyzeTaskComplexity(prompt);
-    const rules = this.routingRules[taskComplexity.level];
-
-    // Filter available models based on preferences
-    let candidateModels = this.modelChain.filter(model => {
-      // Check user preferences
-      if (userPreferences?.preferredProvider && model.provider !== userPreferences.preferredProvider) {
-        return false;
-      }
-      if (userPreferences?.maxCost && model.costPerToken && model.costPerToken > userPreferences.maxCost) {
-        return false;
-      }
-      return true;
-    });
-
-    // Apply routing rules
-    let preferredModels = candidateModels.filter(model =>
-      rules.preferred.some(pref => model.tier === pref || model.model.includes(pref))
-    );
-
-    // If no preferred models available, use all candidates but avoid explicitly bad ones
-    if (preferredModels.length === 0) {
-      preferredModels = candidateModels.filter(model =>
-        !rules.avoid.some(avoid => model.tier === avoid || model.model.includes(avoid))
-      );
-    }
-
-    // If still no models, use any available
-    if (preferredModels.length === 0) {
-      preferredModels = candidateModels;
-    }
-
-    // Select best model based on performance and cost
-    const selectedModel = this.selectOptimalModel(preferredModels, taskComplexity, userPreferences);
-
-    // Generate alternatives (other suitable models)
-    const alternatives = preferredModels.filter(model => model !== selectedModel).slice(0, 2);
-
-    // Calculate cost estimate
-    const costEstimate = selectedModel.costPerToken
-      ? selectedModel.costPerToken * taskComplexity.estimatedTokens
-      : 0;
-
-    // Determine performance priority
-    let performance: RoutingDecision['performance'];
-    if (taskComplexity.timeSensitive || userPreferences?.prioritizeSpeed) {
-      performance = 'fast';
-    } else if (taskComplexity.level === 'architectural_design' || taskComplexity.requiresCreativity) {
-      performance = 'thorough';
-    } else {
-      performance = 'balanced';
-    }
-
-    // Generate reasoning
-    const reasoning = this.generateRoutingReasoning(selectedModel, taskComplexity, performance);
-
-    return {
-      model: selectedModel,
-      reasoning,
-      alternatives,
-      costEstimate,
-      performance,
-      fallbackStrategy: this.generateFallbackStrategy(selectedModel)
-    };
-  }
-
-  /**
-   * Select optimal model from candidates
-   */
-  private selectOptimalModel(
-    candidates: ModelTier[],
-    taskComplexity: TaskComplexity,
-    preferences?: { prioritizeSpeed?: boolean }
-  ): ModelTier {
-    if (candidates.length === 1) {
-      return candidates[0];
-    }
-
-    // Score each candidate
-    const scoredCandidates = candidates.map(model => {
-      let score = 0;
-
-      // Performance history bonus
-      const recentPerformance = this.getRecentPerformance(model.model);
-      if (recentPerformance) {
-        score += recentPerformance.successRate * 0.3;
-        // Prefer faster models if speed is prioritized
-        if (preferences?.prioritizeSpeed) {
-          score += (1 / recentPerformance.responseTime) * 0.2;
-        }
-      }
-
-      // Capability matching
-      const hasRequiredCapabilities = this.hasRequiredCapabilities(model, taskComplexity);
-      if (hasRequiredCapabilities) {
-        score += 0.4;
-      }
-
-      // Cost efficiency (prefer cheaper models for simple tasks)
-      if (model.costPerToken) {
-        const costEfficiency = taskComplexity.level === 'simple_questions' ? 0.2 : 0.1;
-        score += (1 / model.costPerToken) * costEfficiency;
-      }
-
-      // Prefer cloud models for better availability and capabilities
-      // (Ollama local models still available but not prioritized)
-      if (model.provider !== 'ollama') {
-        score += 0.15;  // Boost cloud models over local
-      }
-
-      return { model, score };
-    });
-
-    // Return highest scoring model
-    scoredCandidates.sort((a, b) => b.score - a.score);
-    return scoredCandidates[0].model;
-  }
-
-  /**
-   * Check if model has required capabilities for task
-   */
-  private hasRequiredCapabilities(model: ModelTier, taskComplexity: TaskComplexity): boolean {
-    const requiredCapabilities = this.getRequiredCapabilities(taskComplexity);
-    return requiredCapabilities.every(cap => model.capabilities.includes(cap));
-  }
-
-  /**
-   * Get required capabilities for task complexity
-   */
-  private getRequiredCapabilities(taskComplexity: TaskComplexity): string[] {
-    const baseCapabilities = ['basic_responses'];
-
-    switch (taskComplexity.level) {
-      case 'simple_questions':
-        return [...baseCapabilities, 'quick_responses'];
-      case 'basic_coding':
-        return [...baseCapabilities, 'coding'];
-      case 'complex_reasoning':
-        return [...baseCapabilities, 'complex_reasoning'];
-      case 'advanced_coding':
-        return [...baseCapabilities, 'coding', 'advanced_coding'];
-      case 'architectural_design':
-        return [...baseCapabilities, 'complex_reasoning', 'architecture'];
-      default:
-        return baseCapabilities;
-    }
-  }
-
-  /**
-   * Get recent performance metrics for a model
-   */
-  private getRecentPerformance(modelName: string): PerformanceMetrics | null {
-    const recentMetrics = this.performanceHistory
-      .filter(m => m.modelName === modelName)
-      .filter(m => Date.now() - m.timestamp < 24 * 60 * 60 * 1000) // Last 24 hours
-      .sort((a, b) => b.timestamp - a.timestamp);
-
-    if (recentMetrics.length === 0) {
-      return null;
-    }
-
-    // Average recent performance
-    const avgResponseTime = recentMetrics.reduce((sum, m) => sum + m.responseTime, 0) / recentMetrics.length;
-    const avgSuccessRate = recentMetrics.reduce((sum, m) => sum + m.successRate, 0) / recentMetrics.length;
-
-    return {
-      modelName,
-      responseTime: avgResponseTime,
-      tokenUsage: 0, // Not needed for routing
-      successRate: avgSuccessRate,
-      cost: 0, // Not needed for routing
-      timestamp: Date.now()
-    };
-  }
-
-  /**
-   * Generate routing reasoning explanation
-   */
-  private generateRoutingReasoning(
-    model: ModelTier,
-    taskComplexity: TaskComplexity,
-    performance: RoutingDecision['performance']
-  ): string {
-    let reasoning = `Selected ${model.name} for ${taskComplexity.level} task. `;
-
-    if (performance === 'fast') {
-      reasoning += 'Prioritizing speed for time-sensitive request. ';
-    } else if (performance === 'thorough') {
-      reasoning += 'Using comprehensive model for complex requirements. ';
-    }
-
-    if (model.provider === 'ollama') {
-      reasoning += 'Using local Ollama model for offline capability. ';
-    } else {
-      reasoning += `Using ${model.provider} cloud model for reliability and advanced capabilities. `;
-    }
-
-    if (taskComplexity.requiresCreativity) {
-      reasoning += 'Task requires creative thinking. ';
-    }
-    if (taskComplexity.requiresPrecision) {
-      reasoning += 'Task requires high precision. ';
-    }
-
-    return reasoning.trim();
-  }
-
-  /**
-   * Generate fallback strategy
-   */
-  private generateFallbackStrategy(primaryModel: ModelTier): string {
-    const fallbackModels = this.modelChain.filter(m =>
-      m.tier === 'fallback' || (m.provider !== primaryModel.provider && m.tier === primaryModel.tier)
-    );
-
-    if (fallbackModels.length === 0) {
-      return 'Retry with same model after cooldown';
-    }
-
-    return `Fallback to: ${fallbackModels.map(m => m.name).join(', ')}`;
-  }
-
-  /**
-   * Record performance metrics for learning.
-   * Supports both object-style (new) and positional (legacy) calls.
-   */
-  recordPerformance(
-    metricsOrProvider: Omit<PerformanceMetrics, 'timestamp'> | string,
-    model?: string,
-    responseTime?: number,
-    success?: boolean
-  ): void {
-    const metrics: Omit<PerformanceMetrics, 'timestamp'> =
-      typeof metricsOrProvider === 'string'
-        ? {
-            modelName: model || 'unknown',
-            responseTime: responseTime || 0,
-            tokenUsage: 0,
-            successRate: success ? 1 : 0,
-            cost: 0
-          }
-        : metricsOrProvider;
-
-    this.performanceHistory.push({
-      ...metrics,
-      timestamp: Date.now()
-    });
-
-    // Keep only recent history (last 1000 entries)
-    if (this.performanceHistory.length > 1000) {
-      this.performanceHistory = this.performanceHistory.slice(-1000);
-    }
-  }
-
-  /**
-   * Legacy compatibility API expected by historical tests.
-   */
   async selectModel(
     prompt: string,
-    _taskType: string,
-    options?: LegacySelectionOptions
-  ): Promise<{ provider: string; model: string; tier: 'fast' | 'deep' | 'fallback'; capabilities: string[] }> {
-    if (options?.preferredModel) {
-      const aliases: Record<string, string[]> = {
-        'claude-sonnet-4-20250514': ['claude-3-sonnet-20240229', 'claude-3-haiku-20240307']
-      };
-      const acceptableModels = [options.preferredModel, ...(aliases[options.preferredModel] || [])];
-      const preferred = this.modelChain.find(
-        m => acceptableModels.includes(m.model) || m.name === options.preferredModel
-      );
-      if (preferred) {
-        return {
-          provider: preferred.provider,
-          model: preferred.model,
-          tier: preferred.tier,
-          capabilities: preferred.capabilities
-        };
-      }
+    taskType: string = 'chat',
+    options?: LegacySelectOptions
+  ): Promise<LegacySelection> {
+    const preferredModel = this.resolvePreferredModel(options?.preferredModel);
+    if (preferredModel) {
+      return this.toLegacySelection(preferredModel.name, preferredModel.provider, 'Using user preferred model');
     }
 
-    if (prompt.trim().split(/\s+/).length <= 3) {
-      const fast = this.modelChain.find(m => m.tier === 'fast') || this.modelChain[0];
-      return {
-        provider: fast.provider,
-        model: fast.model,
-        tier: fast.tier,
-        capabilities: fast.capabilities
-      };
-    }
-
-    const decision = this.routeRequest(prompt);
-    return {
-      provider: decision.model.provider,
-      model: decision.model.model,
-      tier: decision.model.tier,
-      capabilities: decision.model.capabilities
-    };
+    const desiredTier = this.inferDesiredTier(prompt, taskType);
+    const routing = this.routeRequest(prompt, {
+      preferredProvider: options?.preferredProvider
+    });
+    return this.pickByTier(routing, desiredTier);
   }
 
   async selectModelWithFallback(
     prompt: string,
-    taskType: string
-  ): Promise<{ provider: string; model: string; tier: 'fast' | 'deep' | 'fallback'; capabilities: string[] }> {
+    taskType: string = 'chat',
+    options?: LegacySelectOptions
+  ): Promise<LegacySelection> {
     try {
-      return await this.selectModel(prompt, taskType);
+      return await this.selectModel(prompt, taskType, options);
     } catch {
-      const fallback = this.modelChain.find(m => m.tier === 'fallback') || this.modelChain[0];
-      return {
-        provider: fallback.provider,
-        model: fallback.model,
-        tier: fallback.tier,
-        capabilities: fallback.capabilities
-      };
+      return this.selectCostEffectiveModel(prompt);
     }
-  }
-
-  async selectModelWithTimeout(
-    prompt: string,
-    taskType: string,
-    timeoutMs: number
-  ): Promise<{ provider: string; model: string; tier: 'fast' | 'deep' | 'fallback'; capabilities: string[] }> {
-    const selectionPromise = this.selectModel(prompt, taskType);
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Model selection timed out')), timeoutMs);
-    });
-    return Promise.race([selectionPromise, timeoutPromise]);
   }
 
   async selectModelWithRetry(
     prompt: string,
-    taskType: string,
-    retries: number
-  ): Promise<{ provider: string; model: string; tier: 'fast' | 'deep' | 'fallback'; capabilities: string[] }> {
+    taskType: string = 'chat',
+    retries: number = 3,
+    options?: LegacySelectOptions
+  ): Promise<LegacySelection> {
     let lastError: unknown;
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    const attempts = Math.max(1, retries);
+
+    for (let i = 0; i < attempts; i += 1) {
       try {
-        return await this.selectModel(prompt, taskType);
+        return await this.selectModelWithFallback(prompt, taskType, options);
       } catch (error) {
         lastError = error;
       }
     }
-    throw lastError instanceof Error ? lastError : new Error('Model selection failed');
+
+    if (lastError instanceof Error) {
+      throw lastError;
+    }
+    return this.selectCostEffectiveModel(prompt);
   }
 
-  getPerformanceMetrics(): PerformanceMetrics[] {
-    return [...this.performanceHistory];
+  async selectModelWithTimeout(
+    prompt: string,
+    taskType: string = 'chat',
+    timeoutMs: number = 1000,
+    options?: LegacySelectOptions
+  ): Promise<LegacySelection> {
+    const effectiveTimeout = Math.max(1, timeoutMs);
+
+    return Promise.race<LegacySelection>([
+      this.selectModelWithRetry(prompt, taskType, 2, options),
+      new Promise<LegacySelection>((resolve) => {
+        setTimeout(() => {
+          resolve(this.getSafeFallbackSelection(prompt));
+        }, effectiveTimeout);
+      })
+    ]);
   }
 
-  getAverageLatency(_provider: string, model: string): number {
-    const samples = this.performanceHistory.filter(p => p.modelName === model);
-    if (samples.length === 0) return 0;
-    return samples.reduce((sum, sample) => sum + sample.responseTime, 0) / samples.length;
+  async selectCostEffectiveModel(prompt: string): Promise<LegacySelection> {
+    const localCandidate = this.getAvailableModels()
+      .filter((model) => model.provider === 'ollama')
+      .sort((a, b) => {
+        const costDiff = this.costRank(a.cost) - this.costRank(b.cost);
+        if (costDiff !== 0) return costDiff;
+        return this.speedRank(b.speed) - this.speedRank(a.speed);
+      })[0];
+
+    if (localCandidate) {
+      return this.toLegacySelection(localCandidate.name, localCandidate.provider, 'Most cost-effective local model');
+    }
+
+    const routing = this.routeRequest(prompt);
+    return this.toLegacySelection(routing.model, routing.provider, routing.reasoning);
   }
 
-  getP95Latency(_provider: string, model: string): number {
-    const samples = this.performanceHistory
-      .filter(p => p.modelName === model)
-      .map(p => p.responseTime)
-      .sort((a, b) => a - b);
-    if (samples.length === 0) return 0;
-    const index = Math.max(0, Math.ceil(samples.length * 0.95) - 1);
-    return samples[index];
-  }
+  async matchCapabilities(capabilities: string[]): Promise<{
+    provider: string;
+    model: string;
+    capabilities: string[];
+    score: number;
+  }> {
+    const requested = capabilities.map((cap) => cap.toLowerCase());
+    const models = this.getAvailableModels();
 
-  async selectCostEffectiveModel(
-    prompt: string
-  ): Promise<{ provider: string; model: string; tier: 'fast' | 'deep' | 'fallback'; capabilities: string[] }> {
-    const local = this.modelChain.find(m => m.provider === 'ollama' && (m.tier === 'fast' || m.tier === 'deep'));
-    if (local) {
+    let bestModel: ModelCapability | undefined;
+    let bestScore = -1;
+    let bestMatches: string[] = [];
+
+    for (const model of models) {
+      const matched = requested.filter((cap) =>
+        model.supportedTasks.some((task) => task.toLowerCase().includes(cap)) ||
+        model.strengths.some((strength) => strength.toLowerCase().includes(cap))
+      );
+
+      const score = matched.length / Math.max(1, requested.length);
+      if (score > bestScore) {
+        bestScore = score;
+        bestModel = model;
+        bestMatches = matched;
+      }
+    }
+
+    if (!bestModel) {
+      const fallback = this.getSafeFallbackSelection('capability fallback');
       return {
-        provider: local.provider,
-        model: local.model,
-        tier: local.tier,
-        capabilities: local.capabilities
+        provider: fallback.provider,
+        model: fallback.model,
+        capabilities: [],
+        score: 0
       };
     }
-    return this.selectModel(prompt, 'chat');
+
+    return {
+      provider: bestModel.provider,
+      model: bestModel.name,
+      capabilities: bestMatches.length > 0 ? bestMatches : requested,
+      score: Math.max(0, bestScore)
+    };
+  }
+
+  recordPerformance(record: Omit<PerformanceRecord, 'timestamp'>): void;
+  recordPerformance(provider: string, model: string, responseTime: number, success: boolean): void;
+  recordPerformance(
+    recordOrProvider: Omit<PerformanceRecord, 'timestamp'> | string,
+    model?: string,
+    responseTime?: number,
+    success?: boolean
+  ): void {
+    const record: Omit<PerformanceRecord, 'timestamp'> =
+      typeof recordOrProvider === 'string'
+        ? {
+            provider: recordOrProvider,
+            model: model || 'unknown',
+            taskType: 'chat',
+            responseTime: responseTime || 0,
+            success: Boolean(success),
+            tokensUsed: 0,
+            cost: 0
+          }
+        : recordOrProvider;
+
+    super.recordPerformance(record);
+    this.legacyPerformance.push({
+      provider: record.provider,
+      model: record.model,
+      responseTime: record.responseTime,
+      success: record.success,
+      timestamp: new Date()
+    });
+  }
+
+  getPerformanceMetrics(): LegacyPerformanceMetric[] {
+    return [...this.legacyPerformance];
+  }
+
+  getAverageLatency(provider: string, model: string): number {
+    const values = this.legacyPerformance
+      .filter((metric) => metric.provider === provider && metric.model === model)
+      .map((metric) => metric.responseTime);
+
+    if (values.length === 0) return 0;
+    const sum = values.reduce((acc, value) => acc + value, 0);
+    return Math.round(sum / values.length);
+  }
+
+  getP95Latency(provider: string, model: string): number {
+    const values = this.legacyPerformance
+      .filter((metric) => metric.provider === provider && metric.model === model)
+      .map((metric) => metric.responseTime)
+      .sort((a, b) => a - b);
+
+    if (values.length === 0) return 0;
+    const idx = Math.floor((values.length - 1) * 0.95);
+    return values[idx];
   }
 
   calculateCost(provider: string, model: string, inputTokens: number, outputTokens: number): number {
-    const modelInfo = this.modelChain.find(m => m.provider === provider && m.model === model);
-    const fallbackRates: Record<string, number> = {
-      'anthropic:claude-sonnet-4-20250514': 0.0008,
-      'anthropic:claude-3-sonnet-20240229': 0.003,
-      'openai:gpt-4': 0.03
-    };
-    const rate = modelInfo?.costPerToken || fallbackRates[`${provider}:${model}`] || 0;
+    const capability = this.getAvailableModels().find((candidate) =>
+      candidate.provider === provider && candidate.name === model
+    );
+    const rate = capability?.performanceMetrics.costPerToken ?? this.defaultCostPerToken(provider);
     return (inputTokens + outputTokens) * rate;
   }
 
-  async recordCost(_provider: string, _model: string, cost: number): Promise<void> {
+  recordCost(_provider: string, _model: string, cost: number): void {
     this.totalCost += Math.max(0, cost);
   }
 
@@ -648,55 +251,144 @@ export class EnhancedModelRouter {
     return this.totalCost;
   }
 
-  async matchCapabilities(capabilities: string[]): Promise<{ provider: string; model: string; capabilities: string[] }> {
-    const match = this.modelChain.find(model =>
-      capabilities.some(capability => model.capabilities.includes(capability) || model.capabilities.includes('all_tasks'))
-    ) || this.modelChain[0];
-
-    return {
-      provider: match.provider,
-      model: match.model,
-      capabilities: match.capabilities
-    };
+  clearHistory(): void {
+    super.clearHistory();
+    this.legacyPerformance = [];
+    this.totalCost = 0;
   }
 
-  /**
-   * Update model chain (for dynamic configuration)
-   */
-  updateModelChain(newChain: ModelTier[]): void {
-    this.modelChain = newChain;
-  }
+  private resolvePreferredModel(preferredModel?: string): ModelCapability | undefined {
+    if (!preferredModel) return undefined;
 
-  /**
-   * Get routing statistics
-   */
-  getRoutingStats(): any {
-    const modelUsage = this.performanceHistory.reduce((acc, metric) => {
-      if (!acc[metric.modelName]) {
-        acc[metric.modelName] = { count: 0, avgResponseTime: 0, avgSuccessRate: 0 };
-      }
-      acc[metric.modelName].count++;
-      acc[metric.modelName].avgResponseTime += metric.responseTime;
-      acc[metric.modelName].avgSuccessRate += metric.successRate;
-      return acc;
-    }, {} as any);
-
-    // Calculate averages
-    Object.keys(modelUsage).forEach(modelName => {
-      const stats = modelUsage[modelName];
-      stats.avgResponseTime /= stats.count;
-      stats.avgSuccessRate /= stats.count;
+    const normalized = preferredModel.toLowerCase();
+    return this.getAvailableModels().find((model) => {
+      const modelName = model.name.toLowerCase();
+      return modelName === normalized || modelName.includes(normalized);
     });
+  }
 
+  private inferDesiredTier(prompt: string, taskType: string): LegacyTier {
+    const lowerPrompt = `${taskType} ${prompt}`.toLowerCase();
+    const complexKeywords = [
+      'distributed',
+      'architecture',
+      'system',
+      'implement',
+      'migration',
+      'optimize',
+      'scalable',
+      'concurrency',
+      'security',
+      'performance',
+      'caching',
+      'redis',
+      'refactor'
+    ];
+
+    if (complexKeywords.some((keyword) => lowerPrompt.includes(keyword))) {
+      return 'deep';
+    }
+
+    if (prompt.split(/\s+/).length > 12) {
+      return 'deep';
+    }
+
+    return 'fast';
+  }
+
+  private pickByTier(routing: RoutingDecision, desiredTier: LegacyTier): LegacySelection {
+    const candidates = [
+      { provider: routing.provider, model: routing.model, reason: routing.reasoning },
+      ...routing.fallbackOptions.map((option) => ({
+        provider: option.provider,
+        model: option.model,
+        reason: option.reason
+      }))
+    ];
+
+    const match = candidates.find((candidate) => this.tierForModel(candidate.model) === desiredTier);
+    if (match) {
+      return this.toLegacySelection(match.model, match.provider, match.reason);
+    }
+
+    return this.toLegacySelection(routing.model, routing.provider, routing.reasoning);
+  }
+
+  private getSafeFallbackSelection(prompt: string): LegacySelection {
+    const ollamaFast = this.getAvailableModels().find(
+      (model) => model.provider === 'ollama' && this.tierForSpeed(model.speed) === 'fast'
+    );
+    if (ollamaFast) {
+      return this.toLegacySelection(ollamaFast.name, ollamaFast.provider, 'Timeout fallback to local fast model');
+    }
+
+    const routing = this.routeRequest(prompt);
+    return this.toLegacySelection(routing.model, routing.provider, routing.reasoning);
+  }
+
+  private toLegacySelection(modelName: string, provider: string, reasoning: string): LegacySelection {
     return {
-      totalRequests: this.performanceHistory.length,
-      modelUsage,
-      routingRules: this.routingRules
+      provider,
+      model: modelName,
+      tier: this.tierForModel(modelName),
+      reasoning
     };
+  }
+
+  private tierForModel(modelName: string): LegacyTier {
+    const model = this.getAvailableModels().find((candidate) => candidate.name === modelName);
+    if (model) {
+      return this.tierForSpeed(model.speed);
+    }
+
+    const lowerModel = modelName.toLowerCase();
+    if (
+      lowerModel.includes('mini') ||
+      lowerModel.includes('haiku') ||
+      lowerModel.includes(':7b') ||
+      lowerModel.includes(':8b') ||
+      lowerModel.includes('small') ||
+      lowerModel.includes('nano')
+    ) {
+      return 'fast';
+    }
+    return 'deep';
+  }
+
+  private tierForSpeed(speed: ModelCapability['speed']): LegacyTier {
+    return speed === 'fast' ? 'fast' : 'deep';
+  }
+
+  private speedRank(speed: ModelCapability['speed']): number {
+    const ranks: Record<ModelCapability['speed'], number> = {
+      fast: 3,
+      medium: 2,
+      slow: 1
+    };
+    return ranks[speed];
+  }
+
+  private costRank(cost: ModelCapability['cost']): number {
+    const ranks: Record<ModelCapability['cost'], number> = {
+      free: 0,
+      low: 1,
+      medium: 2,
+      high: 3
+    };
+    return ranks[cost];
+  }
+
+  private defaultCostPerToken(provider: string): number {
+    const rates: Record<string, number> = {
+      anthropic: 0.0008,
+      openai: 0.0007,
+      openrouter: 0.0006,
+      ollama: 0.0001
+    };
+    return rates[provider] ?? 0.0005;
   }
 }
 
-// Singleton instance
 let enhancedModelRouterInstance: EnhancedModelRouter | null = null;
 
 export function getEnhancedModelRouter(): EnhancedModelRouter {
@@ -705,3 +397,6 @@ export function getEnhancedModelRouter(): EnhancedModelRouter {
   }
   return enhancedModelRouterInstance;
 }
+
+export default EnhancedModelRouter;
+

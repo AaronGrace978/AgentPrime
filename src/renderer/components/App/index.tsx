@@ -47,6 +47,7 @@ const LivePreview = React.lazy(() => import('../LivePreview'));
 const DeployPanel = React.lazy(() => import('../DeployPanel'));
 const InlineEditDialog = React.lazy(() => import('../InlineEditDialog'));
 const MultiFileDiffReview = React.lazy(() => import('../MultiFileDiffReview'));
+import type { FileChange as ReviewFileChange } from '../MultiFileDiffReview';
 
 import { OpenFile, FileItem, Command } from './types';
 import {
@@ -100,7 +101,8 @@ function App() {
     runOutput,
     terminalVisible,
     setTerminalVisible,
-    runScript: executeScript
+    runScript: executeScript,
+    killScript
   } = useScriptRunner();
 
   const { currentTheme, themeType, setTheme } = useTheme();
@@ -109,6 +111,8 @@ function App() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'file' | 'folder'>('file');
   const [composerOpen, setComposerOpen] = useState(false);
+  /** Once true, AIChat stays mounted so collapsing the sidebar does not reset an in-flight agent. */
+  const [composerMounted, setComposerMounted] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [useSplitView, setUseSplitView] = useState(false);
@@ -122,6 +126,8 @@ function App() {
   const [deployPanelOpen, setDeployPanelOpen] = useState(false);
   const [inlineEditRequest, setInlineEditRequest] = useState<any>(null);
   const [inlineEditProcessing, setInlineEditProcessing] = useState(false);
+  const [agentReviewChanges, setAgentReviewChanges] = useState<ReviewFileChange[]>([]);
+  const [agentReviewTask, setAgentReviewTask] = useState<string>('');
   const [codeIssues] = useState<any[]>([]);
   const [appSettings, setAppSettings] = useState<any>({
     theme: 'dark',
@@ -144,6 +150,10 @@ function App() {
   useEffect(() => {
     window.agentAPI.setActiveFilePath(selectedFile?.path ?? null);
   }, [selectedFile?.path]);
+
+  useEffect(() => {
+    if (composerOpen) setComposerMounted(true);
+  }, [composerOpen]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -258,6 +268,95 @@ function App() {
     };
   }, [activeFile]);
 
+  const syncOpenFileFromDisk = useCallback(async (filePath: string) => {
+    try {
+      const readResult = await window.agentAPI.readFile(filePath);
+      setOpenFiles((prev) => {
+        const idx = prev.findIndex((file) => file.file.path === filePath);
+        if (idx < 0) return prev;
+
+        if (typeof readResult?.content === 'string') {
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            content: readResult.content,
+            originalContent: readResult.content,
+            isDirty: false
+          };
+          return next;
+        }
+
+        // File no longer exists (rejected created file) - close its tab.
+        return prev.filter((file) => file.file.path !== filePath);
+      });
+    } catch (error) {
+      console.warn(`Failed to sync open file after review change: ${filePath}`, error);
+    }
+  }, [setOpenFiles]);
+
+  const applyRejectedChange = useCallback(async (change: ReviewFileChange) => {
+    if (change.action === 'created') {
+      await window.agentAPI.deleteItem(change.filePath);
+    } else {
+      await window.agentAPI.writeFile(change.filePath, change.oldContent);
+    }
+    await syncOpenFileFromDisk(change.filePath);
+  }, [syncOpenFileFromDisk]);
+
+  const handleAcceptReviewFile = useCallback((filePath: string) => {
+    setAgentReviewChanges((prev) =>
+      prev.map((change) =>
+        change.filePath === filePath ? { ...change, status: 'accepted' } : change
+      )
+    );
+  }, []);
+
+  const handleRejectReviewFile = useCallback(async (filePath: string) => {
+    const target = agentReviewChanges.find((change) => change.filePath === filePath);
+    if (!target) return;
+
+    try {
+      await applyRejectedChange(target);
+      setAgentReviewChanges((prev) =>
+        prev.map((change) =>
+          change.filePath === filePath ? { ...change, status: 'rejected' } : change
+        )
+      );
+      if (currentPath) {
+        await loadDirectory(currentPath);
+      }
+      toast.success('Change Reverted', filePath);
+    } catch (error: any) {
+      toast.error('Failed to Revert Change', error?.message || filePath);
+    }
+  }, [agentReviewChanges, applyRejectedChange, currentPath, loadDirectory, toast]);
+
+  const handleAcceptAllReviewFiles = useCallback(() => {
+    setAgentReviewChanges((prev) =>
+      prev.map((change) => (change.status === 'pending' ? { ...change, status: 'accepted' } : change))
+    );
+  }, []);
+
+  const handleRejectAllReviewFiles = useCallback(async () => {
+    const pendingChanges = agentReviewChanges.filter((change) => change.status === 'pending');
+    if (pendingChanges.length === 0) return;
+
+    try {
+      for (const change of pendingChanges) {
+        await applyRejectedChange(change);
+      }
+      setAgentReviewChanges((prev) =>
+        prev.map((change) => (change.status === 'pending' ? { ...change, status: 'rejected' } : change))
+      );
+      if (currentPath) {
+        await loadDirectory(currentPath);
+      }
+      toast.success('Changes Reverted', `${pendingChanges.length} file(s) restored`);
+    } catch (error: any) {
+      toast.error('Bulk Revert Failed', error?.message || 'Could not revert all pending files');
+    }
+  }, [agentReviewChanges, applyRejectedChange, currentPath, loadDirectory, toast]);
+
   // Listen for Cmd+K inline edit events from Monaco
   useEffect(() => {
     const handleInlineEdit = (e: Event) => {
@@ -304,24 +403,27 @@ function App() {
   }, [fileContent, handleContentChange, toast]);
 
   useEffect(() => {
+    // Capture phase so shortcuts fire even when Monaco editor has focus
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
 
+      const consume = () => { e.preventDefault(); e.stopPropagation(); };
+
       if (mod && key === 'l') {
-        e.preventDefault();
+        consume();
         setComposerOpen((prev) => !prev);
         return;
       }
 
       if (mod && e.shiftKey && key === 'n') {
-        e.preventDefault();
+        consume();
         setTemplateModalOpen(true);
         return;
       }
 
       if (mod && key === 's' && !e.shiftKey) {
-        e.preventDefault();
+        consume();
         if (activeFile?.isDirty) {
           saveFile();
         }
@@ -329,31 +431,31 @@ function App() {
       }
 
       if (mod && key === 'o') {
-        e.preventDefault();
+        consume();
         openFolder();
         return;
       }
 
       if (mod && key === 'b') {
-        e.preventDefault();
+        consume();
         setFileExplorerOpen((prev) => !prev);
         return;
       }
 
       if (mod && e.key === '`') {
-        e.preventDefault();
+        consume();
         setTerminalVisible(!terminalVisible);
         return;
       }
 
       if (e.key === 'F5' && !mod) {
-        e.preventDefault();
+        consume();
         runScript();
         return;
       }
 
       if (mod && e.key === 'Tab' && !e.shiftKey) {
-        e.preventDefault();
+        consume();
         if (openFiles.length > 1) {
           switchTab((activeFileIndex + 1) % openFiles.length);
         }
@@ -361,7 +463,7 @@ function App() {
       }
 
       if (mod && e.shiftKey && e.key === 'Tab') {
-        e.preventDefault();
+        consume();
         if (openFiles.length > 1) {
           switchTab(activeFileIndex === 0 ? openFiles.length - 1 : activeFileIndex - 1);
         }
@@ -369,7 +471,7 @@ function App() {
       }
 
       if (mod && key === 'w' && !e.shiftKey) {
-        e.preventDefault();
+        consume();
         if (activeFileIndex >= 0) {
           closeTab(activeFileIndex);
         }
@@ -377,48 +479,50 @@ function App() {
       }
 
       if (mod && e.shiftKey && key === 'k') {
-        e.preventDefault();
+        consume();
         setCommandPaletteOpen(true);
         return;
       }
 
       if (mod && e.shiftKey && key === 'f') {
-        e.preventDefault();
+        consume();
         setSearchReplaceOpen((prev) => !prev);
         return;
       }
 
       if (mod && e.shiftKey && key === 'g') {
-        e.preventDefault();
+        consume();
         setGitPanelOpen((prev) => !prev);
         return;
       }
 
       if (mod && e.shiftKey && key === 'p') {
-        e.preventDefault();
+        consume();
         setLivePreviewOpen((prev) => !prev);
         return;
       }
 
       if (mod && e.shiftKey && key === 'd') {
-        e.preventDefault();
+        consume();
         setDeployPanelOpen(true);
         return;
       }
 
       if (e.key === 'Escape') {
         if (commandPaletteOpen) {
+          consume();
           setCommandPaletteOpen(false);
           return;
         }
         if (searchReplaceOpen) {
+          consume();
           setSearchReplaceOpen(false);
         }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [
     activeFile,
     activeFileIndex,
@@ -566,6 +670,7 @@ function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           onSaveFile={() => saveFile()}
           onRunScript={runScript}
+          onStopScript={killScript}
           onToggleSplitView={() => setUseSplitView((prev) => !prev)}
           onToggleGitPanel={() => setGitPanelOpen((prev) => !prev)}
         />
@@ -742,10 +847,11 @@ function App() {
               {composerOpen ? <IconChevronRight size="sm" /> : <IconChevronLeft size="sm" />}
             </button>
           </div>
-          {composerOpen && (
+          {composerMounted && (
             <ErrorBoundary>
               <Suspense fallback={<div className="loading-spinner"><IconSpinner size="lg" /> Loading AI Composer...</div>}>
                 <AIChat
+                  isVisible={composerOpen}
                   onClose={() => setComposerOpen(false)}
                   openFiles={openFiles}
                   activeFileIndex={activeFileIndex}
@@ -762,6 +868,13 @@ function App() {
                       });
                     }
                     handleContentChange(code);
+                  }}
+                  onAgentChangesReady={(changes, taskDescription) => {
+                    setAgentReviewTask(taskDescription);
+                    setAgentReviewChanges(changes.map((change) => ({
+                      ...change,
+                      status: 'pending'
+                    })));
                   }}
                 />
               </Suspense>
@@ -840,6 +953,31 @@ function App() {
           }}
           workspacePath={currentPath}
         />
+
+        {agentReviewChanges.length > 0 && (
+          <div style={{
+            position: 'fixed',
+            top: '72px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: 'min(1000px, 92vw)',
+            zIndex: 1001,
+          }}>
+            <ErrorBoundary>
+              <Suspense fallback={<div className="loading-placeholder">Loading Change Review...</div>}>
+                <MultiFileDiffReview
+                  changes={agentReviewChanges}
+                  onAcceptFile={handleAcceptReviewFile}
+                  onRejectFile={(filePath) => { void handleRejectReviewFile(filePath); }}
+                  onAcceptAll={handleAcceptAllReviewFiles}
+                  onRejectAll={() => { void handleRejectAllReviewFiles(); }}
+                  onClose={() => setAgentReviewChanges([])}
+                  taskDescription={agentReviewTask}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        )}
 
         <StatusBar
           currentFile={getCurrentFileInfo()}

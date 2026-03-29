@@ -90,50 +90,47 @@ export function sanitizeFileName(name: string): string {
     return 'untitled';
   }
   
-  // Split into name and extension
-  const lastDotIndex = name.lastIndexOf('.');
+  // Detect leading-dot prefix (dotfiles like .gitignore, .eslintrc.js, .env)
+  const leadingDotMatch = name.match(/^(\.+)/);
+  const leadingDots = leadingDotMatch ? leadingDotMatch[1] : '';
+  const nameWithoutLeadingDots = leadingDots ? name.substring(leadingDots.length) : name;
+
+  // Split the non-dot portion into name and extension
+  const lastDotIndex = nameWithoutLeadingDots.lastIndexOf('.');
   let baseName: string;
   let extension: string;
   
-  if (lastDotIndex > 0) { // Has extension (and not a hidden file like .gitignore)
-    baseName = name.substring(0, lastDotIndex);
-    extension = name.substring(lastDotIndex); // includes the dot
+  if (lastDotIndex > 0) {
+    baseName = nameWithoutLeadingDots.substring(0, lastDotIndex);
+    extension = nameWithoutLeadingDots.substring(lastDotIndex); // includes the dot
+  } else if (lastDotIndex === -1 || lastDotIndex === 0) {
+    baseName = nameWithoutLeadingDots;
+    extension = '';
   } else {
-    baseName = name;
+    baseName = nameWithoutLeadingDots;
     extension = '';
   }
   
-  // Sanitize the base name
+  // Sanitize the base name (but NOT the leading dot prefix)
   let sanitized = baseName
-    // Remove null bytes and control characters
     .replace(/\0/g, '')
     .replace(/[\x00-\x1F]/g, '')
-    // Replace Windows-invalid characters: < > : " / \ | ? *
     .replace(/[<>:"/\\|?*]/g, '-')
-    // Replace em dashes, en dashes, and other special unicode dashes with regular dash
     .replace(/[\u2014\u2013\u2012\u2011\u2010]/g, '-')
-    // Replace other problematic unicode characters
-    .replace(/[\u00A0]/g, ' ') // Non-breaking space to regular space
-    // Trim whitespace from both ends
+    .replace(/[\u00A0]/g, ' ')
     .trim()
-    // Remove trailing dots and spaces (Windows restriction)
     .replace(/[\s.]+$/g, '')
-    // Remove leading dots
-    .replace(/^\.+/g, '')
-    // Replace multiple spaces with single space
     .replace(/\s+/g, ' ')
-    // Replace consecutive dashes with single dash
     .replace(/-+/g, '-')
-    // Remove leading/trailing dashes
     .replace(/^-+|-+$/g, '');
   
-  // If sanitization removed everything, use default name
-  if (!sanitized || sanitized.length === 0) {
+  // If sanitization removed the base but we had a leading dot, keep it as a dotfile
+  if ((!sanitized || sanitized.length === 0) && !leadingDots) {
     sanitized = 'untitled';
   }
   
   // Limit length (Windows MAX_PATH considerations, leave room for extension)
-  const maxBaseLength = 200 - extension.length;
+  const maxBaseLength = 200 - extension.length - leadingDots.length;
   if (sanitized.length > maxBaseLength) {
     sanitized = sanitized.substring(0, maxBaseLength);
   }
@@ -142,8 +139,8 @@ export function sanitizeFileName(name: string): string {
   extension = extension
     .replace(/[<>:"/\\|?*]/g, '')
     .replace(/[\x00-\x1F]/g, '');
-  
-  return sanitized + extension;
+
+  return leadingDots + sanitized + extension;
 }
 
 /**

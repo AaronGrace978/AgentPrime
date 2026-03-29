@@ -5,11 +5,11 @@
  * by extracting types, constants, hooks, and sub-components.
  */
 
-import React, { useState, useEffect } from 'react';
-import { agentLoop, promptBuilder } from '../../agent';
+import React, { useState, useEffect, useRef } from 'react';
+import { promptBuilder } from '../../agent';
 
 // Types and constants
-import { Message, AIChatProps, ChatMode } from './types';
+import { Message, AIChatProps, ChatMode, AgentFileChange } from './types';
 import {
   WELCOME_MESSAGE,
   CHAT_WELCOME_MESSAGE,
@@ -41,6 +41,7 @@ import type { AIError } from './components';
 import AgentProgressTracker from '../AgentProgressTracker';
 
 const AIChat: React.FC<AIChatProps> = ({
+  isVisible = true,
   onClose,
   openFiles = [],
   activeFileIndex = -1,
@@ -48,7 +49,8 @@ const AIChat: React.FC<AIChatProps> = ({
   getCursorPosition,
   onOpenFolder,
   onOpenTemplates,
-  onApplyCode
+  onApplyCode,
+  onAgentChangesReady
 }) => {
   // Chat mode: agent (default), chat (just talk), dino (Dino Buddy)
   const [chatMode, setChatMode] = useState<ChatMode>('agent');
@@ -72,6 +74,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
   // Progress tracking state
   const [currentTask, setCurrentTask] = useState('');
+  const agentFileChangesRef = useRef<Map<string, AgentFileChange>>(new Map());
 
   // Load active model from settings
   useEffect(() => {
@@ -184,12 +187,20 @@ const AIChat: React.FC<AIChatProps> = ({
 
   // Real-time agent progress streaming
   useEffect(() => {
+    const handleTaskStart = (data: { task: string }) => {
+      if (!agentRunning) return;
+      if (data?.task) {
+        setCurrentTask(data.task);
+      }
+    };
+
     const handleStepComplete = (data: { type: string; title: string; success: boolean }) => {
       if (!agentRunning) return;
       const statusTag = data.success ? '[ok]' : '[warn]';
       const typeTags: Record<string, string> = {
         'write_file': '[write]', 'read_file': '[read]', 'run_command': '[cmd]',
         'list_dir': '[list]', 'patch_file': '[patch]', 'search': '[search]',
+        'search_codebase': '[search]', 'str_replace': '[edit]',
       };
       const stepTag = typeTags[data.type] || statusTag;
       setMessages(prev => {
@@ -212,17 +223,29 @@ const AIChat: React.FC<AIChatProps> = ({
       });
     };
 
-    const handleFileModified = (data: { path: string; action: string }) => {
+    const handleFileModified = (data: { path: string; action: string; oldContent?: string; newContent?: string }) => {
       if (!agentRunning) return;
+
+      const existing = agentFileChangesRef.current.get(data.path);
+      const normalizedAction: AgentFileChange['action'] =
+        data.action === 'created' ? 'created' : data.action === 'deleted' ? 'deleted' : 'modified';
+
+      agentFileChangesRef.current.set(data.path, {
+        filePath: data.path,
+        oldContent: existing ? existing.oldContent : (data.oldContent || ''),
+        newContent: data.newContent ?? existing?.newContent ?? '',
+        action: existing ? existing.action : normalizedAction
+      });
+
       setMessages(prev => {
         const workingIdx = prev.findIndex(m => m.content.includes('Working on your request'));
         if (workingIdx >= 0) {
           const updated = [...prev];
           const current = updated[workingIdx].content;
           const fileName = data.path.split(/[/\\]/).pop() || data.path;
-          const actionTag = data.action === 'created' ? '[new]' : '[updated]';
+          const actionTag = normalizedAction === 'created' ? '[new]' : normalizedAction === 'deleted' ? '[deleted]' : '[updated]';
           const progressLine = `\n${actionTag} ${data.action}: \`${fileName}\``;
-          if (!current.includes(fileName)) {
+          if (!current.includes(`${data.action}: \`${fileName}\``)) {
             updated[workingIdx] = {
               ...updated[workingIdx],
               content: current + progressLine
@@ -235,11 +258,14 @@ const AIChat: React.FC<AIChatProps> = ({
     };
 
     // Attach listeners
-    window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
-    window.agentAPI?.onAgentFileModified?.(handleFileModified);
+    const removeTaskStart = window.agentAPI?.onAgentTaskStart?.(handleTaskStart);
+    const removeStepComplete = window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
+    const removeFileModified = window.agentAPI?.onAgentFileModified?.(handleFileModified);
 
     return () => {
-      window.agentAPI?.removeAgentListeners?.();
+      if (typeof removeTaskStart === 'function') removeTaskStart();
+      if (typeof removeStepComplete === 'function') removeStepComplete();
+      if (typeof removeFileModified === 'function') removeFileModified();
     };
   }, [agentRunning]);
 
@@ -274,28 +300,6 @@ const AIChat: React.FC<AIChatProps> = ({
             activeFile: activeFileContext
           });
         }
-
-        // Set up agent callbacks
-        agentLoop.setCallbacks({
-          onError: (error) => {
-            if (!error.includes('Iteration')) {
-              setMessages(prev => [...prev, {
-                role: 'assistant',
-                content: `Error: ${error}`,
-                timestamp: new Date()
-              }]);
-            }
-            setAgentRunning(false);
-          },
-          onComplete: (message) => {
-            setMessages(prev => [...prev, {
-              role: 'assistant',
-              content: `Done: ${message}`,
-              timestamp: new Date()
-            }]);
-            setAgentRunning(false);
-          }
-        });
       } catch (error) {
         console.error('Failed to initialize agent:', error);
       }
@@ -486,6 +490,7 @@ const AIChat: React.FC<AIChatProps> = ({
     setAgentRunning(true);
     setIsLoading(true);
     setCurrentTask(currentInput);
+    agentFileChangesRef.current.clear();
 
     let agentModel = selectedModel;
     if (dualModel.enabled) {
@@ -518,6 +523,19 @@ const AIChat: React.FC<AIChatProps> = ({
     }]);
 
     try {
+      const activeFilePath = activeFileIndex >= 0 ? openFiles[activeFileIndex]?.file.path : undefined;
+      let terminalHistory: string[] = [];
+      try {
+        const terminalSnapshot = await window.agentAPI.terminalGetHistory?.(undefined, 12000);
+        if (terminalSnapshot?.success && Array.isArray(terminalSnapshot.entries)) {
+          terminalHistory = terminalSnapshot.entries
+            .filter((entry: any) => typeof entry?.history === 'string' && entry.history.trim().length > 0)
+            .map((entry: any) => `# ${entry.title} (${entry.id})\n${entry.history}`);
+        }
+      } catch (historyError) {
+        console.warn('Failed to gather terminal history for agent context:', historyError);
+      }
+
       // @ts-ignore
       const result = await window.agentAPI.chat(currentInput, {
         agent_mode: true,
@@ -525,7 +543,10 @@ const AIChat: React.FC<AIChatProps> = ({
         use_specialized_agents: useSpecializedAgents,
         model: agentModel,
         dual_mode: dualModel.mode,
-        dino_buddy_mode: false
+        dino_buddy_mode: false,
+        file_path: activeFilePath,
+        open_files: openFiles.map(file => file.file.path),
+        terminal_history: terminalHistory
       });
 
       setMessages(prev => {
@@ -542,6 +563,33 @@ const AIChat: React.FC<AIChatProps> = ({
         setLastFailedInput(currentInput);
       } else {
         setLastError(null);
+      }
+
+      if (result.success && onAgentChangesReady) {
+        const rawChanges = Array.from(agentFileChangesRef.current.values());
+        const hydratedChanges = await Promise.all(rawChanges.map(async (change) => {
+          if (change.action !== 'deleted' && (!change.newContent || change.newContent.length === 0)) {
+            try {
+              const readResult = await window.agentAPI.readFile(change.filePath);
+              if (typeof readResult?.content === 'string') {
+                return { ...change, newContent: readResult.content };
+              }
+            } catch (readError) {
+              console.warn(`Failed to hydrate change for ${change.filePath}:`, readError);
+            }
+          }
+          return change;
+        }));
+
+        const meaningfulChanges = hydratedChanges.filter((change) =>
+          change.action === 'created' ||
+          change.action === 'deleted' ||
+          change.oldContent !== change.newContent
+        );
+
+        if (meaningfulChanges.length > 0) {
+          onAgentChangesReady(meaningfulChanges, currentInput);
+        }
       }
 
       if (brainConnected) {
@@ -584,16 +632,23 @@ const AIChat: React.FC<AIChatProps> = ({
   };
 
   // Stop agent
-  const handleStop = () => {
-    agentLoop.stopAgent();
+  const handleStop = async () => {
+    try {
+      await window.agentAPI.stopAgent?.();
+    } catch (error) {
+      console.error('Failed to stop agent:', error);
+    }
     setAgentRunning(false);
+    setIsLoading(false);
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: 'Agent stopped',
+      content: 'Stop requested. Agent is shutting down...',
       timestamp: new Date(),
       type: 'system'
     }]);
   };
+
+  const busy = agentRunning || isLoading || isRetrying;
 
   return (
     <div style={{
@@ -601,12 +656,15 @@ const AIChat: React.FC<AIChatProps> = ({
       top: 0, left: 0, right: 0, bottom: 0,
       background: 'rgba(0, 0, 0, 0.5)',
       backdropFilter: 'blur(4px)',
-      display: 'flex',
+      display: isVisible ? 'flex' : 'none',
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 1000,
       animation: 'chatOverlayIn 0.15s ease'
-    }} onClick={onClose}>
+    }} onClick={() => {
+      if (busy) return;
+      onClose();
+    }}>
       <div style={{
         background: 'var(--prime-bg)',
         border: '1px solid var(--prime-border)',

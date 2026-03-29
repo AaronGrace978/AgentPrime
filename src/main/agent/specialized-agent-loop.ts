@@ -10,13 +10,14 @@
  * 6. Project memory - remembers past projects for updates
  */
 
-import { routeToSpecialists, executeWithSpecialists, AGENT_CONFIGS, AgentRole } from './specialized-agents';
+import { routeToSpecialists, executeWithSpecialists, AGENT_CONFIGS, AgentRole, type SpecialistExecutionCallbacks } from './specialized-agents';
 import { AgentContext } from '../agent-loop';
 import { getProjectRegistry, ProjectRegistry } from './project-registry';
 import { ProjectDocumenter } from './project-documenter';
 import { testProjectInBrowser, formatBrowserTestResults } from './tools/projectTester';
 import * as fs from 'fs';
 import * as path from 'path';
+import { EventEmitter } from 'events';
 import { withAITimeoutAndRetry, TimeoutError } from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
 import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
@@ -30,14 +31,20 @@ interface ProjectVerification {
   createdFiles: string[];
 }
 
-export class SpecializedAgentLoop {
+export class SpecializedAgentLoop extends EventEmitter {
   private context: AgentContext;
   private workHistory: Map<AgentRole, string[]> = new Map();
   private registry: ProjectRegistry;
+  private stopRequested = false;
 
   constructor(context: AgentContext) {
+    super();
     this.context = context;
     this.registry = getProjectRegistry();
+  }
+
+  requestStop(_reason: string = 'Stopped by user'): void {
+    this.stopRequested = true;
   }
 
   /**
@@ -45,6 +52,8 @@ export class SpecializedAgentLoop {
    */
   async run(userMessage: string): Promise<string> {
     console.log('[SpecializedAgent] Starting specialized agent execution...');
+    this.stopRequested = false;
+    this.emit('task-start', { task: userMessage });
 
     // Start transaction for this specialized agent task
     const transactionId = transactionManager.startTransaction(`Specialized agent task: ${userMessage.substring(0, 100)}${userMessage.length > 100 ? '...' : ''}`);
@@ -64,6 +73,10 @@ export class SpecializedAgentLoop {
 
     // Main execution loop with retries
     while (retryCount <= MAX_RETRIES) {
+      if (this.stopRequested) {
+        return `⏹️ **Agent stopped by user**\n\nCreated so far: ${allCreatedFiles.length} file(s).`;
+      }
+
       // Step 1: Route to appropriate specialists
       const roles = routeToSpecialists(userMessage, {
         files: this.getProjectFiles(),
@@ -81,14 +94,56 @@ export class SpecializedAgentLoop {
       }
 
       // Step 3: Execute with specialists
-      const { results, finalAnalysis, executedTools } = await executeWithSpecialists(
-        taskMessage,
-        roles,
-        {
-          workspacePath: this.context.workspacePath,
-          files: this.getProjectFiles()
+      const trackerMode = retryCount > 0 ? 'fix' : (isUpdate ? 'enhance' : 'create');
+      const specialistCallbacks: SpecialistExecutionCallbacks = {
+        shouldCancel: () => this.stopRequested,
+        onToolStart: (event) => {
+          this.emit('step-start', {
+            type: event.type,
+            title: event.title,
+            specialist: event.specialist
+          });
+        },
+        onToolComplete: (event) => {
+          this.emit('step-complete', event);
+        },
+        onFileChange: (change) => {
+          this.emit('file-modified', {
+            path: change.filePath,
+            action: change.action,
+            oldContent: change.oldContent,
+            newContent: change.newContent
+          });
+        },
+        onCommandOutput: (event) => {
+          this.emit('command-output', event);
         }
-      );
+      };
+
+      let specialistRun: Awaited<ReturnType<typeof executeWithSpecialists>>;
+      try {
+        specialistRun = await executeWithSpecialists(
+          taskMessage,
+          roles,
+          {
+            workspacePath: this.context.workspacePath,
+            files: this.getProjectFiles()
+          },
+          trackerMode,
+          specialistCallbacks
+        );
+      } catch (error) {
+        if (this.stopRequested) {
+          return `⏹️ **Agent stopped by user**\n\nCreated so far: ${allCreatedFiles.length} file(s).`;
+        }
+        throw error;
+      }
+
+      const { results, finalAnalysis, executedTools } = specialistRun;
+
+      if (finalAnalysis) {
+        this.emit('critique-complete', { analysis: finalAnalysis });
+      }
 
       // Step 4: Collect created files from this run
       const newFiles: string[] = [];

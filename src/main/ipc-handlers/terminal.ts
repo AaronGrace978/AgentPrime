@@ -21,10 +21,12 @@ interface TerminalSession {
   process: any;
   cwd: string;
   title: string;
+  history: string;
 }
 
 const sessions = new Map<string, TerminalSession>();
 let sessionCounter = 0;
+const MAX_HISTORY_CHARS = 200_000;
 
 const ERROR_PATTERNS = [
   { pattern: /Error:\s+(.+)/i, type: 'generic' },
@@ -94,12 +96,17 @@ export function registerTerminalHandlers(deps: TerminalDeps): void {
         process: ptyProcess,
         cwd,
         title: path.basename(cwd),
+        history: '',
       };
 
       sessions.set(id, session);
 
       const window = mainWindow();
       ptyProcess.onData((data: string) => {
+        session.history += data;
+        if (session.history.length > MAX_HISTORY_CHARS) {
+          session.history = session.history.slice(-MAX_HISTORY_CHARS);
+        }
         window?.webContents.send('terminal:data', { id, data });
 
         const errors = detectErrors(data);
@@ -155,6 +162,31 @@ export function registerTerminalHandlers(deps: TerminalDeps): void {
       cwd: s.cwd,
       title: s.title,
     }));
+  });
+
+  ipcMain.handle('terminal:get-history', async (_event, id?: string, maxChars: number = 12000) => {
+    const safeMaxChars = Number.isFinite(maxChars) ? Math.max(1000, Math.min(100000, maxChars)) : 12000;
+
+    const targetSessions = id ? [sessions.get(id)].filter(Boolean) as TerminalSession[] : Array.from(sessions.values());
+    const entries = targetSessions.map((session) => {
+      const history = session.history || '';
+      const clipped = history.length > safeMaxChars ? history.slice(-safeMaxChars) : history;
+      return {
+        id: session.id,
+        title: session.title,
+        cwd: session.cwd,
+        history: clipped,
+      };
+    });
+
+    return {
+      success: true,
+      entries,
+      combined: entries
+        .map((entry) => `# ${entry.title} (${entry.id})\n${entry.history}`.trim())
+        .join('\n\n')
+        .trim(),
+    };
   });
 
   console.log('[Terminal] PTY terminal handlers registered');

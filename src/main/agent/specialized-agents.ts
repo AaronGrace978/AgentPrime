@@ -26,6 +26,22 @@ import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-re
 import { transactionManager } from '../core/transaction-manager';
 import { validateToolCall, fixToolCall, resetFileTracker, populateFileTracker, validatePackageJson, validateIndexHtml, validateJavaScriptFile, detectOrphanedFiles, getFileTrackerState, FileTrackerMode } from './tool-validation';
 import { sanitizeFileName } from '../security/ipcValidation';
+import { spawn } from 'child_process';
+
+interface AgentPendingFileChange {
+  filePath: string;
+  oldContent: string;
+  newContent: string;
+  action: 'created' | 'modified' | 'deleted';
+  status: 'pending' | 'accepted' | 'rejected';
+}
+
+interface AgentCommandOutputEvent {
+  command: string;
+  stream: 'stdout' | 'stderr';
+  chunk: string;
+  timestamp: number;
+}
 
 /**
  * Get all project files from a workspace directory
@@ -114,7 +130,6 @@ async function checkOllamaHealth(): Promise<{ healthy: boolean; models: string[]
  * Check if a provider/model combo is a cloud service (doesn't need local installation)
  */
 function isCloudProvider(provider: string, model: string): boolean {
-  // These providers are always cloud-based
   if (provider === 'anthropic' || provider === 'openai' || provider === 'openrouter') {
     return true;
   }
@@ -1058,17 +1073,46 @@ export function routeToSpecialists(
 // Note: Tools are accessed via executeTool function, not directly imported
 
 /**
- * Extract requirements from planning text
+ * Extract requirements from planning text.
+ * Models vary: bullets (- * •), numbered (1. 1) 2)), or plain paragraphs.
  */
 function extractRequirements(planContent: string): string[] {
+  const raw = planContent.trim();
+  if (!raw) return [];
+
+  const stripListPrefix = (s: string): string =>
+    s.replace(/^[-*•·▪]\s+/, '').replace(/^\d+[\).\s]+\s*/, '').trim();
+
   const requirements: string[] = [];
-  const lines = planContent.split('\n');
+  const lines = raw.split('\n');
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || /^\d+\./.test(trimmed)) {
-      requirements.push(trimmed.replace(/^[-*\d]+\.\s*/, ''));
+    if (!trimmed) continue;
+    if (
+      trimmed.startsWith('- ') ||
+      trimmed.startsWith('* ') ||
+      trimmed.startsWith('• ') ||
+      trimmed.startsWith('· ') ||
+      trimmed.startsWith('▪ ') ||
+      /^\d+\.\s/.test(trimmed) ||
+      /^\d+\)\s/.test(trimmed)
+    ) {
+      const item = stripListPrefix(trimmed);
+      if (item.length > 0) requirements.push(item);
     }
+  }
+
+  if (requirements.length === 0 && raw.length > 40) {
+    for (const line of lines) {
+      const t = line.trim();
+      if (t.length < 20) continue;
+      if (/^#{1,6}\s/.test(t)) continue;
+      if (t.startsWith('```')) continue;
+      if (/^---+$/u.test(t)) continue;
+      requirements.push(t);
+    }
+    return requirements.slice(0, 50);
   }
 
   return requirements;
@@ -1178,8 +1222,24 @@ function parseToolCalls(content: string): any[] {
 /**
  * Execute a tool call
  */
-async function executeTool(toolCall: any, workspacePath: string): Promise<any> {
+export interface SpecialistExecutionCallbacks {
+  shouldCancel?: () => boolean;
+  onToolStart?: (event: { type: string; title: string; specialist?: string }) => void;
+  onToolComplete?: (event: { type: string; title: string; success: boolean; specialist?: string; error?: string }) => void;
+  onFileChange?: (change: AgentPendingFileChange) => void;
+  onCommandOutput?: (event: AgentCommandOutputEvent) => void;
+}
+
+async function executeTool(
+  toolCall: any,
+  workspacePath: string,
+  callbacks?: SpecialistExecutionCallbacks
+): Promise<any> {
   const { name, arguments: args } = toolCall;
+
+  if (callbacks?.shouldCancel?.()) {
+    throw new Error('Specialized agent cancelled by user');
+  }
 
   switch (name) {
     case 'write_file':
@@ -1231,7 +1291,16 @@ async function executeTool(toolCall: any, workspacePath: string): Promise<any> {
         }
       }
       
+      const existedBefore = fs.existsSync(filePath);
+      const oldContent = existedBefore ? fs.readFileSync(filePath, 'utf-8') : null;
       fs.writeFileSync(filePath, args.content || '', 'utf-8');
+      callbacks?.onFileChange?.({
+        filePath: sanitizedPath.replace(/\\/g, '/'),
+        oldContent: oldContent ?? '',
+        newContent: args.content || '',
+        action: existedBefore ? 'modified' : 'created',
+        status: 'pending'
+      });
       return { action: 'write_file', path: sanitizedPath, success: true };
 
     case 'read_file':
@@ -1242,9 +1311,104 @@ async function executeTool(toolCall: any, workspacePath: string): Promise<any> {
       }
       return { action: 'read_file', path: args.path, error: 'File not found', success: false };
 
-    case 'run_command':
-      // This would need to be implemented with actual command execution
-      return { action: 'run_command', command: args.command, success: true };
+    case 'run_command': {
+      const command = args.command || '';
+      const cwd = args.cwd || '.';
+      const timeout = typeof args.timeout === 'number' ? args.timeout : 120;
+      const workDir = path.resolve(workspacePath, cwd);
+
+      return await new Promise((resolve, reject) => {
+        if (callbacks?.shouldCancel?.()) {
+          reject(new Error('Specialized agent cancelled by user'));
+          return;
+        }
+
+        const child = spawn(command, {
+          cwd: workDir,
+          shell: true,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: process.env
+        });
+
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+
+        const resolveOnce = (value: any) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          clearInterval(cancelPoll);
+          resolve(value);
+        };
+        const rejectOnce = (err: Error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          clearInterval(cancelPoll);
+          reject(err);
+        };
+
+        child.stdout.on('data', (data) => {
+          const chunk = data.toString();
+          stdout += chunk;
+          callbacks?.onCommandOutput?.({
+            command,
+            stream: 'stdout',
+            chunk,
+            timestamp: Date.now()
+          });
+        });
+        child.stderr.on('data', (data) => {
+          const chunk = data.toString();
+          stderr += chunk;
+          callbacks?.onCommandOutput?.({
+            command,
+            stream: 'stderr',
+            chunk,
+            timestamp: Date.now()
+          });
+        });
+
+        const timer = setTimeout(() => {
+          try {
+            child.kill('SIGTERM');
+          } catch {
+            // ignore
+          }
+          rejectOnce(new Error(`Command timed out after ${timeout}s`));
+        }, timeout * 1000);
+
+        const cancelPoll = setInterval(() => {
+          if (!callbacks?.shouldCancel?.() || child.killed) return;
+          try {
+            child.kill('SIGTERM');
+          } catch {
+            // ignore
+          }
+        }, 250);
+
+        child.on('close', (code) => {
+          if (callbacks?.shouldCancel?.()) {
+            rejectOnce(new Error('Specialized agent cancelled by user'));
+            return;
+          }
+          resolveOnce({
+            action: 'run_command',
+            command,
+            cwd,
+            exit_code: code,
+            stdout,
+            stderr,
+            success: code === 0
+          });
+        });
+
+        child.on('error', (error) => {
+          rejectOnce(error);
+        });
+      });
+    }
 
     default:
       return { action: name, error: 'Unknown tool', success: false };
@@ -1326,7 +1490,8 @@ export async function executeWithSpecialists(
   task: string,
   roles: AgentRole[],
   context: any = {},
-  taskMode: FileTrackerMode = 'create'
+  taskMode: FileTrackerMode = 'create',
+  callbacks?: SpecialistExecutionCallbacks
 ): Promise<{
   results: Map<AgentRole, string>;
   finalAnalysis?: string;
@@ -1336,6 +1501,12 @@ export async function executeWithSpecialists(
   const executedTools: any[] = [];
   const successfulPatterns: any[] = [];
   const mistakes: string[] = [];
+  const assertNotCancelled = () => {
+    if (callbacks?.shouldCancel?.()) {
+      throw new Error('Specialized agent cancelled by user');
+    }
+  };
+  assertNotCancelled();
 
   // 🛡️ FILE TRACKER MODE - Behavior depends on task type
   // - CREATE: Full reset for new projects
@@ -1379,16 +1550,20 @@ export async function executeWithSpecialists(
     implementedFeatures: []
   };
 
-  // Get best available model for planning - USE WORKING PROVIDERS!
-  // Anthropic Claude is confirmed working, use it as primary!
+  // Get best available model for planning.
+  // Ollama cloud models listed first so the agent works out of the box
+  // without requiring paid API credits.
   const DEFAULT_MODEL_CHAIN = [
+    { name: 'Qwen3-Coder-Next Cloud', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
+    { name: 'Qwen3-Coder 480b Cloud', provider: 'ollama', model: 'qwen3-coder:480b-cloud', tier: 'deep' },
     { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
-    { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' }
+    { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },
   ];
 
   const planningModels = DEFAULT_MODEL_CHAIN.map(m => ({ provider: m.provider, model: m.model }));
   const planningModel = await getBestAvailableModel(planningModels);
+  assertNotCancelled();
 
   if (!planningModel) {
     // Instead of failing, provide helpful guidance
@@ -1529,6 +1704,7 @@ Output as a structured list. Be specific and comprehensive.` }
   // Parse and execute tool calls from orchestrator
   const orchestratorTools = parseToolCalls(orchestratorResponse.content || '');
   for (const toolCall of orchestratorTools) {
+    assertNotCancelled();
     try {
       // Validate tool call before execution
       const validation = validateToolCall(toolCall.function || toolCall, context.workspacePath, task);
@@ -1543,7 +1719,13 @@ Output as a structured list. Be specific and comprehensive.` }
         ? fixToolCall(toolCall, validation)
         : toolCall;
 
-      const result = await executeTool(fixedToolCall, context.workspacePath);
+      const normalized = fixedToolCall.function || fixedToolCall;
+      const toolName = normalized.name || 'unknown_tool';
+      const toolArgs = normalized.arguments || {};
+      const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+      callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: 'tool_orchestrator' });
+      const result = await executeTool(fixedToolCall, context.workspacePath, callbacks);
+      callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: true, specialist: 'tool_orchestrator' });
       executedTools.push({ toolCall: fixedToolCall, result });
       
       // Track created files in shared context
@@ -1553,6 +1735,17 @@ Output as a structured list. Be specific and comprehensive.` }
     } catch (error) {
       console.warn(`Orchestrator tool execution failed:`, error);
       mistakes.push(`Orchestrator tool execution: ${error}`);
+      const normalized = (toolCall as any).function || toolCall;
+      const toolName = normalized.name || 'unknown_tool';
+      const toolArgs = normalized.arguments || {};
+      const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+      callbacks?.onToolComplete?.({
+        type: toolName,
+        title: toolTitle,
+        success: false,
+        specialist: 'tool_orchestrator',
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   }
 
@@ -1567,6 +1760,7 @@ Output as a structured list. Be specific and comprehensive.` }
   console.log('[MirrorAgents] 🔧 Running specialists with smart fallback...');
 
   for (const role of roles) {
+    assertNotCancelled();
     if (role === 'tool_orchestrator') continue; // Already done
 
     const config = AGENT_CONFIGS[role];
@@ -1619,6 +1813,7 @@ ${buildSharedContext(sharedContext)}`
         console.log(`[MirrorAgents] Specialist ${role} returned ${specialistTools.length} tool calls`);
         
         for (const toolCall of specialistTools) {
+          assertNotCancelled();
           try {
             // Validate tool call before execution
             const validation = validateToolCall(toolCall.function || toolCall, context.workspacePath, task);
@@ -1633,7 +1828,13 @@ ${buildSharedContext(sharedContext)}`
               ? fixToolCall(toolCall, validation)
               : toolCall;
 
-            const result = await executeTool(fixedToolCall, context.workspacePath);
+            const normalized = fixedToolCall.function || fixedToolCall;
+            const toolName = normalized.name || 'unknown_tool';
+            const toolArgs = normalized.arguments || {};
+            const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+            callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: role });
+            const result = await executeTool(fixedToolCall, context.workspacePath, callbacks);
+            callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: true, specialist: role });
             executedTools.push({ toolCall: fixedToolCall, result, specialist: role });
             
             // Track created files in shared context
@@ -1644,6 +1845,17 @@ ${buildSharedContext(sharedContext)}`
           } catch (error) {
             console.warn(`[MirrorAgents] ${role} tool execution failed:`, error);
             mistakes.push(`${role} tool execution: ${error}`);
+            const normalized = (toolCall as any).function || toolCall;
+            const toolName = normalized.name || 'unknown_tool';
+            const toolArgs = normalized.arguments || {};
+            const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+            callbacks?.onToolComplete?.({
+              type: toolName,
+              title: toolTitle,
+              success: false,
+              specialist: role,
+              error: error instanceof Error ? error.message : String(error)
+            });
           }
         }
         
@@ -1718,6 +1930,7 @@ ${buildSharedContext(sharedContext)}`
       // Execute any tools the analyst wants to run
       const analystTools = parseToolCalls(analysis.content || '');
       for (const toolCall of analystTools) {
+        assertNotCancelled();
         try {
           // Validate tool call
           const validation = validateToolCall(toolCall.function || toolCall, context.workspacePath, task);
@@ -1730,7 +1943,13 @@ ${buildSharedContext(sharedContext)}`
             ? fixToolCall(toolCall, validation)
             : toolCall;
 
-          const result = await executeTool(fixedToolCall, context.workspacePath);
+          const normalized = fixedToolCall.function || fixedToolCall;
+          const toolName = normalized.name || 'unknown_tool';
+          const toolArgs = normalized.arguments || {};
+          const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+          callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: 'integration_analyst' });
+          const result = await executeTool(fixedToolCall, context.workspacePath, callbacks);
+          callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: true, specialist: 'integration_analyst' });
           executedTools.push({ toolCall: fixedToolCall, result, specialist: 'integration_analyst' });
 
           if (result.action === 'write_file' && result.path) {
@@ -1738,6 +1957,17 @@ ${buildSharedContext(sharedContext)}`
           }
         } catch (error) {
           console.warn(`Analyst tool execution failed:`, error);
+          const normalized = (toolCall as any).function || toolCall;
+          const toolName = normalized.name || 'unknown_tool';
+          const toolArgs = normalized.arguments || {};
+          const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+          callbacks?.onToolComplete?.({
+            type: toolName,
+            title: toolTitle,
+            success: false,
+            specialist: 'integration_analyst',
+            error: error instanceof Error ? error.message : String(error)
+          });
         }
       }
 

@@ -2,7 +2,7 @@
  * useScriptRunner - Hook for running and managing script execution
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { FileItem, RunOutput } from '../types';
 
 interface UseScriptRunnerReturn {
@@ -19,6 +19,7 @@ export function useScriptRunner(): UseScriptRunnerReturn {
   const [isRunning, setIsRunning] = useState(false);
   const [runOutput, setRunOutput] = useState<RunOutput[]>([]);
   const [terminalVisible, setTerminalVisible] = useState(false);
+  const runningPidRef = useRef<number | null>(null);
 
   // Set up script execution listeners
   useEffect(() => {
@@ -30,6 +31,7 @@ export function useScriptRunner(): UseScriptRunnerReturn {
 
     if (window.agentAPI.onScriptExit) {
       window.agentAPI.onScriptExit((data: any) => {
+        runningPidRef.current = null;
         setIsRunning(false);
         setRunOutput(prev => [...prev, {
           type: 'system',
@@ -40,6 +42,7 @@ export function useScriptRunner(): UseScriptRunnerReturn {
 
     if (window.agentAPI.onScriptError) {
       window.agentAPI.onScriptError((data: any) => {
+        runningPidRef.current = null;
         setIsRunning(false);
         console.error('Script error:', data.error);
       });
@@ -62,7 +65,9 @@ export function useScriptRunner(): UseScriptRunnerReturn {
     try {
       if (window.agentAPI.runScript) {
         const result = await window.agentAPI.runScript(selectedFile.path);
-        if (!result.success) {
+        if (result.success && result.pid) {
+          runningPidRef.current = result.pid;
+        } else if (!result.success) {
           setIsRunning(false);
           console.error(result.error || 'Failed to run script');
         }
@@ -98,10 +103,19 @@ export function useScriptRunner(): UseScriptRunnerReturn {
     }
   }, [isRunning]);
 
-  // Kill script
-  const killScript = useCallback(() => {
+  // Kill the running script process via IPC
+  const killScript = useCallback(async () => {
+    const pid = runningPidRef.current;
+    if (pid && window.agentAPI.killScript) {
+      try {
+        await window.agentAPI.killScript(pid);
+      } catch (err: any) {
+        console.error('Failed to kill script:', err.message);
+      }
+    }
+    runningPidRef.current = null;
     setIsRunning(false);
-    console.log('Stopped execution');
+    setRunOutput(prev => [...prev, { type: 'system', text: '\n--- Process stopped by user ---\n' }]);
   }, []);
 
   // Clear output

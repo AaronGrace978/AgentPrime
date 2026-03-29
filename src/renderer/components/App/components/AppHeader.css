@@ -146,6 +146,18 @@
   color: #ffffff;
 }
 
+.app-header-pro-btn-danger {
+  border-color: #ff4d4f;
+  background: #ff4d4f;
+  color: #ffffff;
+}
+
+.app-header-pro-btn-danger:hover:not(:disabled) {
+  background: #ff7875;
+  border-color: #ff7875;
+  color: #ffffff;
+}
+
 @media (max-width: 800px) {
   .app-header-pro-center {
     display: none;

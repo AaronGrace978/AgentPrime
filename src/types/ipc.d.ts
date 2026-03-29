@@ -74,10 +74,10 @@ export interface AgentAPI {
   removeModelSelectionInfo: () => void;
 
   // Agent progress events
-  onAgentTaskStart: (callback: (data: { task: string }) => void) => void;
-  onAgentStepComplete: (callback: (data: { type: string; title: string; success: boolean }) => void) => void;
-  onAgentFileModified: (callback: (data: { path: string; action: string }) => void) => void;
-  onAgentCritiqueComplete: (callback: (data: any) => void) => void;
+  onAgentTaskStart: (callback: (data: { task: string }) => void) => (() => void) | void;
+  onAgentStepComplete: (callback: (data: { type: string; title: string; success: boolean }) => void) => (() => void) | void;
+  onAgentFileModified: (callback: (data: { path: string; action: string; oldContent?: string; newContent?: string }) => void) => (() => void) | void;
+  onAgentCritiqueComplete: (callback: (data: any) => void) => (() => void) | void;
   removeAgentListeners: () => void;
 
   // Generic listeners
@@ -130,6 +130,7 @@ export interface AgentAPI {
   undoCommand: () => Promise<any>;
 
   // Agent tooling
+  stopAgent: () => Promise<{ success: boolean; error?: string }>;
   listFiles: (path: string) => Promise<any>;
   agentReadFile: (path: string) => Promise<any>;
   agentWriteFile: (path: string, content: string) => Promise<any>;
@@ -139,6 +140,10 @@ export interface AgentAPI {
     options?: { includePattern?: string; excludePattern?: string; maxResults?: number }
   ) => Promise<any>;
   applyDiff: (path: string, diff: string) => Promise<any>;
+  terminalGetHistory: (
+    id?: string,
+    maxChars?: number
+  ) => Promise<{ success: boolean; entries?: Array<{ id: string; title: string; cwd: string; history: string }>; combined?: string; error?: string }>;
 
   // Search and symbol navigation
   globalSearch: (query: string, options?: any) => Promise<any>;

@@ -110,14 +110,15 @@ const BASE_TIMEOUTS = {
 
 /**
  * Hard caps prevent runaway adaptive timeouts (e.g. 30+ minute cloud waits).
- * Goal: fail faster so smart fallback can try the next model sooner.
+ * Goal: fail faster so smart fallback can try the next model sooner,
+ * but not SO fast that Ollama cloud models always timeout on valid work.
  */
 const MAX_TIMEOUTS: Record<OperationType, number> = {
-  chat: 120000,       // 2 minutes
+  chat: 150000,       // 2.5 minutes
   completion: 15000,  // 15 seconds
-  analysis: 180000,   // 3 minutes
-  complex: 240000,    // 4 minutes
-  project: 420000     // 7 minutes
+  analysis: 240000,   // 4 minutes
+  complex: 360000,    // 6 minutes (was 4 -- too tight for 480b cloud models)
+  project: 600000     // 10 minutes (was 7 -- full project gen needs headroom)
 };
 
 /**
@@ -180,19 +181,43 @@ export async function withFileTimeout<T>(
  * Using Anthropic/OpenAI since they're confirmed working!
  */
 export const FALLBACK_MODEL_CHAIN = [
-  // Cloud providers - CONFIRMED WORKING! (newest first)
-  { provider: 'anthropic', model: 'claude-opus-4-6', size: 'cloud' as ModelSize },
-  { provider: 'openai', model: 'gpt-5.2-2025-12-11', size: 'cloud' as ModelSize },
-  { provider: 'openai', model: 'gpt-5.2', size: 'cloud' as ModelSize },
+  // Ollama cloud models first -- always available, no billing surprises
+  { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },
+  { provider: 'ollama', model: 'qwen3-coder:480b-cloud', size: 'cloud' as ModelSize },
+
+  // Cloud providers (may require active billing)
   { provider: 'anthropic', model: 'claude-sonnet-4-20250514', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-4o', size: 'cloud' as ModelSize },
+  { provider: 'anthropic', model: 'claude-opus-4-6', size: 'cloud' as ModelSize },
+  { provider: 'openai', model: 'gpt-5.2-2025-12-11', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
   { provider: 'openai', model: 'gpt-4o-mini', size: 'fast' as ModelSize },
-
-  // Ollama Cloud as last resort (if configured correctly)
-  { provider: 'ollama', model: 'qwen3-coder:480b-cloud', size: 'cloud' as ModelSize },
-  { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },
 ];
+
+const recentProviderFailures: Map<string, { count: number; lastFailed: number }> = new Map();
+const FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // skip provider for 5 min after 2+ failures
+
+function recordProviderFailure(provider: string): void {
+  const entry = recentProviderFailures.get(provider) || { count: 0, lastFailed: 0 };
+  entry.count += 1;
+  entry.lastFailed = Date.now();
+  recentProviderFailures.set(provider, entry);
+}
+
+function shouldSkipProvider(provider: string): boolean {
+  // Never skip Ollama: failures are often per-model (timeouts). Aggregating by
+  // provider would skip the second Ollama fallback after the first times out.
+  if (provider === 'ollama') {
+    return false;
+  }
+  const entry = recentProviderFailures.get(provider);
+  if (!entry) return false;
+  if (Date.now() - entry.lastFailed > FAILURE_COOLDOWN_MS) {
+    recentProviderFailures.delete(provider);
+    return false;
+  }
+  return entry.count >= 2;
+}
 
 /**
  * Result of a retry operation with fallback info
@@ -313,10 +338,16 @@ export async function withSmartFallback<T>(
   } catch (primaryError) {
     console.log(`[SmartFallback] Primary model failed: ${(primaryError as Error).message}`);
     
+    recordProviderFailure(primaryProvider);
+
     // Try fallback models
     for (const fallback of FALLBACK_MODEL_CHAIN) {
-      // Skip if it's the same as primary
       if (fallback.provider === primaryProvider && fallback.model === primaryModel) continue;
+
+      if (shouldSkipProvider(fallback.provider)) {
+        console.log(`[SmartFallback] Skipping ${fallback.provider}/${fallback.model} (provider failed recently)`);
+        continue;
+      }
       
       try {
         attempts++;
@@ -325,17 +356,18 @@ export async function withSmartFallback<T>(
           () => operation(fallback.provider, fallback.model),
           operationType,
           fallback.model,
-          0 // No retries on fallbacks, just try next
+          0
         );
         console.log(`[SmartFallback] ✅ Fallback succeeded: ${fallback.model}`);
         return { result, usedFallback: true, finalModel: fallback.model, attempts };
       } catch (fallbackError) {
-        console.log(`[SmartFallback] Fallback ${fallback.model} failed, trying next...`);
+        const errMsg = (fallbackError as Error).message || String(fallbackError);
+        console.log(`[SmartFallback] Fallback ${fallback.model} failed: ${errMsg.substring(0, 200)}`);
+        recordProviderFailure(fallback.provider);
         continue;
       }
     }
     
-    // All fallbacks failed
-    throw new Error(`All models failed after ${attempts} attempts. Primary: ${primaryModel}. Check your Ollama installation.`);
+    throw new Error(`All models failed after ${attempts} attempts. Primary: ${primaryModel}. Check your API keys and Ollama configuration.`);
   }
 }

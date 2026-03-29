@@ -1055,6 +1055,8 @@ export interface AgentContext {
   terminalHistory: string[];
   gitStatus?: string;
   model?: string;
+  onFileWrite?: (change: { path: string; oldContent: string; newContent: string; action: 'created' | 'modified' }) => void;
+  isCancellationRequested?: () => boolean;
 }
 
 interface Message {
@@ -1182,6 +1184,8 @@ const tools: Record<string, Tool> = {
       }
       
       const fullPath = path.resolve(context.workspacePath, filePath);
+      const fileExistedBeforeWrite = fs.existsSync(fullPath);
+      const previousContent = fileExistedBeforeWrite ? fs.readFileSync(fullPath, 'utf-8') : '';
 
       // Always create parent directories unless explicitly disabled
       if (create_dirs !== false) {
@@ -1222,6 +1226,13 @@ const tools: Record<string, Tool> = {
       }
       
       fs.writeFileSync(fullPath, contentString, 'utf-8');
+
+      context.onFileWrite?.({
+        path: filePath,
+        oldContent: previousContent,
+        newContent: contentString,
+        action: fileExistedBeforeWrite ? 'modified' : 'created'
+      });
       
       // === FILE REFERENCE VALIDATION ===
       // Check if HTML files reference resources that don't exist yet
@@ -1269,7 +1280,8 @@ const tools: Record<string, Tool> = {
       const result: any = {
         path: filePath,
         written: true,
-        size: contentString.length
+        size: contentString.length,
+        action: fileExistedBeforeWrite ? 'modified' : 'created'
       };
       
       if (warnings.length > 0) {
@@ -1377,6 +1389,13 @@ Use read_file first to see the exact content you want to replace.`,
       
       // Write the patched content
       fs.writeFileSync(fullPath, newContent, 'utf-8');
+
+      context.onFileWrite?.({
+        path: filePath,
+        oldContent: currentContent,
+        newContent,
+        action: 'modified'
+      });
       
       return {
         success: true,
@@ -1415,6 +1434,10 @@ Use read_file first to see the exact content you want to replace.`,
     },
     execute: async ({ command, cwd = '.', timeout = 30 }, context) => {
       const startTime = Date.now();
+
+      if (context.isCancellationRequested?.()) {
+        throw new Error('Command cancelled before execution');
+      }
       
       // === SECURITY CHECK 1: Rate Limiting ===
       const rateCheck = commandRateLimiter.canExecute();
@@ -1487,6 +1510,18 @@ Use read_file first to see the exact content you want to replace.`,
       }
 
       return new Promise((resolve, reject) => {
+        let settled = false;
+        const complete = (finalizer: () => void) => {
+          if (settled) return;
+          settled = true;
+          finalizer();
+        };
+
+        if (context.isCancellationRequested?.()) {
+          complete(() => reject(new Error('Command cancelled before execution')));
+          return;
+        }
+
         // Use resolved command, but split properly for spawn
         const [cmd, ...args] = resolvedCommand.split(' ');
         const child = spawn(cmd, args, {
@@ -1502,9 +1537,28 @@ Use read_file first to see the exact content you want to replace.`,
         child.stdout.on('data', (data) => { stdout += data.toString(); });
         child.stderr.on('data', (data) => { stderr += data.toString(); });
 
+        const cancellationPoll = setInterval(() => {
+          if (context.isCancellationRequested?.() && !settled) {
+            try {
+              child.kill();
+            } catch {
+              // Ignore kill failures
+            }
+            clearTimeout(timer);
+            clearInterval(cancellationPoll);
+            complete(() => reject(new Error('Command cancelled by user')));
+          }
+        }, 200);
+
         const timer = setTimeout(() => {
-          child.kill();
-          
+          if (settled) return;
+          try {
+            child.kill();
+          } catch {
+            // Ignore kill failures
+          }
+          clearInterval(cancellationPoll);
+
           // === AUDIT LOG: Command timeout ===
           commandAuditLogger.log({
             command,
@@ -1513,12 +1567,14 @@ Use read_file first to see the exact content you want to replace.`,
             reason: `Timed out after ${timeout}s`,
             duration: timeout * 1000
           });
-          
-          reject(new Error(`Command timed out after ${timeout}s`));
+
+          complete(() => reject(new Error(`Command timed out after ${timeout}s`)));
         }, timeout * 1000);
 
         child.on('close', (code) => {
+          if (settled) return;
           clearTimeout(timer);
+          clearInterval(cancellationPoll);
           
           // Check if error is due to missing tool
           const combinedOutput = stdout + stderr;
@@ -1596,12 +1652,14 @@ Use read_file first to see the exact content you want to replace.`,
             exitCode: code || 0,
             duration
           });
-          
-          resolve(result);
+
+          complete(() => resolve(result));
         });
 
         child.on('error', (err) => {
+          if (settled) return;
           clearTimeout(timer);
+          clearInterval(cancellationPoll);
           
           // === AUDIT LOG: Command error ===
           commandAuditLogger.log({
@@ -1611,8 +1669,8 @@ Use read_file first to see the exact content you want to replace.`,
             reason: err.message,
             duration: Date.now() - startTime
           });
-          
-          reject(err);
+
+          complete(() => reject(err));
         });
       });
     }
@@ -2742,10 +2800,39 @@ export class AgentLoop extends EventEmitter {
   private messages: Message[] = [];
   private sessionId: string | null = null; // Track current session for state management
   private maxIterations = 100;
+  private stopRequested = false;
+  private stopReason: string | null = null;
+  private fileChangesThisTask = new Map<string, {
+    path: string;
+    oldContent: string;
+    newContent: string;
+    action: 'created' | 'modified';
+  }>();
 
   /** Get current session ID */
   getSessionId(): string | null {
     return this.sessionId;
+  }
+
+  /** Request cancellation of the active run */
+  requestStop(reason: string = 'Stopped by user'): void {
+    this.stopRequested = true;
+    this.stopReason = reason;
+  }
+
+  private buildStopMessage(): string {
+    const reason = this.stopReason || 'Stopped by user';
+    return this.buildFinalAnswer(
+      `⏹️ **Agent Stopped**\n\n` +
+      `${reason}\n\n` +
+      `Progress so far:\n` +
+      `- ${this.completedSteps.length} step(s) completed\n` +
+      `- ${this.fileChangesThisTask.size} file(s) changed`
+    );
+  }
+
+  private isCancellationRequested(): boolean {
+    return this.stopRequested;
   }
   private noToolCallStreak = 0;
   private parseErrorStreak = 0;
@@ -3318,6 +3405,28 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     // 🦖 DINO BUDDY: Reset improvement tracking
     this.filesGeneratedThisSession = [];
     this.currentTask = userMessage;
+    this.stopRequested = false;
+    this.stopReason = null;
+    this.fileChangesThisTask.clear();
+
+    // Register per-run context hooks for cancellation and file change streaming.
+    this.context.isCancellationRequested = () => this.isCancellationRequested();
+    this.context.onFileWrite = (change) => {
+      const existing = this.fileChangesThisTask.get(change.path);
+      const merged = {
+        path: change.path,
+        oldContent: existing ? existing.oldContent : change.oldContent,
+        newContent: change.newContent,
+        action: existing ? existing.action : change.action
+      };
+      this.fileChangesThisTask.set(change.path, merged);
+      this.emit('file-modified', {
+        path: merged.path,
+        action: merged.action,
+        oldContent: merged.oldContent,
+        newContent: merged.newContent
+      });
+    };
     
     // Emit task start event for progress tracker
     this.emit('task-start', { task: userMessage });
@@ -3803,6 +3912,12 @@ ${this.taskMode === TaskMode.ENHANCE ? `
     console.log(`[Agent] ⏱️ Task timeout: ${MAX_TASK_DURATION_MS / 60000} minutes (complex: ${isComplexTask})`);
 
     while (iteration < this.maxIterations) {
+      if (this.isCancellationRequested()) {
+        console.log('[Agent] Stop requested, ending task loop');
+        finalAnswer = this.buildStopMessage();
+        break;
+      }
+
       iteration++;
       
       // 🛡️ CHECK TOTAL TASK TIMEOUT
@@ -3893,6 +4008,11 @@ ${this.taskMode === TaskMode.ENHANCE ? `
           modelToUse, // Model name for adaptive timeout
           2 // Retry up to 2 times on timeout
         );
+
+        if (this.isCancellationRequested()) {
+          finalAnswer = this.buildStopMessage();
+          break;
+        }
 
         // Check for API errors first
         if (!response.success) {
@@ -4070,8 +4190,14 @@ We'll add more features after this core version works.`;
 
           // Execute tools (could parallelize file operations)
           const toolResults: string[] = [];
+          let stopRequestedInToolLoop = false;
 
           for (const toolCall of validatedToolCalls) {
+            if (this.isCancellationRequested()) {
+              stopRequestedInToolLoop = true;
+              break;
+            }
+
             try {
               const tool = tools[toolCall.function.name];
               if (!tool) {
@@ -4666,9 +4792,6 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 // Track files for self-critique at end
                 this.filesGeneratedThisSession.push({ path: args.path, content: args.content });
                 
-                // Emit progress event
-                this.emit('file-modified', { path: args.path, action: 'write' });
-                
                 // Verify the tool result actually achieved the goal
                 try {
                   const verification = await verifyToolResult(
@@ -4892,7 +5015,17 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 }
               }
               // === END ERROR KNOWLEDGE ===
+              this.emit('step-complete', {
+                type: toolCall.function.name,
+                title: `${toolCall.function.name}(${args?.path || args?.command || '...'})`,
+                success: false
+              });
             }
+          }
+
+          if (stopRequestedInToolLoop) {
+            finalAnswer = this.buildStopMessage();
+            break;
           }
           
           // Add continuation prompt
@@ -4987,6 +5120,11 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
 
       } catch (error: any) {
         console.error('[Agent] Loop error:', error);
+
+        if (this.isCancellationRequested()) {
+          finalAnswer = this.buildStopMessage();
+          break;
+        }
 
         // Check for credit/billing errors that require immediate stop
         if (error.message.includes('credit') || error.message.includes('billing') ||
