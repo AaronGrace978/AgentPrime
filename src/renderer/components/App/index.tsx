@@ -108,7 +108,7 @@ function App() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'file' | 'folder'>('file');
-  const [composerOpen, setComposerOpen] = useState(true);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [useSplitView, setUseSplitView] = useState(false);
