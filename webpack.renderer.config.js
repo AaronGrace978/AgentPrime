@@ -56,7 +56,8 @@ module.exports = {
     }),
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'renderer/css', to: 'css' }
+        { from: 'renderer/css', to: 'css' },
+        { from: 'node_modules/monaco-editor/min', to: 'monaco-editor/min' }
       ]
     })
   ],

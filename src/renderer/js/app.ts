@@ -4,8 +4,12 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { loader } from '@monaco-editor/react';
 import App from '../components/App';
 import '../styles.css';
+
+// Use locally bundled Monaco instead of CDN (CSP blocks external scripts)
+loader.config({ paths: { vs: './monaco-editor/min/vs' } });
 
 // Main app initialization
 document.addEventListener('DOMContentLoaded', () => {
