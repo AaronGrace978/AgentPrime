@@ -50,7 +50,7 @@ export class Controls {
     });
   }
 
-  public update(delta: number): void {
+  public update(): void {
     // Update camera rotation
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.mouseX;

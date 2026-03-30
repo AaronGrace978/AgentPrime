@@ -1,6 +1,8 @@
 {
+  "id": "nextjs-fullstack",
   "name": "Next.js Full-Stack",
   "version": "1.0.0",
+  "postCreate": ["npm install"],
   "directories": [
     "src/app",
     "src/app/api",

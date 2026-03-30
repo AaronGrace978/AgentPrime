@@ -1,11 +1,10 @@
 use clap::{Parser, Subcommand};
 use colored::*;
 
-mod lib;
-use lib::{greet, get_info};
+use {{packageName}}::{greet, get_info};
 
 #[derive(Parser)]
-#[command(name = "{{projectName}}")]
+#[command(name = "{{packageName}}")]
 #[command(author = "{{author}}")]
 #[command(version = "0.1.0")]
 #[command(about = "{{description}}", long_about = None)]

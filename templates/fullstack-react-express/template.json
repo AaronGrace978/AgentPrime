@@ -1,5 +1,11 @@
 {
   "id": "fullstack-react-express",
+  "name": "React + Express",
+  "postCreate": [
+    "npm install (root)",
+    "npm install (frontend)",
+    "npm install (backend)"
+  ],
   "files": [
     { "path": "package.json", "template": "package.json" },
     { "path": "README.md", "template": "README.md" },

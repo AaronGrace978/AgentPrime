@@ -22,8 +22,9 @@
     "test:unit": "jest --runInBand",
     "test:integration": "jest --testPathPatterns=tests/integration --passWithNoTests",
     "test:e2e": "playwright test",
+    "test:templates": "npx tsx scripts/template-smoke-test.ts",
     "test:performance": "jest --testPathPatterns=tests/core/performance --passWithNoTests",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e && npm run test:templates",
     "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
     "typecheck": "tsc --noEmit",
     "dist": "npm run build && electron-builder",
@@ -127,6 +128,13 @@
       {
         "from": "backend/dist/",
         "to": "backend/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "templates/",
+        "to": "templates/",
         "filter": [
           "**/*"
         ]

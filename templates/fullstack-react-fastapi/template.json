@@ -1,5 +1,10 @@
 {
   "id": "fullstack-react-fastapi",
+  "name": "React + FastAPI",
+  "postCreate": [
+    "npm install (frontend)",
+    "python environment setup (backend)"
+  ],
   "files": [
     { "path": "README.md", "template": "README.md" },
     { "path": ".gitignore", "template": ".gitignore" },

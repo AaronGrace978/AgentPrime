@@ -1,5 +1,5 @@
 [package]
-name = "{{projectName}}"
+name = "{{packageName}}"
 version = "0.1.0"
 edition = "2021"
 authors = ["{{author}}"]
@@ -15,5 +15,5 @@ assert_cmd = "2.0"
 predicates = "3.0"
 
 [[bin]]
-name = "{{projectName}}"
+name = "{{packageName}}"
 path = "src/main.rs"

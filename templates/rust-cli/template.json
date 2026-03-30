@@ -1,6 +1,9 @@
 {
+  "id": "rust-cli",
   "name": "Rust CLI",
   "version": "1.0.0",
+  "postCreate": ["cargo build"],
+  "requirements": ["Rust toolchain (rustup)"],
   "directories": [
     "src"
   ],

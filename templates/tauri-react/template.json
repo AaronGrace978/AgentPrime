@@ -1,5 +1,8 @@
 {
   "id": "tauri-react",
+  "name": "Tauri + React",
+  "postCreate": ["npm install"],
+  "requirements": ["Rust toolchain (rustup)", "Node.js 18+"],
   "files": [
     { "path": "package.json", "template": "package.json" },
     { "path": "tsconfig.json", "template": "tsconfig.json" },
@@ -14,13 +17,13 @@
     { "path": "src-tauri/Cargo.toml", "template": "src-tauri/Cargo.toml" },
     { "path": "src-tauri/build.rs", "template": "src-tauri/build.rs" },
     { "path": "src-tauri/src/main.rs", "template": "src-tauri/src/main.rs" },
-    { "path": "icons/README.md", "template": "icons/README.md" },
+    { "path": "src-tauri/icons/README.md", "template": "icons/README.md" },
     { "path": ".gitignore", "template": ".gitignore" }
   ],
   "directories": [
     "src",
     "src-tauri",
     "src-tauri/src",
-    "icons"
+    "src-tauri/icons"
   ]
 }

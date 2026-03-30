@@ -1,6 +1,8 @@
 {
+  "id": "sveltekit",
   "name": "SvelteKit",
   "version": "1.0.0",
+  "postCreate": ["npm install"],
   "directories": [
     "src",
     "src/routes",

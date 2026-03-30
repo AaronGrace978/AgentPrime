@@ -739,7 +739,11 @@ app.whenReady().then(async () => {
       // In production, templates are bundled with the app
       let templatesPath: string;
       if (app.isPackaged) {
-        templatesPath = path.join(path.dirname(process.execPath), 'templates');
+        const resourcesTemplatesPath = path.join(process.resourcesPath, 'templates');
+        const executableTemplatesPath = path.join(path.dirname(process.execPath), 'templates');
+        templatesPath = fs.existsSync(resourcesTemplatesPath)
+          ? resourcesTemplatesPath
+          : executableTemplatesPath;
       } else {
         // Development: go up two levels from dist/main to project root
         templatesPath = path.join(__dirname, '../..', 'templates');

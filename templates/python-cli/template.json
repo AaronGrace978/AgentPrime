@@ -1,6 +1,9 @@
 {
+  "id": "python-cli",
   "name": "Python CLI Tool",
   "version": "1.0.0",
+  "postCreate": ["python environment setup"],
+  "requirements": ["Python 3.9+"],
   "directories": [
     "src",
     "tests"

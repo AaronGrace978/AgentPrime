@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"{{projectName}}/internal/models"
+	"{{packageName}}/internal/models"
 )
 
 var items = []models.Item{

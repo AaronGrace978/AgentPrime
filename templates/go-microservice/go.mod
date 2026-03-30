@@ -1,4 +1,4 @@
-module {{projectName}}
+module {{packageName}}
 
 go 1.21
 

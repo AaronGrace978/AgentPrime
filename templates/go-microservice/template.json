@@ -1,6 +1,9 @@
 {
+  "id": "go-microservice",
   "name": "Go Microservice",
   "version": "1.0.0",
+  "postCreate": ["go mod tidy"],
+  "requirements": ["Go 1.21+"],
   "directories": [
     "cmd/server",
     "internal/handlers",

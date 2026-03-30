@@ -183,6 +183,7 @@ npm run test:coverage
 npm run test:unit
 npm run test:integration
 npm run test:e2e
+npm run test:templates
 npm run test:performance
 npm run test:all
 

@@ -5,10 +5,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import * as zlib from 'zlib';
+import { spawn, spawnSync } from 'child_process';
+import { z } from 'zod';
 import { sanitizeFolderName } from '../security/ipcValidation';
 
 interface TemplateRegistry {
+  version?: string;
   templates: Template[];
   categories: Category[];
 }
@@ -19,18 +22,27 @@ interface Template {
   description?: string;
   category?: string;
   tags?: string[];
+  icon?: string;
+  variables?: Array<{ name: string; label: string; default?: string }>;
+  postCreate?: string[];
+  requirements?: string[];
 }
 
 interface Category {
   id: string;
   name: string;
   description?: string;
+  icon?: string;
 }
 
 interface TemplateDefinition {
+  id?: string;
+  name?: string;
+  version?: string;
   files?: TemplateFile[];
   directories?: string[];
   postCreate?: string[];
+  requirements?: string[];
 }
 
 interface TemplateFile {
@@ -46,12 +58,75 @@ interface CreateProjectResult {
   postCreate: string[];
   dependenciesInstalled?: boolean;
   installOutput?: string;
+  stepResults?: PostCreateStepResult[];
 }
 
 interface Variables {
   projectName: string;
+  author?: string;
+  description?: string;
   [key: string]: any;
 }
+
+interface TemplateContext extends Variables {
+  originalProjectName: string;
+  projectDirName: string;
+  packageName: string;
+  currentYear: string;
+}
+
+interface PostCreateStepResult {
+  step: string;
+  cwd: string;
+  success: boolean;
+  output: string;
+}
+
+const TemplateVariableSchema = z.object({
+  name: z.string().min(1),
+  label: z.string().min(1),
+  default: z.string().optional()
+}).strict();
+
+const TemplateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  icon: z.string().optional(),
+  variables: z.array(TemplateVariableSchema).optional(),
+  postCreate: z.array(z.string()).optional(),
+  requirements: z.array(z.string()).optional()
+}).strict();
+
+const CategorySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  icon: z.string().optional()
+}).strict();
+
+const TemplateRegistrySchema = z.object({
+  version: z.string().optional(),
+  templates: z.array(TemplateSchema),
+  categories: z.array(CategorySchema)
+}).strict();
+
+const TemplateFileSchema = z.object({
+  template: z.string().min(1),
+  path: z.string().min(1)
+}).strict();
+
+const TemplateDefinitionSchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  version: z.string().optional(),
+  files: z.array(TemplateFileSchema).default([]),
+  directories: z.array(z.string()).optional(),
+  postCreate: z.array(z.string()).optional(),
+  requirements: z.array(z.string()).optional()
+}).strict();
 
 class TemplateEngine {
   private templatesDir: string;
@@ -60,6 +135,53 @@ class TemplateEngine {
   constructor(templatesDir: string) {
     this.templatesDir = templatesDir;
     console.log(`[TemplateEngine] Initialized with templates directory: ${templatesDir}`);
+  }
+
+  private formatSchemaError(error: z.ZodError): string {
+    return error.issues
+      .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+      .join('; ');
+  }
+
+  private validateRegistry(parsed: unknown): TemplateRegistry {
+    const registry = TemplateRegistrySchema.parse(parsed) as TemplateRegistry;
+    const templateIds = new Set<string>();
+    const categoryIds = new Set(registry.categories.map((category) => category.id));
+
+    for (const template of registry.templates) {
+      if (templateIds.has(template.id)) {
+        throw new Error(`Duplicate template id in registry: ${template.id}`);
+      }
+      templateIds.add(template.id);
+
+      if (template.category && !categoryIds.has(template.category)) {
+        throw new Error(`Template '${template.id}' references unknown category '${template.category}'`);
+      }
+    }
+
+    return registry;
+  }
+
+  private validateTemplateDefinition(templateId: string, template: Template, parsed: unknown): TemplateDefinition {
+    const definition = TemplateDefinitionSchema.parse(parsed) as TemplateDefinition;
+
+    if (definition.id && definition.id !== templateId) {
+      throw new Error(`Template '${templateId}' has mismatched template.json id '${definition.id}'`);
+    }
+
+    if (definition.name && definition.name !== template.name) {
+      throw new Error(`Template '${templateId}' has mismatched template.json name '${definition.name}'`);
+    }
+
+    if (definition.postCreate && template.postCreate && JSON.stringify(definition.postCreate) !== JSON.stringify(template.postCreate)) {
+      throw new Error(`Template '${templateId}' has mismatched postCreate steps between registry and template.json`);
+    }
+
+    if (definition.requirements && template.requirements && JSON.stringify(definition.requirements) !== JSON.stringify(template.requirements)) {
+      throw new Error(`Template '${templateId}' has mismatched requirements between registry and template.json`);
+    }
+
+    return definition;
   }
 
   /**
@@ -76,14 +198,16 @@ class TemplateEngine {
     }
 
     try {
-      const parsed = JSON.parse(fs.readFileSync(registryPath, 'utf-8')) as TemplateRegistry;
-      this.registry = parsed;
-      const templateCount = parsed.templates ? parsed.templates.length : 0;
-      const categoryCount = parsed.categories ? parsed.categories.length : 0;
+      const parsed = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+      const validated = this.validateRegistry(parsed);
+      this.registry = validated;
+      const templateCount = validated.templates ? validated.templates.length : 0;
+      const categoryCount = validated.categories ? validated.categories.length : 0;
       console.log(`[TemplateEngine] Registry loaded: ${templateCount} templates, ${categoryCount} categories`);
-      return parsed;
+      return validated;
     } catch (e: any) {
-      const error = `Failed to parse registry JSON: ${e.message}`;
+      const details = e instanceof z.ZodError ? this.formatSchemaError(e) : e.message;
+      const error = `Failed to parse registry JSON: ${details}`;
       console.error(`[TemplateEngine] ERROR: ${error}`);
       throw new Error(error);
     }
@@ -126,13 +250,372 @@ class TemplateEngine {
     return template;
   }
 
+  private loadTemplateDefinition(templateId: string, template: Template): TemplateDefinition {
+    const templateDir = path.join(this.templatesDir, templateId);
+    const templateJsonPath = path.join(templateDir, 'template.json');
+
+    if (!fs.existsSync(templateJsonPath)) {
+      throw new Error(`Template definition not found for '${templateId}' at ${templateJsonPath}`);
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(templateJsonPath, 'utf-8'));
+      return this.validateTemplateDefinition(templateId, template, parsed);
+    } catch (e: any) {
+      const details = e instanceof z.ZodError ? this.formatSchemaError(e) : e.message;
+      throw new Error(`Failed to parse template.json: ${details}`);
+    }
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private sanitizePackageName(name: string): string {
+    const normalized = name
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-+/g, '-');
+
+    return normalized || 'app';
+  }
+
+  private buildTemplateContext(variables: Variables): TemplateContext {
+    const originalProjectName = String(variables.projectName || '').trim();
+    const projectDirName = sanitizeFolderName(originalProjectName);
+    const projectName = projectDirName || 'untitled';
+    const packageName = this.sanitizePackageName(projectName);
+    const author = typeof variables.author === 'string' && variables.author.trim()
+      ? variables.author.trim()
+      : 'Developer';
+    const description = typeof variables.description === 'string'
+      ? variables.description.trim()
+      : '';
+
+    return {
+      ...variables,
+      originalProjectName,
+      projectName,
+      projectDirName: projectName,
+      packageName,
+      author,
+      description,
+      currentYear: new Date().getFullYear().toString()
+    };
+  }
+
+  private getUniqueDirectories(filePaths: string[], fileName: string): string[] {
+    const dirs = new Set<string>();
+
+    for (const filePath of filePaths) {
+      if (path.basename(filePath) !== fileName) continue;
+      const dir = path.dirname(filePath);
+      dirs.add(dir === '.' ? '' : dir);
+    }
+
+    return [...dirs];
+  }
+
+  private isLikelyBinary(buffer: Buffer): boolean {
+    const sample = buffer.subarray(0, Math.min(buffer.length, 1024));
+    for (const byte of sample) {
+      if (byte === 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private ensureProjectDirectory(projectPath: string): void {
+    if (fs.existsSync(projectPath)) {
+      const existingEntries = fs.readdirSync(projectPath);
+      if (existingEntries.length > 0) {
+        throw new Error(`Target directory already exists and is not empty: ${projectPath}`);
+      }
+      return;
+    }
+
+    fs.mkdirSync(projectPath, { recursive: true });
+  }
+
+  private resolvePythonCommand(): { command: string; prefixArgs: string[] } | null {
+    const candidates: Array<{ command: string; prefixArgs: string[] }> = process.platform === 'win32'
+      ? [
+          { command: 'py', prefixArgs: ['-3'] },
+          { command: 'python', prefixArgs: [] },
+          { command: 'python3', prefixArgs: [] }
+        ]
+      : [
+          { command: 'python3', prefixArgs: [] },
+          { command: 'python', prefixArgs: [] }
+        ];
+
+    for (const candidate of candidates) {
+      const result = spawnSync(candidate.command, [...candidate.prefixArgs, '--version'], {
+        shell: true,
+        stdio: 'ignore'
+      });
+      if (result.status === 0) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private resolveScopedPath(projectPath: string, scope?: string): string {
+    const normalizedScope = (scope || '').trim().toLowerCase();
+    if (!normalizedScope || normalizedScope === '.' || normalizedScope === 'root') {
+      return projectPath;
+    }
+
+    const scopedPath = path.resolve(projectPath, scope || '');
+    const relative = path.relative(projectPath, scopedPath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error(`Post-create scope escapes project directory: ${scope}`);
+    }
+
+    return scopedPath;
+  }
+
+  private async runCommand(
+    command: string,
+    args: string[],
+    cwd: string,
+    label: string,
+    timeoutMs = 10 * 60 * 1000
+  ): Promise<{ success: boolean; output: string }> {
+    return new Promise((resolve) => {
+      let output = '';
+      let errorOutput = '';
+      let settled = false;
+
+      const child = spawn(command, args, {
+        cwd,
+        shell: true,
+        env: { ...process.env }
+      });
+
+      const finish = (result: { success: boolean; output: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(result);
+      };
+
+      child.stdout?.on('data', (data: Buffer) => {
+        output += data.toString();
+      });
+
+      child.stderr?.on('data', (data: Buffer) => {
+        errorOutput += data.toString();
+      });
+
+      child.on('close', (code: number | null) => {
+        if (code === 0) {
+          finish({ success: true, output: output || errorOutput || `${label} completed successfully` });
+        } else {
+          finish({ success: false, output: errorOutput || output || `${label} failed with code ${code}` });
+        }
+      });
+
+      child.on('error', (err: Error) => {
+        finish({ success: false, output: `Failed to run ${label}: ${err.message}` });
+      });
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        finish({ success: false, output: `${label} timed out after ${Math.round(timeoutMs / 60000)} minutes` });
+      }, timeoutMs);
+    });
+  }
+
+  private resolveDeclaredPostCreate(template: Template, templateDef: TemplateDefinition): string[] {
+    return templateDef.postCreate || template.postCreate || [];
+  }
+  private createPngChunk(type: string, data: Buffer): Buffer {
+    const typeBuffer = Buffer.from(type, 'ascii');
+    const chunk = Buffer.concat([typeBuffer, data]);
+    let crc = 0xffffffff;
+
+    for (const byte of chunk) {
+      crc ^= byte;
+      for (let i = 0; i < 8; i++) {
+        if ((crc & 1) !== 0) {
+          crc = (crc >>> 1) ^ 0xedb88320;
+        } else {
+          crc >>>= 1;
+        }
+      }
+    }
+
+    crc = (crc ^ 0xffffffff) >>> 0;
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length, 0);
+    const crcBuffer = Buffer.alloc(4);
+    crcBuffer.writeUInt32BE(crc, 0);
+
+    return Buffer.concat([length, typeBuffer, data, crcBuffer]);
+  }
+
+  private createMinimalPngBuffer(): Buffer {
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(1, 0);
+    ihdr.writeUInt32BE(1, 4);
+    ihdr.writeUInt8(8, 8);
+    ihdr.writeUInt8(6, 9);
+    ihdr.writeUInt8(0, 10);
+    ihdr.writeUInt8(0, 11);
+    ihdr.writeUInt8(0, 12);
+
+    const pixelData = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x00]);
+    const compressed = zlib.deflateSync(pixelData);
+
+    return Buffer.concat([
+      signature,
+      this.createPngChunk('IHDR', ihdr),
+      this.createPngChunk('IDAT', compressed),
+      this.createPngChunk('IEND', Buffer.alloc(0))
+    ]);
+  }
+
+  private createMinimalIcoBuffer(): Buffer {
+    const header = Buffer.alloc(6);
+    header.writeUInt16LE(0, 0);
+    header.writeUInt16LE(1, 2);
+    header.writeUInt16LE(1, 4);
+
+    const bitmapHeader = Buffer.alloc(40);
+    bitmapHeader.writeUInt32LE(40, 0);
+    bitmapHeader.writeInt32LE(1, 4);
+    bitmapHeader.writeInt32LE(2, 8);
+    bitmapHeader.writeUInt16LE(1, 12);
+    bitmapHeader.writeUInt16LE(32, 14);
+    bitmapHeader.writeUInt32LE(0, 16);
+    bitmapHeader.writeUInt32LE(4, 20);
+    bitmapHeader.writeInt32LE(0, 24);
+    bitmapHeader.writeInt32LE(0, 28);
+    bitmapHeader.writeUInt32LE(0, 32);
+    bitmapHeader.writeUInt32LE(0, 36);
+
+    const pixel = Buffer.from([0x00, 0x00, 0x00, 0x00]);
+    const mask = Buffer.from([0x00, 0x00, 0x00, 0x00]);
+    const dib = Buffer.concat([bitmapHeader, pixel, mask]);
+
+    const directoryEntry = Buffer.alloc(16);
+    directoryEntry.writeUInt8(1, 0);
+    directoryEntry.writeUInt8(1, 1);
+    directoryEntry.writeUInt8(0, 2);
+    directoryEntry.writeUInt8(0, 3);
+    directoryEntry.writeUInt16LE(1, 4);
+    directoryEntry.writeUInt16LE(32, 6);
+    directoryEntry.writeUInt32LE(dib.length, 8);
+    directoryEntry.writeUInt32LE(22, 12);
+
+    return Buffer.concat([header, directoryEntry, dib]);
+  }
+  private ensureTauriIcons(projectPath: string): string[] {
+    const iconsDir = path.join(projectPath, 'src-tauri', 'icons');
+    fs.mkdirSync(iconsDir, { recursive: true });
+
+    const png = this.createMinimalPngBuffer();
+    const ico = this.createMinimalIcoBuffer();
+    const created: string[] = [];
+    const assets: Array<{ relativePath: string; buffer: Buffer }> = [
+      { relativePath: path.join('src-tauri', 'icons', '32x32.png'), buffer: png },
+      { relativePath: path.join('src-tauri', 'icons', '128x128.png'), buffer: png },
+      { relativePath: path.join('src-tauri', 'icons', '128x128@2x.png'), buffer: png },
+      { relativePath: path.join('src-tauri', 'icons', 'icon.ico'), buffer: ico }
+    ];
+
+    for (const asset of assets) {
+      const targetPath = path.join(projectPath, asset.relativePath);
+      if (!fs.existsSync(targetPath)) {
+        fs.writeFileSync(targetPath, asset.buffer);
+        created.push(asset.relativePath.replace(/\\/g, '/'));
+      }
+    }
+
+    return created;
+  }
+
+  private ensureGeneratedAssets(templateId: string, projectPath: string): string[] {
+    if (templateId === 'tauri-react') {
+      return this.ensureTauriIcons(projectPath);
+    }
+
+    return [];
+  }
+
+  private async executePostCreateStep(step: string, projectPath: string): Promise<PostCreateStepResult> {
+    const match = step.match(/^(.*?)(?:\s+\(([^)]+)\))?$/);
+    const baseStep = match?.[1]?.trim().toLowerCase() || step.trim().toLowerCase();
+    const scope = match?.[2];
+    const cwd = this.resolveScopedPath(projectPath, scope);
+
+    let result: { success: boolean; output: string };
+    if (baseStep === 'npm install') {
+      result = await this.installNodeDependencies(cwd);
+    } else if (baseStep === 'python environment setup') {
+      result = await this.installPythonDependencies(cwd);
+    } else if (baseStep === 'go mod tidy') {
+      result = await this.runCommand('go', ['mod', 'tidy'], cwd, 'go mod tidy');
+    } else if (baseStep === 'cargo build') {
+      result = await this.runCommand('cargo', ['build'], cwd, 'cargo build');
+    } else {
+      result = await this.runCommand(step, [], cwd, step);
+    }
+
+    return {
+      step,
+      cwd,
+      success: result.success,
+      output: result.output
+    };
+  }
+
+  private async executePostCreateSteps(
+    template: Template,
+    templateDef: TemplateDefinition,
+    projectPath: string,
+    files: TemplateFile[]
+  ): Promise<{ success: boolean; output: string; stepResults: PostCreateStepResult[] }> {
+    const steps = this.resolveDeclaredPostCreate(template, templateDef);
+    const stepResults: PostCreateStepResult[] = [];
+
+    if (steps.length === 0) {
+      const inferred = await this.installTemplateDependencies(projectPath, files);
+      return {
+        success: inferred.success,
+        output: inferred.output,
+        stepResults
+      };
+    }
+
+    for (const step of steps) {
+      const stepResult = await this.executePostCreateStep(step, projectPath);
+      stepResults.push(stepResult);
+      if (!stepResult.success) {
+        throw new Error(`Post-create step failed: ${step}\n${stepResult.output}`);
+      }
+    }
+
+    return {
+      success: true,
+      output: stepResults.map((result) => `[${result.step}] ${result.cwd}\n${result.output}`).join('\n\n'),
+      stepResults
+    };
+  }
+
   /**
    * Substitute variables in content
    */
   substituteVariables(content: string, variables: Variables): string {
     let result = content;
     for (const [key, value] of Object.entries(variables)) {
-      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      const regex = new RegExp(`\\{\\{${this.escapeRegExp(key)}\\}\\}`, 'g');
       result = result.replace(regex, String(value));
     }
     return result;
@@ -153,37 +636,20 @@ class TemplateEngine {
     }
 
     const templateDir = path.join(this.templatesDir, templateId);
-    const templateJsonPath = path.join(templateDir, 'template.json');
+    const templateDef = this.loadTemplateDefinition(templateId, template);
     console.log(`[TemplateEngine] Template directory: ${templateDir}`);
-    console.log(`[TemplateEngine] Template definition path: ${templateJsonPath}`);
+    console.log(`[TemplateEngine] Template definition loaded: ${templateDef.files?.length || 0} files, ${templateDef.directories?.length || 0} directories`);
 
-    if (!fs.existsSync(templateJsonPath)) {
-      const error = `Template definition not found for '${templateId}' at ${templateJsonPath}`;
-      console.error(`[TemplateEngine] ERROR: ${error}`);
-      throw new Error(error);
-    }
-
-    let templateDef: TemplateDefinition;
-    try {
-      templateDef = JSON.parse(fs.readFileSync(templateJsonPath, 'utf-8'));
-      console.log(`[TemplateEngine] Template definition loaded: ${templateDef.files?.length || 0} files, ${templateDef.directories?.length || 0} directories`);
-    } catch (e: any) {
-      const error = `Failed to parse template.json: ${e.message}`;
-      console.error(`[TemplateEngine] ERROR: ${error}`);
-      throw new Error(error);
-    }
-
-    // Sanitize project name to prevent invalid folder names
-    const safeProjectName = sanitizeFolderName(variables.projectName);
-    console.log(`[TemplateEngine] Original project name: "${variables.projectName}" -> Sanitized: "${safeProjectName}"`);
+    const templateContext = this.buildTemplateContext(variables);
+    console.log(`[TemplateEngine] Original project name: "${templateContext.originalProjectName}" -> Sanitized: "${templateContext.projectDirName}"`);
     
-    const projectPath = path.join(targetDir, safeProjectName);
+    const projectPath = path.join(targetDir, templateContext.projectDirName);
     console.log(`[TemplateEngine] Project will be created at: ${projectPath}`);
 
     // Create project directory
     console.log(`[TemplateEngine] Creating project directory: ${projectPath}`);
     try {
-      fs.mkdirSync(projectPath, { recursive: true });
+      this.ensureProjectDirectory(projectPath);
       console.log(`[TemplateEngine] Project directory created`);
     } catch (e: any) {
       const error = `Failed to create project directory: ${e.message}`;
@@ -222,10 +688,14 @@ class TemplateEngine {
 
         if (fs.existsSync(sourcePath)) {
           try {
-            // Read, substitute variables, and write
-            let content = fs.readFileSync(sourcePath, 'utf-8');
-            content = this.substituteVariables(content, variables);
-            fs.writeFileSync(targetPath, content, 'utf-8');
+            const buffer = fs.readFileSync(sourcePath);
+            if (this.isLikelyBinary(buffer)) {
+              fs.writeFileSync(targetPath, buffer);
+            } else {
+              let content = buffer.toString('utf-8');
+              content = this.substituteVariables(content, templateContext);
+              fs.writeFileSync(targetPath, content, 'utf-8');
+            }
             createdFiles.push(file.path);
             console.log(`[TemplateEngine] Created file: ${file.path}`);
           } catch (e: any) {
@@ -233,69 +703,48 @@ class TemplateEngine {
             throw new Error(`Failed to create file ${file.path}: ${e.message}`);
           }
         } else {
-          console.warn(`[TemplateEngine] Warning: Template file not found: ${sourcePath}`);
+          throw new Error(`Template file not found: ${sourcePath}`);
         }
       }
     }
 
     // Generate .bat launcher files from package.json scripts
     console.log(`[TemplateEngine] Generating .bat launcher files`);
-    const batFiles = this.generateBatFiles(projectPath, variables);
+    const batFiles = this.generateBatFiles(projectPath, templateContext);
     if (batFiles.length > 0) {
       console.log(`[TemplateEngine] Generated ${batFiles.length} .bat files: ${batFiles.join(', ')}`);
     }
     createdFiles.push(...batFiles);
 
     // Generate .bat files for Python projects
-    const pythonBats = this.generatePythonBatFiles(projectPath, variables);
+    const pythonBats = this.generatePythonBatFiles(projectPath, templateContext);
     if (pythonBats.length > 0) {
       console.log(`[TemplateEngine] Generated ${pythonBats.length} Python .bat files: ${pythonBats.join(', ')}`);
     }
     createdFiles.push(...pythonBats);
 
-    // Auto-install dependencies
-    let dependenciesInstalled = false;
-    let installOutput = '';
-
-    // Check for Node.js project (package.json)
-    const packageJsonPath = path.join(projectPath, 'package.json');
-    if (fs.existsSync(packageJsonPath)) {
-      console.log(`[TemplateEngine] Node.js project detected, installing dependencies...`);
-      const nodeResult = await this.installNodeDependencies(projectPath);
-      dependenciesInstalled = nodeResult.success;
-      installOutput = nodeResult.output;
-      if (nodeResult.success) {
-        console.log(`[TemplateEngine] Node.js dependencies installed successfully`);
-      } else {
-        console.warn(`[TemplateEngine] Node.js dependency installation failed: ${nodeResult.output}`);
-      }
+    const generatedAssets = this.ensureGeneratedAssets(templateId, projectPath);
+    if (generatedAssets.length > 0) {
+      console.log(`[TemplateEngine] Generated ${generatedAssets.length} runtime assets: ${generatedAssets.join(', ')}`);
     }
+    createdFiles.push(...generatedAssets);
 
-    // Check for Python project (requirements.txt)
-    const requirementsPath = path.join(projectPath, 'requirements.txt');
-    if (fs.existsSync(requirementsPath)) {
-      console.log(`[TemplateEngine] Python project detected, setting up environment...`);
-      const pythonResult = await this.installPythonDependencies(projectPath);
-      // Only update if not already set by Node install, or if Python succeeded
-      if (!dependenciesInstalled || pythonResult.success) {
-        dependenciesInstalled = pythonResult.success;
-      }
-      installOutput += (installOutput ? '\n' : '') + pythonResult.output;
-      if (pythonResult.success) {
-        console.log(`[TemplateEngine] Python environment set up successfully`);
-      } else {
-        console.warn(`[TemplateEngine] Python setup failed: ${pythonResult.output}`);
-      }
-    }
+    const { success: dependenciesInstalled, output: installOutput, stepResults } = await this.executePostCreateSteps(
+      template,
+      templateDef,
+      projectPath,
+      templateDef.files || []
+    );
 
     const result: CreateProjectResult = {
       success: true,
       projectPath,
       template: templateId,
       filesCreated: createdFiles,
-      postCreate: templateDef.postCreate || [],
+      postCreate: templateDef.postCreate || template.postCreate || [],
       dependenciesInstalled,
-      installOutput
+      installOutput,
+      stepResults
     };
 
     console.log(`[TemplateEngine] Project creation completed successfully!`);
@@ -304,6 +753,49 @@ class TemplateEngine {
     console.log(`[TemplateEngine] Project path: ${projectPath}`);
 
     return result;
+  }
+
+  /**
+   * Install dependencies for all manifests declared by a template.
+   */
+  async installTemplateDependencies(
+    projectPath: string,
+    files: TemplateFile[]
+  ): Promise<{ success: boolean; output: string }> {
+    const outputs: string[] = [];
+    let allSucceeded = true;
+
+    const filePaths = files.map((file) => file.path);
+    const packageDirs = this.getUniqueDirectories(filePaths, 'package.json');
+    const requirementsDirs = this.getUniqueDirectories(filePaths, 'requirements.txt');
+
+    for (const dir of packageDirs) {
+      const targetPath = dir ? path.join(projectPath, dir) : projectPath;
+      console.log(`[TemplateEngine] Node.js project detected at ${targetPath}, installing dependencies...`);
+      const nodeResult = await this.installNodeDependencies(targetPath);
+      outputs.push(`[npm install] ${dir || '.'}\n${nodeResult.output}`);
+      allSucceeded = allSucceeded && nodeResult.success;
+    }
+
+    for (const dir of requirementsDirs) {
+      const targetPath = dir ? path.join(projectPath, dir) : projectPath;
+      console.log(`[TemplateEngine] Python project detected at ${targetPath}, setting up environment...`);
+      const pythonResult = await this.installPythonDependencies(targetPath);
+      outputs.push(`[python setup] ${dir || '.'}\n${pythonResult.output}`);
+      allSucceeded = allSucceeded && pythonResult.success;
+    }
+
+    if (outputs.length === 0) {
+      return {
+        success: true,
+        output: 'No automatic dependency installation steps were detected for this template.'
+      };
+    }
+
+    return {
+      success: allSucceeded,
+      output: outputs.join('\n\n')
+    };
   }
 
   /**
@@ -346,7 +838,13 @@ class TemplateEngine {
         console.log(`[TemplateEngine] npm: ${text.trim()}`);
       });
 
+      const timeout = setTimeout(() => {
+        npmProcess.kill();
+        resolve({ success: false, output: 'npm install timed out after 5 minutes' });
+      }, 5 * 60 * 1000);
+
       npmProcess.on('close', (code: number | null) => {
+        clearTimeout(timeout);
         if (code === 0) {
           console.log(`[TemplateEngine] npm install completed successfully`);
           resolve({ success: true, output: output || 'Dependencies installed successfully' });
@@ -357,15 +855,10 @@ class TemplateEngine {
       });
 
       npmProcess.on('error', (err: Error) => {
+        clearTimeout(timeout);
         console.error(`[TemplateEngine] npm install error: ${err.message}`);
         resolve({ success: false, output: `Failed to run npm install: ${err.message}` });
       });
-
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        npmProcess.kill();
-        resolve({ success: false, output: 'npm install timed out after 5 minutes' });
-      }, 5 * 60 * 1000);
     });
   }
 
@@ -384,31 +877,45 @@ class TemplateEngine {
     console.log(`[TemplateEngine] Setting up Python environment in ${projectPath}...`);
     
     return new Promise((resolve) => {
-      const isWindows = process.platform === 'win32';
       let output = '';
+      let settled = false;
+      let activeProcess: ReturnType<typeof spawn> | null = null;
       
       // First create venv
-      const pythonCmd = isWindows ? 'python' : 'python3';
+      const pythonRuntime = this.resolvePythonCommand();
+      if (!pythonRuntime) {
+        resolve({ success: false, output: 'Python runtime not found on PATH' });
+        return;
+      }
       const venvPath = path.join(projectPath, 'venv');
       
       if (fs.existsSync(venvPath)) {
         console.log(`[TemplateEngine] Virtual environment already exists`);
       }
       
-      const createVenv = spawn(pythonCmd, ['-m', 'venv', 'venv'], {
+      const createVenv = spawn(pythonRuntime.command, [...pythonRuntime.prefixArgs, '-m', 'venv', 'venv'], {
         cwd: projectPath,
         shell: true
       });
+      activeProcess = createVenv;
+
+      const finish = (result: { success: boolean; output: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(result);
+      };
 
       createVenv.on('close', (code) => {
         if (code !== 0) {
-          resolve({ success: false, output: 'Failed to create virtual environment' });
+          finish({ success: false, output: 'Failed to create virtual environment' });
           return;
         }
         
         console.log(`[TemplateEngine] Virtual environment created, installing dependencies...`);
         
         // Now install requirements
+        const isWindows = process.platform === 'win32';
         const pipPath = isWindows 
           ? path.join(projectPath, 'venv', 'Scripts', 'pip.exe')
           : path.join(projectPath, 'venv', 'bin', 'pip');
@@ -417,6 +924,7 @@ class TemplateEngine {
           cwd: projectPath,
           shell: true
         });
+        activeProcess = pipInstall;
 
         pipInstall.stdout?.on('data', (data: Buffer) => {
           output += data.toString();
@@ -429,26 +937,26 @@ class TemplateEngine {
         pipInstall.on('close', (pipCode) => {
           if (pipCode === 0) {
             console.log(`[TemplateEngine] Python dependencies installed successfully`);
-            resolve({ success: true, output: 'Python dependencies installed' });
+            finish({ success: true, output: output || 'Python dependencies installed' });
           } else {
             console.error(`[TemplateEngine] pip install failed`);
-            resolve({ success: false, output: output || 'pip install failed' });
+            finish({ success: false, output: output || 'pip install failed' });
           }
         });
 
         pipInstall.on('error', (err) => {
-          resolve({ success: false, output: `pip install error: ${err.message}` });
+          finish({ success: false, output: `pip install error: ${err.message}` });
         });
       });
 
       createVenv.on('error', (err) => {
-        resolve({ success: false, output: `Failed to create venv: ${err.message}` });
+        finish({ success: false, output: `Failed to create venv: ${err.message}` });
       });
 
       // Timeout after 5 minutes
-      setTimeout(() => {
-        createVenv.kill();
-        resolve({ success: false, output: 'Python setup timed out after 5 minutes' });
+      const timeout = setTimeout(() => {
+        activeProcess?.kill();
+        finish({ success: false, output: 'Python setup timed out after 5 minutes' });
       }, 5 * 60 * 1000);
     });
   }

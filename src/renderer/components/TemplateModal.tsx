@@ -41,7 +41,7 @@ const getTemplateBadge = (template: Template | null): string => {
 interface TemplateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (template: Template) => Promise<void>;
+  onCreateProject: (projectPath: string, template: Template, createResult: any) => Promise<void>;
   onSwitchToAIComposer?: (request: string) => void;
 }
 
@@ -54,6 +54,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [projectName, setProjectName] = useState('');
   const [projectLocation, setProjectLocation] = useState('');
+  const [authorName, setAuthorName] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +64,8 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
   const handleSelectTemplate = (template: Template) => {
     setSelectedTemplate(template);
     setProjectName(template.variables?.find((v: any) => v.name === 'projectName')?.default || '');
+    setAuthorName(template.variables?.find((v: any) => v.name === 'author')?.default || 'Developer');
+    setProjectDescription(template.variables?.find((v: any) => v.name === 'description')?.default || template.description || '');
     setError(null);
   };
 
@@ -109,8 +112,8 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
       // Create project variables
       const variables: Record<string, string> = {
         projectName: projectName.trim(),
-        author: 'Developer',
-        description: selectedTemplate.description
+        author: authorName.trim() || 'Developer',
+        description: projectDescription.trim() || selectedTemplate.description
       };
 
       setLoadingStatus('Creating project files...');
@@ -133,12 +136,14 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
         
         // Open the created project
         const projectPath = createResult.projectPath || `${location}/${projectName.trim()}`;
-        await onCreateProject(selectedTemplate);
+        await onCreateProject(projectPath, selectedTemplate, createResult);
         onClose();
         // Reset state
         setSelectedTemplate(null);
         setProjectName('');
         setProjectLocation('');
+        setAuthorName('');
+        setProjectDescription('');
         setLoadingStatus('');
       } else {
         setError(createResult.error || 'Failed to create project');
@@ -278,6 +283,30 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
                       Browse...
                     </button>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="project-author">Author:</label>
+                  <input
+                    id="project-author"
+                    type="text"
+                    value={authorName}
+                    onChange={(e) => setAuthorName(e.target.value)}
+                    placeholder="Developer"
+                    disabled={loading}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="project-description">Description:</label>
+                  <textarea
+                    id="project-description"
+                    value={projectDescription}
+                    onChange={(e) => setProjectDescription(e.target.value)}
+                    placeholder="Describe your project"
+                    disabled={loading}
+                    rows={3}
+                  />
                 </div>
 
                 {error && (

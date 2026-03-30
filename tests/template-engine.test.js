@@ -1,114 +1,52 @@
-/**
- * AgentPrime - Template Engine Tests
- * 
- * NOTE: These tests are currently pending migration to new TypeScript structure.
- * Original TemplateEngine has been moved to src/main/legacy/.
- */
-
+const fs = require('fs');
 const path = require('path');
 
-describe('Template Engine', () => {
-  describe('Variable Substitution', () => {
-    // Inline implementation for testing the pattern
-    function substituteVariables(content, variables) {
-      let result = content;
-      for (const [key, value] of Object.entries(variables)) {
-        const pattern = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-        result = result.replace(pattern, value);
-      }
-      return result;
+const templatesDir = path.resolve(__dirname, '../templates');
+const registryPath = path.join(templatesDir, 'registry.json');
+const registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+
+describe('Template Engine Contract', () => {
+  it('registry templates should map to existing template folders', () => {
+    for (const template of registry.templates) {
+      const templateDir = path.join(templatesDir, template.id);
+      const templateJsonPath = path.join(templateDir, 'template.json');
+
+      expect(fs.existsSync(templateDir)).toBe(true);
+      expect(fs.existsSync(templateJsonPath)).toBe(true);
     }
-
-    it('should replace single variable', () => {
-      const content = 'Hello {{name}}!';
-      const variables = { name: 'World' };
-      const result = substituteVariables(content, variables);
-      expect(result).toBe('Hello World!');
-    });
-
-    it('should replace multiple variables', () => {
-      const content = '{{greeting}} {{name}}! Welcome to {{project}}.';
-      const variables = {
-        greeting: 'Hello',
-        name: 'Developer',
-        project: 'AgentPrime'
-      };
-      const result = substituteVariables(content, variables);
-      expect(result).toBe('Hello Developer! Welcome to AgentPrime.');
-    });
-
-    it('should replace repeated variables', () => {
-      const content = '{{name}} loves {{name}}';
-      const variables = { name: 'Code' };
-      const result = substituteVariables(content, variables);
-      expect(result).toBe('Code loves Code');
-    });
-
-    it('should leave unknown variables unchanged', () => {
-      const content = 'Hello {{unknown}}!';
-      const variables = { name: 'World' };
-      const result = substituteVariables(content, variables);
-      expect(result).toBe('Hello {{unknown}}!');
-    });
-
-    it('should handle empty content', () => {
-      const result = substituteVariables('', { name: 'Test' });
-      expect(result).toBe('');
-    });
-
-    it('should handle empty variables', () => {
-      const content = 'No variables here';
-      const result = substituteVariables(content, {});
-      expect(result).toBe('No variables here');
-    });
   });
 
-  describe('Template Registry', () => {
-    it('should define expected registry structure', () => {
-      const mockRegistry = {
-        templates: [{ id: 'test', name: 'Test Template' }],
-        categories: ['test', 'frontend', 'backend']
-      };
-      
-      expect(mockRegistry.templates).toBeInstanceOf(Array);
-      expect(mockRegistry.categories).toContain('frontend');
-    });
+  it('every template.json should align with registry metadata', () => {
+    for (const template of registry.templates) {
+      const templateJsonPath = path.join(templatesDir, template.id, 'template.json');
+      const definition = JSON.parse(fs.readFileSync(templateJsonPath, 'utf-8'));
 
-    it('should find template by id', () => {
-      const templates = [
-        { id: 'react', name: 'React App' },
-        { id: 'vue', name: 'Vue App' }
-      ];
-      
-      const found = templates.find(t => t.id === 'react');
-      expect(found).toEqual({ id: 'react', name: 'React App' });
-    });
-
-    it('should return undefined for unknown template', () => {
-      const templates = [
-        { id: 'react', name: 'React App' }
-      ];
-      
-      const found = templates.find(t => t.id === 'unknown');
-      expect(found).toBeUndefined();
-    });
+      expect(definition.id).toBe(template.id);
+      expect(definition.name).toBe(template.name);
+      expect(Array.isArray(definition.files)).toBe(true);
+      expect(definition.files.length).toBeGreaterThan(0);
+      expect(definition.postCreate || []).toEqual(template.postCreate || []);
+      expect(definition.requirements || []).toEqual(template.requirements || []);
+    }
   });
 
-  describe('Template File Structure', () => {
-    it('should define required template.json fields', () => {
-      const validTemplate = {
-        id: 'example',
-        name: 'Example Template',
-        description: 'An example template for testing',
-        category: 'frontend',
-        files: ['index.html', 'style.css', 'main.js'],
-        variables: ['name', 'author']
-      };
-      
-      expect(validTemplate.id).toBeDefined();
-      expect(validTemplate.name).toBeDefined();
-      expect(validTemplate.files).toBeInstanceOf(Array);
-      expect(validTemplate.variables).toBeInstanceOf(Array);
-    });
+  it('should only reference source files that exist on disk', () => {
+    for (const template of registry.templates) {
+      const templateDir = path.join(templatesDir, template.id);
+      const definition = JSON.parse(fs.readFileSync(path.join(templateDir, 'template.json'), 'utf-8'));
+
+      for (const file of definition.files) {
+        const sourcePath = path.join(templateDir, file.template);
+        expect(fs.existsSync(sourcePath)).toBe(true);
+      }
+    }
+  });
+
+  it('should keep categories in sync with template metadata', () => {
+    const categoryIds = new Set(registry.categories.map((category) => category.id));
+
+    for (const template of registry.templates) {
+      expect(categoryIds.has(template.category)).toBe(true);
+    }
   });
 });

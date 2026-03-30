@@ -25,7 +25,7 @@ pip install -e ".[dev]"
 python -m src.cli --help
 
 # Or after installing
-{{projectName}} --help
+{{packageName}} --help
 ```
 
 ## Development

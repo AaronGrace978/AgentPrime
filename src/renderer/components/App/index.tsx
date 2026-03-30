@@ -899,11 +899,12 @@ function App() {
           <TemplateModal
             isOpen={templateModalOpen}
             onClose={() => setTemplateModalOpen(false)}
-            onCreateProject={async () => {
-              const result = await (window as any).agentAPI.selectDirectory();
-              if (result.success) {
-                await openFolder();
+            onCreateProject={async (projectPath, _template, createResult) => {
+              await loadDirectory(projectPath);
+              if (createResult?.dependenciesInstalled === false && createResult?.installOutput) {
+                toast.error('Project Created With Setup Warnings', createResult.installOutput);
               }
+              toast.success('Project Created', projectPath);
             }}
             onSwitchToAIComposer={(request) => {
               setTemplateModalOpen(false);

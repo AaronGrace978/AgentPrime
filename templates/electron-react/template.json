@@ -1,5 +1,7 @@
 {
   "id": "electron-react",
+  "name": "Electron + React",
+  "postCreate": ["npm install"],
   "files": [
     { "path": "package.json", "template": "package.json" },
     { "path": "tsconfig.json", "template": "tsconfig.json" },

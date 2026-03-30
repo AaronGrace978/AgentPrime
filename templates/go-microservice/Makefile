@@ -1,6 +1,6 @@
 .PHONY: build run test clean docker
 
-APP_NAME := {{projectName}}
+APP_NAME := {{packageName}}
 BUILD_DIR := ./bin
 
 build:

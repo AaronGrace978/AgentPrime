@@ -13,7 +13,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A modern Electron desktop application" }
       ],
-      "postCreate": ["cd {{projectName}} && npm install"]
+      "postCreate": ["npm install"]
     },
     {
       "id": "tauri-react",
@@ -27,7 +27,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A lightweight Tauri desktop application" }
       ],
-      "postCreate": ["cd {{projectName}} && npm install"],
+      "postCreate": ["npm install"],
       "requirements": ["Rust toolchain (rustup)", "Node.js 18+"]
     },
     {
@@ -42,10 +42,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A full-stack application with React and FastAPI" }
       ],
-      "postCreate": [
-        "cd {{projectName}}/frontend && npm install",
-        "cd {{projectName}}/backend && pip install -r requirements.txt"
-      ]
+      "postCreate": ["npm install (frontend)", "python environment setup (backend)"]
     },
     {
       "id": "fullstack-react-express",
@@ -59,11 +56,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A full-stack MERN application" }
       ],
-      "postCreate": [
-        "cd {{projectName}} && npm install",
-        "cd {{projectName}}/frontend && npm install",
-        "cd {{projectName}}/backend && npm install"
-      ]
+      "postCreate": ["npm install (root)", "npm install (frontend)", "npm install (backend)"]
     },
     {
       "id": "nextjs-fullstack",
@@ -77,7 +70,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A Next.js full-stack application" }
       ],
-      "postCreate": ["cd {{projectName}} && npm install"]
+      "postCreate": ["npm install"]
     },
     {
       "id": "vue-vite",
@@ -91,7 +84,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A Vue 3 application" }
       ],
-      "postCreate": ["cd {{projectName}} && npm install"]
+      "postCreate": ["npm install"]
     },
     {
       "id": "sveltekit",
@@ -105,7 +98,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A SvelteKit application" }
       ],
-      "postCreate": ["cd {{projectName}} && npm install"]
+      "postCreate": ["npm install"]
     },
     {
       "id": "python-cli",
@@ -119,10 +112,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A Python CLI tool" }
       ],
-      "postCreate": [
-        "cd {{projectName}} && python -m venv venv",
-        "cd {{projectName}} && pip install -r requirements.txt"
-      ],
+      "postCreate": ["python environment setup"],
       "requirements": ["Python 3.9+"]
     },
     {
@@ -137,7 +127,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A Go microservice" }
       ],
-      "postCreate": ["cd {{projectName}} && go mod tidy"],
+      "postCreate": ["go mod tidy"],
       "requirements": ["Go 1.21+"]
     },
     {
@@ -152,7 +142,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A Rust CLI tool" }
       ],
-      "postCreate": ["cd {{projectName}} && cargo build"],
+      "postCreate": ["cargo build"],
       "requirements": ["Rust toolchain (rustup)"]
     },
     {
@@ -167,7 +157,7 @@
         { "name": "author", "label": "Author", "default": "Developer" },
         { "name": "description", "label": "Description", "default": "A Three.js voxel game" }
       ],
-      "postCreate": ["cd {{projectName}} && npm install"]
+      "postCreate": ["npm install"]
     }
   ],
   "categories": [

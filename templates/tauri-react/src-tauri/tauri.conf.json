@@ -6,17 +6,18 @@
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'self'; form-action 'self';"
+    }
+  },
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
     "copyright": "Copyright © {{currentYear}} {{author}}. All rights reserved.",
-    "createUpdaterBundle": false,
-    "deb": {
-      "depends": []
-    },
+    "createUpdaterArtifacts": false,
     "externalBin": [],
     "icon": [],
-    "identifier": "com.{{projectName}}.app",
     "longDescription": "{{description}}",
     "macOS": {
       "entitlements": null,
@@ -34,15 +35,12 @@
       "timestampUrl": null
     }
   },
-  "identifier": "com.{{projectName}}.app",
+  "identifier": "com.{{packageName}}.app",
   "plugins": {
     "updater": {
       "active": false
     }
   },
   "productName": "{{projectName}}",
-  "security": {
-    "csp": "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' https: wss: ws:; object-src 'none'; base-uri 'self'; form-action 'self';"
-  },
   "version": "1.0.0"
 }

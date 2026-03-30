@@ -1,8 +1,6 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::Manager;
-
 // Tauri command - callable from JavaScript
 #[tauri::command]
 fn greet(name: &str) -> String {

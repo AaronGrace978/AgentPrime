@@ -18,13 +18,13 @@ cargo install --path .
 
 ```bash
 # Show help
-{{projectName}} --help
+{{packageName}} --help
 
 # Greet someone
-{{projectName}} greet --name "World"
+{{packageName}} greet --name "World"
 
 # Show info
-{{projectName}} info
+{{packageName}} info
 ```
 
 ## Development

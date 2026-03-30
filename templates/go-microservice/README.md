@@ -12,7 +12,7 @@ go run ./cmd/server
 
 # Or build and run
 make build
-./bin/{{projectName}}
+./bin/{{packageName}}
 ```
 
 Server starts at http://localhost:8080

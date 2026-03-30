@@ -4,6 +4,8 @@
  */
 
 import { IpcMain, Dialog, BrowserWindow, OpenDialogReturnValue } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 
 interface TemplateEngine {
   getTemplates(): any[];
@@ -65,7 +67,31 @@ export function register(deps: TemplateHandlersDeps): void {
     console.log(`[TemplateHandlers] template:create called - templateId: ${templateId}, targetDir: ${targetDir}`);
     console.log(`[TemplateHandlers] template:create variables:`, JSON.stringify(variables, null, 2));
     try {
-      const result = await templateEngine.createProject(templateId, targetDir, variables);
+      if (typeof templateId !== 'string' || !templateId.trim()) {
+        throw new Error('Template ID is required');
+      }
+      if (!templateEngine.getTemplate(templateId)) {
+        throw new Error(`Unknown template: ${templateId}`);
+      }
+      if (typeof targetDir !== 'string' || !targetDir.trim()) {
+        throw new Error('Target directory is required');
+      }
+
+      const normalizedTargetDir = path.resolve(targetDir);
+      if (!path.isAbsolute(normalizedTargetDir)) {
+        throw new Error('Target directory must be an absolute path');
+      }
+      if (!fs.existsSync(normalizedTargetDir) || !fs.statSync(normalizedTargetDir).isDirectory()) {
+        throw new Error(`Target directory does not exist: ${normalizedTargetDir}`);
+      }
+      if (!variables || typeof variables !== 'object') {
+        throw new Error('Template variables are required');
+      }
+      if (typeof variables.projectName !== 'string' || !variables.projectName.trim()) {
+        throw new Error('Project name is required');
+      }
+
+      const result = await templateEngine.createProject(templateId, normalizedTargetDir, variables);
       console.log(`[TemplateHandlers] template:create success - project created at: ${result.projectPath}`);
       return { success: true, ...result };
     } catch (e: any) {

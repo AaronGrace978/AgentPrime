@@ -12,6 +12,7 @@
     "module": "CommonJS",
     "target": "ES2022",
     "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "resolveJsonModule": true

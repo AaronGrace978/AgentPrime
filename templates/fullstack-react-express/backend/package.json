@@ -1,5 +1,5 @@
 {
-  "name": "{{projectName}}-backend",
+  "name": "{{packageName}}-backend",
   "version": "1.0.0",
   "type": "module",
   "scripts": {

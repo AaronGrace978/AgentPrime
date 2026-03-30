@@ -7,7 +7,6 @@ export class Game {
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
-  private world: World;
   private player: Player;
   private controls: Controls;
   private clock: THREE.Clock;
@@ -46,7 +45,7 @@ export class Game {
     this.scene.add(directionalLight);
 
     // World and player
-    this.world = new World(this.scene);
+    new World(this.scene);
     this.player = new Player(this.camera);
     this.controls = new Controls(this.camera, this.player);
 
@@ -68,7 +67,7 @@ export class Game {
     const delta = this.clock.getDelta();
     
     // Update controls and player
-    this.controls.update(delta);
+    this.controls.update();
     this.player.update(delta);
 
     // Render
