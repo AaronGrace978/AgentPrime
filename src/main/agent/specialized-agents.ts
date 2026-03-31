@@ -399,7 +399,7 @@ DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
 export const AGENT_CONFIGS: Record<AgentRole, AgentConfig> = {
   tool_orchestrator: {
     role: 'tool_orchestrator',
-    model: 'qwen3-coder:480b-cloud',  // CLOUD MODEL - POWERFUL
+    model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.2, // Low temperature = more Opus-like deterministic thinking
     maxTokens: 16384,
@@ -494,7 +494,7 @@ ${TOOL_CALL_FORMAT}`
 
   javascript_specialist: {
     role: 'javascript_specialist',
-    model: 'qwen3-coder:480b-cloud',  // CLOUD MODEL - EXCELLENT AT CODING
+    model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.3, // Slightly higher for creativity, but still Opus-like
     maxTokens: 16384,
@@ -706,7 +706,7 @@ ${TOOL_CALL_FORMAT}`
 
   python_specialist: {
     role: 'python_specialist',
-    model: 'qwen3-coder:480b-cloud',  // CLOUD MODEL - GREAT AT PYTHON
+    model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.3,
     maxTokens: 16384,
@@ -828,7 +828,7 @@ ${TOOL_CALL_FORMAT}`
 
   pipeline_specialist: {
     role: 'pipeline_specialist',
-    model: 'qwen3-coder:480b-cloud',  // CLOUD MODEL - GOOD FOR CONFIGS
+    model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.2,
     maxTokens: 8192,
@@ -1567,7 +1567,7 @@ export async function executeWithSpecialists(
   // without requiring paid API credits.
   const DEFAULT_MODEL_CHAIN = [
     { name: 'Qwen3-Coder-Next Cloud', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
-    { name: 'Qwen3-Coder 480b Cloud', provider: 'ollama', model: 'qwen3-coder:480b-cloud', tier: 'deep' },
+    { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
     { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
     { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },

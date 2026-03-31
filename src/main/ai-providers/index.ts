@@ -496,8 +496,56 @@ class AIProviderRouter {
    * Set the active provider and model
    */
   setActiveProvider(providerName: string | null, model: string | null = null): void {
-    this.activeProvider = providerName;
+    const inferredProvider = this.inferProviderForModel(model, providerName);
+    this.activeProvider = inferredProvider;
     this.activeModel = model;
+  }
+
+  /**
+   * Infer the most likely provider for a model identifier.
+   * This prevents stale UI settings from claiming "openai" while the model is clearly an Ollama cloud model.
+   */
+  inferProviderForModel(model: string | null | undefined, preferredProvider: string | null = null): string | null {
+    if (!model) {
+      return preferredProvider;
+    }
+
+    const normalized = model.trim().toLowerCase();
+    if (!normalized) {
+      return preferredProvider;
+    }
+
+    if (normalized.startsWith('openai/') || normalized.startsWith('gpt-') || normalized.startsWith('o1') || normalized.startsWith('o3')) {
+      return 'openai';
+    }
+
+    if (normalized.startsWith('anthropic/') || normalized.startsWith('claude-')) {
+      return 'anthropic';
+    }
+
+    if (normalized.startsWith('openrouter/')) {
+      return 'openrouter';
+    }
+
+    if (
+      normalized.startsWith('ollama/') ||
+      normalized.includes(':cloud') ||
+      normalized.includes('-cloud') ||
+      normalized.startsWith('qwen') ||
+      normalized.startsWith('deepseek') ||
+      normalized.startsWith('minimax') ||
+      normalized.startsWith('glm-') ||
+      normalized.startsWith('devstral') ||
+      normalized.startsWith('ministral') ||
+      normalized.startsWith('nemotron') ||
+      normalized.startsWith('kimi-') ||
+      normalized.startsWith('gemini-3') ||
+      normalized.startsWith('qwen2.5-coder')
+    ) {
+      return 'ollama';
+    }
+
+    return preferredProvider;
   }
 
   /**

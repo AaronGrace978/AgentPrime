@@ -80,6 +80,33 @@ export class Transaction {
   }
 
   /**
+   * Record a file change using an already-captured snapshot.
+   * This is used when the caller already knows the pre-write contents.
+   */
+  async recordFileChange(
+    filePath: string,
+    originalContent: string | null,
+    newContent: string,
+    existed: boolean
+  ): Promise<void> {
+    if (this.committed || this.rolledBack) {
+      throw new Error('Cannot record operation on committed or rolled back transaction');
+    }
+
+    const fullPath = path.resolve(this.workspacePath, filePath);
+    const operation: FileOperation = {
+      path: filePath,
+      fullPath,
+      originalContent,
+      newContent,
+      existed,
+      timestamp: Date.now()
+    };
+
+    this.operations.push(operation);
+  }
+
+  /**
    * Create a checkpoint for rollback purposes
    * Returns checkpoint ID for later reference
    */
@@ -272,6 +299,22 @@ export class TransactionManager {
     }
 
     await this.activeTransaction.recordWrite(filePath, newContent);
+  }
+
+  /**
+   * Record a file change from a known before/after snapshot.
+   */
+  async recordFileChange(
+    filePath: string,
+    originalContent: string | null,
+    newContent: string,
+    existed: boolean
+  ): Promise<void> {
+    if (!this.activeTransaction) {
+      return;
+    }
+
+    await this.activeTransaction.recordFileChange(filePath, originalContent, newContent, existed);
   }
 
   /**

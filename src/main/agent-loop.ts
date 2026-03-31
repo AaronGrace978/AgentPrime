@@ -2784,7 +2784,7 @@ interface ModelTier {
 // Default escalation chain - will be overridden by settings
 const DEFAULT_MODEL_CHAIN: ModelTier[] = [
   { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
-  { name: 'Deep', provider: 'ollama', model: 'qwen3-coder:480b-cloud', tier: 'deep' },
+  { name: 'Deep', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
   { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
 ];
 
@@ -3113,7 +3113,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     });
     
     // Initialize with context model
-    this.currentActiveModel = context.model || 'qwen3-coder:480b-cloud';
+    this.currentActiveModel = context.model || 'qwen3-coder-next:cloud';
 
     // Initialize validation pipeline
     this.initializeValidationPipeline();
@@ -3214,14 +3214,14 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
         { name: 'GPT-5.2', provider: 'openai', model: 'gpt-5.2', tier: 'premium' },
         { name: 'GPT-5.2 (Latest)', provider: 'openai', model: 'gpt-5.2-2025-12-11', tier: 'premium' },
-        { name: 'Ollama Fallback', provider: 'ollama', model: 'qwen3-coder:480b-cloud', tier: 'fallback' }
+        { name: 'Ollama Fallback', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'fallback' }
       ];
       console.log('[Agent] 📋 Configured OpenAI model escalation chain');
     } else {
       // Default to Ollama chain
       this.modelChain = [
         { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
-        { name: 'Deep', provider: 'ollama', model: 'qwen3-coder:480b-cloud', tier: 'deep' },
+        { name: 'Deep', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
         { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
       ];
       console.log('[Agent] 📋 Configured Ollama model escalation chain');
@@ -3974,7 +3974,7 @@ ${this.taskMode === TaskMode.ENHANCE ? `
 
       try {
         // Use current active model (may have been escalated)
-        const modelToUse = this.currentActiveModel || this.context.model || 'qwen3-coder:480b-cloud';
+        const modelToUse = this.currentActiveModel || this.context.model || 'qwen3-coder-next:cloud';
         const escalationInfo = this.escalationCount > 0 ? ` [escalated ${this.escalationCount}x]` : '';
         console.log(`[Agent] Iteration ${iteration}/${this.maxIterations}, model: ${modelToUse}${escalationInfo}, steps: ${this.completedSteps.length}`);
         

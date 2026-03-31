@@ -93,8 +93,8 @@ export function getModelLabel(provider: string, model: string): string {
 
 // Default brain configuration
 export const DEFAULT_BRAIN_CONFIG = {
-  fastModel: { provider: 'openai', model: 'gpt-5.4-mini', enabled: true },
-  deepModel: { provider: 'anthropic', model: 'claude-sonnet-4-6', enabled: true }
+  fastModel: { provider: 'ollama', model: 'minimax-m2.7:cloud', enabled: true },
+  deepModel: { provider: 'ollama', model: 'qwen3-coder-next:cloud', enabled: true }
 };
 
 // Default dual model state

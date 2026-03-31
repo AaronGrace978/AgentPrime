@@ -86,6 +86,10 @@ async function checkOllamaHealth(): Promise<{
   }
 }
 
+function resolveProviderForModel(model: string | undefined, preferredProvider: string | undefined): string {
+  return aiRouter.inferProviderForModel(model, preferredProvider || 'ollama') || preferredProvider || 'ollama';
+}
+
 // 🦖 DINO BUDDY: Conversation summarization for long sessions
 import { conversationSummarizer } from '../agent/conversation-summarizer';
 
@@ -306,8 +310,8 @@ export function register(deps: ChatHandlerDeps): void {
         
         // Get settings early for model/provider selection
         const agentSettings = getSettings();
-        const selectedModel = context.model || agentSettings?.activeModel || 'gpt-4o';
-        const activeProvider = agentSettings?.activeProvider || 'openai';
+        const selectedModel = context.model || agentSettings?.activeModel || 'qwen3-coder-next:cloud';
+        const activeProvider = resolveProviderForModel(selectedModel, agentSettings?.activeProvider || 'ollama');
         
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
         const isOllamaCloud = selectedModel?.includes('cloud') || 
@@ -728,9 +732,9 @@ Separate files with blank lines.
       
       // Get settings for provider configuration
       const settings = getSettings();
-      const activeProvider = settings?.activeProvider || 'ollama';
+      const activeProvider = resolveProviderForModel(context.model || settings?.activeModel, settings?.activeProvider || 'ollama');
       // Use model from context (UI selector) first, then fall back to settings
-      const activeModel = context.model || settings?.activeModel || 'gpt-4o';
+      const activeModel = context.model || settings?.activeModel || 'qwen3-coder-next:cloud';
       
       // Add system prompt as first message if provided
       const messagesWithSystem = systemPrompt 
@@ -891,8 +895,8 @@ Separate files with blank lines.
       
       // Get model and provider info for error context
       const settings = getSettings();
-      const activeProvider = settings?.activeProvider || 'openai';
-      const activeModel = context.model || settings?.activeModel || 'gpt-4o';
+      const activeModel = context.model || settings?.activeModel || 'qwen3-coder-next:cloud';
+      const activeProvider = resolveProviderForModel(activeModel, settings?.activeProvider || 'ollama');
       
       event.sender.send('chat-error', {
         requestId,

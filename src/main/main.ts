@@ -231,7 +231,7 @@ if (fs.existsSync(dotenvPath)) {
 
 // Dual Ollama Configuration
 // Cloud models can use various endpoints - check env vars or detect from model name
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder:480b-cloud';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder-next:cloud';
 const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'deepseek-v3.1:671b-cloud';
 // Ollama API keys from environment (primary + desktop fallback)
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
@@ -282,21 +282,21 @@ let settings: Settings = {
   inlineCompletions: true,
   dinoBuddyMode: false,
   confirmOnClose: true,  // Prevent accidental closes (can be disabled in settings)
-  activeProvider: 'openai',
-  activeModel: 'gpt-5.4',
+  activeProvider: 'ollama',
+  activeModel: 'qwen3-coder-next:cloud',
   dualOllamaEnabled: false,
   
-  // Dual Model System - OpenAI optimized for MIT hackathon
+  // Dual Model System - default to the same Ollama-first stack used by the agent runtime
   dualModelEnabled: true,
   dualModelConfig: {
     fastModel: {
-      provider: 'openai',
-      model: 'gpt-5.4-mini',
+      provider: 'ollama',
+      model: 'minimax-m2.7:cloud',
       enabled: true
     },
     deepModel: {
-      provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
+      provider: 'ollama',
+      model: 'qwen3-coder-next:cloud',
       enabled: true
     },
     autoRoute: true,
@@ -351,6 +351,21 @@ function initializeAIProviders(): void {
 
     return normalized;
   };
+
+  const normalizeProviderFromModel = (model: string | undefined, fallback: string) =>
+    aiRouter.inferProviderForModel(model, fallback) || fallback;
+
+  settings.activeProvider = normalizeProviderFromModel(settings.activeModel, settings.activeProvider || 'ollama');
+  if (settings.dualModelConfig) {
+    settings.dualModelConfig.fastModel.provider = normalizeProviderFromModel(
+      settings.dualModelConfig.fastModel.model,
+      settings.dualModelConfig.fastModel.provider || 'ollama'
+    );
+    settings.dualModelConfig.deepModel.provider = normalizeProviderFromModel(
+      settings.dualModelConfig.deepModel.model,
+      settings.dualModelConfig.deepModel.provider || 'ollama'
+    );
+  }
 
   if (settings.providers.ollama) {
     const ollamaConfig = normalizeProviderConfig('ollama', settings.providers.ollama);

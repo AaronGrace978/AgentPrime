@@ -57,7 +57,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     this.emit('task-start', { task: userMessage });
 
     // Start transaction for this specialized agent task
-    const transactionId = transactionManager.startTransaction(`Specialized agent task: ${userMessage.substring(0, 100)}${userMessage.length > 100 ? '...' : ''}`);
+    const transaction = transactionManager.startTransaction(this.context.workspacePath);
 
     try {
       // Check if this is an update to an existing project
@@ -109,6 +109,12 @@ export class SpecializedAgentLoop extends EventEmitter {
           this.emit('step-complete', event);
         },
         onFileChange: (change) => {
+          void transactionManager.recordFileChange(
+            change.filePath,
+            change.oldContent,
+            change.newContent,
+            change.action !== 'created'
+          );
           this.emit('file-modified', {
             path: change.filePath,
             action: change.action,
@@ -181,6 +187,9 @@ export class SpecializedAgentLoop extends EventEmitter {
         console.warn('[SpecializedAgent] Auto-fix failed (non-critical):', error.message);
       }
 
+      // Re-run verification after auto-fix so newly introduced or corrected files are accounted for.
+      lastVerification = await this.verifyProject(allCreatedFiles);
+
       if (lastVerification.isComplete) {
         console.log('[SpecializedAgent] ✅ Project verification PASSED');
         
@@ -203,17 +212,13 @@ export class SpecializedAgentLoop extends EventEmitter {
               lastVerification.errors.push(`[Browser Test] ${issue.description}`);
             }
             
-            // If critical UI issues found, mark as incomplete for retry
-            const criticalUIIssues = browserTestResult.issues.filter(i => 
-              i.severity === 'critical' && 
-              (i.category === 'click' || i.category === 'layout')
-            );
-            
-            if (criticalUIIssues.length > 0 && retryCount < MAX_RETRIES) {
-              console.log(`[SpecializedAgent] 🔧 Found ${criticalUIIssues.length} critical UI issues - will retry`);
+            const criticalIssues = browserTestResult.issues.filter(i => i.severity === 'critical');
+
+            if (criticalIssues.length > 0 && retryCount < MAX_RETRIES) {
+              console.log(`[SpecializedAgent] 🔧 Found ${criticalIssues.length} critical browser/runtime issues - will retry`);
               lastVerification.isComplete = false;
               lastVerification.errors.push(
-                ...criticalUIIssues.map(i => `CSS FIX NEEDED: ${i.description}. ${i.suggestedFix || ''}`)
+                ...criticalIssues.map(i => `BROWSER FIX NEEDED: ${i.description}. ${i.suggestedFix || ''}`.trim())
               );
             }
           }
@@ -247,8 +252,9 @@ export class SpecializedAgentLoop extends EventEmitter {
 
     // Commit transaction on successful completion
     try {
-      await transactionManager.commitTransaction();
-      console.log(`[SpecializedAgent] ✅ Transaction committed: ${transactionId}`);
+      const operationCount = transaction.getOperationCount();
+      transactionManager.commitTransaction();
+      console.log(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
     } catch (txError) {
       console.error(`[SpecializedAgent] ❌ Transaction commit failed:`, txError);
     }
@@ -275,7 +281,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         // For non-timeout errors, do full rollback
         try {
           await transactionManager.rollbackTransaction();
-          console.log(`[SpecializedAgent] 🔄 Transaction rolled back: ${transactionId}`);
+          console.log('[SpecializedAgent] 🔄 Transaction rolled back');
         } catch (rollbackError) {
           console.error(`[SpecializedAgent] ❌ Transaction rollback failed:`, rollbackError);
         }
@@ -446,6 +452,31 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
     }
 
+    // Check JS/TS module imports so bundler-based projects don't pass with broken local references.
+    for (const file of existingFiles) {
+      if (!/\.(js|jsx|ts|tsx|mjs|cjs)$/.test(file)) {
+        continue;
+      }
+
+      const filePath = path.join(workspacePath, file);
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        for (const importPath of this.extractLocalImports(content)) {
+          const resolved = this.resolveLocalImport(file, importPath, workspacePath);
+          if (!resolved) {
+            const importError = `${file} imports missing file: ${importPath}`;
+            errors.push(importError);
+            const normalizedImport = this.normalizeImportTarget(file, importPath);
+            if (normalizedImport && !missingFiles.includes(normalizedImport)) {
+              missingFiles.push(normalizedImport);
+            }
+          }
+        }
+      } catch (err) {
+        errors.push(`Could not read ${file}: ${err}`);
+      }
+    }
+
     // Check for empty files
     for (const file of existingFiles) {
       const filePath = path.join(workspacePath, file);
@@ -480,8 +511,13 @@ export class SpecializedAgentLoop extends EventEmitter {
     const projectType = this.detectProjectType();
     const hasPackageJson = this.getProjectFiles().includes('package.json');
     const hasIndexHtml = this.getProjectFiles().some(f => f === 'index.html' || f.endsWith('/index.html'));
+    const packageJson = this.readRootPackageJson();
+    const bundlerProject = this.isBundlerProject(packageJson);
+    const runCommand = this.getRecommendedRunCommand(packageJson);
+    const nodeModulesInstalled = fs.existsSync(path.join(this.context.workspacePath, 'node_modules'));
+    const isReady = Boolean(verification?.isComplete);
     
-    let response = `## ✅ Project Created!\n\n`;
+    let response = isReady ? `## ✅ Project Created!\n\n` : `## ⚠️ Project Needs Fixes\n\n`;
     response += `**Location:** \`${this.context.workspacePath}\`\n\n`;
     
     if (createdFiles.length > 0) {
@@ -527,12 +563,17 @@ export class SpecializedAgentLoop extends EventEmitter {
     // Add action buttons
     response += `### Actions\n`;
     response += `**📂 Open Folder:** [Click to open](file://${this.context.workspacePath})\n\n`;
-    
-    if (hasIndexHtml) {
+
+    if (runCommand) {
+      response += `**▶ Run Project:** \`${runCommand}\`\n\n`;
+      if (bundlerProject) {
+        response += `**🌐 Open in Browser:** Start the dev server, then open the local URL it prints\n\n`;
+      }
+    } else if (hasIndexHtml && !bundlerProject) {
       response += `**🚀 Launch in Browser:** Open \`index.html\` in your browser\n\n`;
     }
-    
-    if (hasPackageJson) {
+
+    if (hasPackageJson && !nodeModulesInstalled) {
       response += `**📦 Install Dependencies:** Run \`npm install\` in the project folder\n\n`;
     }
 
@@ -546,7 +587,9 @@ export class SpecializedAgentLoop extends EventEmitter {
       response += `- Suggested improvements\n\n`;
     }
 
-    response += `---\n🎉 Your project is ready!`;
+    response += isReady
+      ? `---\n🎉 Your project is ready!`
+      : `---\n⚠️ AgentPrime found issues that still need fixing before this project is ready.`;
 
     return response;
   }
@@ -571,6 +614,104 @@ export class SpecializedAgentLoop extends EventEmitter {
    */
   private normalizePath(filePath: string): string {
     return filePath.replace(/^\.\//, '').replace(/\\/g, '/');
+  }
+
+  private readRootPackageJson(): any | null {
+    const packageJsonPath = path.join(this.context.workspacePath, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  private isBundlerProject(packageJson: any | null): boolean {
+    if (fs.existsSync(path.join(this.context.workspacePath, 'vite.config.ts')) || fs.existsSync(path.join(this.context.workspacePath, 'vite.config.js'))) {
+      return true;
+    }
+
+    const deps = {
+      ...(packageJson?.dependencies || {}),
+      ...(packageJson?.devDependencies || {})
+    };
+
+    return Boolean(deps.vite || deps.webpack || deps.parcel || deps.next || deps['@vitejs/plugin-react']);
+  }
+
+  private getRecommendedRunCommand(packageJson: any | null): string | null {
+    const scripts = packageJson?.scripts || {};
+    if (typeof scripts.dev === 'string' && scripts.dev.trim()) {
+      return 'npm run dev';
+    }
+    if (typeof scripts.start === 'string' && scripts.start.trim()) {
+      return 'npm start';
+    }
+    return null;
+  }
+
+  private extractLocalImports(content: string): string[] {
+    const matches = [
+      ...content.matchAll(/import\s+[^'"]*['"]([^'"]+)['"]/g),
+      ...content.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g),
+      ...content.matchAll(/export\s+[^'"]*from\s+['"]([^'"]+)['"]/g)
+    ];
+
+    return matches
+      .map((match) => match[1])
+      .filter((value): value is string => Boolean(value))
+      .filter((value) => value.startsWith('.') || value.startsWith('/'));
+  }
+
+  private normalizeImportTarget(sourceFile: string, importPath: string): string | null {
+    const sanitizedImport = importPath.split('?')[0].split('#')[0];
+    const sourceDir = path.posix.dirname(sourceFile.replace(/\\/g, '/'));
+    const normalized = sanitizedImport.startsWith('/')
+      ? sanitizedImport.replace(/^\//, '')
+      : path.posix.normalize(path.posix.join(sourceDir, sanitizedImport));
+
+    return normalized.replace(/\\/g, '/');
+  }
+
+  private resolveLocalImport(sourceFile: string, importPath: string, workspacePath: string): string | null {
+    const normalizedImport = this.normalizeImportTarget(sourceFile, importPath);
+    if (!normalizedImport) {
+      return null;
+    }
+
+    const hasExtension = /\.[a-z0-9]+$/i.test(normalizedImport);
+    const baseCandidates = hasExtension
+      ? [normalizedImport]
+      : [
+          normalizedImport,
+          `${normalizedImport}.js`,
+          `${normalizedImport}.jsx`,
+          `${normalizedImport}.ts`,
+          `${normalizedImport}.tsx`,
+          `${normalizedImport}.mjs`,
+          `${normalizedImport}.cjs`,
+          `${normalizedImport}.css`,
+          `${normalizedImport}.scss`,
+          `${normalizedImport}.sass`,
+          `${normalizedImport}.less`,
+          `${normalizedImport}.json`,
+          path.posix.join(normalizedImport, 'index.js'),
+          path.posix.join(normalizedImport, 'index.jsx'),
+          path.posix.join(normalizedImport, 'index.ts'),
+          path.posix.join(normalizedImport, 'index.tsx')
+        ];
+
+    for (const candidate of baseCandidates) {
+      const fullPath = path.join(workspacePath, candidate);
+      if (fs.existsSync(fullPath)) {
+        return candidate;
+      }
+    }
+
+    return null;
   }
 
   /**

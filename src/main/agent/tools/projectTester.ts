@@ -83,6 +83,7 @@ export interface TestedElement {
 export class ProjectBrowserTester {
   private serverProcess: ChildProcess | null = null;
   private serverPort: number = 0;
+  private serverOutput = '';
   
   constructor(private workspacePath: string) {}
   
@@ -121,6 +122,9 @@ export class ProjectBrowserTester {
         category: 'load',
         description: 'Playwright not installed - install with "npm install playwright" to enable browser testing'
       });
+      if (this.isBundlerManagedProject()) {
+        result.suggestions.push('This project uses a bundler/dev server, so static HTML analysis cannot fully verify runtime behavior.');
+      }
       
       // Fall back to static analysis only
       return this.staticHtmlAnalysis(result, htmlFiles);
@@ -152,6 +156,37 @@ export class ProjectBrowserTester {
           result.consoleWarnings.push(msg.text());
         }
       });
+
+      page.on('pageerror', (error: Error) => {
+        result.issues.push({
+          severity: 'critical',
+          category: 'console',
+          description: `Uncaught page error: ${error.message.substring(0, 200)}`
+        });
+        result.score -= 15;
+      });
+
+      page.on('requestfailed', (request: { url: () => string; failure: () => { errorText?: string } | null }) => {
+        result.issues.push({
+          severity: 'critical',
+          category: 'load',
+          description: `Request failed: ${request.url()} (${request.failure()?.errorText || 'unknown error'})`
+        });
+        result.score -= 10;
+      });
+
+      page.on('response', (response: { url: () => string; status: () => number; request: () => { resourceType: () => string } }) => {
+        const status = response.status();
+        const resourceType = response.request().resourceType();
+        if (status >= 400 && ['document', 'script', 'stylesheet', 'fetch', 'xhr'].includes(resourceType)) {
+          result.issues.push({
+            severity: 'critical',
+            category: 'load',
+            description: `HTTP ${status} while loading ${resourceType}: ${response.url()}`
+          });
+          result.score -= 10;
+        }
+      });
       
       // Navigate to the main page
       const mainHtml = htmlFiles[0];
@@ -160,6 +195,7 @@ export class ProjectBrowserTester {
       
       await page.goto(url, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for any animations/loads
+      this.reportServerRuntimeIssues(result);
       
       // Check for console errors
       if (result.consoleErrors.length > 0) {
@@ -243,12 +279,28 @@ export class ProjectBrowserTester {
     return new Promise((resolve) => {
       // Find an available port
       const port = 8765 + Math.floor(Math.random() * 1000);
+      this.serverOutput = '';
       
       try {
-        // Use npx http-server
-        this.serverProcess = spawn('npx', ['http-server', this.workspacePath, '-p', port.toString(), '--silent'], {
-          shell: true,
-          detached: false
+        if (this.isViteProject()) {
+          const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+          this.serverProcess = spawn(npmCommand, ['run', 'dev', '--', '--host', '127.0.0.1', '--port', port.toString()], {
+            cwd: this.workspacePath,
+            shell: true,
+            detached: false
+          });
+        } else {
+          this.serverProcess = spawn('npx', ['http-server', this.workspacePath, '-p', port.toString(), '--silent'], {
+            shell: true,
+            detached: false
+          });
+        }
+
+        this.serverProcess.stdout?.on('data', (data) => {
+          this.serverOutput += data.toString();
+        });
+        this.serverProcess.stderr?.on('data', (data) => {
+          this.serverOutput += data.toString();
         });
         
         this.serverProcess.on('error', () => {
@@ -256,11 +308,13 @@ export class ProjectBrowserTester {
           resolve();
         });
         
-        // Wait for server to start
+        // Wait for server to start and fail fast if the dev server is already reporting import/runtime errors.
         setTimeout(() => {
-          this.serverPort = port;
+          const startupFailed =
+            /failed to resolve import|internal server error|pre-transform error|error when starting dev server/i.test(this.serverOutput);
+          this.serverPort = startupFailed ? 0 : port;
           resolve();
-        }, 2000);
+        }, this.isViteProject() ? 3500 : 2000);
         
       } catch (e) {
         this.serverPort = 0;
@@ -276,6 +330,56 @@ export class ProjectBrowserTester {
     if (this.serverProcess) {
       this.serverProcess.kill();
       this.serverProcess = null;
+    }
+  }
+
+  private readPackageJson(): any | null {
+    const packageJsonPath = path.join(this.workspacePath, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  private isViteProject(): boolean {
+    const packageJson = this.readPackageJson();
+    return (
+      fs.existsSync(path.join(this.workspacePath, 'vite.config.ts')) ||
+      fs.existsSync(path.join(this.workspacePath, 'vite.config.js')) ||
+      Boolean(packageJson?.dependencies?.vite) ||
+      Boolean(packageJson?.devDependencies?.vite) ||
+      /\bvite\b/.test(String(packageJson?.scripts?.dev || ''))
+    );
+  }
+
+  private isBundlerManagedProject(): boolean {
+    const packageJson = this.readPackageJson();
+    const deps = {
+      ...(packageJson?.dependencies || {}),
+      ...(packageJson?.devDependencies || {})
+    };
+
+    return this.isViteProject() || Boolean(deps.webpack || deps.parcel || deps.next);
+  }
+
+  private reportServerRuntimeIssues(result: BrowserTestResult): void {
+    const lines = this.serverOutput
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (const line of lines.filter((entry) => /failed to resolve import|internal server error|pre-transform error|module not found|cannot find module/i.test(entry)).slice(0, 5)) {
+      result.issues.push({
+        severity: 'critical',
+        category: 'load',
+        description: `Dev server reported runtime error: ${line.substring(0, 200)}`
+      });
+      result.score -= 15;
     }
   }
   
@@ -456,7 +560,7 @@ export class ProjectBrowserTester {
       }
     }
     
-    result.passed = result.score >= 70;
+    result.passed = result.score >= 70 && result.issues.filter(i => i.severity === 'critical').length === 0;
     return result;
   }
 }

@@ -38,13 +38,13 @@ interface SettingsPanelProps {
 
 const DEFAULT_DUAL_MODEL_CONFIG: Settings['dualModelConfig'] = {
   fastModel: {
-    provider: 'openai',
-    model: 'gpt-5.4-mini',
+    provider: 'ollama',
+    model: 'minimax-m2.7:cloud',
     enabled: true
   },
   deepModel: {
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-6',
+    provider: 'ollama',
+    model: 'qwen3-coder-next:cloud',
     enabled: true
   },
   autoRoute: true,
@@ -115,8 +115,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       inlineCompletions: true,
       dinoBuddyMode: false,
       useSpecializedAgents: false,
-      activeProvider: 'openai',
-      activeModel: 'gpt-5.4',
+      activeProvider: 'ollama',
+      activeModel: 'qwen3-coder-next:cloud',
       dualOllamaEnabled: false,
       dualModelEnabled: true,
       dualModelConfig: DEFAULT_DUAL_MODEL_CONFIG,
