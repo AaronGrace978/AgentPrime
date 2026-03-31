@@ -24,6 +24,7 @@ import * as path from 'path';
 import { withAITimeoutAndRetry, withSmartFallback, TimeoutError, FALLBACK_MODEL_CHAIN, detectModelSize } from '../core/timeout-utils';
 import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
 import { transactionManager } from '../core/transaction-manager';
+import { getRecommendedMaxTokens } from '../core/model-output-limits';
 import { validateToolCall, fixToolCall, resetFileTracker, populateFileTracker, validatePackageJson, validateIndexHtml, validateJavaScriptFile, detectOrphanedFiles, getFileTrackerState, FileTrackerMode } from './tool-validation';
 import { sanitizeFileName } from '../security/ipcValidation';
 import { spawn } from 'child_process';
@@ -402,7 +403,7 @@ export const AGENT_CONFIGS: Record<AgentRole, AgentConfig> = {
     model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.2, // Low temperature = more Opus-like deterministic thinking
-    maxTokens: 16384,
+    maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'words_to_code'),
     systemPrompt: `You are the Tool Orchestrator for complex multi-file web applications. You coordinate the creation of sophisticated projects.
 
 **OPUS MODE ACTIVE**: You are operating in Claude Opus mode. Think deeply, plan thoroughly, and execute with Opus-level quality.
@@ -497,7 +498,7 @@ ${TOOL_CALL_FORMAT}`
     model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.3, // Slightly higher for creativity, but still Opus-like
-    maxTokens: 16384,
+    maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'specialist'),
     systemPrompt: `You are a JavaScript/TypeScript specialist. You CREATE FILES containing complete, production-ready code.
 
 **OPUS MODE ACTIVE**: You are operating in Claude Opus mode. Your code must match Opus's quality, completeness, and style.
@@ -709,7 +710,7 @@ ${TOOL_CALL_FORMAT}`
     model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.3,
-    maxTokens: 16384,
+    maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'specialist'),
     systemPrompt: `You are a Python specialist. You CREATE FILES containing complete, production-ready Python code.
 
 ## IMPLEMENTATION RULES
@@ -727,7 +728,7 @@ ${TOOL_CALL_FORMAT}`
     model: 'deepseek-v3.1:671b-cloud',  // CLOUD MODEL - BEST FOR COMPLEX TASKS
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: 16384,
+    maxTokens: getRecommendedMaxTokens('deepseek-v3.1:671b-cloud', 'specialist'),
     systemPrompt: `You are a Tauri v2 and Rust specialist. You CREATE FILES for modern desktop applications using Tauri 2.x.
 
 ## TAURI V2 CRITICAL REQUIREMENTS (MUST FOLLOW EXACTLY)
@@ -831,7 +832,7 @@ ${TOOL_CALL_FORMAT}`
     model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: 8192,
+    maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'pipeline'),
     systemPrompt: `You are a DevOps and build pipeline specialist. You CREATE configuration files, build scripts, and deployment setups.
 
 ## EXPERTISE
@@ -848,7 +849,7 @@ ${TOOL_CALL_FORMAT}`
     model: 'deepseek-v3.1:671b-cloud',  // CLOUD MODEL - SMART FOR ANALYSIS
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: 16384,
+    maxTokens: getRecommendedMaxTokens('deepseek-v3.1:671b-cloud', 'analysis'),
     systemPrompt: `You are an integration analyst. Review the project and CREATE any missing files needed for the project to work.
 
 ## YOUR JOB

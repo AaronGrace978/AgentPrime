@@ -36,6 +36,7 @@ import { summarizeIfNeeded, conversationSummarizer } from './agent/conversation-
 import { backupBeforeOperation, restoreLatestBackup } from './agent/project-backup';
 import { EventEmitter } from 'events';
 import { searchWithRipgrep } from './core/ripgrep-runner';
+import { getRecommendedMaxTokens, isOllamaCloudModel } from './core/model-output-limits';
 
 // 🧠 CONSCIOUSNESS SYSTEM - Deep Intent Understanding (ported from ActivatePrime)
 import { processWithConsciousness, type ConsciousnessState, type ConsciousnessInjection } from './consciousness';
@@ -3978,18 +3979,15 @@ ${this.taskMode === TaskMode.ENHANCE ? `
         const escalationInfo = this.escalationCount > 0 ? ` [escalated ${this.escalationCount}x]` : '';
         console.log(`[Agent] Iteration ${iteration}/${this.maxIterations}, model: ${modelToUse}${escalationInfo}, steps: ${this.completedSteps.length}`);
         
-        // Use model-appropriate token limits - premium models get more!
-        let maxTokens = 4096;
-        if (modelToUse.includes('sonnet-4') || modelToUse.includes('opus-4')) {
-          maxTokens = 16384; // Premium Claude models - let them generate full projects!
-        } else if (modelToUse.includes('claude') && (modelToUse.includes('sonnet') || modelToUse.includes('opus'))) {
-          maxTokens = 16384; // All premium Claude models
-        } else if (modelToUse.includes('claude')) {
-          maxTokens = 8192; // Haiku models
-        }
+        const maxTokens = getRecommendedMaxTokens(
+          modelToUse,
+          this.taskMode === TaskMode.CREATE ? 'words_to_code' : 'agent'
+        );
         
         if (maxTokens > 4096) {
-          console.log(`[Agent] 🚀 Using ${maxTokens} token limit for ${modelToUse} - full power mode!`);
+          console.log(
+            `[Agent] 🚀 Using ${maxTokens} token limit for ${modelToUse} - full power mode! (ollamaCloud=${isOllamaCloudModel(modelToUse)})`
+          );
         }
         
         const response = await withAITimeoutAndRetry(

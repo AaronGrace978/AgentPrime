@@ -14,6 +14,7 @@ import axios from 'axios';
 import { Readable } from 'stream';
 import dns from 'dns';
 import { lookup } from 'dns/promises';
+import { getRecommendedMaxTokens, isOllamaCloudModel } from '../core/model-output-limits';
 
 // Cache for available models (refreshed every 30 seconds)
 let modelCache: { models: string[]; timestamp: number } | null = null;
@@ -145,6 +146,30 @@ export class OllamaProvider extends BaseProvider {
     return model;
   }
 
+  private getDefaultMaxTokens(model: string): number {
+    return getRecommendedMaxTokens(model, 'provider_default');
+  }
+
+  private getRequestTimeoutMs(model: string, maxTokens: number, streaming: boolean, isCloudModel: boolean): number {
+    const tokenMultiplier = Math.max(1, maxTokens / 2048);
+    const cloudMultiplier = isCloudModel ? 4 : 1;
+    const isLargeModel =
+      model.includes('70b') ||
+      model.includes('123b') ||
+      model.includes('180b') ||
+      model.includes('405b') ||
+      model.includes('671b');
+    const sizeMultiplier = isLargeModel ? 3 : 1;
+    const baseTimeout = streaming ? 90000 : 60000;
+    const computed = Math.round(baseTimeout * tokenMultiplier * cloudMultiplier * sizeMultiplier);
+
+    if (streaming) {
+      return Math.min(computed, isCloudModel ? 1200000 : 600000);
+    }
+
+    return Math.min(computed, isCloudModel ? 900000 : 300000);
+  }
+
   /**
    * Quick health check - is Ollama running?
    */
@@ -248,7 +273,7 @@ export class OllamaProvider extends BaseProvider {
 
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
-    const isCloudModelByName = model.includes('cloud') || model.includes(':cloud');
+    const isCloudModelByName = isOllamaCloudModel(model);
     // Runtime URL override: if model is cloud but baseUrl is local, fix it
     let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
     if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
@@ -261,18 +286,8 @@ export class OllamaProvider extends BaseProvider {
     // Resolve model name: direct API calls to ollama.com need suffix stripped
     const apiModel = this.resolveModelName(model, isDirectApi);
     
-    // Adaptive timeout based on model size and token count
-    const baseTimeout = 60000; // 60 seconds base
-    const maxTokens = options.maxTokens || 4096;
-    // Larger token counts need more time
-    const tokenMultiplier = Math.max(1, maxTokens / 2048);
-    // Cloud models need more time
-    const cloudMultiplier = isCloudModel ? 4 : 1;
-    // Large models need more time
-    const isLargeModel = model.includes('70b') || model.includes('671b') || model.includes('405b');
-    const sizeMultiplier = isLargeModel ? 3 : 1;
-    
-    const timeout = Math.round(baseTimeout * tokenMultiplier * cloudMultiplier * sizeMultiplier);
+    const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
+    const timeout = this.getRequestTimeoutMs(model, maxTokens, false, isCloudModel);
     
     const requestUrl = `${baseUrl}/api/chat`;
     console.log(`[Ollama] Chat with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
@@ -391,7 +406,7 @@ export class OllamaProvider extends BaseProvider {
 
   async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
-    const isCloudModelByName = model.includes('cloud') || model.includes(':cloud');
+    const isCloudModelByName = isOllamaCloudModel(model);
     // Runtime URL override: if model is cloud but baseUrl is local, fix it
     let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
     if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
@@ -404,9 +419,11 @@ export class OllamaProvider extends BaseProvider {
     // Resolve model name: direct API calls to ollama.com need suffix stripped
     const apiModel = this.resolveModelName(model, isDirectApi);
     const requestUrl = `${baseUrl}/api/chat`;
+    const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
+    const timeout = this.getRequestTimeoutMs(model, maxTokens, true, isCloudModel);
     
     console.log(`[Ollama] Stream with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
-    console.log(`[Ollama] Request URL: ${requestUrl}, API Key present: ${!!this.apiKey}`);
+    console.log(`[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}, API Key present: ${!!this.apiKey}`);
 
     try {
       const response = await axios.post(requestUrl, {
@@ -415,10 +432,10 @@ export class OllamaProvider extends BaseProvider {
         stream: true,
         options: {
           temperature: options.temperature ?? 0.7,
-          num_predict: options.maxTokens || 4096
+          num_predict: maxTokens
         }
       }, {
-        ...this.getAxiosConfig(300000),
+        ...this.getAxiosConfig(timeout),
         responseType: 'stream'
       });
 
@@ -585,7 +602,10 @@ export class OllamaProvider extends BaseProvider {
     const model = (options.model || this.config.model || 'llama3.2') as string;
     const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
     const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const isCloudModel = isOllamaCloudModel(model) || baseUrl.includes('ollama.com');
     const apiModel = this.resolveModelName(model, isDirectApi);
+    const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
+    const timeout = this.getRequestTimeoutMs(model, maxTokens, true, isCloudModel);
     
     try {
       const response = await axios.post(`${this.baseUrl}/api/chat`, {
@@ -594,11 +614,11 @@ export class OllamaProvider extends BaseProvider {
         stream: true,
         options: {
           temperature: options.temperature ?? 0.7,
-          num_predict: options.maxTokens || 4096
+          num_predict: maxTokens
         }
       }, {
         headers: this.getHeaders(),
-        timeout: 600000, // 10 minutes for streaming (generous)
+        timeout,
         responseType: 'stream'
       });
 

@@ -17,6 +17,7 @@ import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
 import { parseChatIpcContext } from '../security/chat-ipc-context';
 import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN } from '../core/timeout-utils';
 import { stateManager } from '../core/state-manager';
+import { getRecommendedMaxTokens, isOllamaCloudModel } from '../core/model-output-limits';
 import axios from 'axios';
 
 /**
@@ -784,10 +785,14 @@ Separate files with blank lines.
       // Words to Code needs MUCH higher limits for complete game/app generation
       const isWordsToCodeMode = context.words_to_code_mode || context.wordsToCode || false;
       const isJustChatMode = context.just_chat_mode || context.justChatMode || false;
-      // Just Chat & standard chat: 16K so long conversations (e.g. PrimeSpace Messenger) don't cut off mid-sentence
-      const maxTokens = isWordsToCodeMode ? 32768 : (isJustChatMode ? 16384 : 16384); // 32K code gen, 16K chat
+      const maxTokens = getRecommendedMaxTokens(
+        activeModel,
+        isWordsToCodeMode ? 'words_to_code' : isJustChatMode ? 'just_chat' : 'chat'
+      );
       
-      console.log(`[Chat] Mode: ${isWordsToCodeMode ? 'Words to Code' : isJustChatMode ? 'Just Chat' : 'Standard'}, maxTokens: ${maxTokens}`);
+      console.log(
+        `[Chat] Mode: ${isWordsToCodeMode ? 'Words to Code' : isJustChatMode ? 'Just Chat' : 'Standard'}, maxTokens: ${maxTokens}, ollamaCloud: ${isOllamaCloudModel(activeModel)}`
+      );
 
       if (dualModelEnabled) {
         // Configure dual model system

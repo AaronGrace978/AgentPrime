@@ -114,11 +114,11 @@ const BASE_TIMEOUTS = {
  * but not SO fast that Ollama cloud models always timeout on valid work.
  */
 const MAX_TIMEOUTS: Record<OperationType, number> = {
-  chat: 150000,       // 2.5 minutes
-  completion: 15000,  // 15 seconds
-  analysis: 240000,   // 4 minutes
-  complex: 360000,    // 6 minutes (was 4 -- too tight for 480b cloud models)
-  project: 600000     // 10 minutes (was 7 -- full project gen needs headroom)
+  chat: 300000,       // 5 minutes
+  completion: 30000,  // 30 seconds
+  analysis: 600000,   // 10 minutes
+  complex: 900000,    // 15 minutes
+  project: 1200000    // 20 minutes
 };
 
 /**
