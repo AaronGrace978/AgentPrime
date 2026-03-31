@@ -10,7 +10,7 @@ describe('model output limits', () => {
   it('gives Ollama cloud higher chat and generation budgets', () => {
     expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'chat')).toBe(32768);
     expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'agent')).toBe(32768);
-    expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'words_to_code')).toBe(65536);
+    expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'words_to_code')).toBe(32768);
   });
 
   it('keeps non-cloud providers on conservative defaults', () => {

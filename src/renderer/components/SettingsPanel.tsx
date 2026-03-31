@@ -22,6 +22,10 @@ import {
   getModelOptionsForProvider,
   getProviderLabel
 } from './AIChat/constants';
+import {
+  DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS,
+  OLLAMA_CLOUD_MAX_TOKENS_CAP
+} from '../../main/core/model-output-limits';
 import { ThemeId } from '../themes';
 import type { Settings } from '../../types';
 
@@ -78,6 +82,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     return localSettings.dualModelConfig || DEFAULT_DUAL_MODEL_CONFIG;
   }, [localSettings.dualModelConfig]);
 
+  const getOllamaCloudLimits = useCallback((): NonNullable<Settings['ollamaCloudOutputLimits']> => {
+    return localSettings.ollamaCloudOutputLimits || DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS;
+  }, [localSettings.ollamaCloudOutputLimits]);
+
   const saveSettings = useCallback(() => {
     onSettingsChange(localSettings);
     setHasChanges(false);
@@ -120,6 +128,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       dualOllamaEnabled: false,
       dualModelEnabled: true,
       dualModelConfig: DEFAULT_DUAL_MODEL_CONFIG,
+      ollamaCloudOutputLimits: DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS,
       telemetryEnabled: false,
       developerMode: false,
       confirmOnClose: true,
@@ -179,6 +188,17 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       }
     });
   }, [getDualModelConfig, updateSetting]);
+
+  const handleOllamaCloudLimitChange = useCallback((
+    key: keyof NonNullable<Settings['ollamaCloudOutputLimits']>,
+    value: number
+  ) => {
+    const safeValue = Math.max(4096, Math.min(OLLAMA_CLOUD_MAX_TOKENS_CAP, Math.round((Number.isFinite(value) ? value : 4096) / 1024) * 1024));
+    updateSetting('ollamaCloudOutputLimits', {
+      ...getOllamaCloudLimits(),
+      [key]: safeValue
+    });
+  }, [getOllamaCloudLimits, updateSetting]);
 
   const renderModelSelectorControls = (
     provider: string,
@@ -531,6 +551,70 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     </div>
                   </div>
                 )}
+
+                <div className="setting-subsection">
+                  <h4>Ollama Cloud Output Budgets</h4>
+                  <p className="setting-subsection-copy">
+                    Tune how much output AgentPrime requests from Ollama Cloud for each workflow. Higher budgets help bigger generations complete, but they also increase latency and can hit provider-side ceilings.
+                  </p>
+
+                  {[
+                    ['chatMaxTokens', 'Standard Chat', 'Normal coding chat and interactive responses'],
+                    ['justChatMaxTokens', 'Just Chat', 'Non-agent conversation mode'],
+                    ['wordsToCodeMaxTokens', 'Words to Code', 'Project generation and larger app builds'],
+                    ['agentMaxTokens', 'Agent Loop', 'Monolithic agent planning and execution'],
+                    ['specialistMaxTokens', 'Specialists', 'Specialized coding agents like JS and Python'],
+                    ['analysisMaxTokens', 'Analysis', 'Review-heavy and integration passes'],
+                    ['pipelineMaxTokens', 'Pipeline', 'Build, packaging, and deployment workflows'],
+                    ['providerDefaultMaxTokens', 'Provider Default', 'Fallback when a caller does not specify a budget']
+                  ].map(([key, label, description]) => (
+                    <div className="setting-group" key={key}>
+                      <label className="setting-label">
+                        <span className="setting-name">{label}</span>
+                        <span className="setting-description">{description}</span>
+                      </label>
+                      <div className="setting-input-group setting-input-group--wide">
+                        <input
+                          type="range"
+                          min="4096"
+                          max={String(OLLAMA_CLOUD_MAX_TOKENS_CAP)}
+                          step="1024"
+                          value={getOllamaCloudLimits()[key as keyof NonNullable<Settings['ollamaCloudOutputLimits']>]}
+                          onChange={(e) => handleOllamaCloudLimitChange(
+                            key as keyof NonNullable<Settings['ollamaCloudOutputLimits']>,
+                            parseInt(e.target.value, 10)
+                          )}
+                          className="setting-range"
+                        />
+                        <input
+                          type="number"
+                          min="4096"
+                          max={String(OLLAMA_CLOUD_MAX_TOKENS_CAP)}
+                          step="1024"
+                          value={getOllamaCloudLimits()[key as keyof NonNullable<Settings['ollamaCloudOutputLimits']>]}
+                          onChange={(e) => handleOllamaCloudLimitChange(
+                            key as keyof NonNullable<Settings['ollamaCloudOutputLimits']>,
+                            parseInt(e.target.value || '0', 10)
+                          )}
+                          className="setting-number-input"
+                        />
+                        <span className="setting-value">
+                          {getOllamaCloudLimits()[key as keyof NonNullable<Settings['ollamaCloudOutputLimits']>].toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="setting-group">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => updateSetting('ollamaCloudOutputLimits', DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS)}
+                    >
+                      <IconRefresh size="sm" /> Reset Ollama Cloud Budgets
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -911,9 +995,24 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             gap: 12px;
           }
 
+          .setting-input-group--wide {
+            width: min(100%, 360px);
+          }
+
           .setting-range {
             width: 140px;
             accent-color: var(--prime-accent);
+          }
+
+          .setting-number-input {
+            width: 108px;
+            padding: 7px 10px;
+            background: var(--prime-surface);
+            border: 1px solid var(--prime-border);
+            border-radius: 8px;
+            color: var(--prime-text);
+            font-size: 12px;
+            font-family: inherit;
           }
 
           .setting-value {
@@ -940,6 +1039,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             letter-spacing: normal;
             font-size: 13px;
             font-weight: 600;
+          }
+
+          .setting-subsection-copy {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--prime-text-muted);
           }
 
           .shortcuts-section {

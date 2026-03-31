@@ -8,6 +8,61 @@ export type OutputBudgetMode =
   | 'pipeline'
   | 'provider_default';
 
+export interface OllamaCloudOutputLimits {
+  chatMaxTokens: number;
+  justChatMaxTokens: number;
+  wordsToCodeMaxTokens: number;
+  agentMaxTokens: number;
+  specialistMaxTokens: number;
+  analysisMaxTokens: number;
+  pipelineMaxTokens: number;
+  providerDefaultMaxTokens: number;
+}
+
+export const DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS: OllamaCloudOutputLimits = {
+  chatMaxTokens: 32768,
+  justChatMaxTokens: 32768,
+  wordsToCodeMaxTokens: 32768,
+  agentMaxTokens: 32768,
+  specialistMaxTokens: 32768,
+  analysisMaxTokens: 32768,
+  pipelineMaxTokens: 24576,
+  providerDefaultMaxTokens: 32768
+};
+
+export const OLLAMA_CLOUD_MAX_TOKENS_CAP = 32768;
+
+let runtimeOllamaCloudOutputLimits: OllamaCloudOutputLimits = { ...DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS };
+
+function clampTokenBudget(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1024, Math.min(OLLAMA_CLOUD_MAX_TOKENS_CAP, Math.round(value / 1024) * 1024));
+}
+
+export function normalizeOllamaCloudOutputLimits(
+  overrides?: Partial<OllamaCloudOutputLimits> | null
+): OllamaCloudOutputLimits {
+  return {
+    chatMaxTokens: clampTokenBudget(overrides?.chatMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.chatMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.chatMaxTokens),
+    justChatMaxTokens: clampTokenBudget(overrides?.justChatMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.justChatMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.justChatMaxTokens),
+    wordsToCodeMaxTokens: clampTokenBudget(overrides?.wordsToCodeMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.wordsToCodeMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.wordsToCodeMaxTokens),
+    agentMaxTokens: clampTokenBudget(overrides?.agentMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.agentMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.agentMaxTokens),
+    specialistMaxTokens: clampTokenBudget(overrides?.specialistMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.specialistMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.specialistMaxTokens),
+    analysisMaxTokens: clampTokenBudget(overrides?.analysisMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.analysisMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.analysisMaxTokens),
+    pipelineMaxTokens: clampTokenBudget(overrides?.pipelineMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.pipelineMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.pipelineMaxTokens),
+    providerDefaultMaxTokens: clampTokenBudget(overrides?.providerDefaultMaxTokens ?? DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.providerDefaultMaxTokens, DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS.providerDefaultMaxTokens)
+  };
+}
+
+export function setOllamaCloudOutputLimits(overrides?: Partial<OllamaCloudOutputLimits> | null): OllamaCloudOutputLimits {
+  runtimeOllamaCloudOutputLimits = normalizeOllamaCloudOutputLimits(overrides);
+  return runtimeOllamaCloudOutputLimits;
+}
+
+export function getOllamaCloudOutputLimits(): OllamaCloudOutputLimits {
+  return { ...runtimeOllamaCloudOutputLimits };
+}
+
 function normalizeModel(model?: string): string {
   return (model || '').trim().toLowerCase();
 }
@@ -15,19 +70,6 @@ function normalizeModel(model?: string): string {
 export function isOllamaCloudModel(model?: string): boolean {
   const normalized = normalizeModel(model);
   return !!normalized && (normalized.includes(':cloud') || normalized.includes('-cloud'));
-}
-
-function isHighCapacityOllamaCloudModel(model?: string): boolean {
-  const normalized = normalizeModel(model);
-  return (
-    normalized.includes('qwen3-coder-next') ||
-    normalized.includes('qwen3-coder:480b') ||
-    normalized.includes('deepseek-v3') ||
-    normalized.includes('devstral-2:123b') ||
-    normalized.includes('glm-5') ||
-    normalized.includes('qwen3.5') ||
-    normalized.includes('mistral-large-3')
-  );
 }
 
 function isAnthropicPremiumModel(model?: string): boolean {
@@ -48,21 +90,25 @@ export function getRecommendedMaxTokens(model?: string, mode: OutputBudgetMode =
   const normalized = normalizeModel(model);
 
   if (isOllamaCloudModel(normalized)) {
-    const highCapacity = isHighCapacityOllamaCloudModel(normalized);
     switch (mode) {
       case 'words_to_code':
-        return highCapacity ? 65536 : 49152;
+        return runtimeOllamaCloudOutputLimits.wordsToCodeMaxTokens;
       case 'agent':
+        return runtimeOllamaCloudOutputLimits.agentMaxTokens;
       case 'specialist':
+        return runtimeOllamaCloudOutputLimits.specialistMaxTokens;
       case 'analysis':
-        return highCapacity ? 32768 : 24576;
+        return runtimeOllamaCloudOutputLimits.analysisMaxTokens;
       case 'pipeline':
-        return 24576;
+        return runtimeOllamaCloudOutputLimits.pipelineMaxTokens;
       case 'provider_default':
+        return runtimeOllamaCloudOutputLimits.providerDefaultMaxTokens;
       case 'chat':
+        return runtimeOllamaCloudOutputLimits.chatMaxTokens;
       case 'just_chat':
+        return runtimeOllamaCloudOutputLimits.justChatMaxTokens;
       default:
-        return 32768;
+        return runtimeOllamaCloudOutputLimits.chatMaxTokens;
     }
   }
 

@@ -12,6 +12,11 @@ import axios from 'axios';
 import type { Settings } from '../types';
 import { getTheme, getTitleBarOverlay, type ThemeId } from '../renderer/themes';
 import { initAppLogging, initOptionalSentry, logCrash } from './core/app-logger';
+import {
+  DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS,
+  normalizeOllamaCloudOutputLimits,
+  setOllamaCloudOutputLimits
+} from './core/model-output-limits';
 
 // ============================================================================
 // GLOBAL ERROR HANDLERS — structured logs + crashes.jsonl (+ optional Sentry)
@@ -304,6 +309,7 @@ let settings: Settings = {
     deepModelTriggers: ['analyze', 'debug', 'refactor', 'explain', 'architect', 'optimize', 'review'],
     fastModelTriggers: ['quick', 'simple', 'format', 'rename', 'fix typo', 'what is']
   },
+  ollamaCloudOutputLimits: { ...DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS },
   
   providers: {
     ollama: {
@@ -354,6 +360,9 @@ function initializeAIProviders(): void {
 
   const normalizeProviderFromModel = (model: string | undefined, fallback: string) =>
     aiRouter.inferProviderForModel(model, fallback) || fallback;
+
+  settings.ollamaCloudOutputLimits = normalizeOllamaCloudOutputLimits(settings.ollamaCloudOutputLimits);
+  setOllamaCloudOutputLimits(settings.ollamaCloudOutputLimits);
 
   settings.activeProvider = normalizeProviderFromModel(settings.activeModel, settings.activeProvider || 'ollama');
   if (settings.dualModelConfig) {
@@ -1057,6 +1066,13 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
       ...newSettings.providers
     };
   }
+
+  if (newSettings.ollamaCloudOutputLimits || settings.ollamaCloudOutputLimits) {
+    newSettings.ollamaCloudOutputLimits = normalizeOllamaCloudOutputLimits({
+      ...(settings.ollamaCloudOutputLimits || DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS),
+      ...(newSettings.ollamaCloudOutputLimits || {})
+    });
+  }
   
   settings = { ...settings, ...newSettings };
   saveSettings();
@@ -1068,7 +1084,7 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
 
   // Reinitialize AI providers when provider settings OR dual model settings change
   if (newSettings.activeProvider || newSettings.activeModel || newSettings.providers ||
-      newSettings.dualModelEnabled !== undefined || newSettings.dualModelConfig) {
+      newSettings.dualModelEnabled !== undefined || newSettings.dualModelConfig || newSettings.ollamaCloudOutputLimits) {
     initializeAIProviders();
     console.log('[Settings] AI providers reinitialized due to settings change');
   }

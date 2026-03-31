@@ -71,6 +71,7 @@ export interface Settings {
   // Dual Model Configuration (like Cursor!)
   dualModelEnabled: boolean;
   dualModelConfig: DualModelConfig;
+  ollamaCloudOutputLimits?: OllamaCloudOutputLimits;
   
   // Web Search Configuration for Matrix Agent
   webSearch?: {
@@ -115,6 +116,17 @@ export interface DualModelConfig {
   deepModelTriggers: string[];
   // Keywords that trigger fast model
   fastModelTriggers: string[];
+}
+
+export interface OllamaCloudOutputLimits {
+  chatMaxTokens: number;
+  justChatMaxTokens: number;
+  wordsToCodeMaxTokens: number;
+  agentMaxTokens: number;
+  specialistMaxTokens: number;
+  analysisMaxTokens: number;
+  pipelineMaxTokens: number;
+  providerDefaultMaxTokens: number;
 }
 
 export interface FileTreeItem {
