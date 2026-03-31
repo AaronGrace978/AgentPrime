@@ -24,6 +24,34 @@ const PLACEHOLDERS: Record<ChatMode, string> = {
   dino: 'Talk to Dino Buddy! 🦖',
 };
 
+const getPrimaryActionLabel = (
+  chatMode: ChatMode,
+  isLoading: boolean,
+  agentRunning: boolean
+): string => {
+  if (isLoading) {
+    return 'Thinking';
+  }
+
+  if (agentRunning) {
+    return chatMode === 'agent' ? 'Running' : 'Working';
+  }
+
+  if (chatMode === 'agent') return 'Run Agent';
+  if (chatMode === 'dino') return 'Talk to Dino';
+  return 'Send';
+};
+
+const getWorkspaceHint = (chatMode: ChatMode, workspacePath: string | null): string => {
+  if (chatMode !== 'agent') {
+    return 'Conversation mode';
+  }
+
+  return workspacePath
+    ? 'Workspace connected for file-aware changes'
+    : 'Select a workspace for file-aware agent mode';
+};
+
 export const ChatInput: React.FC<ChatInputProps> = ({
   input,
   setInput,
@@ -94,6 +122,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   }, [input, setInput]);
 
   const isDisabled = !input.trim() || isLoading || agentRunning;
+  const primaryActionLabel = getPrimaryActionLabel(chatMode, isLoading, agentRunning);
+  const workspaceHint = getWorkspaceHint(chatMode, workspacePath);
 
   return (
     <div style={{
@@ -109,6 +139,70 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         onClose={() => setShowMentions(false)}
         visible={showMentions}
       />
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '12px',
+        marginBottom: '10px',
+        padding: '0 2px',
+        flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 10px',
+            borderRadius: '999px',
+            background: chatMode === 'agent'
+              ? 'rgba(59, 130, 246, 0.12)'
+              : chatMode === 'dino'
+                ? 'rgba(245, 158, 11, 0.12)'
+                : 'var(--prime-surface-hover)',
+            color: chatMode === 'agent'
+              ? 'var(--prime-accent)'
+              : chatMode === 'dino'
+                ? 'var(--prime-amber)'
+                : 'var(--prime-text-secondary)',
+            fontSize: '11px',
+            fontWeight: 700,
+            textTransform: 'capitalize',
+          }}>
+            {chatMode === 'agent' ? 'Agent Mode' : chatMode === 'dino' ? 'Dino Buddy' : 'Chat Mode'}
+          </span>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 10px',
+            borderRadius: '999px',
+            background: 'var(--prime-surface-hover)',
+            color: 'var(--prime-text-secondary)',
+            fontSize: '11px',
+            fontWeight: 700,
+            textTransform: 'capitalize',
+          }}>
+            {chatMode === 'agent' ? `${mode} budget` : 'Responsive'}
+          </span>
+        </div>
+        <span style={{
+          fontSize: '11px',
+          color: workspacePath || chatMode !== 'agent' ? 'var(--prime-success)' : 'var(--prime-text-muted)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}>
+          <span style={{
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            background: workspacePath || chatMode !== 'agent' ? 'var(--prime-success)' : 'var(--prime-text-muted)',
+          }} />
+          {workspaceHint}
+        </span>
+      </div>
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <div style={{ flex: 1, position: 'relative' }}>
@@ -211,9 +305,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   borderRadius: '50%',
                   animation: 'chatSpin 0.7s linear infinite'
                 }} />
-                {agentRunning ? 'Working' : 'Thinking'}
+                {primaryActionLabel}
               </>
-            ) : 'Send'}
+            ) : primaryActionLabel}
           </button>
         </div>
       </div>
@@ -241,7 +335,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           }}>Shift+Enter</kbd> new line
         </span>
         <span style={{
-          color: 'var(--prime-success)',
+          color: chatMode !== 'agent' || workspacePath ? 'var(--prime-success)' : 'var(--prime-text-secondary)',
           fontSize: '10px',
           fontWeight: 600,
           display: 'flex',

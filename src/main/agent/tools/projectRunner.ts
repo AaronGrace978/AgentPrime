@@ -24,6 +24,19 @@ export interface ProjectInfo {
 }
 
 export class ProjectRunner {
+  private static isBundlerProject(workspacePath: string, packageJson: any): boolean {
+    if (fs.existsSync(path.join(workspacePath, 'vite.config.ts')) || fs.existsSync(path.join(workspacePath, 'vite.config.js'))) {
+      return true;
+    }
+
+    const deps = {
+      ...(packageJson?.dependencies || {}),
+      ...(packageJson?.devDependencies || {})
+    };
+
+    return Boolean(deps.vite || deps.webpack || deps.parcel || deps.next || deps['@vitejs/plugin-react']);
+  }
+
   /**
    * Detect project type and structure
    */
@@ -67,8 +80,11 @@ export class ProjectRunner {
           } else {
             info.type = 'node';
             info.name = packageJson.name || 'Node.js App';
+            const bundlerProject = this.isBundlerProject(workspacePath, packageJson);
             // Get start command for regular Node.js projects
-            if (packageJson.scripts?.start) {
+            if (bundlerProject && packageJson.scripts?.dev) {
+              info.startCommand = `npm run dev`;
+            } else if (packageJson.scripts?.start) {
               info.startCommand = `npm start`;
             } else if (packageJson.scripts?.dev) {
               info.startCommand = `npm run dev`;
@@ -99,12 +115,21 @@ export class ProjectRunner {
         // Detect Python installation
         info.pythonPath = await this.findPython();
         
-        // Check for virtual environment
-        const venvPath = path.join(workspacePath, 'venv');
-        const envPath = path.join(workspacePath, '.env');
-        if (fs.existsSync(venvPath) || fs.existsSync(envPath)) {
-          info.hasVirtualEnv = true;
-          info.virtualEnvPath = fs.existsSync(venvPath) ? venvPath : envPath;
+        // Check for virtual environment (directories only — .env files are dotenv, not venvs)
+        const venvCandidates = ['venv', '.venv', 'env'];
+        for (const candidate of venvCandidates) {
+          const candidatePath = path.join(workspacePath, candidate);
+          try {
+            if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isDirectory()) {
+              const hasActivate = fs.existsSync(path.join(candidatePath, 'Scripts', 'activate')) ||
+                                  fs.existsSync(path.join(candidatePath, 'bin', 'activate'));
+              if (hasActivate) {
+                info.hasVirtualEnv = true;
+                info.virtualEnvPath = candidatePath;
+                break;
+              }
+            }
+          } catch { /* stat failed — skip */ }
         }
         
         // Find main Python file

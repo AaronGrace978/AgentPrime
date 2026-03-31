@@ -3,9 +3,9 @@ import { Player } from '../entities/Player';
 
 export class Controls {
   private keys: { [key: string]: boolean } = {};
-  private mouseX: number = 0;
-  private mouseY: number = 0;
-  private isPointerLocked: boolean = false;
+  private mouseX = 0;
+  private mouseY = 0;
+  private isPointerLocked = false;
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -15,12 +15,10 @@ export class Controls {
   }
 
   private setupEventListeners(): void {
-    // Keyboard
     document.addEventListener('keydown', (e) => {
       this.keys[e.key.toLowerCase()] = true;
       if (e.key === ' ') {
         e.preventDefault();
-        this.player.jump();
       }
     });
 
@@ -28,7 +26,6 @@ export class Controls {
       this.keys[e.key.toLowerCase()] = false;
     });
 
-    // Mouse look
     document.addEventListener('mousemove', (e) => {
       if (this.isPointerLocked) {
         const sensitivity = 0.002;
@@ -38,7 +35,6 @@ export class Controls {
       }
     });
 
-    // Pointer lock
     document.addEventListener('click', () => {
       if (!this.isPointerLocked) {
         document.body.requestPointerLock();
@@ -50,33 +46,28 @@ export class Controls {
     });
   }
 
-  public update(): void {
-    // Update camera rotation
+  public update(delta: number): void {
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.y = this.mouseX;
     this.camera.rotation.x = this.mouseY;
 
-    // Movement
     const direction = new THREE.Vector3();
-    
-    if (this.keys['w'] || this.keys['arrowup']) {
-      direction.z -= 1;
-    }
-    if (this.keys['s'] || this.keys['arrowdown']) {
-      direction.z += 1;
-    }
-    if (this.keys['a'] || this.keys['arrowleft']) {
-      direction.x -= 1;
-    }
-    if (this.keys['d'] || this.keys['arrowright']) {
-      direction.x += 1;
-    }
+
+    if (this.keys['w'] || this.keys['arrowup']) direction.z -= 1;
+    if (this.keys['s'] || this.keys['arrowdown']) direction.z += 1;
+    if (this.keys['a'] || this.keys['arrowleft']) direction.x -= 1;
+    if (this.keys['d'] || this.keys['arrowright']) direction.x += 1;
+    if (this.keys[' ']) direction.y += 1;
+    if (this.keys['shift'] || this.keys['c']) direction.y -= 1;
 
     if (direction.length() > 0) {
-      this.player.move(direction);
+      this.player.move(direction, delta);
     } else {
-      this.player.stop();
+      this.player.stopHorizontal();
+    }
+
+    if (this.keys['x']) {
+      this.player.brake(delta);
     }
   }
 }
-

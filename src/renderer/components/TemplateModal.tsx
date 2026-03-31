@@ -38,6 +38,70 @@ const getTemplateBadge = (template: Template | null): string => {
   return compact || 'TM';
 };
 
+const getWorkflowStage = (
+  selectedTemplate: Template | null,
+  loading: boolean,
+  loadingStatus: string
+): { label: string; detail: string } => {
+  if (!selectedTemplate) {
+    return {
+      label: 'Choose a starting point',
+      detail: 'Pick a template or route a more complex brief into AI Composer.',
+    };
+  }
+
+  if (!loading) {
+    return {
+      label: 'Configure your scaffold',
+      detail: 'Review project metadata before AgentPrime writes files and installs dependencies.',
+    };
+  }
+
+  const normalized = loadingStatus.toLowerCase();
+  if (normalized.includes('prepar')) {
+    return {
+      label: 'Preparing workspace',
+      detail: 'Checking the destination and locking in the scaffold inputs.',
+    };
+  }
+  if (normalized.includes('creating') || normalized.includes('scaffold')) {
+    return {
+      label: 'Scaffolding project',
+      detail: 'Writing the starter files and project structure.',
+    };
+  }
+  if (normalized.includes('dependencies')) {
+    return {
+      label: 'Installing dependencies',
+      detail: 'Bringing the starter project to a runnable baseline.',
+    };
+  }
+  if (normalized.includes('opening')) {
+    return {
+      label: 'Opening workspace',
+      detail: 'Handing the generated project back to the IDE.',
+    };
+  }
+
+  return {
+    label: 'Working',
+    detail: loadingStatus || 'Completing project setup.',
+  };
+};
+
+const getPrimaryButtonLabel = (loading: boolean, loadingStatus: string): string => {
+  if (!loading) {
+    return 'Scaffold Project';
+  }
+
+  const normalized = loadingStatus.toLowerCase();
+  if (normalized.includes('prepar')) return 'Preparing...';
+  if (normalized.includes('creating') || normalized.includes('scaffold')) return 'Scaffolding...';
+  if (normalized.includes('dependencies')) return 'Installing...';
+  if (normalized.includes('opening')) return 'Opening...';
+  return loadingStatus || 'Working...';
+};
+
 interface TemplateModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -60,6 +124,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [projectDescription, setProjectDescription] = useState('');
   const [showComplexityCheck, setShowComplexityCheck] = useState(false);
+  const workflowStage = getWorkflowStage(selectedTemplate, loading, loadingStatus);
 
   const handleSelectTemplate = (template: Template) => {
     setSelectedTemplate(template);
@@ -93,7 +158,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
     }
 
     setLoading(true);
-    setLoadingStatus('Preparing project...');
+    setLoadingStatus('Preparing workspace...');
     setError(null);
 
     try {
@@ -116,7 +181,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
         description: projectDescription.trim() || selectedTemplate.description
       };
 
-      setLoadingStatus('Creating project files...');
+      setLoadingStatus('Scaffolding starter files...');
 
       // Create project from template
       const createResult = await (window as any).agentAPI.createFromTemplate(
@@ -128,7 +193,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
       if (createResult.success) {
         // Show dependency installation status
         if (createResult.dependenciesInstalled) {
-          setLoadingStatus('Dependencies installed! Opening project...');
+          setLoadingStatus('Dependencies installed. Opening project...');
         } else if (createResult.installOutput) {
           // Dependencies were attempted but may have had issues
           console.warn('Dependency installation note:', createResult.installOutput);
@@ -162,7 +227,10 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
     <div className="modal-overlay" onClick={onClose}>
       <div className="template-modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="template-modal-header">
-          <h2>Create New Project</h2>
+          <div className="template-modal-title-group">
+            <h2>Create New Project</h2>
+            <p>{workflowStage.detail}</p>
+          </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -240,6 +308,15 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
                   <div>
                     <h3>{selectedTemplate.name}</h3>
                     <p>{selectedTemplate.description}</p>
+                  </div>
+                </div>
+                <div className="template-status-strip">
+                  <div className="template-status-pill">
+                    <span className="template-status-dot" />
+                    {workflowStage.label}
+                  </div>
+                  <div className="template-status-copy">
+                    AgentPrime will scaffold this starter, install dependencies when supported, then open the workspace for review.
                   </div>
                 </div>
               </div>
@@ -327,6 +404,10 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
 
         {selectedTemplate && (
           <div className="template-modal-footer">
+            <div className="template-footer-status">
+              <span className="template-footer-status-label">{workflowStage.label}</span>
+              <span className="template-footer-status-copy">{workflowStage.detail}</span>
+            </div>
             <button 
               type="button" 
               onClick={onClose}
@@ -340,7 +421,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
               disabled={!projectName.trim() || loading}
               className="create-button"
             >
-              {loading ? (loadingStatus || 'Creating...') : 'Create Project →'}
+              {getPrimaryButtonLabel(loading, loadingStatus)}
             </button>
           </div>
         )}

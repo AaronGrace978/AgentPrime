@@ -1,68 +1,52 @@
 import * as THREE from 'three';
 
+/**
+ * Simple space-flight style movement: thrust + damping (no voxel ground).
+ */
 export class Player {
-  public velocity: THREE.Vector3;
-  public onGround: boolean = false;
-  private speed: number = 5;
-  private jumpSpeed: number = 8;
-  private gravity: number = 20;
+  public velocity = new THREE.Vector3();
+  private thrust = 55;
+  private damping = 0.988;
 
-  constructor(private camera: THREE.PerspectiveCamera) {
-    this.velocity = new THREE.Vector3();
-  }
+  constructor(private camera: THREE.PerspectiveCamera) {}
 
   public update(delta: number): void {
-    // Apply gravity
-    if (!this.onGround) {
-      this.velocity.y -= this.gravity * delta;
-    }
-
-    // Update camera position
-    this.camera.position.add(
-      this.velocity.clone().multiplyScalar(delta)
-    );
-
-    // Simple ground collision (y = 0)
-    if (this.camera.position.y < 2) {
-      this.camera.position.y = 2;
-      this.velocity.y = 0;
-      this.onGround = true;
-    } else {
-      this.onGround = false;
-    }
+    this.camera.position.addScaledVector(this.velocity, delta);
+    const d = Math.pow(this.damping, delta * 60);
+    this.velocity.multiplyScalar(d);
   }
 
-  public move(direction: THREE.Vector3): void {
-    // Move relative to camera direction
+  public move(direction: THREE.Vector3, delta: number): void {
     const forward = new THREE.Vector3();
     this.camera.getWorldDirection(forward);
-    forward.y = 0;
     forward.normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0));
+    if (right.lengthSq() < 1e-6) {
+      right.set(1, 0, 0);
+    } else {
+      right.normalize();
+    }
 
-    const right = new THREE.Vector3();
-    right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-    right.normalize();
+    const move = new THREE.Vector3();
+    move.addScaledVector(forward, -direction.z);
+    move.addScaledVector(right, direction.x);
 
-    const moveVector = new THREE.Vector3();
-    moveVector.addScaledVector(forward, direction.z);
-    moveVector.addScaledVector(right, direction.x);
-    moveVector.normalize();
-    moveVector.multiplyScalar(this.speed);
+    if (direction.y !== 0) {
+      move.addScaledVector(new THREE.Vector3(0, 1, 0), direction.y);
+    }
 
-    this.velocity.x = moveVector.x;
-    this.velocity.z = moveVector.z;
-  }
-
-  public jump(): void {
-    if (this.onGround) {
-      this.velocity.y = this.jumpSpeed;
-      this.onGround = false;
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(this.thrust * delta);
+      this.velocity.add(move);
     }
   }
 
-  public stop(): void {
+  public stopHorizontal(): void {
     this.velocity.x = 0;
     this.velocity.z = 0;
   }
-}
 
+  public brake(delta: number): void {
+    this.velocity.multiplyScalar(Math.pow(0.85, delta * 60));
+  }
+}

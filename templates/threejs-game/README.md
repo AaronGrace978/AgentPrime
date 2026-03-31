@@ -2,15 +2,13 @@
 
 {{description}}
 
-A Three.js-based JavaScript game built with React and TypeScript. Perfect for building Minecraft-like voxel games, 3D adventures, or any web-based 3D game.
+A **Vite + React + TypeScript** starter with **Three.js**. The default scene is a **neutral space environment** (starfield + simple flight controls) — a blank canvas for your game, **not** a voxel/block world.
 
 ## Features
 
-- 🎮 **Three.js 3D Engine** - Full 3D graphics and rendering
-- 🧱 **Voxel World System** - Chunk-based world generation (Minecraft-style)
-- 🎯 **Player Controller** - First-person movement and camera controls
-- ⚡ **Vite + TypeScript** - Fast development with type safety
-- ⚛️ **React Integration** - Modern UI framework
+- Three.js rendering with a lightweight scene setup
+- First-person style look (pointer lock) + **WASD** move, **Space** up, **Shift/C** down, **X** brake
+- Fast dev workflow with Vite and TypeScript
 
 ## Quick Start
 
@@ -19,32 +17,16 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+Open http://localhost:5173 — click the view to capture the mouse.
 
-## Game Development
+## Customize
 
-### World Generation
-Edit `src/game/world/World.ts` to customize terrain generation.
-
-### Player Controls
-Modify `src/game/utils/Controls.ts` for custom input handling.
-
-### Adding Blocks
-Extend the block system in `src/game/world/Chunk.ts`.
+- **Scene & content**: `src/game/world/World.ts`
+- **Movement & feel**: `src/game/entities/Player.ts`, `src/game/utils/Controls.ts`
+- **Main loop**: `src/game/Game.ts`
 
 ## Building for Production
 
 ```bash
 npm run build
 ```
-
-## Resources
-
-- [Three.js Documentation](https://threejs.org/docs/)
-- [Vite Documentation](https://vitejs.dev/)
-- [React Documentation](https://react.dev/)
-
----
-
-Built with AgentPrime 🚀
-

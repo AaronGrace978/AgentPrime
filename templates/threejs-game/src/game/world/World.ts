@@ -1,57 +1,40 @@
 import * as THREE from 'three';
-import { Chunk } from './Chunk';
 
+/**
+ * Neutral starter scene: starfield + lights — not voxel terrain.
+ * Agents should replace/extend this to match the user's game idea.
+ */
 export class World {
-  private chunks: Map<string, Chunk> = new Map();
-  private scene: THREE.Scene;
-  private chunkSize = 16;
-  private renderDistance = 3;
+  constructor(private scene: THREE.Scene) {
+    this.scene.background = new THREE.Color(0x020617);
+    this.scene.fog = new THREE.FogExp2(0x050510, 0.00035);
 
-  constructor(scene: THREE.Scene) {
-    this.scene = scene;
-    this.generateWorld();
-  }
-
-  private generateWorld(): void {
-    // Generate chunks around origin
-    for (let x = -this.renderDistance; x <= this.renderDistance; x++) {
-      for (let z = -this.renderDistance; z <= this.renderDistance; z++) {
-        this.generateChunk(x, z);
-      }
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 8000;
+    const positions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i++) {
+      positions[i] = (Math.random() - 0.5) * 6000;
     }
-  }
-
-  private generateChunk(chunkX: number, chunkZ: number): void {
-    const key = `${chunkX},${chunkZ}`;
-    
-    if (this.chunks.has(key)) {
-      return;
-    }
-
-    const chunk = new Chunk(chunkX, chunkZ, this.chunkSize);
-    chunk.generate();
-    chunk.mesh.position.set(
-      chunkX * this.chunkSize,
-      0,
-      chunkZ * this.chunkSize
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const stars = new THREE.Points(
+      starGeo,
+      new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 1.8,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.9,
+      })
     );
-    
-    this.scene.add(chunk.mesh);
-    this.chunks.set(key, chunk);
-  }
+    this.scene.add(stars);
 
-  public getBlock(x: number, y: number, z: number): number {
-    const chunkX = Math.floor(x / this.chunkSize);
-    const chunkZ = Math.floor(z / this.chunkSize);
-    const key = `${chunkX},${chunkZ}`;
-    
-    const chunk = this.chunks.get(key);
-    if (!chunk) return 0;
-    
-    const localX = x - chunkX * this.chunkSize;
-    const localZ = z - chunkZ * this.chunkSize;
-    
-    return chunk.getBlock(localX, y, localZ);
+    const amb = new THREE.AmbientLight(0x6688cc, 0.35);
+    this.scene.add(amb);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+    sun.position.set(120, 80, 60);
+    this.scene.add(sun);
+    const fill = new THREE.PointLight(0x4488ff, 0.6, 2000);
+    fill.position.set(-80, 40, -40);
+    this.scene.add(fill);
   }
 }
-

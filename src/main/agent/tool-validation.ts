@@ -11,12 +11,26 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import {
+  LEGACY_SPECIALIST_ROLE_MAP,
+  SPECIALIST_MATRIX,
+  isCommandAllowedForSpecialist,
+  type LegacySpecialistRole,
+  type SpecialistBlackboard,
+  type SpecialistId,
+} from './specialist-contracts';
 
 export interface ValidationResult {
   valid: boolean;
   error?: string;
   fixedPath?: string;
   warning?: string;
+}
+
+export interface SpecialistValidationContext {
+  specialist?: LegacySpecialistRole | SpecialistId | 'repair_specialist';
+  claimedFiles?: string[];
+  blackboard?: SpecialistBlackboard;
 }
 
 /**
@@ -131,12 +145,196 @@ export function getFileTrackerState(): Map<string, string[]> {
   return new Map(sessionFileTracker);
 }
 
+function normalizeForGlob(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.?\//, '');
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+}
+
+function globToRegExp(glob: string): RegExp {
+  const normalized = normalizeForGlob(glob);
+  const regexBody = normalized
+    .split('**').map((segment) =>
+      segment
+        .split('*')
+        .map((part) => escapeRegex(part))
+        .join('[^/]*')
+    )
+    .join('.*');
+
+  return new RegExp(`^${regexBody}$`, 'i');
+}
+
+function matchesAnyGlob(filePath: string, globs: readonly string[]): boolean {
+  const normalized = normalizeForGlob(filePath);
+  return globs.some((glob) => globToRegExp(glob).test(normalized));
+}
+
+function resolveValidationSpecialist(
+  specialist?: SpecialistValidationContext['specialist']
+): SpecialistId | null {
+  if (!specialist) {
+    return null;
+  }
+
+  if (specialist in SPECIALIST_MATRIX) {
+    return specialist as SpecialistId;
+  }
+
+  if ((specialist as string) in LEGACY_SPECIALIST_ROLE_MAP) {
+    return LEGACY_SPECIALIST_ROLE_MAP[specialist as LegacySpecialistRole];
+  }
+
+  return null;
+}
+
+function validateSpecialistReadBoundary(
+  specialistContext: SpecialistValidationContext | undefined,
+  filePath: string
+): ValidationResult | null {
+  const specialistId = resolveValidationSpecialist(specialistContext?.specialist);
+  if (!specialistId) {
+    return null;
+  }
+
+  const definition = SPECIALIST_MATRIX[specialistId];
+  if (definition.readableGlobs.length > 0 && !matchesAnyGlob(filePath, definition.readableGlobs)) {
+    return {
+      valid: false,
+      error: `${specialistId}: attempted to read "${filePath}" outside its allowed scope`,
+    };
+  }
+
+  return null;
+}
+
+function validateSpecialistToolBoundary(
+  specialistContext: SpecialistValidationContext | undefined,
+  toolName: string
+): ValidationResult | null {
+  if (!specialistContext?.specialist) {
+    return null;
+  }
+
+  if (specialistContext.specialist === 'tool_orchestrator') {
+    const allowedTools = new Set([
+      'read_file',
+      'write_file',
+      'create_file',
+      'run_command',
+      'scaffold_project',
+      'search_codebase',
+      'find_symbols',
+    ]);
+    if (!allowedTools.has(toolName)) {
+      return {
+        valid: false,
+        error: `tool_orchestrator: tool "${toolName}" is outside the transitional orchestrator tool set`,
+      };
+    }
+    return null;
+  }
+
+  const specialistId = resolveValidationSpecialist(specialistContext.specialist);
+  if (!specialistId) {
+    return null;
+  }
+
+  const definition = SPECIALIST_MATRIX[specialistId];
+  if (!definition.allowedToolNames.includes(toolName)) {
+    return {
+      valid: false,
+      error: `${specialistId}: tool "${toolName}" is outside its allowed tool set`,
+    };
+  }
+
+  return null;
+}
+
+function validateSpecialistWriteBoundary(
+  specialistContext: SpecialistValidationContext | undefined,
+  filePath: string
+): ValidationResult | null {
+  const normalizedFilePath = normalizeForGlob(filePath);
+  const specialistId = resolveValidationSpecialist(specialistContext?.specialist);
+
+  if (specialistContext?.specialist === 'tool_orchestrator') {
+    const claimedFiles = specialistContext.claimedFiles || [];
+    if (claimedFiles.length > 0 && !matchesAnyGlob(normalizedFilePath, claimedFiles)) {
+      return {
+        valid: false,
+        error: `tool_orchestrator: attempted to write "${normalizedFilePath}" outside assigned file claims`,
+      };
+    }
+    return null;
+  }
+
+  if (!specialistId) {
+    return null;
+  }
+
+  const definition = SPECIALIST_MATRIX[specialistId];
+  if (definition.writableGlobs.length === 0) {
+    return {
+      valid: false,
+      error: `${specialistId}: is a read-only specialist and cannot write "${normalizedFilePath}"`,
+    };
+  }
+
+  if (!matchesAnyGlob(normalizedFilePath, definition.writableGlobs)) {
+    return {
+      valid: false,
+      error: `${specialistId}: attempted to write "${normalizedFilePath}" outside its writable scope`,
+    };
+  }
+
+  const claimedFiles = specialistContext?.claimedFiles || [];
+  if (claimedFiles.length > 0 && !matchesAnyGlob(normalizedFilePath, claimedFiles)) {
+    return {
+      valid: false,
+      error: `${specialistId}: attempted to write "${normalizedFilePath}" outside assigned file claims`,
+    };
+  }
+
+  return null;
+}
+
+function validateSpecialistCommandBoundary(
+  specialistContext: SpecialistValidationContext | undefined,
+  command: string
+): ValidationResult | null {
+  const specialistId = resolveValidationSpecialist(specialistContext?.specialist);
+  if (!specialistId) {
+    return null;
+  }
+
+  if (specialistContext?.specialist === 'tool_orchestrator') {
+    return null;
+  }
+
+  if (!isCommandAllowedForSpecialist(specialistId, command)) {
+    return {
+      valid: false,
+      error: `${specialistId}: command "${command}" is outside its allowed command set`,
+    };
+  }
+
+  return null;
+}
+
 /**
  * Detect what type of project the task is about
  * FIXED: Added more single keyword matches for better detection
  */
 export function detectProjectType(taskContext: string): string | null {
   const taskLower = taskContext.toLowerCase();
+
+  // Explicit technology mentions should win over generic "game" matches.
+  if (taskLower.includes('three.js') || taskLower.includes('threejs') || taskLower.includes('webgl')) return 'threejs';
+  if (taskLower.includes('tetris')) return 'tetris';
+  if (taskLower.includes('minecraft')) return 'minecraft';
   
   for (const [projectType, keywords] of Object.entries(PROJECT_SIGNATURES)) {
     const matchCount = keywords.filter(kw => taskLower.includes(kw)).length;
@@ -146,9 +344,7 @@ export function detectProjectType(taskContext: string): string | null {
   }
   
   // Single keyword matches for explicit mentions (ordered by specificity)
-  if (taskLower.includes('tetris')) return 'tetris';
-  if (taskLower.includes('minecraft')) return 'minecraft';
-  if (taskLower.includes('three.js') || taskLower.includes('threejs') || taskLower.includes('3d')) return 'threejs';
+  if (taskLower.includes('3d')) return 'threejs';
   if (taskLower.includes('portfolio')) return 'portfolio';
   if (taskLower.includes('dashboard')) return 'dashboard';
   if (taskLower.includes('ecommerce') || taskLower.includes('e-commerce') || taskLower.includes('shop')) return 'ecommerce';
@@ -201,14 +397,8 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
   const taskLower = taskContext.toLowerCase();
   const contentLower = content.toLowerCase();
   
-  // Detect task type (what user asked for)
-  let taskType: string | null = null;
-  for (const [projectType, keywords] of Object.entries(PROJECT_SIGNATURES)) {
-    if (keywords.some(kw => taskLower.includes(kw))) {
-      taskType = projectType;
-      break;
-    }
-  }
+  // Detect task type using the same prioritised logic as the rest of validation.
+  const taskType = detectProjectType(taskContext);
   
   // Detect content type (what AI is generating)
   const contentType = detectProjectTypeFromContent(content);
@@ -257,29 +447,39 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
 /**
  * Validate a tool call before execution
  */
-export function validateToolCall(toolCall: any, workspacePath: string, taskContext?: string): ValidationResult {
+export function validateToolCall(
+  toolCall: any,
+  workspacePath: string,
+  taskContext?: string,
+  specialistContext?: SpecialistValidationContext
+): ValidationResult {
   if (!toolCall || !toolCall.name) {
     return { valid: false, error: 'Invalid tool call: missing name' };
   }
 
+  const toolBoundary = validateSpecialistToolBoundary(specialistContext, toolCall.name);
+  if (toolBoundary) {
+    return toolBoundary;
+  }
+
   // Validate read_file tool
   if (toolCall.name === 'read_file') {
-    return validateReadFile(toolCall, workspacePath);
+    return validateReadFile(toolCall, workspacePath, specialistContext);
   }
 
   // Validate write_file tool
   if (toolCall.name === 'write_file' || toolCall.name === 'create_file') {
-    return validateWriteFile(toolCall, workspacePath, taskContext);
+    return validateWriteFile(toolCall, workspacePath, taskContext, specialistContext);
   }
 
   // Validate run_command tool
   if (toolCall.name === 'run_command') {
-    return validateRunCommand(toolCall);
+    return validateRunCommand(toolCall, specialistContext);
   }
 
   // Validate scaffold_project tool
   if (toolCall.name === 'scaffold_project') {
-    return validateScaffoldProject(toolCall, workspacePath);
+    return validateScaffoldProject(toolCall, workspacePath, specialistContext);
   }
 
   if (toolCall.name === 'search_codebase') {
@@ -310,7 +510,11 @@ export function validateToolCall(toolCall: any, workspacePath: string, taskConte
 /**
  * Validate read_file tool call
  */
-function validateReadFile(toolCall: any, workspacePath: string): ValidationResult {
+function validateReadFile(
+  toolCall: any,
+  workspacePath: string,
+  specialistContext?: SpecialistValidationContext
+): ValidationResult {
   const args = toolCall.arguments || {};
   const filePath = args.path;
 
@@ -354,6 +558,11 @@ function validateReadFile(toolCall: any, workspacePath: string): ValidationResul
     };
   }
 
+  const specialistBoundary = validateSpecialistReadBoundary(specialistContext, filePath);
+  if (specialistBoundary) {
+    return specialistBoundary;
+  }
+
   return { valid: true };
 }
 
@@ -365,13 +574,23 @@ function validateReadFile(toolCall: any, workspacePath: string): ValidationResul
  * 2. Project type coherence (content matches task)
  * 3. File structure sanity checks
  */
-function validateWriteFile(toolCall: any, workspacePath: string, taskContext?: string): ValidationResult {
+function validateWriteFile(
+  toolCall: any,
+  workspacePath: string,
+  taskContext?: string,
+  specialistContext?: SpecialistValidationContext
+): ValidationResult {
   const args = toolCall.arguments || {};
   const filePath = args.path;
   const content = args.content || '';
 
   if (!filePath) {
     return { valid: false, error: 'write_file: missing path argument' };
+  }
+
+  const specialistBoundary = validateSpecialistWriteBoundary(specialistContext, filePath);
+  if (specialistBoundary) {
+    return specialistBoundary;
   }
 
   const fileName = path.basename(filePath).toLowerCase();
@@ -696,7 +915,7 @@ function validateWriteFile(toolCall: any, workspacePath: string, taskContext?: s
 /**
  * Validate run_command tool call
  */
-function validateRunCommand(toolCall: any): ValidationResult {
+function validateRunCommand(toolCall: any, specialistContext?: SpecialistValidationContext): ValidationResult {
   const args = toolCall.arguments || {};
   const command = args.command;
 
@@ -716,21 +935,47 @@ function validateRunCommand(toolCall: any): ValidationResult {
     }
   }
 
+  const specialistBoundary = validateSpecialistCommandBoundary(specialistContext, command);
+  if (specialistBoundary) {
+    return specialistBoundary;
+  }
+
   return { valid: true };
 }
 
 /**
  * Validate scaffold_project tool call
  */
-function validateScaffoldProject(toolCall: any, workspacePath: string): ValidationResult {
+function validateScaffoldProject(
+  toolCall: any,
+  workspacePath: string,
+  specialistContext?: SpecialistValidationContext
+): ValidationResult {
   const args = toolCall.arguments || {};
+  const projectType = typeof args.project_type === 'string' ? args.project_type.trim() : '';
+  const projectName = typeof args.project_name === 'string' ? args.project_name.trim() : '';
   const projectPath = args.project_path || args.path;
 
-  if (!projectPath) {
-    return { valid: false, error: 'scaffold_project: missing project_path argument' };
+  if (!projectType) {
+    return { valid: false, error: 'scaffold_project: missing project_type argument' };
   }
 
-  // Similar validation as write_file
+  if (!projectName) {
+    return { valid: false, error: 'scaffold_project: missing project_name argument' };
+  }
+
+  const specialistId = resolveValidationSpecialist(specialistContext?.specialist);
+  if (specialistContext?.specialist === 'integration_analyst' || specialistId === 'integration_verifier') {
+    return {
+      valid: false,
+      error: 'integration_verifier: scaffold_project is not allowed during verification',
+    };
+  }
+
+  if (!projectPath) {
+    return { valid: true };
+  }
+
   if (path.isAbsolute(projectPath)) {
     try {
       const relativePath = path.relative(workspacePath, projectPath);
@@ -747,6 +992,23 @@ function validateScaffoldProject(toolCall: any, workspacePath: string): Validati
     };
   }
 
+  try {
+    const resolvedPath = path.resolve(workspacePath, projectPath);
+    const normalizedWorkspace = path.normalize(workspacePath);
+    const normalizedResolved = path.normalize(resolvedPath);
+    if (!normalizedResolved.startsWith(normalizedWorkspace)) {
+      return {
+        valid: false,
+        error: `scaffold_project: path outside workspace: ${projectPath}`
+      };
+    }
+  } catch {
+    return {
+      valid: false,
+      error: `scaffold_project: invalid path: ${projectPath}`
+    };
+  }
+
   return { valid: true };
 }
 
@@ -760,14 +1022,15 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
   const errors: string[] = [];
   const warnings: string[] = [];
   const contentLower = content.toLowerCase();
+  const trackedPaths = Array.from(createdFiles.values()).flat().map((filePath) => filePath.replace(/\\/g, '/'));
   
   // Get list of CSS files that were created
-  const cssFiles = Array.from(createdFiles.keys()).filter(f => 
+  const cssFiles = trackedPaths.filter(f => 
     f.endsWith('.css') && !f.includes('node_modules')
   );
   
   // Get list of JS files that were created (excluding config files)
-  const jsFiles = Array.from(createdFiles.keys()).filter(f => 
+  const jsFiles = trackedPaths.filter(f => 
     (f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.jsx')) && 
     !f.includes('node_modules') &&
     !f.includes('config') &&
@@ -780,9 +1043,14 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
   
   // Check if index.html has ANY script tag
   const hasScriptTag = contentLower.includes('<script');
+  const hasModuleScript = hasScriptTag && contentLower.includes('type="module"');
+  const bundlerManagedProject = trackedPaths.some((filePath) =>
+    /(^|\/)vite\.config\.(ts|js)$/.test(filePath)
+  );
+  const allowBundlerManagedCss = bundlerManagedProject && hasModuleScript;
   
   // 🚨 HARD FAILURE: CSS files created but no stylesheet link
-  if (cssFiles.length > 0 && !hasStylesheetLink) {
+  if (cssFiles.length > 0 && !hasStylesheetLink && !allowBundlerManagedCss) {
     errors.push(
       `🚨 CRITICAL ERROR: CSS file(s) created (${cssFiles.join(', ')}) but index.html has NO <link rel="stylesheet"> tag!\n` +
       `The page will appear completely unstyled (404 for CSS).\n` +
@@ -809,6 +1077,10 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
   
   // Check for specific CSS file references
   for (const cssFile of cssFiles) {
+    if (allowBundlerManagedCss) {
+      break;
+    }
+
     const fileName = cssFile.split('/').pop() || cssFile;
     if (!content.includes(cssFile) && !content.includes(fileName)) {
       errors.push(

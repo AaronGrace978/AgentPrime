@@ -29,6 +29,34 @@ It combines:
 
 The goal is simple: give you a practical local coding environment that feels fast, workspace-aware, and useful from the first launch.
 
+## Project Status
+
+AgentPrime is in an active foundation-hardening phase: the desktop IDE shell is already real, but the main push right now is turning project creation and agent execution from "alpha-feeling" into a dependable loop.
+
+Current status:
+
+- The desktop product shell is in place: workspace, Monaco editor, tabs, terminal, search, settings, chat, and model routing all exist.
+- The agent system is moving from prompt-only specialists to bounded discipline experts with file ownership, tool limits, command limits, and blackboard-style handoffs.
+- Template creation is now being hardened around a single materialization path instead of multiple drifting creation flows.
+- The current target loop is `create -> review -> apply -> install -> run -> repair`.
+
+Recently verified:
+
+- Transactional template materialization with rollback support for failed project generation.
+- Deterministic scaffold routing for canonical template requests like `threejs-game`.
+- Specialist planning and blackboard state for bounded assignments and repair passes.
+- Specialist-aware tool validation for file, tool, and command boundaries.
+- Rollback-aware verification messaging and targeted repair behavior.
+- End-to-end `threejs-game` smoke coverage for `create -> npm install -> npm run build`.
+
+Confidence snapshot:
+
+- `31/31` targeted regression tests passing for the scaffold, specialist, validation, and verification workstreams.
+- Lightweight Three.js routing smoke passing.
+- Filtered template smoke passing for the `threejs-game` template.
+
+This is not the finish line yet, but it is a meaningful step past the earlier "alpha" behavior in project generation and specialist coordination.
+
 ## What AgentPrime Can Do
 
 - Open a project and work in a full desktop IDE shell with Monaco editor, tabs, file tree, terminal, and search/replace
@@ -45,6 +73,11 @@ The goal is simple: give you a practical local coding environment that feels fas
 
 ## Recent Upgrades
 
+- Added a typed bounded-specialist contract matrix with discipline metadata and reflection checklists in `src/main/agent/specialist-contracts.ts`.
+- Added blackboard ownership tracking and bounded step planning through `src/main/agent/task-master.ts` and `src/main/agent/specialized-agent-loop.ts`.
+- Hardened `src/main/legacy/template-engine.ts` so failed template generation can roll back cleanly instead of leaving partial projects behind.
+- Added deterministic scaffold routing and bootstrap coverage for browser Three.js projects.
+- Added specialist-boundary regression tests, template rollback tests, and smoke validation for the current create path.
 - Better AI Composer stability. Once the composer has been opened, it stays mounted when collapsed so in-flight work is not reset.
 - Faster, richer chat rendering with a virtualized message list and improved code blocks with copy/apply actions.
 - Safer chat payload handling through schema-validated IPC context with stricter bounds on incoming data.
@@ -52,6 +85,19 @@ The goal is simple: give you a practical local coding environment that feels fas
 - Better specialized-agent execution with bounded parallel tool work and stronger review/verification plumbing.
 - Improved Ollama handling so cloud-style endpoints do not get treated like a local daemon health check path.
 - Shortcut behavior aligned with the UI: `Ctrl+K` opens the command palette outside the editor, while `Ctrl+K` in Monaco remains inline AI edit.
+
+## Next Goals
+
+The next major milestones are focused on making AgentPrime feel like a proper AI IDE instead of a promising prototype:
+
+1. Add user-visible review/apply checkpoints so generated patch sets can be staged before writes are finalized.
+2. Split reflection into `instant`, `standard`, and `deep` budgets so specialists stay fast on easy turns and only escalate on risky or failing work.
+3. Expand smoke coverage from the current scaffold path into broader template sweeps and browser/UI-level end-to-end checks.
+4. Continue replacing language-only roles with discipline-first specialists such as styling/UX, testing, security, performance, and data-contract experts.
+5. Tighten the `install -> run -> verify -> repair` loop so AgentPrime can recover from failures with smaller, more targeted fixes.
+6. Keep reducing latency in the agent path so the system feels closer to a fast local assistant than a slow multi-agent committee.
+
+For the current specialist architecture direction, see `docs/BOUNDED_SPECIALIST_MATRIX.md`.
 
 ## Core Features
 

@@ -1679,9 +1679,9 @@ npm-debug.log*
 
     for (const basePath of commonPaths) {
       code.push(`if exist "${basePath}\\npm.cmd" (`);
-      code.push(`    set "NODE_EXE="${basePath}\\node.exe"`);
-      code.push(`    set "NPM_EXE="${basePath}\\npm.cmd"`);
-      code.push(`    set "PATH="${basePath};%PATH%"`);
+      code.push(`    set "NODE_EXE=${basePath}\\node.exe"`);
+      code.push(`    set "NPM_EXE=${basePath}\\npm.cmd"`);
+      code.push(`    set "PATH=${basePath};%PATH%"`);
       code.push('    goto :node_found');
       code.push(')');
     }
@@ -1729,8 +1729,8 @@ npm-debug.log*
       try {
         const content = this.safeReadFileSync(mainTsPath, 'utf-8');
         if (content === null) return; // OneDrive placeholder
-        if (content.includes('React') || content.includes('JSX') || content.includes('<')) {
-          // Contains JSX, should be .tsx
+        const hasJsx = /import\s+React|from\s+['"]react['"]|<[A-Z][A-Za-z]*[\s/>]/.test(content);
+        if (hasJsx) {
           const mainTsxPath = path.join(workspacePath, 'src', 'main.tsx');
           fs.writeFileSync(mainTsxPath, content, 'utf-8');
           fs.unlinkSync(mainTsPath);
@@ -1826,9 +1826,12 @@ npm-debug.log*
             }
           }
 
-          // Fix script reference to use .tsx if it exists
-          if (content.includes('main.ts') && fs.existsSync(path.join(workspacePath, 'src', 'main.tsx'))) {
-            content = content.replace(/main\.ts/g, 'main.tsx');
+          // Fix malformed Vite entry references without turning main.tsxx into main.tsxxx.
+          if (fs.existsSync(path.join(workspacePath, 'src', 'main.tsx'))) {
+            content = content.replace(/main\.tsxx(?=["'])/g, 'main.tsx');
+            if (content.includes('main.ts')) {
+              content = content.replace(/main\.ts(?=["'])/g, 'main.tsx');
+            }
             modified = true;
           }
 

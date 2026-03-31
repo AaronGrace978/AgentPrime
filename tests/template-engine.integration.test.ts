@@ -140,5 +140,55 @@ describe('TemplateEngine integration', () => {
         projectName: 'broken-project'
       })
     ).rejects.toThrow('Template file not found');
+
+    expect(fs.existsSync(path.join(tempRoot, 'broken-project'))).toBe(false);
+  });
+
+  it('rolls back in-place materialization when a template fails partway through', async () => {
+    const tempRoot = createTempDir('agentprime-template-engine-rollback-');
+    const templatesDir = path.join(tempRoot, 'templates');
+    const templateDir = path.join(templatesDir, 'broken-in-place');
+    const workspacePath = path.join(tempRoot, 'workspace');
+    fs.mkdirSync(templateDir, { recursive: true });
+    fs.mkdirSync(workspacePath, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(templatesDir, 'registry.json'),
+      JSON.stringify({
+        templates: [{ id: 'broken-in-place', name: 'Broken In Place', category: 'frontend' }],
+        categories: [{ id: 'frontend', name: 'Frontend' }]
+      }, null, 2)
+    );
+
+    fs.writeFileSync(
+      path.join(templateDir, 'template.json'),
+      JSON.stringify({
+        id: 'broken-in-place',
+        name: 'Broken In Place',
+        directories: ['src'],
+        files: [
+          { template: 'README.md', path: 'README.md' },
+          { template: 'missing.ts', path: 'src/missing.ts' }
+        ]
+      }, null, 2)
+    );
+
+    fs.writeFileSync(path.join(templateDir, 'README.md'), '# Updated scaffold\n');
+    fs.writeFileSync(path.join(workspacePath, 'README.md'), '# Existing workspace\n');
+
+    const engine = new TemplateEngine(templatesDir);
+
+    await expect(
+      engine.materializeProject({
+        templateId: 'broken-in-place',
+        targetDir: workspacePath,
+        variables: { projectName: 'workspace' },
+        mode: 'in-place',
+        runPostCreate: false
+      })
+    ).rejects.toThrow('Template file not found');
+
+    expect(fs.readFileSync(path.join(workspacePath, 'README.md'), 'utf-8')).toBe('# Existing workspace\n');
+    expect(fs.existsSync(path.join(workspacePath, 'src'))).toBe(false);
   });
 });

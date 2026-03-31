@@ -22,6 +22,13 @@ import { withAITimeoutAndRetry, TimeoutError } from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
 import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
 import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
+import { getTelemetryService } from '../core/telemetry-service';
+import { getTaskMaster, type TaskMasterRetryContext } from './task-master';
+import {
+  LEGACY_SPECIALIST_ROLE_MAP,
+  type SpecialistBlackboard,
+  type SpecialistId,
+} from './specialist-contracts';
 
 const MAX_RETRIES = 2;
 
@@ -48,6 +55,68 @@ export class SpecializedAgentLoop extends EventEmitter {
     this.stopRequested = true;
   }
 
+  private resolveMode(isUpdate: boolean, retryCount: number): SpecialistBlackboard['mode'] {
+    if (retryCount > 0) {
+      return 'repair';
+    }
+    return isUpdate ? 'edit' : 'create';
+  }
+
+  private mapLegacyRoleToSpecialist(role: AgentRole): SpecialistId {
+    if (role === 'repair_specialist') {
+      return 'repair_specialist';
+    }
+    return LEGACY_SPECIALIST_ROLE_MAP[role as keyof typeof LEGACY_SPECIALIST_ROLE_MAP];
+  }
+
+  private buildSpecialistRoster(
+    roles: AgentRole[],
+    mode: SpecialistBlackboard['mode']
+  ): SpecialistId[] {
+    const mapped = roles.map((role) => this.mapLegacyRoleToSpecialist(role));
+    const roster = new Set<SpecialistId>(['executive_router', 'task_master', ...mapped]);
+
+    if (mode === 'create') {
+      roster.add('template_scaffold_specialist');
+    }
+
+    if (mode === 'repair') {
+      roster.add('repair_specialist');
+    }
+
+    return [...roster];
+  }
+
+  private buildBlackboard(
+    userMessage: string,
+    mode: SpecialistBlackboard['mode'],
+    roles: AgentRole[],
+    retryContext?: TaskMasterRetryContext
+  ): SpecialistBlackboard {
+    const taskId = `specialized_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const specialists = this.buildSpecialistRoster(roles, mode);
+    const plan = getTaskMaster(this.context.workspacePath, userMessage).buildPlan({
+      mode,
+      specialists,
+      retryContext,
+    });
+
+    return {
+      taskId,
+      userGoal: userMessage,
+      mode,
+      currentOwner: 'task_master',
+      status: mode === 'repair' ? 'repairing' : 'planning',
+      workspacePath: this.context.workspacePath,
+      activeStepId: plan.activeStepId,
+      claimedFiles: plan.claimedFiles,
+      steps: plan.steps,
+      artifacts: [],
+      findings: [],
+      approvalsRequired: [],
+    };
+  }
+
   /**
    * Run a task using specialized agents WITH VERIFICATION
    */
@@ -55,6 +124,13 @@ export class SpecializedAgentLoop extends EventEmitter {
     console.log('[SpecializedAgent] Starting specialized agent execution...');
     this.stopRequested = false;
     this.emit('task-start', { task: userMessage });
+    const telemetry = getTelemetryService();
+    const taskStartedAt = Date.now();
+    telemetry.track('agent_task_start', {
+      mode: 'specialized',
+      workspacePath: this.context.workspacePath,
+      requestedModel: this.context.model || null,
+    });
 
     // Start transaction for this specialized agent task
     const transaction = transactionManager.startTransaction(this.context.workspacePath);
@@ -71,27 +147,55 @@ export class SpecializedAgentLoop extends EventEmitter {
     let retryCount = 0;
     let allCreatedFiles: string[] = [];
     let lastVerification: ProjectVerification | null = null;
+    let verificationSucceeded = false;
+    let rolledBackIncomplete = false;
+    let blackboard: SpecialistBlackboard | null = null;
 
     // Main execution loop with retries
     while (retryCount <= MAX_RETRIES) {
       if (this.stopRequested) {
+        await transactionManager.rollbackTransaction();
         return `⏹️ **Agent stopped by user**\n\nCreated so far: ${allCreatedFiles.length} file(s).`;
       }
 
       // Step 1: Route to appropriate specialists
-      const roles = routeToSpecialists(userMessage, {
+      const routedRoles = routeToSpecialists(userMessage, {
         files: this.getProjectFiles(),
         language: this.detectLanguage(),
         projectType: this.detectProjectType()
       });
+      const roles = [...routedRoles];
+      if (retryCount > 0 && !roles.includes('repair_specialist')) {
+        roles.push('repair_specialist');
+      }
+
+      const mode = this.resolveMode(isUpdate, retryCount);
+      blackboard = this.buildBlackboard(userMessage, mode, roles, lastVerification
+        ? { missingFiles: lastVerification.missingFiles, errors: lastVerification.errors }
+        : undefined);
+      this.emit('blackboard-update', blackboard);
 
       console.log(`[SpecializedAgent] Attempt ${retryCount + 1}/${MAX_RETRIES + 1} - Routing to: ${roles.join(', ')}`);
 
       // Step 2: Build the task message (include missing files if retrying)
       let taskMessage = userMessage;
-      if (retryCount > 0 && lastVerification && lastVerification.missingFiles.length > 0) {
-        taskMessage = `CRITICAL: The following files are MISSING and MUST be created:\n${lastVerification.missingFiles.map(f => `- ${f}`).join('\n')}\n\nOriginal task: ${userMessage}\n\nCreate these missing files with COMPLETE, WORKING content. Do not skip any file.`;
-        console.log(`[SpecializedAgent] Retry with missing files: ${lastVerification.missingFiles.join(', ')}`);
+      if (retryCount > 0 && lastVerification) {
+        const missingFileSection = lastVerification.missingFiles.length > 0
+          ? `Missing files:\n${lastVerification.missingFiles.map(f => `- ${f}`).join('\n')}\n\n`
+          : '';
+        const issueSection = lastVerification.errors.length > 0
+          ? `Verification/build/runtime issues:\n${lastVerification.errors.map(err => `- ${err}`).join('\n')}\n\n`
+          : '';
+
+        if (missingFileSection || issueSection) {
+          taskMessage =
+            `CRITICAL FIX PASS REQUIRED.\n\n` +
+            `${missingFileSection}` +
+            `${issueSection}` +
+            `Original task: ${userMessage}\n\n` +
+            `Fix the concrete issues above with targeted edits only. Keep the existing scaffold and working files intact.`;
+          console.log(`[SpecializedAgent] Retry with targeted verification feedback`);
+        }
       }
 
       // Step 3: Execute with specialists
@@ -134,42 +238,59 @@ export class SpecializedAgentLoop extends EventEmitter {
           roles,
           {
             workspacePath: this.context.workspacePath,
-            files: this.getProjectFiles()
+            files: this.getProjectFiles(),
+            model: this.context.model,
+            blackboard,
           },
           trackerMode,
           specialistCallbacks
         );
       } catch (error) {
         if (this.stopRequested) {
+          await transactionManager.rollbackTransaction();
           return `⏹️ **Agent stopped by user**\n\nCreated so far: ${allCreatedFiles.length} file(s).`;
         }
         throw error;
       }
 
-      const { results, finalAnalysis, executedTools } = specialistRun;
+      const { results, finalAnalysis, executedTools, scaffoldApplied, scaffoldTemplateId, skippedGenerativePass } = specialistRun;
+      if (blackboard) {
+        blackboard.status = 'verifying';
+        this.emit('blackboard-update', blackboard);
+      }
 
       if (finalAnalysis) {
         this.emit('critique-complete', { analysis: finalAnalysis });
       }
 
       // Step 4: Collect created files from this run
-      const newFiles: string[] = [];
-      if (executedTools) {
-        for (const tool of executedTools) {
-          if (tool.toolCall?.function?.name === 'write_file' && tool.toolCall?.function?.arguments?.path) {
-            const filePath = tool.toolCall.function.arguments.path;
-            if (!allCreatedFiles.includes(filePath)) {
-              allCreatedFiles.push(filePath);
-              newFiles.push(filePath);
-            }
-          }
+      const newFiles = this.collectCreatedFilesFromExecutedTools(executedTools || []);
+      for (const filePath of newFiles) {
+        if (!allCreatedFiles.includes(filePath)) {
+          allCreatedFiles.push(filePath);
         }
       }
 
       console.log(`[SpecializedAgent] Created ${newFiles.length} new files: ${newFiles.join(', ')}`);
+      if (scaffoldApplied) {
+        console.log(`[SpecializedAgent] 🧱 Scaffold-first path applied (${scaffoldTemplateId || 'template'})`);
+      }
+      if (skippedGenerativePass) {
+        console.log('[SpecializedAgent] 🧪 Skipped long generative pass; proceeding directly to runnable verification');
+      }
 
       // Step 5: VERIFY the project is complete
       lastVerification = await this.verifyProject(allCreatedFiles);
+      const verificationSnapshot = lastVerification;
+      if (blackboard && verificationSnapshot.errors.length > 0) {
+        blackboard.findings = verificationSnapshot.errors.map((error) => ({
+          severity: 'error',
+          summary: error,
+          files: verificationSnapshot.missingFiles,
+          suggestedOwner: 'repair_specialist',
+        }));
+        this.emit('blackboard-update', blackboard);
+      }
       
       // AUTO-FIX: Always run auto-fixer (even if verification fails, it can fix issues)
       try {
@@ -190,47 +311,62 @@ export class SpecializedAgentLoop extends EventEmitter {
       // Re-run verification after auto-fix so newly introduced or corrected files are accounted for.
       lastVerification = await this.verifyProject(allCreatedFiles);
 
+      // Always attempt to install dependencies so the project is usable even
+      // if there are minor verification issues (TS errors, etc.).
+      const installResult = await this.installDependenciesIfNeeded();
+      if (!installResult.success) {
+        lastVerification.errors.push(`[Install] ${this.compactProcessOutput(installResult.output)}`);
+      }
+
       if (lastVerification.isComplete) {
         console.log('[SpecializedAgent] ✅ Project verification PASSED');
         
-        // Install dependencies if package.json exists
-        await this.installDependenciesIfNeeded();
-        
-        // Step 6: BROWSER TESTING - Test the project in a real browser
-        try {
-          console.log('[SpecializedAgent] 🌐 Running browser tests...');
-          const browserTestResult = await testProjectInBrowser(this.context.workspacePath);
-          
-          if (browserTestResult.passed) {
-            console.log(`[SpecializedAgent] ✅ Browser tests passed (score: ${browserTestResult.score}/100)`);
-          } else {
-            console.log(`[SpecializedAgent] ⚠️ Browser tests found issues (score: ${browserTestResult.score}/100)`);
-            console.log(formatBrowserTestResults(browserTestResult));
-            
-            // Add browser test issues to verification errors
-            for (const issue of browserTestResult.issues.filter(i => i.severity === 'critical')) {
-              lastVerification.errors.push(`[Browser Test] ${issue.description}`);
-            }
-            
-            const criticalIssues = browserTestResult.issues.filter(i => i.severity === 'critical');
-
-            if (criticalIssues.length > 0 && retryCount < MAX_RETRIES) {
-              console.log(`[SpecializedAgent] 🔧 Found ${criticalIssues.length} critical browser/runtime issues - will retry`);
-              lastVerification.isComplete = false;
-              lastVerification.errors.push(
-                ...criticalIssues.map(i => `BROWSER FIX NEEDED: ${i.description}. ${i.suggestedFix || ''}`.trim())
-              );
-            }
-          }
-        } catch (browserTestError: any) {
-          console.warn('[SpecializedAgent] Browser testing skipped:', browserTestError.message);
-          // Non-critical - continue without browser tests
+        // Build verification — failure is recorded but doesn't nuke the project
+        const buildResult = await this.buildProjectIfNeeded();
+        if (!buildResult.success) {
+          lastVerification.isComplete = false;
+          lastVerification.errors.push(`[Build] ${this.compactProcessOutput(buildResult.output)}`);
         }
         
-        // Only finalize if still complete after browser tests
+        // Step 6: BROWSER TESTING - Test the project in a real browser
         if (lastVerification.isComplete) {
-          // Generate project documentation and register
+          try {
+            console.log('[SpecializedAgent] 🌐 Running browser tests...');
+            const browserTestResult = await testProjectInBrowser(this.context.workspacePath);
+            
+            if (browserTestResult.passed) {
+              console.log(`[SpecializedAgent] ✅ Browser tests passed (score: ${browserTestResult.score}/100)`);
+            } else {
+              console.log(`[SpecializedAgent] ⚠️ Browser tests found issues (score: ${browserTestResult.score}/100)`);
+              console.log(formatBrowserTestResults(browserTestResult));
+              
+              // Add browser test issues to verification errors
+              for (const issue of browserTestResult.issues.filter(i => i.severity === 'critical')) {
+                lastVerification.errors.push(`[Browser Test] ${issue.description}`);
+              }
+              
+              const criticalIssues = browserTestResult.issues.filter(i => i.severity === 'critical');
+
+              if (criticalIssues.length > 0 && retryCount < MAX_RETRIES) {
+                console.log(`[SpecializedAgent] 🔧 Found ${criticalIssues.length} critical browser/runtime issues - will retry`);
+                lastVerification.isComplete = false;
+                lastVerification.errors.push(
+                  ...criticalIssues.map(i => `BROWSER FIX NEEDED: ${i.description}. ${i.suggestedFix || ''}`.trim())
+                );
+              }
+            }
+          } catch (browserTestError: any) {
+            console.warn('[SpecializedAgent] Browser testing skipped:', browserTestError.message);
+          }
+        }
+        
+        if (lastVerification.isComplete) {
           await this.finalizeProject(userMessage, allCreatedFiles, isUpdate);
+          verificationSucceeded = true;
+          if (blackboard) {
+            blackboard.status = 'completed';
+            this.emit('blackboard-update', blackboard);
+          }
           
           break;
         }
@@ -241,6 +377,10 @@ export class SpecializedAgentLoop extends EventEmitter {
       if (lastVerification.errors.length > 0) {
         console.log(`[SpecializedAgent] ⚠️ Errors: ${lastVerification.errors.slice(0, 3).join('; ')}`);
       }
+      if (blackboard) {
+        blackboard.status = 'repairing';
+        this.emit('blackboard-update', blackboard);
+      }
       retryCount++;
       
       if (retryCount > MAX_RETRIES) {
@@ -249,17 +389,54 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     // Step 6: Build final response
+    // Decide whether to commit or rollback.
+    // Key principle: a project with minor build errors is far more useful than an
+    // empty folder.  Only rollback when **no** files were actually written to disk
+    // (i.e., total generation failure).  Build/TS errors are surfaced to the user
+    // but the files are kept so they can be fixed.
+    const filesActuallyExist = allCreatedFiles.some(f => {
+      try { return fs.existsSync(path.join(this.context.workspacePath, f)); } catch { return false; }
+    });
+    const shouldCommit = verificationSucceeded || filesActuallyExist;
 
-    // Commit transaction on successful completion
-    try {
-      const operationCount = transaction.getOperationCount();
-      transactionManager.commitTransaction();
-      console.log(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
-    } catch (txError) {
-      console.error(`[SpecializedAgent] ❌ Transaction commit failed:`, txError);
+    if (shouldCommit) {
+      try {
+        const operationCount = transaction.getOperationCount();
+        transactionManager.commitTransaction();
+        telemetry.track('agent_task_complete', {
+          mode: 'specialized',
+          success: verificationSucceeded,
+          rolledBack: false,
+          retryCount,
+          fileCount: allCreatedFiles.length,
+          durationMs: Date.now() - taskStartedAt,
+        });
+        if (verificationSucceeded) {
+          console.log(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
+        } else {
+          console.log(`[SpecializedAgent] ⚠️ Transaction committed with issues (${operationCount} file ops) — files kept for user to fix`);
+        }
+      } catch (txError) {
+        console.error(`[SpecializedAgent] ❌ Transaction commit failed:`, txError);
+        throw txError;
+      }
+    } else {
+      await transactionManager.rollbackTransaction();
+      rolledBackIncomplete = true;
+      telemetry.track('agent_task_complete', {
+        mode: 'specialized',
+        success: false,
+        rolledBack: true,
+        retryCount,
+        fileCount: allCreatedFiles.length,
+        durationMs: Date.now() - taskStartedAt,
+        verificationErrors: lastVerification?.errors || [],
+        missingFiles: lastVerification?.missingFiles || [],
+      });
+      console.log('[SpecializedAgent] 🔄 Rolled back incomplete specialized-agent run');
     }
 
-    return this.buildResponse(allCreatedFiles, lastVerification);
+    return this.buildResponse(allCreatedFiles, lastVerification, { rolledBack: rolledBackIncomplete });
     } catch (error) {
       // On timeout, try to rollback to last checkpoint instead of full rollback
       if (error instanceof TimeoutError) {
@@ -286,6 +463,13 @@ export class SpecializedAgentLoop extends EventEmitter {
           console.error(`[SpecializedAgent] ❌ Transaction rollback failed:`, rollbackError);
         }
       }
+      telemetry.track('agent_task_complete', {
+        mode: 'specialized',
+        success: false,
+        rolledBack: true,
+        durationMs: Date.now() - taskStartedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error; // Re-throw the original error
     }
   }
@@ -429,19 +613,28 @@ export class SpecializedAgentLoop extends EventEmitter {
             }
           }
 
-          // Find JS references
-          const jsRefs = content.match(/src=["']([^"']+\.js)["']/g) || [];
-          for (const ref of jsRefs) {
-            const jsFile = ref.match(/src=["']([^"']+\.js)["']/)?.[1];
-            if (jsFile && !jsFile.startsWith('http')) {
-              const normalizedPath = this.normalizePath(jsFile);
-              if (!existingFiles.includes(normalizedPath) && !this.fileExists(workspacePath, jsFile)) {
+          // Find local script/module references, including TS/TSX/JSX entries used by Vite.
+          const scriptRefs = content.match(/src=["']([^"']+\.(?:js|jsx|ts|tsx|mjs|cjs|tsxx))["']/g) || [];
+          for (const ref of scriptRefs) {
+            const scriptFile = ref.match(/src=["']([^"']+\.(?:js|jsx|ts|tsx|mjs|cjs|tsxx))["']/)?.[1];
+            if (scriptFile && !scriptFile.startsWith('http')) {
+              const normalizedPath = this.normalizePath(scriptFile);
+              if (scriptFile.endsWith('.tsxx')) {
+                errors.push(`${file} references invalid script entry: ${scriptFile} (.tsxx is not a valid TypeScript React extension)`);
+                const suggestedPath = normalizedPath.replace(/\.tsxx$/i, '.tsx');
+                if (!missingFiles.includes(suggestedPath)) {
+                  missingFiles.push(suggestedPath);
+                }
+                continue;
+              }
+
+              if (!existingFiles.includes(normalizedPath) && !this.fileExists(workspacePath, scriptFile)) {
                 // SMART VALIDATION: Check if file name makes sense for the project
-                if (this.isValidFileReference(jsFile, workspacePath)) {
+                if (this.isValidFileReference(scriptFile, workspacePath)) {
                   missingFiles.push(normalizedPath);
                 } else {
                   // File reference doesn't make sense - likely a hallucination
-                  errors.push(`${file} references invalid JS file: ${jsFile} (likely hallucinated - check if it matches the project type)`);
+                  errors.push(`${file} references invalid script file: ${scriptFile} (likely hallucinated - check if it matches the project type)`);
                 }
               }
             }
@@ -507,7 +700,11 @@ export class SpecializedAgentLoop extends EventEmitter {
   /**
    * Build the final response with project status
    */
-  private buildResponse(createdFiles: string[], verification: ProjectVerification | null): string {
+  private buildResponse(
+    createdFiles: string[],
+    verification: ProjectVerification | null,
+    options: { rolledBack?: boolean } = {}
+  ): string {
     const projectType = this.detectProjectType();
     const hasPackageJson = this.getProjectFiles().includes('package.json');
     const hasIndexHtml = this.getProjectFiles().some(f => f === 'index.html' || f.endsWith('/index.html'));
@@ -543,6 +740,13 @@ export class SpecializedAgentLoop extends EventEmitter {
         response += `### ✅ Verification Passed\n`;
         response += `All files created and properly linked!\n\n`;
       } else {
+        if (options.rolledBack) {
+          response += `### ↩️ Changes Reverted\n`;
+          response += `AgentPrime rolled back the generated changes because no usable files could be kept.\n\n`;
+        } else {
+          response += `### ⚠️ Project Created With Issues\n`;
+          response += `Files have been kept so you can inspect and fix the remaining issues.\n\n`;
+        }
         if (verification.missingFiles.length > 0) {
           response += `### ⚠️ Missing Files\n`;
           verification.missingFiles.forEach(file => {
@@ -613,7 +817,31 @@ export class SpecializedAgentLoop extends EventEmitter {
    * Normalize a path (remove leading ./ etc)
    */
   private normalizePath(filePath: string): string {
-    return filePath.replace(/^\.\//, '').replace(/\\/g, '/');
+    return filePath.replace(/^\.\//, '').replace(/^\/+/, '').replace(/\\/g, '/');
+  }
+
+  private collectCreatedFilesFromExecutedTools(executedTools: any[]): string[] {
+    const createdFiles = new Set<string>();
+
+    for (const tool of executedTools) {
+      const toolCall = tool?.toolCall;
+      const name = toolCall?.name || toolCall?.function?.name;
+      const args = toolCall?.arguments || toolCall?.function?.arguments || toolCall?.input || toolCall?.function?.input || {};
+
+      if (name === 'write_file' && typeof args.path === 'string') {
+        createdFiles.add(this.normalizePath(args.path));
+      }
+
+      if (name === 'scaffold_project' && Array.isArray(tool?.result?.files)) {
+        for (const file of tool.result.files) {
+          if (typeof file === 'string') {
+            createdFiles.add(this.normalizePath(file));
+          }
+        }
+      }
+    }
+
+    return [...createdFiles];
   }
 
   private readRootPackageJson(): any | null {
@@ -830,13 +1058,27 @@ export class SpecializedAgentLoop extends EventEmitter {
     return undefined;
   }
 
+  private compactProcessOutput(output: string, maxChars: number = 1200): string {
+    const normalized = (output || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) {
+      return 'Command failed with no output.';
+    }
+
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+
+    return `...${normalized.slice(-maxChars)}`;
+  }
+
   /**
    * Install dependencies automatically if package.json or requirements.txt exists
    */
-  private async installDependenciesIfNeeded(): Promise<void> {
+  private async installDependenciesIfNeeded(): Promise<{ success: boolean; output: string }> {
     const workspacePath = this.context.workspacePath;
     const packageJsonPath = path.join(workspacePath, 'package.json');
     const requirementsPath = path.join(workspacePath, 'requirements.txt');
+    const outputs: string[] = [];
 
     // Check for Node.js project
     if (fs.existsSync(packageJsonPath)) {
@@ -870,10 +1112,12 @@ export class SpecializedAgentLoop extends EventEmitter {
           
           console.log('[SpecializedAgent] ✅ Dependencies installed successfully');
           if (stdout) console.log(stdout.substring(0, 500));
+          outputs.push(stdout || stderr || 'npm install completed successfully');
           break; // Success, exit loop
           
         } catch (error: any) {
           console.warn(`[SpecializedAgent] ⚠️ Install attempt ${installAttempt} failed:`, error.message);
+          outputs.push(error.message || 'npm install failed');
           
           // If first attempt fails, try cleaning node_modules and retrying
           if (installAttempt < maxAttempts && fs.existsSync(nodeModulesPath)) {
@@ -889,6 +1133,13 @@ export class SpecializedAgentLoop extends EventEmitter {
               console.warn('[SpecializedAgent] Could not clean node_modules:', cleanError.message);
               break; // Can't clean, don't retry
             }
+          }
+
+          if (installAttempt >= maxAttempts) {
+            return {
+              success: false,
+              output: outputs.join('\n\n')
+            };
           }
         }
       }
@@ -916,10 +1167,63 @@ export class SpecializedAgentLoop extends EventEmitter {
         
         console.log('[SpecializedAgent] ✅ Python dependencies installed successfully');
         if (stdout) console.log(stdout.substring(0, 500));
+        outputs.push(stdout || stderr || 'Python dependency installation completed successfully');
       } catch (error: any) {
         console.warn('[SpecializedAgent] ⚠️ Failed to install Python dependencies:', error.message);
-        // Don't fail the whole process if install fails
+        outputs.push(error.message || 'Python dependency installation failed');
+        return {
+          success: false,
+          output: outputs.join('\n\n')
+        };
       }
+    }
+
+    return {
+      success: true,
+      output: outputs.join('\n\n') || 'No dependencies to install'
+    };
+  }
+
+  private async buildProjectIfNeeded(): Promise<{ success: boolean; output: string }> {
+    const workspacePath = this.context.workspacePath;
+    const packageJsonPath = path.join(workspacePath, 'package.json');
+
+    if (!fs.existsSync(packageJsonPath)) {
+      return { success: true, output: 'No package.json found; skipping build' };
+    }
+
+    try {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      if (!packageJson?.scripts?.build || typeof packageJson.scripts.build !== 'string') {
+        return { success: true, output: 'No build script configured; skipping build' };
+      }
+
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      const { resolveCommand, getNodeEnv } = require('../core/tool-path-finder');
+      const buildCommand = resolveCommand('npm run build');
+      const env = getNodeEnv();
+
+      console.log('[SpecializedAgent] 🏗️ Running build verification...');
+      const { stdout, stderr } = await execAsync(buildCommand, {
+        cwd: workspacePath,
+        timeout: 300000,
+        env,
+        maxBuffer: 10 * 1024 * 1024
+      });
+
+      console.log('[SpecializedAgent] ✅ Build verification passed');
+      return {
+        success: true,
+        output: stdout + stderr
+      };
+    } catch (error: any) {
+      console.warn('[SpecializedAgent] ⚠️ Build verification failed:', error.message);
+      return {
+        success: false,
+        output: error.stderr || error.stdout || error.message || 'Build failed'
+      };
     }
   }
 }

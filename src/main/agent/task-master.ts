@@ -16,6 +16,12 @@ import * as path from 'path';
 import { detectProjectType, detectProjectTypeFromContent } from './tool-validation';
 import { storeTaskLearning } from '../mirror/mirror-singleton';
 import { getOpusReasoningEngine } from '../mirror/opus-reasoning-engine';
+import {
+  SPECIALIST_EXECUTION_ORDER,
+  type SpecialistBlackboard,
+  type SpecialistId,
+  type SpecialistStepAssignment,
+} from './specialist-contracts';
 
 export interface BossReviewResult {
   approved: boolean;
@@ -29,6 +35,18 @@ export interface FileToReview {
   path: string;
   content: string;
   existingContent?: string; // If file already exists
+}
+
+export interface TaskMasterRetryContext {
+  missingFiles: string[];
+  errors: string[];
+}
+
+export interface TaskMasterPlan {
+  activeStepId?: string;
+  steps: SpecialistStepAssignment[];
+  claimedFiles: Record<SpecialistId, string[]>;
+  summary: string;
 }
 
 /**
@@ -53,6 +71,45 @@ export class TaskMaster {
       this.existingFiles.set(filePath, fileInfo.content);
     }
     console.log(`[TaskMaster] 📋 Loaded ${this.existingFiles.size} existing files for review`);
+  }
+
+  buildPlan(params: {
+    mode: SpecialistBlackboard['mode'];
+    specialists: SpecialistId[];
+    retryContext?: TaskMasterRetryContext;
+  }): TaskMasterPlan {
+    const orderedSpecialists = SPECIALIST_EXECUTION_ORDER.filter((id) => params.specialists.includes(id));
+    const claimedFiles = this.createClaimMap();
+    const steps: SpecialistStepAssignment[] = [];
+    const projectType = detectProjectType(this.task);
+    const retryFiles = this.extractRetryFiles(params.retryContext);
+
+    for (const specialist of orderedSpecialists) {
+      const specialistClaims = this.claimsForSpecialist(specialist, params.mode, projectType, retryFiles);
+      claimedFiles[specialist] = specialistClaims;
+
+      if (specialist === 'executive_router' || specialist === 'task_master') {
+        continue;
+      }
+
+      const stepId = `${specialist}_${steps.length + 1}`;
+      steps.push({
+        id: stepId,
+        specialist,
+        goal: this.goalForSpecialist(specialist, params.mode, params.retryContext),
+        status: 'pending',
+        claimedFiles: specialistClaims,
+        acceptanceCriteria: this.acceptanceCriteriaForSpecialist(specialist, params.mode, retryFiles),
+        dependsOn: this.dependenciesForSpecialist(specialist, steps),
+      });
+    }
+
+    return {
+      activeStepId: steps[0]?.id,
+      steps,
+      claimedFiles,
+      summary: `Planned ${steps.length} specialist step(s) for ${params.mode} mode${projectType ? ` (${projectType})` : ''}.`,
+    };
   }
   
   /**
@@ -299,6 +356,154 @@ export class TaskMaster {
     }
     
     return results;
+  }
+
+  private createClaimMap(): Record<SpecialistId, string[]> {
+    return {
+      executive_router: [],
+      task_master: [],
+      template_scaffold_specialist: [],
+      javascript_specialist: [],
+      python_specialist: [],
+      tauri_specialist: [],
+      pipeline_specialist: [],
+      integration_verifier: [],
+      repair_specialist: [],
+    };
+  }
+
+  private extractRetryFiles(retryContext?: TaskMasterRetryContext): string[] {
+    const retryFiles = new Set<string>(retryContext?.missingFiles || []);
+    for (const error of retryContext?.errors || []) {
+      const matches = error.match(/[A-Za-z0-9_./-]+\.(tsx?|jsx?|py|json|html|css|md|yml|yaml|toml|rs)/g) || [];
+      for (const match of matches) {
+        retryFiles.add(match.replace(/\\/g, '/'));
+      }
+    }
+    return [...retryFiles];
+  }
+
+  private claimsForSpecialist(
+    specialist: SpecialistId,
+    mode: SpecialistBlackboard['mode'],
+    projectType: string | null,
+    retryFiles: string[]
+  ): string[] {
+    if (specialist === 'repair_specialist') {
+      return retryFiles.length > 0
+        ? retryFiles
+        : ['src/**', 'backend/**', 'package.json', 'vite.config.*', 'tsconfig*.json'];
+    }
+
+    switch (specialist) {
+      case 'template_scaffold_specialist':
+        return projectType === 'threejs'
+          ? ['package.json', 'README.md', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/**']
+          : mode === 'create'
+            ? ['package.json', 'README.md', 'index.html', 'src/**']
+            : [];
+      case 'javascript_specialist':
+        return ['src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx', 'tests/**/*.ts', 'tests/**/*.tsx'];
+      case 'python_specialist':
+        return ['backend/**/*.py', 'scripts/**/*.py', 'tests/**/*.py'];
+      case 'tauri_specialist':
+        return ['src-tauri/**', 'src/**/*.ts', 'src/**/*.tsx'];
+      case 'pipeline_specialist':
+        return [
+          'package.json',
+          'package-lock.json',
+          'pnpm-lock.yaml',
+          'yarn.lock',
+          'requirements*.txt',
+          'pyproject.toml',
+          'vite.config.*',
+          'tsconfig*.json',
+          '.github/workflows/**',
+        ];
+      default:
+        return [];
+    }
+  }
+
+  private goalForSpecialist(
+    specialist: SpecialistId,
+    mode: SpecialistBlackboard['mode'],
+    retryContext?: TaskMasterRetryContext
+  ): string {
+    if (specialist === 'repair_specialist') {
+      return retryContext
+        ? `Repair only the concrete failures: ${[...retryContext.missingFiles, ...retryContext.errors].slice(0, 4).join('; ')}`
+        : 'Repair only the verifier-reported issues.';
+    }
+
+    const prefix = mode === 'create' ? 'Create' : mode === 'repair' ? 'Repair' : 'Implement';
+    switch (specialist) {
+      case 'template_scaffold_specialist':
+        return `${prefix} the deterministic baseline scaffold without drifting from the chosen project shape.`;
+      case 'javascript_specialist':
+        return `${prefix} the JS/TS application files required by the user request.`;
+      case 'python_specialist':
+        return `${prefix} the Python/backend files required by the user request.`;
+      case 'tauri_specialist':
+        return `${prefix} the desktop bridge and Tauri-specific files.`;
+      case 'pipeline_specialist':
+        return `${prefix} only build, dependency, and automation files needed to run and verify the project.`;
+      case 'integration_verifier':
+        return 'Verify the current diff, runtime wiring, and command results without changing files.';
+      default:
+        return `${prefix} the assigned work.`;
+    }
+  }
+
+  private acceptanceCriteriaForSpecialist(
+    specialist: SpecialistId,
+    mode: SpecialistBlackboard['mode'],
+    retryFiles: string[]
+  ): string[] {
+    if (specialist === 'integration_verifier') {
+      return [
+        'Summarize pass/fail status with concrete findings.',
+        'Reference only files or commands that were actually checked.',
+        'Do not propose unrelated feature work.',
+      ];
+    }
+
+    if (specialist === 'repair_specialist') {
+      return [
+        retryFiles.length > 0 ? `Touch only retry-target files: ${retryFiles.join(', ')}` : 'Touch only files named in the repair plan.',
+        'Apply the smallest viable patch.',
+        'Do not re-scaffold or broaden the feature scope.',
+      ];
+    }
+
+    const criteria = ['Stay inside claimed files.', 'Do not take over another specialist’s domain.'];
+    if (mode === 'create') {
+      criteria.push('Produce runnable output that fits the requested project shape.');
+    }
+    if (specialist === 'pipeline_specialist') {
+      criteria.push('Keep commands cross-platform and verification-oriented.');
+    }
+    return criteria;
+  }
+
+  private dependenciesForSpecialist(
+    specialist: SpecialistId,
+    existingSteps: SpecialistStepAssignment[]
+  ): string[] {
+    const previousStep = existingSteps[existingSteps.length - 1];
+    if (!previousStep) {
+      return [];
+    }
+
+    if (specialist === 'integration_verifier') {
+      return existingSteps.map((step) => step.id).filter((stepId) => stepId !== previousStep.id);
+    }
+
+    if (specialist === 'pipeline_specialist' || specialist === 'repair_specialist') {
+      return [previousStep.id];
+    }
+
+    return [];
   }
 }
 

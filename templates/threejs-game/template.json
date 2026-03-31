@@ -25,7 +25,6 @@
     { "template": "src/styles.css", "path": "src/styles.css" },
     { "template": "src/game/Game.ts", "path": "src/game/Game.ts" },
     { "template": "src/game/world/World.ts", "path": "src/game/world/World.ts" },
-    { "template": "src/game/world/Chunk.ts", "path": "src/game/world/Chunk.ts" },
     { "template": "src/game/entities/Player.ts", "path": "src/game/entities/Player.ts" },
     { "template": "src/game/utils/Controls.ts", "path": "src/game/utils/Controls.ts" }
   ]

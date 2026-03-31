@@ -4994,11 +4994,23 @@ button:active:not(:disabled) {
   border-bottom: 1px solid var(--prime-border);
 }
 
+.template-modal-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .template-modal-header h2 {
   font-size: 24px;
   font-weight: 700;
   color: var(--prime-text);
   margin: 0;
+}
+
+.template-modal-title-group p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--prime-text-secondary);
 }
 
 .template-modal-body {
@@ -5069,6 +5081,46 @@ button:active:not(:disabled) {
   font-size: 14px;
   color: var(--prime-text-secondary);
   margin: 0;
+}
+
+.template-status-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: var(--prime-radius-md);
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(16, 185, 129, 0.08));
+}
+
+.template-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.34);
+  color: var(--prime-text);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.template-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #34d399;
+  box-shadow: 0 0 0 6px rgba(52, 211, 153, 0.12);
+}
+
+.template-status-copy {
+  font-size: 12px;
+  color: var(--prime-text-secondary);
+  line-height: 1.45;
 }
 
 .project-form {
@@ -5152,11 +5204,29 @@ button:active:not(:disabled) {
 .template-modal-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 12px;
   padding: 20px 32px;
   border-top: 1px solid var(--prime-border);
   background: var(--prime-surface);
+}
+
+.template-footer-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.template-footer-status-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--prime-text);
+}
+
+.template-footer-status-copy {
+  font-size: 12px;
+  color: var(--prime-text-secondary);
 }
 
 .template-modal-footer button {
@@ -5194,6 +5264,18 @@ button:active:not(:disabled) {
 .template-modal-footer button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .template-status-strip,
+  .template-modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .template-status-pill {
+    align-self: flex-start;
+  }
 }
 
 /* Complexity Check Styles */

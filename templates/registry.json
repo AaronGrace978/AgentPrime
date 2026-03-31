@@ -148,14 +148,14 @@
     {
       "id": "threejs-game",
       "name": "Three.js Game",
-      "description": "Minecraft-like voxel game with Three.js, React, and TypeScript - perfect for building 3D web games",
+      "description": "Three.js + React + Vite starter with a neutral space scene — customize into any 3D web game",
       "icon": "🎮",
       "category": "games",
-      "tags": ["games", "threejs", "react", "typescript", "voxel", "3d"],
+      "tags": ["games", "threejs", "react", "typescript", "3d", "webgl"],
       "variables": [
         { "name": "projectName", "label": "Project Name", "default": "my-game" },
         { "name": "author", "label": "Author", "default": "Developer" },
-        { "name": "description", "label": "Description", "default": "A Three.js voxel game" }
+        { "name": "description", "label": "Description", "default": "A Three.js browser game" }
       ],
       "postCreate": ["npm install"]
     }

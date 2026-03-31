@@ -57,6 +57,29 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     const rejected = changes.filter(c => c.status === 'rejected').length;
     return { pending, accepted, rejected, total: changes.length };
   }, [changes]);
+  const reviewComplete = stats.pending === 0;
+
+  const renderStatPill = (
+    label: string,
+    value: number,
+    accent: string,
+    background: string
+  ) => (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      padding: '4px 10px',
+      borderRadius: '999px',
+      fontSize: '11px',
+      fontWeight: 700,
+      background,
+      color: accent,
+    }}>
+      <span>{label}</span>
+      <span style={{ color: 'var(--prime-text)' }}>{value}</span>
+    </span>
+  );
 
   const getActionBadge = (action: string) => {
     const colors: Record<string, { bg: string; color: string; label: string }> = {
@@ -88,81 +111,97 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
       border: '1px solid var(--prime-border)',
       borderRadius: '10px',
       overflow: 'hidden',
-      maxHeight: '500px',
+      maxHeight: '560px',
+      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.28)',
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
         gap: '12px',
-        padding: '10px 16px',
-        background: 'var(--prime-bg)',
+        padding: '14px 16px',
+        background: 'linear-gradient(180deg, var(--prime-bg) 0%, var(--prime-surface) 100%)',
         borderBottom: '1px solid var(--prime-border)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-          <span style={{ fontSize: '14px' }}>✏</span>
-          <span style={{ fontWeight: 600, fontSize: '13px' }}>Agent Changes</span>
-          <span style={{
-            fontSize: '11px',
-            color: 'var(--prime-text-muted)',
-            background: 'var(--prime-surface-hover)',
-            padding: '2px 8px',
-            borderRadius: '10px',
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '14px' }}>✏</span>
+              <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--prime-text)' }}>Review Agent Changes</span>
+              <span style={{
+                fontSize: '11px',
+                color: 'var(--prime-text-muted)',
+                background: 'var(--prime-surface-hover)',
+                padding: '3px 8px',
+                borderRadius: '10px',
+              }}>
+                {stats.total} file{stats.total !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
+              {reviewComplete
+                ? 'Review complete. Accepted changes stay in the workspace, and rejected ones have already been reverted.'
+                : 'Accept keeps a change in the workspace. Reject immediately restores the prior file contents.'}
+            </div>
+            {taskDescription && (
+              <div style={{
+                fontSize: '11px',
+                color: 'var(--prime-text-muted)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {taskDescription}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose} style={{
+            background: 'transparent',
+            border: '1px solid var(--prime-border)',
+            color: 'var(--prime-text-secondary)',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 600,
+            padding: '8px 12px',
+            borderRadius: '8px',
+            flexShrink: 0,
           }}>
-            {stats.total} file{stats.total !== 1 ? 's' : ''}
-          </span>
-          {taskDescription && (
-            <span style={{
-              fontSize: '11px',
-              color: 'var(--prime-text-secondary)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-              — {taskDescription}
-            </span>
-          )}
+            {reviewComplete ? 'Done' : 'Hide Review'}
+          </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {renderStatPill('Pending', stats.pending, '#f59e0b', 'rgba(245, 158, 11, 0.12)')}
+          {renderStatPill('Accepted', stats.accepted, '#3fb950', 'rgba(63, 185, 80, 0.12)')}
+          {renderStatPill('Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.12)')}
           {stats.pending > 0 && (
             <>
               <button onClick={onAcceptAll} style={{
-                padding: '4px 12px',
-                borderRadius: '6px',
+                padding: '7px 12px',
+                borderRadius: '8px',
                 border: 'none',
                 background: '#238636',
                 color: '#fff',
                 fontSize: '11px',
-                fontWeight: 600,
+                fontWeight: 700,
                 cursor: 'pointer',
               }}>
-                Accept All ({stats.pending})
+                Accept Pending ({stats.pending})
               </button>
               <button onClick={onRejectAll} style={{
-                padding: '4px 12px',
-                borderRadius: '6px',
+                padding: '7px 12px',
+                borderRadius: '8px',
                 border: '1px solid var(--prime-border)',
                 background: 'transparent',
                 color: '#ff7b72',
                 fontSize: '11px',
-                fontWeight: 600,
+                fontWeight: 700,
                 cursor: 'pointer',
               }}>
-                Reject All
+                Revert Pending
               </button>
             </>
           )}
-          <button onClick={onClose} style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--prime-text-muted)',
-            cursor: 'pointer',
-            fontSize: '16px',
-            padding: '0 4px',
-          }}>
-            x
-          </button>
         </div>
       </div>
 
@@ -180,10 +219,15 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                padding: '6px 16px',
+                padding: '8px 16px',
                 cursor: 'pointer',
                 fontSize: '12px',
-                background: change.status === 'accepted' ? 'rgba(63, 185, 80, 0.05)' : 'transparent',
+                background:
+                  change.status === 'accepted'
+                    ? 'rgba(63, 185, 80, 0.06)'
+                    : change.status === 'rejected'
+                      ? 'rgba(255, 123, 114, 0.04)'
+                      : 'transparent',
               }}
             >
               <span style={{ color: 'var(--prime-text-muted)', fontSize: '10px' }}>
@@ -230,14 +274,14 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
 
               {change.status !== 'pending' && (
                 <span style={{
-                  padding: '1px 8px',
+                  padding: '2px 8px',
                   borderRadius: '10px',
                   fontSize: '10px',
-                  fontWeight: 600,
+                  fontWeight: 700,
                   background: change.status === 'accepted' ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255, 123, 114, 0.15)',
                   color: change.status === 'accepted' ? '#3fb950' : '#ff7b72',
                 }}>
-                  {change.status === 'accepted' ? 'Accepted' : 'Rejected'}
+                  {change.status === 'accepted' ? 'Accepted' : 'Reverted'}
                 </span>
               )}
             </div>

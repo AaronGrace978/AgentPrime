@@ -50,7 +50,7 @@ interface TemplateFile {
   path: string;
 }
 
-interface CreateProjectResult {
+export interface CreateProjectResult {
   success: boolean;
   projectPath: string;
   template: string;
@@ -61,7 +61,7 @@ interface CreateProjectResult {
   stepResults?: PostCreateStepResult[];
 }
 
-interface Variables {
+export interface Variables {
   projectName: string;
   author?: string;
   description?: string;
@@ -80,6 +80,26 @@ interface PostCreateStepResult {
   cwd: string;
   success: boolean;
   output: string;
+}
+
+interface MaterializeTemplateOptions {
+  allowExistingNonEmpty?: boolean;
+  runPostCreate?: boolean;
+}
+
+export type TemplateMaterializationMode = 'create-project' | 'in-place';
+
+export interface TemplateMaterializationRequest {
+  templateId: string;
+  targetDir: string;
+  variables: Variables;
+  mode?: TemplateMaterializationMode;
+  runPostCreate?: boolean;
+}
+
+interface FileSnapshot {
+  existed: boolean;
+  content?: Buffer;
 }
 
 const TemplateVariableSchema = z.object({
@@ -391,10 +411,16 @@ class TemplateEngine {
       let errorOutput = '';
       let settled = false;
 
+      let env = { ...process.env };
+      try {
+        const { getNodeEnv } = require('../core/tool-path-finder');
+        env = getNodeEnv();
+      } catch { /* fallback to process.env */ }
+      
       const child = spawn(command, args, {
         cwd,
         shell: true,
-        env: { ...process.env }
+        env
       });
 
       const finish = (result: { success: boolean; output: string }) => {
@@ -516,7 +542,7 @@ class TemplateEngine {
 
     return Buffer.concat([header, directoryEntry, dib]);
   }
-  private ensureTauriIcons(projectPath: string): string[] {
+  private ensureTauriIcons(projectPath: string, snapshots?: Map<string, FileSnapshot>): string[] {
     const iconsDir = path.join(projectPath, 'src-tauri', 'icons');
     fs.mkdirSync(iconsDir, { recursive: true });
 
@@ -533,7 +559,11 @@ class TemplateEngine {
     for (const asset of assets) {
       const targetPath = path.join(projectPath, asset.relativePath);
       if (!fs.existsSync(targetPath)) {
-        fs.writeFileSync(targetPath, asset.buffer);
+        if (snapshots) {
+          this.writeTrackedFile(targetPath, asset.buffer, snapshots);
+        } else {
+          fs.writeFileSync(targetPath, asset.buffer);
+        }
         created.push(asset.relativePath.replace(/\\/g, '/'));
       }
     }
@@ -541,9 +571,9 @@ class TemplateEngine {
     return created;
   }
 
-  private ensureGeneratedAssets(templateId: string, projectPath: string): string[] {
+  private ensureGeneratedAssets(templateId: string, projectPath: string, snapshots?: Map<string, FileSnapshot>): string[] {
     if (templateId === 'tauri-react') {
-      return this.ensureTauriIcons(projectPath);
+      return this.ensureTauriIcons(projectPath, snapshots);
     }
 
     return [];
@@ -621,13 +651,152 @@ class TemplateEngine {
     return result;
   }
 
-  /**
-   * Create a project from a template
-   */
-  async createProject(templateId: string, targetDir: string, variables: Variables): Promise<CreateProjectResult> {
-    console.log(`[TemplateEngine] createProject() called: templateId=${templateId}, targetDir=${targetDir}`);
-    console.log(`[TemplateEngine] Variables:`, JSON.stringify(variables, null, 2));
+  private ensureTargetDirectory(projectPath: string, allowExistingNonEmpty: boolean): void {
+    if (!allowExistingNonEmpty) {
+      this.ensureProjectDirectory(projectPath);
+      return;
+    }
 
+    fs.mkdirSync(projectPath, { recursive: true });
+  }
+
+  private snapshotFile(targetPath: string, snapshots: Map<string, FileSnapshot>): void {
+    if (snapshots.has(targetPath)) {
+      return;
+    }
+
+    if (!fs.existsSync(targetPath)) {
+      snapshots.set(targetPath, { existed: false });
+      return;
+    }
+
+    snapshots.set(targetPath, {
+      existed: true,
+      content: fs.readFileSync(targetPath)
+    });
+  }
+
+  private writeTrackedFile(
+    targetPath: string,
+    content: Buffer | string,
+    snapshots: Map<string, FileSnapshot>,
+    encoding: BufferEncoding = 'utf-8'
+  ): void {
+    this.snapshotFile(targetPath, snapshots);
+
+    if (Buffer.isBuffer(content)) {
+      fs.writeFileSync(targetPath, content);
+      return;
+    }
+
+    fs.writeFileSync(targetPath, content, encoding);
+  }
+
+  private createTrackedDirectory(targetPath: string, createdDirectories: Set<string>): void {
+    const normalizedTargetPath = path.resolve(targetPath);
+    const missingDirectories: string[] = [];
+    let currentPath = normalizedTargetPath;
+
+    while (!fs.existsSync(currentPath)) {
+      missingDirectories.push(currentPath);
+      const parentPath = path.dirname(currentPath);
+      if (parentPath === currentPath) {
+        break;
+      }
+      currentPath = parentPath;
+    }
+
+    fs.mkdirSync(normalizedTargetPath, { recursive: true });
+    for (const dirPath of missingDirectories.reverse()) {
+      createdDirectories.add(dirPath);
+    }
+  }
+
+  private cleanupEmptyParentDirectories(targetPath: string, stopAt: string): void {
+    let currentPath = path.dirname(targetPath);
+    const normalizedStopAt = path.resolve(stopAt);
+
+    while (currentPath.startsWith(normalizedStopAt) && currentPath !== normalizedStopAt) {
+      if (!fs.existsSync(currentPath)) {
+        currentPath = path.dirname(currentPath);
+        continue;
+      }
+
+      if (fs.readdirSync(currentPath).length > 0) {
+        break;
+      }
+
+      fs.rmdirSync(currentPath);
+      currentPath = path.dirname(currentPath);
+    }
+  }
+
+  private rollbackMaterialization(
+    projectPath: string,
+    snapshots: Map<string, FileSnapshot>,
+    projectPathExisted: boolean,
+    createdDirectories: Set<string>
+  ): void {
+    if (!projectPathExisted && fs.existsSync(projectPath)) {
+      fs.rmSync(projectPath, { recursive: true, force: true });
+      return;
+    }
+
+    const trackedPaths = [...snapshots.entries()].sort(([left], [right]) => right.length - left.length);
+    for (const [targetPath, snapshot] of trackedPaths) {
+      if (!snapshot.existed) {
+        if (fs.existsSync(targetPath)) {
+          fs.rmSync(targetPath, { force: true });
+        }
+        this.cleanupEmptyParentDirectories(targetPath, projectPath);
+        continue;
+      }
+
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.writeFileSync(targetPath, snapshot.content ?? Buffer.alloc(0));
+    }
+
+    const trackedDirectories = [...createdDirectories].sort((left, right) => right.length - left.length);
+    for (const dirPath of trackedDirectories) {
+      if (!fs.existsSync(dirPath)) {
+        continue;
+      }
+
+      if (fs.readdirSync(dirPath).length === 0) {
+        fs.rmdirSync(dirPath);
+      }
+    }
+  }
+
+  private resolveMaterializationRequest(request: TemplateMaterializationRequest): {
+    templateId: string;
+    projectPath: string;
+    variables: Variables;
+    allowExistingNonEmpty: boolean;
+    runPostCreate: boolean;
+  } {
+    const mode = request.mode || 'create-project';
+    const normalizedTargetDir = path.resolve(request.targetDir);
+    const templateContext = this.buildTemplateContext(request.variables);
+    const projectPath = mode === 'in-place'
+      ? normalizedTargetDir
+      : path.join(normalizedTargetDir, templateContext.projectDirName);
+
+    return {
+      templateId: request.templateId,
+      projectPath,
+      variables: request.variables,
+      allowExistingNonEmpty: mode === 'in-place',
+      runPostCreate: request.runPostCreate ?? mode !== 'in-place'
+    };
+  }
+
+  private async materializeTemplate(
+    templateId: string,
+    projectPath: string,
+    variables: Variables,
+    options: MaterializeTemplateOptions = {}
+  ): Promise<CreateProjectResult> {
     const template = this.getTemplate(templateId);
     if (!template) {
       const error = `Template '${templateId}' not found`;
@@ -637,120 +806,155 @@ class TemplateEngine {
 
     const templateDir = path.join(this.templatesDir, templateId);
     const templateDef = this.loadTemplateDefinition(templateId, template);
-    console.log(`[TemplateEngine] Template directory: ${templateDir}`);
+    const templateContext = this.buildTemplateContext(variables);
+
+    console.log(`[TemplateEngine] Materializing template '${templateId}' into: ${projectPath}`);
     console.log(`[TemplateEngine] Template definition loaded: ${templateDef.files?.length || 0} files, ${templateDef.directories?.length || 0} directories`);
 
-    const templateContext = this.buildTemplateContext(variables);
-    console.log(`[TemplateEngine] Original project name: "${templateContext.originalProjectName}" -> Sanitized: "${templateContext.projectDirName}"`);
-    
-    const projectPath = path.join(targetDir, templateContext.projectDirName);
-    console.log(`[TemplateEngine] Project will be created at: ${projectPath}`);
+    const projectPathExisted = fs.existsSync(projectPath);
+    const fileSnapshots = new Map<string, FileSnapshot>();
+    const createdDirectories = new Set<string>();
+    this.ensureTargetDirectory(projectPath, options.allowExistingNonEmpty === true);
 
-    // Create project directory
-    console.log(`[TemplateEngine] Creating project directory: ${projectPath}`);
     try {
-      this.ensureProjectDirectory(projectPath);
-      console.log(`[TemplateEngine] Project directory created`);
-    } catch (e: any) {
-      const error = `Failed to create project directory: ${e.message}`;
-      console.error(`[TemplateEngine] ERROR: ${error}`);
-      throw new Error(error);
-    }
-
-    // Create subdirectories
-    if (templateDef.directories) {
-      console.log(`[TemplateEngine] Creating ${templateDef.directories.length} subdirectories`);
-      for (const dir of templateDef.directories) {
-        const dirPath = path.join(projectPath, dir);
-        try {
-          fs.mkdirSync(dirPath, { recursive: true });
-          console.log(`[TemplateEngine] Created directory: ${dir}`);
-        } catch (e: any) {
-          console.warn(`[TemplateEngine] Warning: Failed to create directory ${dir}: ${e.message}`);
+      if (templateDef.directories) {
+        for (const dir of templateDef.directories) {
+          const dirPath = path.join(projectPath, dir);
+          try {
+            this.createTrackedDirectory(dirPath, createdDirectories);
+          } catch (e: any) {
+            console.warn(`[TemplateEngine] Warning: Failed to create directory ${dir}: ${e.message}`);
+          }
         }
       }
-    }
 
-    // Copy and process template files
-    const createdFiles: string[] = [];
-    console.log(`[TemplateEngine] Processing ${templateDef.files?.length || 0} template files`);
-    if (templateDef.files) {
-      for (const file of templateDef.files) {
-        const sourcePath = path.join(templateDir, file.template);
-        const targetPath = path.join(projectPath, file.path);
+      const createdFiles: string[] = [];
+      if (templateDef.files) {
+        for (const file of templateDef.files) {
+          const sourcePath = path.join(templateDir, file.template);
+          const targetPath = path.join(projectPath, file.path);
 
-        // Ensure target directory exists
-        try {
-          fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-        } catch (e: any) {
-          console.warn(`[TemplateEngine] Warning: Failed to create parent directory for ${file.path}: ${e.message}`);
-        }
+          try {
+            this.createTrackedDirectory(path.dirname(targetPath), createdDirectories);
+          } catch (e: any) {
+            console.warn(`[TemplateEngine] Warning: Failed to create parent directory for ${file.path}: ${e.message}`);
+          }
 
-        if (fs.existsSync(sourcePath)) {
+          if (!fs.existsSync(sourcePath)) {
+            throw new Error(`Template file not found: ${sourcePath}`);
+          }
+
           try {
             const buffer = fs.readFileSync(sourcePath);
             if (this.isLikelyBinary(buffer)) {
-              fs.writeFileSync(targetPath, buffer);
+              this.writeTrackedFile(targetPath, buffer, fileSnapshots);
             } else {
               let content = buffer.toString('utf-8');
               content = this.substituteVariables(content, templateContext);
-              fs.writeFileSync(targetPath, content, 'utf-8');
+              this.writeTrackedFile(targetPath, content, fileSnapshots);
             }
-            createdFiles.push(file.path);
+            createdFiles.push(file.path.replace(/\\/g, '/'));
             console.log(`[TemplateEngine] Created file: ${file.path}`);
           } catch (e: any) {
             console.error(`[TemplateEngine] ERROR: Failed to process file ${file.path}: ${e.message}`);
             throw new Error(`Failed to create file ${file.path}: ${e.message}`);
           }
-        } else {
-          throw new Error(`Template file not found: ${sourcePath}`);
         }
       }
-    }
 
-    // Generate .bat launcher files from package.json scripts
-    console.log(`[TemplateEngine] Generating .bat launcher files`);
-    const batFiles = this.generateBatFiles(projectPath, templateContext);
-    if (batFiles.length > 0) {
-      console.log(`[TemplateEngine] Generated ${batFiles.length} .bat files: ${batFiles.join(', ')}`);
-    }
-    createdFiles.push(...batFiles);
+      const batFiles = this.generateBatFiles(projectPath, templateContext, fileSnapshots).map((file) => file.replace(/\\/g, '/'));
+      const pythonBats = this.generatePythonBatFiles(projectPath, templateContext, fileSnapshots).map((file) => file.replace(/\\/g, '/'));
+      const generatedAssets = this.ensureGeneratedAssets(templateId, projectPath, fileSnapshots).map((file) => file.replace(/\\/g, '/'));
+      createdFiles.push(...batFiles, ...pythonBats, ...generatedAssets);
 
-    // Generate .bat files for Python projects
-    const pythonBats = this.generatePythonBatFiles(projectPath, templateContext);
-    if (pythonBats.length > 0) {
-      console.log(`[TemplateEngine] Generated ${pythonBats.length} Python .bat files: ${pythonBats.join(', ')}`);
-    }
-    createdFiles.push(...pythonBats);
+      let dependenciesInstalled = false;
+      let installOutput = 'Post-create steps skipped';
+      let stepResults: PostCreateStepResult[] = [];
 
-    const generatedAssets = this.ensureGeneratedAssets(templateId, projectPath);
-    if (generatedAssets.length > 0) {
-      console.log(`[TemplateEngine] Generated ${generatedAssets.length} runtime assets: ${generatedAssets.join(', ')}`);
-    }
-    createdFiles.push(...generatedAssets);
+      if (options.runPostCreate !== false) {
+        const executed = await this.executePostCreateSteps(
+          template,
+          templateDef,
+          projectPath,
+          templateDef.files || []
+        );
+        dependenciesInstalled = executed.success;
+        installOutput = executed.output;
+        stepResults = executed.stepResults;
+      }
 
-    const { success: dependenciesInstalled, output: installOutput, stepResults } = await this.executePostCreateSteps(
-      template,
-      templateDef,
-      projectPath,
-      templateDef.files || []
+      return {
+        success: true,
+        projectPath,
+        template: templateId,
+        filesCreated: createdFiles,
+        postCreate: templateDef.postCreate || template.postCreate || [],
+        dependenciesInstalled,
+        installOutput,
+        stepResults
+      };
+    } catch (error) {
+      try {
+        this.rollbackMaterialization(projectPath, fileSnapshots, projectPathExisted, createdDirectories);
+      } catch (rollbackError: any) {
+        console.error(`[TemplateEngine] ERROR: Failed to rollback materialization for '${templateId}': ${rollbackError.message}`);
+      }
+      throw error;
+    }
+  }
+
+  async materializeProject(request: TemplateMaterializationRequest): Promise<CreateProjectResult> {
+    const resolved = this.resolveMaterializationRequest(request);
+    return this.materializeTemplate(
+      resolved.templateId,
+      resolved.projectPath,
+      resolved.variables,
+      {
+        allowExistingNonEmpty: resolved.allowExistingNonEmpty,
+        runPostCreate: resolved.runPostCreate
+      }
     );
+  }
 
-    const result: CreateProjectResult = {
-      success: true,
-      projectPath,
-      template: templateId,
-      filesCreated: createdFiles,
-      postCreate: templateDef.postCreate || template.postCreate || [],
-      dependenciesInstalled,
-      installOutput,
-      stepResults
-    };
+  async applyTemplateInPlace(
+    templateId: string,
+    projectPath: string,
+    variables: Variables,
+    options: MaterializeTemplateOptions = {}
+  ): Promise<CreateProjectResult> {
+    return this.materializeProject({
+      templateId,
+      targetDir: projectPath,
+      variables,
+      mode: 'in-place',
+      runPostCreate: options.runPostCreate
+    });
+  }
+
+  /**
+   * Create a project from a template
+   */
+  async createProject(templateId: string, targetDir: string, variables: Variables): Promise<CreateProjectResult> {
+    console.log(`[TemplateEngine] createProject() called: templateId=${templateId}, targetDir=${targetDir}`);
+    console.log(`[TemplateEngine] Variables:`, JSON.stringify(variables, null, 2));
+    const templateContext = this.buildTemplateContext(variables);
+    console.log(`[TemplateEngine] Original project name: "${templateContext.originalProjectName}" -> Sanitized: "${templateContext.projectDirName}"`);
+
+    const projectPath = path.join(targetDir, templateContext.projectDirName);
+    console.log(`[TemplateEngine] Project will be created at: ${projectPath}`);
+
+    const result = await this.materializeProject({
+      templateId,
+      targetDir,
+      variables,
+      mode: 'create-project',
+      runPostCreate: true
+    });
 
     console.log(`[TemplateEngine] Project creation completed successfully!`);
-    console.log(`[TemplateEngine] Total files created: ${createdFiles.length}`);
-    console.log(`[TemplateEngine] Dependencies installed: ${dependenciesInstalled}`);
-    console.log(`[TemplateEngine] Project path: ${projectPath}`);
+    console.log(`[TemplateEngine] Total files created: ${result.filesCreated.length}`);
+    console.log(`[TemplateEngine] Dependencies installed: ${result.dependenciesInstalled}`);
+    console.log(`[TemplateEngine] Project path: ${result.projectPath}`);
 
     return result;
   }
@@ -819,10 +1023,16 @@ class TemplateEngine {
       let output = '';
       let errorOutput = '';
       
+      let env = { ...process.env };
+      try {
+        const { getNodeEnv } = require('../core/tool-path-finder');
+        env = getNodeEnv();
+      } catch { /* fallback to process.env */ }
+      
       const npmProcess = spawn(npmCmd, ['install'], {
         cwd: projectPath,
         shell: true,
-        env: { ...process.env }
+        env
       });
 
       npmProcess.stdout?.on('data', (data: Buffer) => {
@@ -964,7 +1174,7 @@ class TemplateEngine {
   /**
    * Generate .bat launcher files from package.json scripts
    */
-  generateBatFiles(projectPath: string, variables: Variables): string[] {
+  generateBatFiles(projectPath: string, variables: Variables, snapshots?: Map<string, FileSnapshot>): string[] {
     const createdBats: string[] = [];
     const packageJsonPath = path.join(projectPath, 'package.json');
 
@@ -991,7 +1201,11 @@ class TemplateEngine {
         if (scripts[scriptName]) {
           const batContent = this.createBatFile(scriptName, scripts[scriptName], variables);
           const batPath = path.join(projectPath, batFileName);
-          fs.writeFileSync(batPath, batContent, 'utf-8');
+          if (snapshots) {
+            this.writeTrackedFile(batPath, batContent, snapshots);
+          } else {
+            fs.writeFileSync(batPath, batContent, 'utf-8');
+          }
           createdBats.push(batFileName);
         }
       }
@@ -1000,7 +1214,11 @@ class TemplateEngine {
       if (Object.keys(scripts).length > 0) {
         const runBat = this.createRunBat(scripts, variables);
         const runBatPath = path.join(projectPath, 'run.bat');
-        fs.writeFileSync(runBatPath, runBat, 'utf-8');
+        if (snapshots) {
+          this.writeTrackedFile(runBatPath, runBat, snapshots);
+        } else {
+          fs.writeFileSync(runBatPath, runBat, 'utf-8');
+        }
         createdBats.push('run.bat');
       }
     } catch (e: any) {
@@ -1353,7 +1571,7 @@ if errorlevel 1 (
   /**
    * Generate .bat files for Python projects
    */
-  generatePythonBatFiles(projectPath: string, variables: Variables): string[] {
+  generatePythonBatFiles(projectPath: string, variables: Variables, snapshots?: Map<string, FileSnapshot>): string[] {
     const createdBats: string[] = [];
     const requirementsPath = path.join(projectPath, 'requirements.txt');
     const pyProjectPath = path.join(projectPath, 'pyproject.toml');
@@ -1429,7 +1647,12 @@ echo   venv\\Scripts\\activate.bat
 echo.
 pause
 `;
-      fs.writeFileSync(path.join(projectPath, 'setup.bat'), setupBat, 'utf-8');
+      const setupBatPath = path.join(projectPath, 'setup.bat');
+      if (snapshots) {
+        this.writeTrackedFile(setupBatPath, setupBat, snapshots);
+      } else {
+        fs.writeFileSync(setupBatPath, setupBat, 'utf-8');
+      }
       createdBats.push('setup.bat');
     }
 
@@ -1513,7 +1736,12 @@ if errorlevel 1 (
 
 pause
 `;
-      fs.writeFileSync(path.join(projectPath, 'run.bat'), runBat, 'utf-8');
+      const runBatPath = path.join(projectPath, 'run.bat');
+      if (snapshots) {
+        this.writeTrackedFile(runBatPath, runBat, snapshots);
+      } else {
+        fs.writeFileSync(runBatPath, runBat, 'utf-8');
+      }
       createdBats.push('run.bat');
     }
 

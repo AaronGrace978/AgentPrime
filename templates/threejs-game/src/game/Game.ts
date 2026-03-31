@@ -10,49 +10,32 @@ export class Game {
   private player: Player;
   private controls: Controls;
   private clock: THREE.Clock;
+  private resizeHandler: () => void;
 
   constructor(container: HTMLElement) {
-    // Scene setup
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87CEEB); // Sky blue
-    this.scene.fog = new THREE.Fog(0x87CEEB, 0, 100);
 
-    // Camera setup
     this.camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
       0.1,
-      1000
+      8000
     );
-    this.camera.position.set(0, 20, 0);
+    this.camera.position.set(0, 12, 48);
 
-    // Renderer setup
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(this.renderer.domElement);
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    this.scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(50, 100, 50);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    this.scene.add(directionalLight);
-
-    // World and player
     new World(this.scene);
     this.player = new Player(this.camera);
     this.controls = new Controls(this.camera, this.player);
 
     this.clock = new THREE.Clock();
 
-    // Handle window resize
-    window.addEventListener('resize', () => this.onWindowResize());
+    this.resizeHandler = () => this.onWindowResize();
+    window.addEventListener('resize', this.resizeHandler);
   }
 
   private onWindowResize(): void {
@@ -64,19 +47,15 @@ export class Game {
   public animate(): void {
     requestAnimationFrame(() => this.animate());
 
-    const delta = this.clock.getDelta();
-    
-    // Update controls and player
-    this.controls.update();
+    const delta = Math.min(this.clock.getDelta(), 0.1);
+    this.controls.update(delta);
     this.player.update(delta);
 
-    // Render
     this.renderer.render(this.scene, this.camera);
   }
 
   public dispose(): void {
     this.renderer.dispose();
-    window.removeEventListener('resize', () => this.onWindowResize());
+    window.removeEventListener('resize', this.resizeHandler);
   }
 }
-
