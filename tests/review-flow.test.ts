@@ -82,6 +82,7 @@ describe('Review flow helpers', () => {
     expect(prompt).toContain('Accepted files:');
     expect(prompt).toContain('Rejected files (do not modify):');
     expect(prompt).toContain('Build failed: Missing dependency');
+    expect(prompt).toContain('verifier-failed accepted files');
     expect(prompt).toContain('Do not add new features');
   });
 });

@@ -154,6 +154,7 @@ export interface ChatContext {
   // Dual Model System
   dual_mode?: 'fast' | 'deep' | 'auto';
   runtime_budget?: RuntimeBudgetMode;
+  deterministic_scaffold_only?: boolean;
   has_errors?: boolean;
   just_chat_mode?: boolean;
 }

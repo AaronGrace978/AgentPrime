@@ -14,6 +14,34 @@ export interface ChatMessage {
   content: string;
 }
 
+export type AIRuntimeResolution = 'direct' | 'demoted_to_ollama' | 'fallback_execution';
+
+export interface AIRuntimeSelection {
+  provider: string;
+  model: string;
+}
+
+export interface AIRuntimeSnapshot {
+  requestedProvider: string;
+  requestedModel: string;
+  effectiveProvider: string;
+  effectiveModel: string;
+  executionProvider?: string;
+  executionModel?: string;
+  displayProvider: string;
+  displayModel: string;
+  viaFallback: boolean;
+  resolution: AIRuntimeResolution;
+  reason?: string;
+  lastExecutionAt?: number;
+}
+
+export interface AIStatusSnapshot {
+  connected: boolean;
+  dualModelEnabled: boolean;
+  runtime: AIRuntimeSnapshot;
+}
+
 export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;

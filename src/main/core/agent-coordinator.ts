@@ -698,10 +698,13 @@ export class AgentCoordinator {
     const roleDescriptions: Record<AgentRole, string> = {
       tool_orchestrator: `Orchestrate and plan: ${task}`,
       javascript_specialist: `Write JavaScript/TypeScript code for: ${task}`,
+      styling_ux_specialist: `Refine styling and UX for: ${task}`,
       python_specialist: `Write Python code for: ${task}`,
       tauri_specialist: `Write Tauri v2/Rust desktop app code for: ${task}`,
       pipeline_specialist: `Set up build/deploy pipeline for: ${task}`,
-      integration_analyst: `Review and integrate work for: ${task}`
+      testing_specialist: `Add or improve tests for: ${task}`,
+      integration_analyst: `Review and integrate work for: ${task}`,
+      repair_specialist: `Diagnose and repair issues for: ${task}`,
     };
 
     let description = roleDescriptions[role] || task;
@@ -724,10 +727,13 @@ export class AgentCoordinator {
     const estimates: Record<AgentRole, number> = {
       tool_orchestrator: 30000, // 30 seconds
       javascript_specialist: 120000, // 2 minutes
+      styling_ux_specialist: 120000, // 2 minutes
       python_specialist: 120000, // 2 minutes
       tauri_specialist: 120000, // 2 minutes
       pipeline_specialist: 60000, // 1 minute
-      integration_analyst: 90000 // 1.5 minutes
+      testing_specialist: 120000, // 2 minutes
+      integration_analyst: 90000, // 1.5 minutes
+      repair_specialist: 90000, // 1.5 minutes
     };
 
     return estimates[role] || 60000;

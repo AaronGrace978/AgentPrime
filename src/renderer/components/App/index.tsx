@@ -195,8 +195,11 @@ function App() {
 
   const handleSettingsChange = useCallback(async (newSettings: any) => {
     try {
-      await window.agentAPI.updateSettings(newSettings);
-      setAppSettings((prev: any) => ({ ...prev, ...newSettings }));
+      const updatedSettings = await window.agentAPI.updateSettings(newSettings);
+      setAppSettings(updatedSettings);
+      window.dispatchEvent(new CustomEvent('agentprime-settings-changed', {
+        detail: updatedSettings
+      }));
       toast.success('Settings Saved', 'Your preferences have been updated');
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -568,13 +571,14 @@ function App() {
     const targetedAcceptedFiles = findingFiles.size > 0
       ? acceptedFiles.filter((filePath) => findingFiles.has(filePath))
       : acceptedFiles;
+    const blockedAcceptedFiles = acceptedFiles.filter((filePath) => !targetedAcceptedFiles.includes(filePath));
     const prompt = buildRepairPrompt(agentReviewTask, agentReviewVerification, targetedAcceptedFiles, rejectedFiles);
     setComposerOpen(true);
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('agentprime:repair-scope', {
         detail: {
           allowedFiles: targetedAcceptedFiles,
-          blockedFiles: rejectedFiles,
+          blockedFiles: [...rejectedFiles, ...blockedAcceptedFiles],
           findings: agentReviewVerification.findings || [],
         }
       }));

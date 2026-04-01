@@ -109,4 +109,59 @@ test.describe('Application Smoke', () => {
 
     await expect(window.locator('iframe')).toBeVisible({ timeout: 10000 });
   });
+
+  test('stages a real scaffolded project through the specialized agent stack', async () => {
+    test.setTimeout(120000);
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-e2e-real-review-'));
+
+    const result = await window.evaluate(async (nextWorkspacePath) => {
+      await window.agentAPI.updateSettings({
+        activeProvider: 'ollama',
+        activeModel: 'qwen2.5-coder:7b',
+        useSpecializedAgents: true
+      });
+      await window.agentAPI.setWorkspace(nextWorkspacePath);
+      return await window.agentAPI.chat(
+        'Create a static landing page with a hero section, two CTA buttons, and a status panel.',
+        {
+          agent_mode: true,
+          use_agent_loop: true,
+          use_specialized_agents: true,
+          deterministic_scaffold_only: true,
+          model: 'qwen2.5-coder:7b',
+          runtime_budget: 'standard',
+          dual_mode: 'auto'
+        }
+      );
+    }, workspacePath);
+
+    expect(result.success).toBe(true);
+    expect(result.reviewSessionId).toBeTruthy();
+    expect(Array.isArray(result.reviewChanges)).toBe(true);
+    expect(result.reviewChanges.length).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(false);
+    expect(fs.existsSync(path.join(workspacePath, 'styles.css'))).toBe(false);
+    expect(result.reviewChanges.map((change) => change.filePath)).toEqual(
+      expect.arrayContaining(['index.html', 'styles.css', 'app.js'])
+    );
+
+    await window.evaluate(async ({ sessionId }) => {
+      await window.agentAPI.updatePendingAgentReviewStatuses(sessionId, 'accepted');
+      await window.agentAPI.applyAgentReview(sessionId);
+    }, { sessionId: result.reviewSessionId });
+
+    await expect.poll(() => fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(true);
+    await expect.poll(() => fs.existsSync(path.join(workspacePath, 'styles.css'))).toBe(true);
+
+    const verification = await window.evaluate(async (nextWorkspacePath) => {
+      return await window.agentAPI.verifyProject(nextWorkspacePath);
+    }, workspacePath);
+    expect(verification.success).toBe(true);
+
+    const launch = await window.evaluate(async (nextWorkspacePath) => {
+      return await window.agentAPI.launchProject(nextWorkspacePath);
+    }, workspacePath);
+    expect(launch.success).toBe(true);
+    expect(launch.url).toBeTruthy();
+  });
 });

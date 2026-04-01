@@ -11,6 +11,7 @@ import type {
   AgentReviewSessionSnapshot,
   AgentReviewVerificationState,
 } from './agent-review';
+import type { AIStatusSnapshot, AIRuntimeSnapshot } from './ai-providers';
 
 export interface TelemetryStats {
   totalEvents: number;
@@ -83,10 +84,11 @@ export interface AgentAPI {
     reviewSessionId?: string;
     reviewChanges?: AgentReviewChange[];
     reviewVerification?: AgentReviewVerificationState;
+    runtime?: AIRuntimeSnapshot;
     [key: string]: any;
   }>;
   quickAction: (action: string, code: string, language?: string) => Promise<any>;
-  aiStatus: () => Promise<any>;
+  aiStatus: () => Promise<({ success: true } & AIStatusSnapshot) | { success: false; error?: string }>;
   clearHistory: () => Promise<any>;
   getChatHistory: () => Promise<any>;
   getChatHistoryForSession: (sessionId: string) => Promise<any>;
@@ -112,7 +114,7 @@ export interface AgentAPI {
   removeCommandRequiresConfirmation: () => void;
   onCommandError: (callback: (data: any) => void) => void;
   removeCommandError: () => void;
-  onModelSelectionInfo: (callback: (data: any) => void) => void;
+  onModelSelectionInfo: (callback: (data: AIRuntimeSnapshot & { requestId?: string }) => void) => void;
   removeModelSelectionInfo: () => void;
 
   // Agent progress events

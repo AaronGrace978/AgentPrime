@@ -1059,6 +1059,7 @@ export interface AgentContext {
   gitStatus?: string;
   model?: string;
   runtimeBudget?: 'instant' | 'standard' | 'deep';
+  deterministicScaffoldOnly?: boolean;
   repairScope?: {
     allowedFiles: string[];
     blockedFiles: string[];

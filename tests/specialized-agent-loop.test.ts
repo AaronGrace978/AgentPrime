@@ -155,6 +155,42 @@ describe('SpecializedAgentLoop verification', () => {
     expect(response).toContain('rolled back the generated changes');
   });
 
+  it('builds structured staged-review verification details from runtime findings', () => {
+    const workspacePath = createTempDir('agentprime-specialized-review-verification-');
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'review-verification',
+      scripts: { dev: 'vite', build: 'vite build' },
+      devDependencies: { vite: '^5.4.0' }
+    }, null, 2));
+    fs.writeFileSync(path.join(workspacePath, 'vite.config.ts'), 'export default {};');
+    fs.writeFileSync(path.join(workspacePath, 'index.html'), '<div id="app"></div>');
+
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+    const verification = (loop as any).buildInitialReviewVerification({
+      isComplete: false,
+      missingFiles: ['src/App.tsx'],
+      errors: ['[Build] src/App.tsx imports missing file: ./theme.css'],
+      createdFiles: ['src/main.tsx']
+    });
+
+    expect(verification).toMatchObject({
+      status: 'failed',
+      projectTypeLabel: 'Vite App',
+      buildCommand: 'npm run build',
+      startCommand: 'npm run dev',
+    });
+    expect(verification.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stage: 'validation',
+        files: ['src/App.tsx'],
+      }),
+      expect.objectContaining({
+        stage: 'build',
+        files: ['src/App.tsx', 'src/theme.css'],
+      }),
+    ]));
+  });
+
   it('does not tell zero-dependency static starters to run npm install', () => {
     const workspacePath = createTempDir('agentprime-specialized-static-response-');
     fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({

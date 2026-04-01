@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { promptBuilder } from '../../agent';
+import type { AIRuntimeSnapshot } from '../../../types/ai-providers';
 
 // Types and constants
 import { Message, AIChatProps, ChatMode, AgentFileChange } from './types';
@@ -31,6 +32,7 @@ import {
   MessageList,
   QuickPrompts,
   ChatInput,
+  StatusBar as ChatRuntimeStatusBar,
   WorkspaceSelector,
   SpecializedAgentsToggle,
   CreateFolderDialog,
@@ -73,6 +75,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [lastError, setLastError] = useState<AIError | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const [lastFailedInput, setLastFailedInput] = useState('');
+  const [runtimeStatus, setRuntimeStatus] = useState<AIRuntimeSnapshot | null>(null);
 
   // Progress tracking state
   const [currentTask, setCurrentTask] = useState('');
@@ -83,34 +86,36 @@ const AIChat: React.FC<AIChatProps> = ({
   useEffect(() => {
     const loadActiveModel = async () => {
       try {
-        const settings = await window.agentAPI.getSettings();
-        const preferredProvider = settings?.activeProvider || 'ollama';
-        const requestedModel = settings?.activeModel || '';
-        const inferredProvider = requestedModel.startsWith('gpt-')
-          ? 'openai'
-          : requestedModel.startsWith('claude-')
-            ? 'anthropic'
-            : requestedModel.includes('/')
-              ? 'openrouter'
-              : preferredProvider;
-        const providerConfig = settings?.providers?.[
-          inferredProvider as 'ollama' | 'anthropic' | 'openai' | 'openrouter'
-        ];
-        const localOllamaModel =
-          settings?.providers?.ollama?.model ||
-          'qwen2.5-coder:7b';
-        const providerMissingKey =
-          inferredProvider !== 'ollama' &&
-          !providerConfig?.apiKey;
+        const status = await window.agentAPI.aiStatus();
+        if (!status?.success) {
+          throw new Error(status?.error || 'Failed to load runtime status');
+        }
 
-        setSelectedModel(providerMissingKey
-          ? localOllamaModel
-          : (requestedModel || localOllamaModel));
+        setRuntimeStatus(status.runtime);
+        setSelectedModel(status.runtime.displayModel || status.runtime.effectiveModel || 'qwen2.5-coder:7b');
       } catch (error) {
         console.error('Failed to load active model:', error);
       }
     };
     loadActiveModel();
+  }, []);
+
+  useEffect(() => {
+    const handleRuntimeInfo = (data: AIRuntimeSnapshot & { requestId?: string }) => {
+      if (!data) {
+        return;
+      }
+
+      setRuntimeStatus(data);
+      if (data.displayModel || data.effectiveModel) {
+        setSelectedModel(data.displayModel || data.effectiveModel);
+      }
+    };
+
+    window.agentAPI.onModelSelectionInfo(handleRuntimeInfo);
+    return () => {
+      window.agentAPI.removeModelSelectionInfo();
+    };
   }, []);
 
   // Prefill chat input when templates route a request here.
@@ -423,9 +428,14 @@ const AIChat: React.FC<AIChatProps> = ({
   const sendMessage = async () => {
     if (!input.trim() || isLoading || agentRunning) return;
 
-    const userMessage: Message = { role: 'user', content: input, timestamp: new Date() };
+    const deterministicScaffoldOnly = input.startsWith('__AGENTPRIME_REAL_REVIEW__');
+    const currentInput = deterministicScaffoldOnly
+      ? input.replace('__AGENTPRIME_REAL_REVIEW__', '').trim()
+      : input;
+    if (!currentInput.trim()) return;
+
+    const userMessage: Message = { role: 'user', content: currentInput, timestamp: new Date() };
     setMessages(prev => [...prev, userMessage]);
-    const currentInput = input;
     setInput('');
 
     // ── Chat / Dino mode (no workspace needed, streaming) ──
@@ -467,10 +477,16 @@ const AIChat: React.FC<AIChatProps> = ({
           use_agent_loop: false,
           just_chat_mode: chatMode === 'chat',
           dino_buddy_mode: chatMode === 'dino',
+          deterministic_scaffold_only: deterministicScaffoldOnly,
           model: selectedModel,
           dual_mode: runtimeBudgetToDualMode(dualModel.mode),
           runtime_budget: dualModel.mode
         });
+
+        if (result.runtime) {
+          setRuntimeStatus(result.runtime);
+          setSelectedModel(result.runtime.displayModel || result.runtime.effectiveModel || selectedModel);
+        }
 
         // Streaming may have filled it; fall back to full response if nothing streamed
         if (!streamed && result.success) {
@@ -541,7 +557,7 @@ const AIChat: React.FC<AIChatProps> = ({
     // Agent file generation must honor the model in the picker. Dual-model Fast/Deep routing
     // is for chat streaming; overriding here caused runs to use minimax/qwen while the UI
     // still showed gpt-5.4 — empty specialists, timeouts, and template-only output.
-    const agentModel = selectedModel;
+    const agentModel = runtimeStatus?.displayModel || runtimeStatus?.effectiveModel || selectedModel;
 
     setMessages(prev => [...prev, {
       role: 'assistant',
@@ -568,6 +584,7 @@ const AIChat: React.FC<AIChatProps> = ({
         agent_mode: true,
         use_agent_loop: true,
         use_specialized_agents: useSpecializedAgents,
+        deterministic_scaffold_only: deterministicScaffoldOnly,
         model: agentModel,
         dual_mode: runtimeBudgetToDualMode(dualModel.mode),
         runtime_budget: dualModel.mode,
@@ -577,6 +594,11 @@ const AIChat: React.FC<AIChatProps> = ({
         open_files: openFiles.map(file => file.file.path),
         terminal_history: terminalHistory
       });
+
+      if (result.runtime) {
+        setRuntimeStatus(result.runtime);
+        setSelectedModel(result.runtime.displayModel || result.runtime.effectiveModel || agentModel);
+      }
 
       setMessages(prev => {
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
@@ -832,6 +854,11 @@ const AIChat: React.FC<AIChatProps> = ({
               )}
             </div>
           </div>
+
+          <ChatRuntimeStatusBar
+            currentModel={runtimeStatus?.displayModel || dualModel.currentModel || selectedModel}
+            complexity={dualModel.lastComplexity}
+          />
         </div>
 
         {/* Messages */}

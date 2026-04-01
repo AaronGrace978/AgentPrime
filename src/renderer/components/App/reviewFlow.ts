@@ -48,7 +48,7 @@ export function buildRepairPrompt(
     .join('\n');
 
   return [
-    'Repair the accepted project changes so verification passes.',
+    'Repair the verifier-failed project changes so verification passes.',
     '',
     `Original task: ${taskDescription || 'Agent-created project changes'}`,
     verification.projectTypeLabel ? `Detected project: ${verification.projectTypeLabel}` : null,
@@ -60,7 +60,7 @@ export function buildRepairPrompt(
     'Verification failures:',
     issueLines,
     '',
-    'Focus only on the accepted files and the concrete failures above. Do not add new features.',
+    'Focus only on the verifier-failed accepted files and the concrete failures above. Do not add new features.',
   ]
     .filter(Boolean)
     .join('\n');

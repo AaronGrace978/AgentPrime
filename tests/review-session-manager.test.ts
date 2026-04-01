@@ -80,4 +80,45 @@ describe('ReviewSessionManager', () => {
     expect(fs.readFileSync(path.join(workspacePath, 'src', 'keep.ts'), 'utf-8')).toBe('after');
     expect(fs.existsSync(path.join(workspacePath, 'src', 'new.ts'))).toBe(false);
   });
+
+  it('preserves structured verification findings on staged review sessions', () => {
+    const workspacePath = createTempDir('agentprime-review-verification-');
+    const manager = new ReviewSessionManager();
+
+    const session = manager.createSessionFromOperations(
+      workspacePath,
+      [
+        {
+          path: 'src/App.tsx',
+          originalContent: '',
+          newContent: 'export default function App() { return null; }',
+          existed: false,
+        },
+      ],
+      {
+        status: 'failed',
+        projectTypeLabel: 'Vite App',
+        readinessSummary: 'Ready only after npm run build succeeds and npm run dev starts successfully.',
+        buildCommand: 'npm run build',
+        startCommand: 'npm run dev',
+        issues: ['[build] src/App.tsx imports a missing module'],
+        findings: [
+          {
+            stage: 'build',
+            severity: 'error',
+            summary: '[build] src/App.tsx imports a missing module',
+            files: ['src/App.tsx'],
+            command: 'npm run build',
+          },
+        ],
+      }
+    );
+
+    expect(session?.initialVerification?.status).toBe('failed');
+    expect(session?.initialVerification?.findings?.[0]).toMatchObject({
+      stage: 'build',
+      files: ['src/App.tsx'],
+      command: 'npm run build',
+    });
+  });
 });

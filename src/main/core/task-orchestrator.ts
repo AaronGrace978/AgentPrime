@@ -404,10 +404,13 @@ export class TaskOrchestrator {
     const roleDescriptions: Record<AgentRole, string> = {
       tool_orchestrator: `Plan and orchestrate: ${task}`,
       javascript_specialist: `Implement JavaScript/TypeScript solution: ${task}`,
+      styling_ux_specialist: `Implement styling and UX for: ${task}`,
       python_specialist: `Implement Python solution: ${task}`,
       tauri_specialist: `Implement Tauri v2/Rust desktop solution: ${task}`,
       pipeline_specialist: `Set up build and deployment: ${task}`,
-      integration_analyst: `Review and integrate: ${task}`
+      testing_specialist: `Implement or extend tests for: ${task}`,
+      integration_analyst: `Review and integrate: ${task}`,
+      repair_specialist: `Diagnose and repair issues for: ${task}`,
     };
 
     let description = roleDescriptions[agent] || task;
@@ -539,10 +542,13 @@ export class TaskOrchestrator {
     const baseDurations: Record<AgentRole, number> = {
       tool_orchestrator: 30000,
       javascript_specialist: 120000,
+      styling_ux_specialist: 120000,
       python_specialist: 120000,
       tauri_specialist: 120000,
       pipeline_specialist: 60000,
-      integration_analyst: 90000
+      testing_specialist: 120000,
+      integration_analyst: 90000,
+      repair_specialist: 90000,
     };
 
     let duration = baseDurations[agent] || 60000;

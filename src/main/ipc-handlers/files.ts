@@ -21,7 +21,19 @@ import type { AgentReviewFinding } from '../../types/agent-review';
 
 function extractFilesFromIssue(summary: string): string[] {
   const matches = summary.match(/[A-Za-z0-9_./-]+\.(tsx?|jsx?|py|json|html|css|md|yml|yaml|toml|rs|js)/g) || [];
-  return [...new Set(matches.map((match) => match.replace(/\\/g, '/')))];
+  let anchorFile: string | null = null;
+  const normalized = matches.map((match) => {
+    const cleaned = match.replace(/\\/g, '/');
+    if (cleaned.startsWith('./') || cleaned.startsWith('../')) {
+      if (!anchorFile) {
+        return cleaned.replace(/^\.\//, '');
+      }
+      return path.posix.normalize(path.posix.join(path.posix.dirname(anchorFile), cleaned));
+    }
+    anchorFile = anchorFile || cleaned;
+    return cleaned;
+  });
+  return [...new Set(normalized)];
 }
 
 function buildFinding(

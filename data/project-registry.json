@@ -1384,6 +1384,38 @@
           "prompt": "Can you build me a cookies website please? in javascript or w.e they do to build"
         }
       ]
+    },
+    {
+      "id": "proj_1775006733445_tsuy3u2q8",
+      "name": "agentprime-debug-ui-z2DLm7",
+      "path": "C:\\Users\\AGrac\\AppData\\Local\\Temp\\agentprime-debug-ui-z2DLm7",
+      "type": "web",
+      "description": "Repair the accepted project changes so verification passes",
+      "createdAt": "2026-04-01T01:25:33.444Z",
+      "updatedAt": "2026-04-01T01:25:33.444Z",
+      "files": [
+        "vite.config.js",
+        "src/script.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Express",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-01T01:25:33.444Z",
+          "action": "create",
+          "description": "Repair the accepted project changes so verification passes",
+          "filesChanged": [
+            "vite.config.js",
+            "src/script.js"
+          ],
+          "prompt": "Repair the accepted project changes so verification passes.\nOriginal task: __AGENTPRIME_TEST_REVIEW__\nDetected project: Vite App\nReadiness rule: Ready only after npm run build succeeds and npm run dev starts successfully.\nInstall command: npm install\nBuild command: npm run build\nRun command: npm run dev\nVerification failures:\n- [build] Build failed: x Build failed in 41ms\nerror during build:\n[vite]: Rollup failed to resolve import \"/src/script.js\" from \"C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/index.html\".\nThis is most likely unintended because it can break your application at runtime.\nIf you do want to externalize this module explicitly add it to\n`build.rollupOptions.external`\n    at viteWarn (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65855:17)\n    at onRollupWarning (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65887:5)\n    at onwarn (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65550:7)\n    at file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:21383:13\n    at Object.logger [as onLog] (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:23364:9)\n    at ModuleLoader.handleInvalidResolvedId (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:22108:26)\n    at file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:22066:26\n [files: /src/script.js, /Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/index.html, /Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js, /Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js]\nFocus only on the accepted files and the concrete failures above. Do not add new features."
+        }
+      ]
     }
   ]
 }

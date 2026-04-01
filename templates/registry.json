@@ -73,6 +73,20 @@
       "postCreate": ["npm install"]
     },
     {
+      "id": "static-site",
+      "name": "Static Site",
+      "description": "Zero-dependency landing page starter with HTML, CSS, and JavaScript",
+      "icon": "🪄",
+      "category": "frontend",
+      "tags": ["frontend", "static", "html", "css", "javascript"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-static-site" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A polished static landing page" }
+      ],
+      "postCreate": []
+    },
+    {
       "id": "vue-vite",
       "name": "Vue 3 + Vite",
       "description": "Modern Vue 3 app with Composition API, TypeScript, and Vite",

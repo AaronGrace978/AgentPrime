@@ -25,6 +25,7 @@ const templateCommands: Record<string, CommandSpec[]> = {
   ],
   'fullstack-react-express': [{ command: 'npm run build', requiredTools: ['npm'] }],
   'nextjs-fullstack': [{ command: 'npm run build', requiredTools: ['npm'] }],
+  'static-site': [],
   'vue-vite': [{ command: 'npm run build', requiredTools: ['npm'] }],
   'sveltekit': [
     { command: 'npm run check', requiredTools: ['npm'] },
@@ -41,6 +42,7 @@ const browserSmokeTemplates = new Set([
   'fullstack-react-express',
   'fullstack-react-fastapi',
   'nextjs-fullstack',
+  'static-site',
   'vue-vite',
   'sveltekit',
   'threejs-game',

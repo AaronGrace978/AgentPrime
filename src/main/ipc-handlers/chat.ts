@@ -21,6 +21,9 @@ import { getBudgetAdjustedMaxTokens, isOllamaCloudModel } from '../core/model-ou
 import { getTelemetryService } from '../core/telemetry-service';
 import axios from 'axios';
 import { reviewSessionManager } from '../agent/review-session-manager';
+import { detectCanonicalTemplateId, workspaceNeedsDeterministicScaffold } from '../agent/scaffold-resolver';
+import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
+import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
 
 /**
@@ -100,19 +103,31 @@ function resolveConfiguredModel(settings: any, requestedModel?: string) {
     settings?.activeModel ||
     'qwen2.5-coder:7b';
 
-  let activeModel = requestedModel || settings?.activeModel || localOllamaModel;
-  let activeProvider = resolveProviderForModel(activeModel, settings?.activeProvider || 'ollama');
+  const runtime = resolveEffectiveAIRuntime(settings, requestedModel, settings?.activeProvider || 'ollama');
+  const activeModel = runtime.effectiveModel || localOllamaModel;
+  const activeProvider = runtime.effectiveProvider || resolveProviderForModel(activeModel, settings?.activeProvider || 'ollama');
 
-  const missingProviderKey =
-    activeProvider !== 'ollama' &&
-    !settings?.providers?.[activeProvider]?.apiKey;
+  return { activeModel, activeProvider, localOllamaModel, runtime };
+}
 
-  if (missingProviderKey) {
-    activeModel = localOllamaModel;
-    activeProvider = 'ollama';
-  }
+function flattenRuntimeForTelemetry(runtime: AIRuntimeSnapshot): Record<string, any> {
+  return {
+    requestedProvider: runtime.requestedProvider,
+    requestedModel: runtime.requestedModel,
+    effectiveProvider: runtime.effectiveProvider,
+    effectiveModel: runtime.effectiveModel,
+    executionProvider: runtime.executionProvider || runtime.displayProvider,
+    executionModel: runtime.executionModel || runtime.displayModel,
+    runtimeResolution: runtime.resolution,
+    runtimeViaFallback: runtime.viaFallback,
+  };
+}
 
-  return { activeModel, activeProvider, localOllamaModel };
+function emitRuntimeInfo(sender: WebContents, requestId: string, runtime: AIRuntimeSnapshot): void {
+  sender.send('model-selection-info', {
+    requestId,
+    ...runtime,
+  });
 }
 
 // 🦖 DINO BUDDY: Conversation summarization for long sessions
@@ -372,7 +387,12 @@ export function register(deps: ChatHandlerDeps): void {
         
         // Get settings early for model/provider selection
         const agentSettings = getSettings();
-        const { activeModel: selectedModel, activeProvider } = resolveConfiguredModel(agentSettings, context.model);
+        const {
+          activeModel: selectedModel,
+          activeProvider,
+          runtime: requestedRuntime,
+        } = resolveConfiguredModel(agentSettings, context.model);
+        emitRuntimeInfo(event.sender, requestId, requestedRuntime);
         
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
         const isOllamaCloud = selectedModel?.includes('cloud') || 
@@ -434,9 +454,16 @@ export function register(deps: ChatHandlerDeps): void {
         if (useSpecializedAgents) {
           // Use specialized agent architecture
           console.log(`[Chat] Specialized agent mode enabled, provider: ${activeProvider}, model: ${selectedModel}, cloud: ${isOllamaCloud}`);
+          const deterministicScaffoldOnly =
+            Boolean((context as any).deterministic_scaffold_only) ||
+            (
+              process.env.NODE_ENV === 'test' &&
+              workspaceNeedsDeterministicScaffold(workspacePath) &&
+              Boolean(detectCanonicalTemplateId(message))
+            );
           
           // Pre-flight health check - only for LOCAL Ollama (skip for Ollama Cloud!)
-          if (activeProvider === 'ollama' && !isOllamaCloud) {
+          if (!deterministicScaffoldOnly && activeProvider === 'ollama' && !isOllamaCloud) {
             const health = await checkOllamaHealth();
             if (!health.running) {
               return {
@@ -467,6 +494,7 @@ export function register(deps: ChatHandlerDeps): void {
             model: selectedModel,
             runtimeBudget,
             repairScope: context.repair_scope,
+            deterministicScaffoldOnly,
           };
 
           // Recreate specialized loop per run so we always bind fresh sender listeners.
@@ -497,9 +525,13 @@ export function register(deps: ChatHandlerDeps): void {
             telemetry.track('ai_request', {
               mode: 'specialized_dispatch',
               model: selectedModel,
+              provider: activeProvider,
+              ...flattenRuntimeForTelemetry(requestedRuntime),
               workspacePath,
             });
             const response = await specializedAgentLoop.run(message);
+            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+            emitRuntimeInfo(event.sender, requestId, responseRuntime);
             const reviewSession = specializedAgentLoop.consumePendingReviewSession();
 
             // Store in history
@@ -509,6 +541,8 @@ export function register(deps: ChatHandlerDeps): void {
               mode: 'specialized_dispatch',
               success: true,
               model: selectedModel,
+              provider: activeProvider,
+              ...flattenRuntimeForTelemetry(responseRuntime),
               workspacePath,
               durationMs: Date.now() - agentStartedAt,
             });
@@ -528,13 +562,18 @@ export function register(deps: ChatHandlerDeps): void {
               reviewSessionId: reviewSession?.sessionId,
               reviewChanges: reviewSession?.changes,
               reviewVerification: reviewSession?.initialVerification,
+              runtime: responseRuntime,
             };
           } catch (agentError: any) {
             console.error('[Chat] Specialized agent error:', agentError);
+            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+            emitRuntimeInfo(event.sender, requestId, responseRuntime);
             getTelemetryService().track('ai_response', {
               mode: 'specialized_dispatch',
               success: false,
               model: selectedModel,
+              provider: activeProvider,
+              ...flattenRuntimeForTelemetry(responseRuntime),
               workspacePath,
               durationMs: Date.now() - agentStartedAt,
               error: agentError.message || 'Agent execution failed',
@@ -552,7 +591,8 @@ export function register(deps: ChatHandlerDeps): void {
               requestId,
               agent_mode: true,
               specialized_mode: true,
-              suggestion: 'Try running: ollama pull qwen2.5:14b'
+              suggestion: 'Try running: ollama pull qwen2.5:14b',
+              runtime: responseRuntime,
             };
           } finally {
             activeAgentMode = null;
@@ -560,6 +600,7 @@ export function register(deps: ChatHandlerDeps): void {
         } else {
           // Use monolithic agent loop (existing behavior)
           console.log(`[Chat] Monolithic agent mode enabled, model: ${selectedModel}`);
+          emitRuntimeInfo(event.sender, requestId, requestedRuntime);
 
           if (!agentLoop) {
             agentLoop = createAgent({
@@ -597,6 +638,8 @@ export function register(deps: ChatHandlerDeps): void {
           try {
             activeAgentMode = 'monolithic';
             const response = await agentLoop.run(message);
+            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+            emitRuntimeInfo(event.sender, requestId, responseRuntime);
 
             // Store in history
             addToConversationHistory('user', message);
@@ -613,7 +656,8 @@ export function register(deps: ChatHandlerDeps): void {
               response,
               requestId,
               agent_mode: true,
-              specialized_mode: false
+              specialized_mode: false,
+              runtime: responseRuntime,
             };
           } catch (agentErr: unknown) {
             const msg =
@@ -623,6 +667,8 @@ export function register(deps: ChatHandlerDeps): void {
                   ? agentErr
                   : 'Agent execution failed';
             console.error('[Chat] Monolithic agent error:', agentErr);
+            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+            emitRuntimeInfo(event.sender, requestId, responseRuntime);
             event.sender.send('dino:reaction', {
               expression: 'error',
               message: 'Oof! Something went sideways — want to try again? 🦕'
@@ -632,7 +678,8 @@ export function register(deps: ChatHandlerDeps): void {
               error: msg,
               requestId,
               agent_mode: true,
-              specialized_mode: false
+              specialized_mode: false,
+              runtime: responseRuntime,
             };
           } finally {
             activeAgentMode = null;
@@ -871,7 +918,12 @@ Separate files with blank lines.
       
       // Get settings for provider configuration
       const settings = getSettings();
-      const { activeModel, activeProvider } = resolveConfiguredModel(settings, context.model);
+      const {
+        activeModel,
+        activeProvider,
+        runtime: initialRuntime,
+      } = resolveConfiguredModel(settings, context.model);
+      emitRuntimeInfo(event.sender, requestId, initialRuntime);
       
       // Add system prompt as first message if provided
       const messagesWithSystem = systemPrompt 
@@ -887,6 +939,14 @@ Separate files with blank lines.
       // Use AI router to stream response
       let fullResponse = '';
       let streamTerminalError: string | undefined;
+      let latestRuntime = initialRuntime;
+      const chatStartedAt = Date.now();
+
+      getTelemetryService().track('ai_request', {
+        mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
+        runtimeBudget,
+        ...flattenRuntimeForTelemetry(initialRuntime),
+      });
 
       const processStreamChunk = (chunk: { content?: string; done?: boolean; error?: unknown }) => {
         if (chunk.error != null && chunk.error !== '') {
@@ -957,22 +1017,38 @@ Separate files with blank lines.
               complexity: routingInfo.analysis?.score || 5,
               reasoning: routingInfo.analysis?.reasoning || ''
             });
+          },
+          onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
+            latestRuntime = runtime;
+            emitRuntimeInfo(event.sender, requestId, runtime);
           }
         });
       } else {
         // Standard single-model streaming
         await aiRouter.stream(messagesWithSystem, processStreamChunk, {
           model: activeModel,
-          maxTokens: maxTokens
+          maxTokens: maxTokens,
+          onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
+            latestRuntime = runtime;
+            emitRuntimeInfo(event.sender, requestId, runtime);
+          }
         });
       }
 
       if (streamTerminalError) {
+        getTelemetryService().track('ai_response', {
+          mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
+          success: false,
+          durationMs: Date.now() - chatStartedAt,
+          runtimeBudget,
+          ...flattenRuntimeForTelemetry(latestRuntime),
+          error: streamTerminalError,
+        });
         event.sender.send('chat-error', {
           requestId,
           error: streamTerminalError,
-          model: activeModel,
-          provider: activeProvider
+          model: latestRuntime.displayModel,
+          provider: latestRuntime.displayProvider
         });
         event.sender.send('dino:reaction', {
           expression: 'error',
@@ -982,19 +1058,28 @@ Separate files with blank lines.
           success: false,
           error: streamTerminalError,
           requestId,
-          model: activeModel,
-          provider: activeProvider
+          model: latestRuntime.displayModel,
+          provider: latestRuntime.displayProvider,
+          runtime: latestRuntime,
         };
       }
 
       if (!fullResponse.trim()) {
         const emptyMsg =
           'The model returned an empty response. Try again, shorten your message, or switch models.';
+        getTelemetryService().track('ai_response', {
+          mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
+          success: false,
+          durationMs: Date.now() - chatStartedAt,
+          runtimeBudget,
+          ...flattenRuntimeForTelemetry(latestRuntime),
+          error: emptyMsg,
+        });
         event.sender.send('chat-error', {
           requestId,
           error: emptyMsg,
-          model: activeModel,
-          provider: activeProvider
+          model: latestRuntime.displayModel,
+          provider: latestRuntime.displayProvider
         });
         event.sender.send('dino:reaction', {
           expression: 'error',
@@ -1004,8 +1089,9 @@ Separate files with blank lines.
           success: false,
           error: emptyMsg,
           requestId,
-          model: activeModel,
-          provider: activeProvider
+          model: latestRuntime.displayModel,
+          provider: latestRuntime.displayProvider,
+          runtime: latestRuntime,
         };
       }
       
@@ -1018,11 +1104,19 @@ Separate files with blank lines.
         expression: 'success',
         message: 'Great job! ✨'
       });
+      getTelemetryService().track('ai_response', {
+        mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
+        success: true,
+        durationMs: Date.now() - chatStartedAt,
+        runtimeBudget,
+        ...flattenRuntimeForTelemetry(latestRuntime),
+      });
       
       return {
         success: true,
         response: fullResponse,
-        requestId
+        requestId,
+        runtime: latestRuntime,
       };
       
     } catch (error: unknown) {
@@ -1039,14 +1133,22 @@ Separate files with blank lines.
       
       // Get model and provider info for error context
       const settings = getSettings();
-      const { activeModel, activeProvider } = resolveConfiguredModel(settings, context.model);
+      const { runtime } = resolveConfiguredModel(settings, context.model);
+      getTelemetryService().track('ai_response', {
+        mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
+        success: false,
+        runtimeBudget,
+        ...flattenRuntimeForTelemetry(runtime),
+        error: errorMessage,
+      });
       
       event.sender.send('chat-error', {
         requestId,
         error: errorMessage,
-        model: activeModel,
-        provider: activeProvider
+        model: runtime.displayModel,
+        provider: runtime.displayProvider
       });
+      emitRuntimeInfo(event.sender, requestId, runtime);
 
       // Send error reaction to Dino Buddy
       event.sender.send('dino:reaction', {
@@ -1058,8 +1160,9 @@ Separate files with blank lines.
         success: false,
         error: errorMessage,
         requestId,
-        model: activeModel,
-        provider: activeProvider
+        model: runtime.displayModel,
+        provider: runtime.displayProvider,
+        runtime,
       };
     }
   });

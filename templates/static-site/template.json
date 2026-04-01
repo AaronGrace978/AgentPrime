@@ -1,0 +1,12 @@
+{
+  "id": "static-site",
+  "name": "Static Site",
+  "version": "1.0.0",
+  "directories": [],
+  "files": [
+    { "template": "index.html", "path": "index.html" },
+    { "template": "styles.css", "path": "styles.css" },
+    { "template": "app.js", "path": "app.js" },
+    { "template": "README.md", "path": "README.md" }
+  ]
+}

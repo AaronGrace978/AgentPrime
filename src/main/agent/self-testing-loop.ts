@@ -71,7 +71,16 @@ export class SelfTestingLoop {
     const startTime = Date.now();
     const result: SelfTestResult = {
       success: false,
-      projectInfo: { type: 'unknown', hasPackageJson: false, hasRequirements: false, hasIndexHtml: false },
+      projectInfo: {
+        type: 'unknown',
+        kind: 'unknown',
+        displayName: 'Unknown Project',
+        hasPackageJson: false,
+        hasRequirements: false,
+        hasIndexHtml: false,
+        requiresInstall: false,
+        readinessSummary: 'Project type not detected yet.',
+      },
       installSuccess: false,
       runSuccess: false,
       errors: [],

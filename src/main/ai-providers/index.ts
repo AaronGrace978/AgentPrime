@@ -27,6 +27,7 @@ import type {
 } from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
 import { injectCreed } from '../core/dino-buddy-creed';
+import { recordAIRuntimeExecution } from '../core/ai-runtime-state';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget, runtimeBudgetToDualMode } from '../../types/runtime-budget';
 
 interface ProviderEntry {
@@ -903,6 +904,16 @@ class AIProviderRouter {
       result.modelSelection?.model ||
       requestedModel;
 
+    recordAIRuntimeExecution({
+      requestedProvider,
+      requestedModel,
+      effectiveProvider: requestedProvider,
+      effectiveModel: requestedModel || actualModel,
+      executionProvider: actualProvider,
+      executionModel: actualModel,
+      viaFallback,
+    });
+
     return {
       ...result,
       servedBy: {
@@ -913,6 +924,33 @@ class AIProviderRouter {
         viaFallback
       }
     };
+  }
+
+  private publishRuntimeInfo(
+    actualProvider: string,
+    requestedProvider: string,
+    requestedModel?: string,
+    viaFallback: boolean = false,
+    options: ChatOptions = {}
+  ): void {
+    const actualModel =
+      requestedModel ||
+      (this.providers.get(actualProvider)?.config?.model as string | undefined) ||
+      this.activeModel ||
+      undefined;
+    const runtime = recordAIRuntimeExecution({
+      requestedProvider,
+      requestedModel,
+      effectiveProvider: requestedProvider,
+      effectiveModel: requestedModel || actualModel,
+      executionProvider: actualProvider,
+      executionModel: actualModel,
+      viaFallback,
+    });
+    const onRuntimeInfo = (options as any)?.onRuntimeInfo;
+    if (typeof onRuntimeInfo === 'function') {
+      onRuntimeInfo(runtime);
+    }
   }
 
   /**
@@ -1028,11 +1066,13 @@ class AIProviderRouter {
   async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
     const provider = this.getActiveProvider();
     const model = (options.model || this.activeModel) as string | undefined;
+    const requestedProvider = this.activeProvider || provider.name || 'ollama';
 
     // ═══ DINO BUDDY CREED — Injected at the deepest level ═══
     const messagesWithCreed = injectCreed(messages);
 
     try {
+      this.publishRuntimeInfo(requestedProvider, requestedProvider, model, false, options);
       return await provider.stream(messagesWithCreed, onChunk, { ...options, model });
     } catch (e: any) {
       const isRateLimit = this.isRateLimitError(e);
@@ -1064,6 +1104,13 @@ class AIProviderRouter {
         
         const fallback = this.getProvider(this.fallbackProvider);
         const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
+        this.publishRuntimeInfo(
+          this.fallbackProvider,
+          requestedProvider,
+          (fallbackOptions.model || model) as string | undefined,
+          true,
+          options
+        );
         return fallback.stream(messagesWithCreed, onChunk, fallbackOptions);
       }
       throw e;

@@ -37,11 +37,15 @@ export interface ScaffoldTemplateResult {
 }
 
 const PROJECT_TYPE_TEMPLATE_MAP: Record<string, string> = {
+  static_site: 'static-site',
   threejs_viewer: 'threejs-game',
+  vue_vite: 'vue-vite',
 };
 
 const REQUIRED_TEMPLATE_OUTPUTS: Record<string, string[]> = {
+  'static-site': ['index.html', 'styles.css', 'app.js'],
   'threejs-game': ['package.json', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/Game.ts'],
+  'vue-vite': ['package.json', 'index.html', 'src/main.ts', 'src/App.vue', 'vite.config.ts'],
 };
 
 export function detectCanonicalTemplateId(task: string, projectType?: string): string | null {
@@ -62,6 +66,28 @@ export function detectCanonicalTemplateId(task: string, projectType?: string): s
 
   if (mentionsThreeJs && (mentionsGameLikeGoal || mentionsBrowser)) {
     return 'threejs-game';
+  }
+
+  const mentionsStaticSite =
+    lower.includes('static site') ||
+    lower.includes('static website') ||
+    lower.includes('landing page') ||
+    lower.includes('marketing page') ||
+    lower.includes('portfolio site');
+  if (mentionsStaticSite) {
+    return 'static-site';
+  }
+
+  const mentionsVue = /\bvue\b/.test(lower);
+  const mentionsStarterLikeGoal =
+    lower.includes('starter') ||
+    lower.includes('scaffold') ||
+    lower.includes('template') ||
+    lower.includes('landing page') ||
+    lower.includes('dashboard') ||
+    lower.includes('app');
+  if ((mentionsVue && (lower.includes('vite') || mentionsStarterLikeGoal)) || lower.includes('vue vite')) {
+    return 'vue-vite';
   }
 
   return null;

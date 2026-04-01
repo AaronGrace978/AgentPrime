@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 
 interface StatusBarProps {
   currentFile?: {
@@ -16,6 +17,8 @@ interface AIStatus {
   model: string;
   connected: boolean;
   dualModelEnabled: boolean;
+  reason?: string;
+  runtime?: AIRuntimeSnapshot;
 }
 
 const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) => {
@@ -23,7 +26,7 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
     provider: 'ollama',
     model: 'loading...',
     connected: false,
-    dualModelEnabled: false
+    dualModelEnabled: false,
   });
   const [time, setTime] = useState(new Date());
 
@@ -31,32 +34,18 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
   useEffect(() => {
     const loadStatus = async () => {
       try {
-        const settings = await window.agentAPI.getSettings();
-        const activeProvider = settings?.activeProvider || 'ollama';
-        const requestedModel = settings?.activeModel || '';
-        const inferredProvider = requestedModel.startsWith('gpt-')
-          ? 'openai'
-          : requestedModel.startsWith('claude-')
-            ? 'anthropic'
-            : requestedModel.includes('/')
-              ? 'openrouter'
-              : activeProvider;
-        const providerConfig = settings?.providers?.[
-          inferredProvider as 'ollama' | 'anthropic' | 'openai' | 'openrouter'
-        ];
-        const providerMissingKey =
-          inferredProvider !== 'ollama' &&
-          !providerConfig?.apiKey;
-        const effectiveProvider = providerMissingKey ? 'ollama' : inferredProvider;
-        const providerStatus = await window.agentAPI.testProvider(effectiveProvider);
+        const status = await window.agentAPI.aiStatus();
+        if (!status?.success) {
+          throw new Error(status?.error || 'Failed to load AI runtime status');
+        }
 
         setAiStatus({
-          provider: effectiveProvider,
-          model: providerMissingKey
-            ? (settings?.providers?.ollama?.model || 'qwen2.5-coder:7b')
-            : (requestedModel || settings?.providers?.ollama?.model || 'qwen2.5-coder:7b'),
-          connected: providerStatus?.success || false,
-          dualModelEnabled: settings?.dualModelEnabled || false
+          provider: status.runtime.displayProvider || status.runtime.effectiveProvider,
+          model: status.runtime.displayModel || status.runtime.effectiveModel,
+          connected: status.connected || false,
+          dualModelEnabled: status.dualModelEnabled || false,
+          reason: status.runtime.reason,
+          runtime: status.runtime,
         });
       } catch (error) {
         console.error('Failed to load status:', error);
@@ -117,14 +106,14 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
         {/* Connection Status */}
         <div 
           className={`status-item connection ${aiStatus.connected ? 'connected' : 'disconnected'}`}
-          title={aiStatus.connected ? 'AI Connected' : 'AI Disconnected'}
+          title={aiStatus.reason || (aiStatus.connected ? 'AI Connected' : 'AI Disconnected')}
         >
           <span className="status-dot"></span>
           <span className="status-text">{aiStatus.provider}</span>
         </div>
 
         {/* Current Model */}
-        <div className="status-item model" title={`Model: ${aiStatus.model}`}>
+        <div className="status-item model" title={aiStatus.reason ? `Model: ${aiStatus.model}\n${aiStatus.reason}` : `Model: ${aiStatus.model}`}>
           <span className="status-icon">AI</span>
           <span className="status-text">{formatModel(aiStatus.model)}</span>
           {aiStatus.dualModelEnabled && (

@@ -1924,6 +1924,7 @@ export async function executeWithSpecialists(
   };
   assertNotCancelled();
   const blackboard: SpecialistBlackboard | undefined = context.blackboard;
+  const deterministicScaffoldOnly = Boolean(context.deterministicScaffoldOnly);
   const runtimeBudget: RuntimeBudgetMode =
     context.runtimeBudget === 'instant' || context.runtimeBudget === 'deep'
       ? context.runtimeBudget
@@ -2037,24 +2038,28 @@ export async function executeWithSpecialists(
   }
 
   // Step 0: Planning Phase - Break down task into requirements (FAST)
-  console.log(`[MirrorAgents] 📋 Step 0: Planning with ${planningModel.model}`);
-  markBlackboardOwner(blackboard, 'tool_orchestrator', 'planning');
-  beginPhase('planning', { requestedProvider: planningModel.provider, requestedModel: planningModel.model });
-  aiRouter.setActiveProvider(planningModel.provider, planningModel.model);
-  
-  const planningOrchestrator = AGENT_CONFIGS.tool_orchestrator;
-  const planningPrompt = applyBudgetPrompt(await buildMirrorEnhancedPrompt(
-    task,
-    'tool_orchestrator',
-    planningOrchestrator.systemPrompt
-  ));
+  if (deterministicScaffoldOnly) {
+    beginPhase('planning', { skipped: true, deterministicScaffoldOnly: true });
+    endPhase('planning', 'success', { skipped: true, deterministicScaffoldOnly: true });
+  } else {
+    console.log(`[MirrorAgents] 📋 Step 0: Planning with ${planningModel.model}`);
+    markBlackboardOwner(blackboard, 'tool_orchestrator', 'planning');
+    beginPhase('planning', { requestedProvider: planningModel.provider, requestedModel: planningModel.model });
+    aiRouter.setActiveProvider(planningModel.provider, planningModel.model);
+    
+    const planningOrchestrator = AGENT_CONFIGS.tool_orchestrator;
+    const planningPrompt = applyBudgetPrompt(await buildMirrorEnhancedPrompt(
+      task,
+      'tool_orchestrator',
+      planningOrchestrator.systemPrompt
+    ));
 
-  let planningResponse;
-  try {
-    planningResponse = await withAITimeoutAndRetry(
-      () => aiRouter.chat([
-        { role: 'system', content: planningPrompt },
-        { role: 'user', content: `Task: ${task}
+    let planningResponse;
+    try {
+      planningResponse = await withAITimeoutAndRetry(
+        () => aiRouter.chat([
+          { role: 'system', content: planningPrompt },
+          { role: 'user', content: `Task: ${task}
 
 Break this task down into:
 1. Core features (must-have) - list each feature
@@ -2064,45 +2069,46 @@ Break this task down into:
 5. Dependencies required
 
 Output as a structured list. Be specific and comprehensive.` }
-      ], {
-        model: planningModel.model,
-        temperature: 0.3,
-        maxTokens: budgetedTokens(planningModel.model, 'analysis'),
-        disableRouterFallback: true
-      }),
-      'analysis',
-      planningModel.model,
-      1,
-      runtimeBudget
-    );
-  } catch (error) {
-    console.warn('[MirrorAgents] ⚠️ Planning phase failed, continuing without structured plan');
-    planningResponse = { success: false };
-  }
+        ], {
+          model: planningModel.model,
+          temperature: 0.3,
+          maxTokens: budgetedTokens(planningModel.model, 'analysis'),
+          disableRouterFallback: true
+        }),
+        'analysis',
+        planningModel.model,
+        1,
+        runtimeBudget
+      );
+    } catch (error) {
+      console.warn('[MirrorAgents] ⚠️ Planning phase failed, continuing without structured plan');
+      planningResponse = { success: false };
+    }
 
-  if (planningResponse.success) {
-    const planContent = planningResponse.content || '';
-    const requirements = extractRequirements(planContent);
-    sharedContext.requirements = requirements;
-    addBlackboardArtifact(blackboard, {
-      type: 'execution_plan',
-      author: 'task_master',
-      summary: `Planning extracted ${requirements.length} requirement(s).`,
-      payload: { requirements, planContent },
-    });
-    console.log(`[MirrorAgents] 📋 Planning complete: ${requirements.length} requirements identified`);
-    endPhase('planning', 'success', {
-      requestedProvider: planningModel.provider,
-      requestedModel: planningModel.model,
-      actualProvider: planningResponse.servedBy?.provider || planningModel.provider,
-      actualModel: planningResponse.servedBy?.model || planningModel.model,
-      requirementCount: requirements.length,
-    });
-  } else {
-    endPhase('planning', 'failure', {
-      requestedProvider: planningModel.provider,
-      requestedModel: planningModel.model,
-    });
+    if (planningResponse.success) {
+      const planContent = planningResponse.content || '';
+      const requirements = extractRequirements(planContent);
+      sharedContext.requirements = requirements;
+      addBlackboardArtifact(blackboard, {
+        type: 'execution_plan',
+        author: 'task_master',
+        summary: `Planning extracted ${requirements.length} requirement(s).`,
+        payload: { requirements, planContent },
+      });
+      console.log(`[MirrorAgents] 📋 Planning complete: ${requirements.length} requirements identified`);
+      endPhase('planning', 'success', {
+        requestedProvider: planningModel.provider,
+        requestedModel: planningModel.model,
+        actualProvider: planningResponse.servedBy?.provider || planningModel.provider,
+        actualModel: planningResponse.servedBy?.model || planningModel.model,
+        requirementCount: requirements.length,
+      });
+    } else {
+      endPhase('planning', 'failure', {
+        requestedProvider: planningModel.provider,
+        requestedModel: planningModel.model,
+      });
+    }
   }
 
   // Create checkpoint after planning
@@ -2145,6 +2151,18 @@ Output as a structured list. Be specific and comprehensive.` }
     });
   } else {
     endPhase('deterministic_scaffold', 'success', { skipped: true });
+  }
+
+  if (scaffoldApplied && deterministicScaffoldOnly) {
+    console.log('[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists');
+    return {
+      results,
+      finalAnalysis,
+      executedTools,
+      scaffoldApplied,
+      scaffoldTemplateId,
+      skippedGenerativePass: true
+    };
   }
 
   // Scaffold supplies a runnable skeleton only — orchestrator + specialists MUST run so

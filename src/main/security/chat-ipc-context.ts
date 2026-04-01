@@ -37,6 +37,7 @@ export const chatIpcContextSchema = z
     justChatMode: z.boolean().optional(),
     dual_mode: dualModeSchema.optional(),
     runtime_budget: runtimeBudgetSchema.optional(),
+    deterministic_scaffold_only: z.boolean().optional(),
     repair_scope: repairScopeSchema.optional(),
     file_content: z.string().max(600000).optional(),
     has_errors: z.boolean().optional(),

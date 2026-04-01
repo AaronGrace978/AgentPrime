@@ -92,6 +92,7 @@ import { resolveFeatureFlags, getFeatureFlags } from './core/feature-flags';
 
 // Import Telemetry Service
 import { initializeTelemetry, getTelemetryService } from './core/telemetry-service';
+import { resolveEffectiveAIRuntime } from './core/ai-runtime-state';
 
 // Import Auto-Updater
 import { initializeAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getAppVersion } from './core/auto-updater';
@@ -361,29 +362,13 @@ function initializeAIProviders(): void {
   const normalizeProviderFromModel = (model: string | undefined, fallback: string) =>
     aiRouter.inferProviderForModel(model, fallback) || fallback;
 
-  const getLocalOllamaFallbackModel = () =>
-    settings.providers?.ollama?.model || OLLAMA_MODEL || 'qwen2.5-coder:7b';
-
-  const providerHasCredentials = (providerName: string | undefined) => {
-    if (!providerName || providerName === 'ollama' || providerName === 'ollamaSecondary') {
-      return true;
-    }
-    const providerConfig = (settings.providers as Record<string, any> | undefined)?.[providerName];
-    return Boolean(providerConfig?.apiKey);
-  };
-
   const normalizeActiveSelection = () => {
     const previousProvider = settings.activeProvider;
     const previousModel = settings.activeModel;
+    const runtime = resolveEffectiveAIRuntime(settings, settings.activeModel, settings.activeProvider);
 
-    settings.activeProvider = normalizeProviderFromModel(settings.activeModel, settings.activeProvider || 'ollama');
-    if (!providerHasCredentials(settings.activeProvider)) {
-      settings.activeProvider = 'ollama';
-      settings.activeModel = getLocalOllamaFallbackModel();
-    }
-    if (!settings.activeModel) {
-      settings.activeModel = getLocalOllamaFallbackModel();
-    }
+    settings.activeProvider = runtime.effectiveProvider;
+    settings.activeModel = runtime.effectiveModel;
 
     return previousProvider !== settings.activeProvider || previousModel !== settings.activeModel;
   };
@@ -1288,12 +1273,18 @@ ipcMain.handle('quick-action', async (_event, action: string, code: string, lang
 // AI Status
 ipcMain.handle('ai-status', async () => {
   try {
-    const provider = aiRouter.getActiveProvider();
+    const runtime = resolveEffectiveAIRuntime(settings, settings.activeModel, settings.activeProvider);
+    const providerStatus = await aiRouter.testProvider(runtime.effectiveProvider).catch((error: any) => ({
+      success: false,
+      error: error?.message || String(error)
+    }));
     return {
       success: true,
-      provider: settings.activeProvider,
-      model: settings.activeModel,
-      connected: !!provider
+      provider: runtime.displayProvider,
+      model: runtime.displayModel,
+      connected: providerStatus?.success || false,
+      dualModelEnabled: !!settings.dualModelEnabled,
+      runtime
     };
   } catch (error: any) {
     return { success: false, error: error.message };

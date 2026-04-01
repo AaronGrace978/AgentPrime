@@ -66,6 +66,16 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     const rejected = changes.filter(c => c.status === 'rejected').length;
     return { pending, accepted, rejected, total: changes.length };
   }, [changes]);
+  const acceptedFiles = useMemo(
+    () => changes.filter((change) => change.status === 'accepted').map((change) => change.filePath),
+    [changes]
+  );
+  const repairTargets = useMemo(() => {
+    const findingFiles = new Set((verification?.findings || []).flatMap((finding) => finding.files));
+    return findingFiles.size > 0
+      ? acceptedFiles.filter((filePath) => findingFiles.has(filePath))
+      : acceptedFiles;
+  }, [acceptedFiles, verification]);
   const reviewComplete = stats.pending === 0;
   const acceptedCount = stats.accepted;
   const showVerificationActions = reviewComplete && acceptedCount > 0 && (!isStaged || applied);
@@ -345,6 +355,36 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             {verification.buildCommand && (
               <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
                 Build: <code>{verification.buildCommand}</code>
+              </div>
+            )}
+            {verification.status === 'failed' && repairTargets.length > 0 && (
+              <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
+                Repair scope: {repairTargets.map((filePath) => `\`${filePath}\``).join(', ')}
+              </div>
+            )}
+            {verification.findings && verification.findings.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {verification.findings.slice(0, 6).map((finding, index) => (
+                  <div key={`${finding.summary}-${index}`} style={{
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    background: 'rgba(15, 23, 42, 0.28)',
+                    border: '1px solid rgba(148, 163, 184, 0.12)',
+                    fontSize: '11px',
+                    color: 'var(--prime-text-secondary)',
+                    lineHeight: 1.45,
+                  }}>
+                    <div style={{ color: 'var(--prime-text)', fontWeight: 600 }}>
+                      [{finding.stage}] {finding.summary}
+                    </div>
+                    {finding.files.length > 0 && (
+                      <div>Files: {finding.files.map((filePath) => `\`${filePath}\``).join(', ')}</div>
+                    )}
+                    {finding.command && (
+                      <div>Command: <code>{finding.command}</code></div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
             {verification.issues.length > 0 && (

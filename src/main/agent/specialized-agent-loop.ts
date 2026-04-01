@@ -28,6 +28,7 @@ import {
   getProjectRuntimeProfileSync,
   mapRuntimeKindToRegistryType,
 } from './project-runtime';
+import { scaffoldProjectFromTemplate } from './scaffold-resolver';
 import {
   LEGACY_SPECIALIST_ROLE_MAP,
   type SpecialistBlackboard,
@@ -35,7 +36,11 @@ import {
 } from './specialist-contracts';
 import { ProjectRunner } from './tools/projectRunner';
 import { reviewSessionManager } from './review-session-manager';
-import type { AgentReviewSessionSnapshot } from '../../types/agent-review';
+import type {
+  AgentReviewFinding,
+  AgentReviewSessionSnapshot,
+  AgentReviewVerificationState,
+} from '../../types/agent-review';
 
 const MAX_RETRIES = 2;
 
@@ -44,6 +49,43 @@ interface ProjectVerification {
   missingFiles: string[];
   errors: string[];
   createdFiles: string[];
+}
+
+function extractFilesFromVerificationIssue(summary: string): string[] {
+  const matches = summary.match(/[A-Za-z0-9_./-]+\.(tsx?|jsx?|py|json|html|css|md|yml|yaml|toml|rs|js)/g) || [];
+  let anchorFile: string | null = null;
+  const normalized = matches.map((match) => {
+    const cleaned = match.replace(/\\/g, '/');
+    if (cleaned.startsWith('./') || cleaned.startsWith('../')) {
+      if (!anchorFile) {
+        return cleaned.replace(/^\.\//, '');
+      }
+      return path.posix.normalize(path.posix.join(path.posix.dirname(anchorFile), cleaned));
+    }
+    anchorFile = anchorFile || cleaned;
+    return cleaned;
+  });
+  return [...new Set(normalized)];
+}
+
+function inferVerificationStage(summary: string): AgentReviewFinding['stage'] {
+  const normalized = summary.toLowerCase();
+  if (normalized.startsWith('[install]') || normalized.includes('install failed')) {
+    return 'install';
+  }
+  if (normalized.startsWith('[build]') || normalized.includes('build failed')) {
+    return 'build';
+  }
+  if (normalized.startsWith('[run]') || normalized.includes('run failed')) {
+    return 'run';
+  }
+  if (normalized.startsWith('[browser') || normalized.includes('browser fix needed')) {
+    return 'browser';
+  }
+  if (normalized.startsWith('[validate]') || normalized.includes('missing file')) {
+    return 'validation';
+  }
+  return 'unknown';
 }
 
 export class SpecializedAgentLoop extends EventEmitter {
@@ -178,6 +220,15 @@ export class SpecializedAgentLoop extends EventEmitter {
     const transaction = transactionManager.startTransaction(this.context.workspacePath);
 
     try {
+      if (this.context.deterministicScaffoldOnly) {
+        return await this.runDeterministicScaffoldReview(
+          userMessage,
+          transaction,
+          taskStartedAt,
+          requestedRuntimeBudget
+        );
+      }
+
       // Check if this is an update to an existing project
     const existingProject = this.registry.findByPath(this.context.workspacePath);
     const isUpdate = existingProject !== undefined;
@@ -305,6 +356,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             files: this.getProjectFiles(),
             model: this.context.model,
             runtimeBudget,
+            deterministicScaffoldOnly: this.context.deterministicScaffoldOnly,
             blackboard,
           },
           trackerMode,
@@ -351,33 +403,32 @@ export class SpecializedAgentLoop extends EventEmitter {
         blackboard.findings = verificationSnapshot.errors.map((error) => ({
           severity: 'error',
           summary: error,
-          files: verificationSnapshot.missingFiles,
+          files: extractFilesFromVerificationIssue(error),
           suggestedOwner: 'repair_specialist',
         }));
+        if (verificationSnapshot.missingFiles.length > 0) {
+          blackboard.findings.push({
+            severity: 'error',
+            summary: `Missing files: ${verificationSnapshot.missingFiles.join(', ')}`,
+            files: verificationSnapshot.missingFiles,
+            suggestedOwner: 'repair_specialist',
+          });
+        }
         this.emit('blackboard-update', blackboard);
       }
-      
-      // AUTO-FIX: Always run auto-fixer (even if verification fails, it can fix issues)
-      try {
-        const { ProjectAutoFixer } = await import('./tools/project-auto-fixer');
-        const fixResult = await ProjectAutoFixer.fixProject(this.context.workspacePath);
-        if (fixResult.fixes.length > 0) {
-          console.log(`[SpecializedAgent] 🔧 Auto-fixed ${fixResult.fixes.length} issue(s):`);
-          fixResult.fixes.forEach(fix => console.log(`  - ${fix}`));
-        }
-        if (fixResult.errors.length > 0) {
-          console.warn(`[SpecializedAgent] ⚠️ ${fixResult.errors.length} error(s) during auto-fix:`);
-          fixResult.errors.forEach(err => console.warn(`  - ${err}`));
-        }
-      } catch (error: any) {
-        console.warn('[SpecializedAgent] Auto-fix failed (non-critical):', error.message);
-      }
-
-      // Re-run verification after auto-fix so newly introduced or corrected files are accounted for.
-      lastVerification = await this.verifyProject(allCreatedFiles);
 
       if (lastVerification.isComplete) {
         console.log('[SpecializedAgent] ✅ Project verification PASSED');
+
+        if (this.context.deterministicScaffoldOnly) {
+          console.log('[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply');
+          verificationSucceeded = true;
+          if (blackboard) {
+            blackboard.status = 'completed';
+            this.emit('blackboard-update', blackboard);
+          }
+          break;
+        }
 
         const lifecycleResult = await ProjectRunner.autoRun(this.context.workspacePath);
         if (lifecycleResult.validation.issues.length > 0) {
@@ -461,7 +512,8 @@ export class SpecializedAgentLoop extends EventEmitter {
     const operationCount = transaction.getOperationCount();
     const stagedReview = reviewSessionManager.createSessionFromOperations(
       this.context.workspacePath,
-      transaction.getOperations()
+      transaction.getOperations(),
+      this.buildInitialReviewVerification(lastVerification)
     );
     const response = this.buildResponse(allCreatedFiles, lastVerification, {
       rolledBack: rolledBackIncomplete,
@@ -796,6 +848,138 @@ export class SpecializedAgentLoop extends EventEmitter {
   /**
    * Build the final response with project status
    */
+  private buildInitialReviewVerification(
+    verification: ProjectVerification | null
+  ): AgentReviewVerificationState | undefined {
+    if (!verification || verification.isComplete) {
+      return undefined;
+    }
+
+    const runtimeProfile = getProjectRuntimeProfileSync(this.context.workspacePath);
+    const findings: AgentReviewFinding[] = [];
+
+    for (const missingFile of verification.missingFiles) {
+      findings.push({
+        stage: 'validation',
+        severity: 'error',
+        summary: `Missing file: ${missingFile}`,
+        files: [missingFile],
+      });
+    }
+
+    for (const error of verification.errors) {
+      findings.push({
+        stage: inferVerificationStage(error),
+        severity: 'error',
+        summary: error,
+        files: extractFilesFromVerificationIssue(error),
+      });
+    }
+
+    const issues = findings.map((finding) => finding.summary);
+    if (issues.length === 0) {
+      return undefined;
+    }
+
+    return {
+      status: 'failed',
+      projectTypeLabel: runtimeProfile.displayName,
+      readinessSummary: runtimeProfile.readiness.summary,
+      startCommand: runtimeProfile.run.command || undefined,
+      buildCommand: runtimeProfile.build.command || undefined,
+      installCommand: runtimeProfile.install.command || undefined,
+      issues,
+      findings,
+    };
+  }
+
+  private async runDeterministicScaffoldReview(
+    userMessage: string,
+    transaction: any,
+    taskStartedAt: number,
+    requestedRuntimeBudget: AgentContext['runtimeBudget']
+  ): Promise<string> {
+    const telemetry = getTelemetryService();
+    this.emit('step-start', {
+      type: 'deterministic_scaffold',
+      title: 'deterministic_scaffold',
+      specialist: 'template_scaffold_specialist',
+    });
+
+    const scaffolded = await scaffoldProjectFromTemplate(this.context.workspacePath, userMessage, {
+      runPostCreate: false,
+      callbacks: {
+        onFileChange: (change) => {
+          void transactionManager.recordFileChange(
+            change.filePath,
+            change.oldContent,
+            change.newContent,
+            change.action !== 'created'
+          );
+          this.emit('file-modified', {
+            path: change.filePath,
+            action: change.action,
+            oldContent: change.oldContent,
+            newContent: change.newContent,
+          });
+        },
+      },
+    });
+
+    this.emit('step-complete', {
+      type: 'deterministic_scaffold',
+      title: 'deterministic_scaffold',
+      specialist: 'template_scaffold_specialist',
+      success: scaffolded.success,
+      error: scaffolded.error,
+    });
+
+    if (!scaffolded.success) {
+      await transactionManager.rollbackTransaction();
+      throw new Error(scaffolded.error || 'Deterministic scaffold generation failed');
+    }
+
+    const verification = await this.verifyProject(scaffolded.createdFiles);
+    const stagedReview = reviewSessionManager.createSessionFromOperations(
+      this.context.workspacePath,
+      transaction.getOperations(),
+      this.buildInitialReviewVerification(verification)
+    );
+
+    const response = this.buildResponse(scaffolded.createdFiles, verification, {
+      stagedReview: Boolean(stagedReview),
+    });
+
+    await transactionManager.rollbackTransaction();
+
+    if (stagedReview) {
+      this.pendingReviewSession = stagedReview;
+      telemetry.track('agent_task_complete', {
+        mode: 'specialized',
+        success: verification.isComplete,
+        rolledBack: false,
+        retryCount: 0,
+        fileCount: scaffolded.createdFiles.length,
+        durationMs: Date.now() - taskStartedAt,
+        stagedReview: true,
+        runtimeBudget: requestedRuntimeBudget || 'standard',
+      });
+      return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
+    }
+
+    telemetry.track('agent_task_complete', {
+      mode: 'specialized',
+      success: verification.isComplete,
+      rolledBack: false,
+      retryCount: 0,
+      fileCount: scaffolded.createdFiles.length,
+      durationMs: Date.now() - taskStartedAt,
+      stagedReview: false,
+      runtimeBudget: requestedRuntimeBudget || 'standard',
+    });
+    return response;
+  }
+
   private buildResponse(
     createdFiles: string[],
     verification: ProjectVerification | null,
