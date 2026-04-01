@@ -13108,7 +13108,55 @@ button:active:not(:disabled) {
   --matrix-red: #ff0040;
 }
 
-/* Matrix: Global CRT Scanline Overlay */
+/* Matrix: App shell above rain backdrop */
+[data-theme="matrix"] #root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Matrix: Digital rain + glyph grid (body::before sits above body bg, under #root) */
+[data-theme="matrix"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiI+CjxnIGZpbGw9IiMwMGZmNDEiIG9wYWNpdHk9IjAuMTUiIGZvbnQtZmFtaWx5PSJKZXRCcmFpbnMgTW9ubyxDb25zb2xhcyxtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTAiPgo8dGV4dCB4PSIyIiB5PSIxMSI+MDE8L3RleHQ+PHRleHQgeD0iMjYiIHk9IjExIj4xMDwvdGV4dD48dGV4dCB4PSI1MCIgeT0iMTEiPjExPC90ZXh0Pjx0ZXh0IHg9Ijc0IiB5PSIxMSI+MDA8L3RleHQ+Cjx0ZXh0IHg9IjIiIHk9IjI4Ij4kJTwvdGV4dD48dGV4dCB4PSIyNiIgeT0iMjgiPkAjPC90ZXh0Pjx0ZXh0IHg9IjUwIiB5PSIyOCI+N3w8L3RleHQ+PHRleHQgeD0iNzQiIHk9IjI4Ij4vXDwvdGV4dD4KPHRleHQgeD0iMiIgeT0iNDUiPjA8L3RleHQ+PHRleHQgeD0iMjYiIHk9IjQ1Ij4xPC90ZXh0Pjx0ZXh0IHg9IjUwIiB5PSI0NSI+NzwvdGV4dD48dGV4dCB4PSI3NCIgeT0iNDUiPjk8L3RleHQ+Cjx0ZXh0IHg9IjIiIHk9IjYyIj57XTwvdGV4dD48dGV4dCB4PSIyNiIgeT0iNjIiPlt9PC90ZXh0Pjx0ZXh0IHg9IjUwIiB5PSI2MiI+Jmx0OyZndDs8L3RleHQ+PHRleHQgeD0iNzQiIHk9IjYyIj4rPTwvdGV4dD4KPHRleHQgeD0iMiIgeT0iNzkiPioqPC90ZXh0Pjx0ZXh0IHg9IjI2IiB5PSI3OSI+LS08L3RleHQ+PHRleHQgeD0iNTAiIHk9Ijc5Ij46OjwvdGV4dD48dGV4dCB4PSI3NCIgeT0iNzkiPjs7PC90ZXh0Pgo8dGV4dCB4PSIyIiB5PSI5MiI+MDE8L3RleHQ+PHRleHQgeD0iMjYiIHk9IjkyIj4xMDwvdGV4dD48dGV4dCB4PSI1MCIgeT0iOTIiPjExPC90ZXh0Pjx0ZXh0IHg9Ijc0IiB5PSI5MiI+MDE8L3RleHQ+CjwvZz48L3N2Zz4="),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 18px,
+      rgba(0, 255, 65, 0.05) 18px,
+      rgba(0, 255, 65, 0.22) 19px,
+      rgba(0, 255, 65, 0.08) 20px,
+      transparent 21px,
+      transparent 42px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 5px,
+      rgba(0, 255, 65, 0.035) 5px,
+      rgba(0, 255, 65, 0.035) 6px
+    );
+  background-size: 96px 96px, 100% 42px, 18px 100%;
+  background-position: 0 0, 0 0, 0 0;
+  animation: matrixRainFall 2.85s linear infinite;
+  opacity: 0.78;
+  mix-blend-mode: screen;
+}
+
+@keyframes matrixRainFall {
+  0% {
+    background-position: 0 0, 0 0, 0 0;
+  }
+  100% {
+    background-position: 0 96px, 0 42px, 24px 0;
+  }
+}
+
+/* Matrix: CRT scanlines + edge vignette (over entire UI, non-interactive) */
 [data-theme="matrix"] body::after {
   content: '';
   position: fixed;
@@ -13116,16 +13164,29 @@ button:active:not(:disabled) {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.1),
-    rgba(0, 0, 0, 0.1) 1px,
-    transparent 1px,
-    transparent 2px
-  );
   pointer-events: none;
   z-index: 99998;
-  opacity: 0.3;
+  opacity: 0.34;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.14),
+      rgba(0, 0, 0, 0.14) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    radial-gradient(
+      ellipse 130% 90% at 50% 45%,
+      transparent 0%,
+      transparent 45%,
+      rgba(0, 0, 0, 0.42) 100%
+    ),
+    linear-gradient(
+      rgba(0, 255, 65, 0.025) 0%,
+      transparent 12%,
+      transparent 88%,
+      rgba(0, 255, 65, 0.02) 100%
+    );
 }
 
 /* Matrix: Phosphor Glow on all text */
@@ -13415,16 +13476,21 @@ button:active:not(:disabled) {
   99% { opacity: 1; }
 }
 
-/* Matrix: Disable flicker for reduced motion preference */
+/* Matrix: Disable flicker / rain motion for reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   [data-theme="matrix"] body {
     animation: none;
   }
-  
-  [data-theme="matrix"] body::after {
-    display: none;
+
+  [data-theme="matrix"] body::before {
+    animation: none;
+    opacity: 0.28;
   }
-  
+
+  [data-theme="matrix"] body::after {
+    opacity: 0.22;
+  }
+
   [data-theme="matrix"] .status-dot.success,
   [data-theme="matrix"] .status-dot.online,
   [data-theme="matrix"] .status-dot.connected {
