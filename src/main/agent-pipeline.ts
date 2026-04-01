@@ -154,6 +154,9 @@ export class AgentPipeline extends EventEmitter {
 
       this.completeStep(execStep, true, { result });
 
+      const responseText = this.normalizeAgentRunResult(result);
+      const filesModified = this.filesModifiedFromAgent();
+
       // ── Stage 3: Validation ──
       const validateStep = this.beginStep('validating', 'Verifying output quality');
       this.transition(PipelineStage.VALIDATING, validateStep, options);
@@ -164,12 +167,12 @@ export class AgentPipeline extends EventEmitter {
 
       return {
         success: true,
-        response: result?.response || result?.content || 'Task completed',
+        response: responseText,
         stage: PipelineStage.COMPLETE,
         steps: this.steps,
         taskMode: taskModeResult.mode,
         durationMs: Date.now() - startTime,
-        filesModified: result?.filesModified || [],
+        filesModified,
       };
 
     } catch (err: any) {
@@ -193,8 +196,13 @@ export class AgentPipeline extends EventEmitter {
    */
   cancel(): void {
     this.cancelled = true;
-    (this.agent as any).stopAgent?.();
+    this.agent.requestStop('Pipeline cancelled');
     this.transition(PipelineStage.CANCELLED, this.steps[this.steps.length - 1]);
+  }
+
+  /** Underlying tool-calling loop (for IPC session id, event wiring, stop). */
+  getAgent(): AgentLoop {
+    return this.agent;
   }
 
   /**
@@ -206,6 +214,23 @@ export class AgentPipeline extends EventEmitter {
   }
 
   // ── Internal helpers ──
+
+  private normalizeAgentRunResult(result: unknown): string {
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (result && typeof result === 'object') {
+      const r = result as Record<string, unknown>;
+      if (typeof r.response === 'string') return r.response;
+      if (typeof r.content === 'string') return r.content;
+    }
+    return 'Task completed';
+  }
+
+  private filesModifiedFromAgent(): string[] {
+    const set = (this.agent as unknown as { filesModifiedThisTask?: Set<string> }).filesModifiedThisTask;
+    return set && typeof set.forEach === 'function' ? Array.from(set) : [];
+  }
 
   private beginStep(stage: string, description: string): PipelineStep {
     const step: PipelineStep = {

@@ -10,9 +10,9 @@
 import { IpcMain, WebContents } from 'electron';
 import aiRouter from '../ai-providers';
 import { CommandExecutor } from '../core/command-executor';
-import { createAgent, AgentLoop } from '../agent-loop';
 import { SpecializedAgentLoop } from '../agent/specialized-agent-loop';
 import type { AgentContext } from '../agent-loop';
+import { createPipeline, type AgentPipeline } from '../agent-pipeline';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
 import { parseChatIpcContext } from '../security/chat-ipc-context';
 import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN } from '../core/timeout-utils';
@@ -101,7 +101,7 @@ function resolveConfiguredModel(settings: any, requestedModel?: string) {
   const localOllamaModel =
     settings?.providers?.ollama?.model ||
     settings?.activeModel ||
-    'qwen2.5-coder:7b';
+    'qwen3-coder:480b-cloud';
 
   const runtime = resolveEffectiveAIRuntime(settings, requestedModel, settings?.activeProvider || 'ollama');
   const activeModel = runtime.effectiveModel || localOllamaModel;
@@ -144,7 +144,7 @@ interface ChatHandlerDeps {
 }
 
 let commandExecutor: CommandExecutor | null = null;
-let agentLoop: AgentLoop | null = null;
+let agentPipeline: AgentPipeline | null = null;
 let specializedAgentLoop: SpecializedAgentLoop | null = null;
 let activeAgentMode: 'monolithic' | 'specialized' | null = null;
 
@@ -246,7 +246,7 @@ export function register(deps: ChatHandlerDeps): void {
   // Current agent (composer) session ID
   ipcMain.handle('get-current-agent-session-id', async () => {
     try {
-      const id = agentLoop?.getSessionId?.() ?? null;
+      const id = agentPipeline?.getAgent()?.getSessionId?.() ?? null;
       return { success: true, sessionId: id };
     } catch {
       return { success: true, sessionId: null };
@@ -256,8 +256,8 @@ export function register(deps: ChatHandlerDeps): void {
   // Stop currently running agent execution
   ipcMain.handle('agent:stop', async () => {
     try {
-      if (activeAgentMode === 'monolithic' && agentLoop) {
-        agentLoop.requestStop('Stopped by user');
+      if (activeAgentMode === 'monolithic' && agentPipeline) {
+        agentPipeline.getAgent().requestStop('Stopped by user');
         return { success: true };
       }
 
@@ -598,48 +598,65 @@ export function register(deps: ChatHandlerDeps): void {
             activeAgentMode = null;
           }
         } else {
-          // Use monolithic agent loop (existing behavior)
+          // Monolithic path: plan → execute → validate via AgentPipeline (wraps AgentLoop)
           console.log(`[Chat] Monolithic agent mode enabled, model: ${selectedModel}`);
           emitRuntimeInfo(event.sender, requestId, requestedRuntime);
 
-          if (!agentLoop) {
-            agentLoop = createAgent({
-              workspacePath,
-              currentFile: context.file_path || getCurrentFile() || undefined,
-              openFiles: context.open_files || [],
-              terminalHistory: context.terminal_history || [],
-              model: selectedModel
-            });
-            
-            // 🦖 DINO BUDDY: Forward progress events to renderer
-            agentLoop.on('task-start', (data) => {
+          const agentContext: AgentContext = {
+            workspacePath,
+            currentFile: context.file_path || getCurrentFile() || undefined,
+            openFiles: context.open_files || [],
+            terminalHistory: context.terminal_history || [],
+            model: selectedModel,
+            runtimeBudget,
+            repairScope: context.repair_scope,
+            deterministicScaffoldOnly: Boolean((context as any).deterministic_scaffold_only),
+          };
+
+          if (!agentPipeline) {
+            agentPipeline = createPipeline(agentContext);
+
+            const loop = agentPipeline.getAgent();
+            loop.on('task-start', (data) => {
               event.sender.send('agent:task-start', data);
             });
-            agentLoop.on('step-complete', (data) => {
+            loop.on('step-complete', (data) => {
               event.sender.send('agent:step-complete', data);
             });
-            agentLoop.on('file-modified', (data) => {
+            loop.on('file-modified', (data) => {
               event.sender.send('agent:file-modified', data);
             });
-            agentLoop.on('critique-complete', (data) => {
+            loop.on('critique-complete', (data) => {
               event.sender.send('agent:critique-complete', data);
             });
           } else {
-            // Update agent context with model
-            agentLoop.updateContext({
-              workspacePath,
-              currentFile: context.file_path || getCurrentFile() || undefined,
-              openFiles: context.open_files || [],
-              terminalHistory: context.terminal_history || [],
-              model: selectedModel
-            });
+            agentPipeline.updateContext(agentContext);
           }
 
           try {
             activeAgentMode = 'monolithic';
-            const response = await agentLoop.run(message);
+            const pipelineResult = await agentPipeline.execute(message, {
+              model: selectedModel,
+              maxRetries: 1,
+            });
+            const response = pipelineResult.response;
             const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
             emitRuntimeInfo(event.sender, requestId, responseRuntime);
+
+            if (!pipelineResult.success) {
+              event.sender.send('dino:reaction', {
+                expression: 'error',
+                message: 'Oof! Something went sideways — want to try again? 🦕'
+              });
+              return {
+                success: false,
+                error: pipelineResult.error || pipelineResult.response,
+                requestId,
+                agent_mode: true,
+                specialized_mode: false,
+                runtime: responseRuntime,
+              };
+            }
 
             // Store in history
             addToConversationHistory('user', message);

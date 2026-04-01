@@ -220,6 +220,12 @@ const agentAPI: AgentAPI = {
   recordDecision: (decision: { context: string; choice: string; reason?: string }) =>
     ipcRenderer.invoke('project-memory:record-decision', decision),
 
+  // Plugins
+  pluginsList: () => ipcRenderer.invoke('plugins:list'),
+  pluginsReload: (pluginId: string) => ipcRenderer.invoke('plugins:reload', pluginId),
+  pluginsExecute: (pluginId: string, command: string, payload?: any) =>
+    ipcRenderer.invoke('plugins:execute', pluginId, command, payload),
+
   // Misc
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
 

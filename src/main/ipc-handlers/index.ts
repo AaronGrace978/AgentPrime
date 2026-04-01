@@ -23,6 +23,7 @@ import { registerTerminalHandlers } from './terminal';
 import { registerProjectMemoryHandlers } from './project-memory';
 import { registerDeployHandlers } from './deploy';
 import { registerChatThreadHandlers } from './chat-threads';
+import { registerPluginHandlers } from './plugins';
 
 interface HandlerDeps {
   ipcMain: any;
@@ -138,6 +139,13 @@ export function registerAllHandlers(deps: HandlerDeps): void {
     mainWindow: deps.mainWindow,
     getWorkspacePath: deps.getWorkspacePath
   });
+
+  if (deps.getPluginManager) {
+    registerPluginHandlers({
+      ipcMain: deps.ipcMain,
+      getPluginManager: deps.getPluginManager
+    });
+  }
 
   // Register durable chat threads
   registerChatThreadHandlers({

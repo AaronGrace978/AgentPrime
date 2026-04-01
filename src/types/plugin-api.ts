@@ -126,6 +126,7 @@ export interface PluginContext {
   window: WindowApi;
   extensions: ExtensionsApi;
   ai: AIApi;
+  host: HostApi;
   storage: StorageApi;
 }
 
@@ -267,6 +268,10 @@ export interface StorageApi {
   keys(): Promise<string[]>;
 }
 
+export interface HostApi {
+  invoke<T = any>(method: string, payload?: any): Promise<T>;
+}
+
 export interface Event<T> {
   (listener: (e: T) => any, thisArgs?: any, disposables?: Disposable[]): Disposable;
 }
@@ -281,7 +286,12 @@ export interface PluginHost {
 export interface PluginSandbox {
   executeCode(code: string, context: PluginContext): Promise<any>;
   validateCode(code: string): Promise<ValidationResult>;
-  isolatePlugin(pluginId: string, manifest: PluginManifest): Promise<IsolatedPlugin>;
+  isolatePlugin(
+    pluginId: string,
+    manifest: PluginManifest,
+    code: string,
+    context: PluginContext
+  ): Promise<IsolatedPlugin>;
 }
 
 export interface ValidationResult {

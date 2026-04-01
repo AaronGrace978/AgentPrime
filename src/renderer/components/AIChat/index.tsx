@@ -69,7 +69,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:7b');
+  const [selectedModel, setSelectedModel] = useState('qwen3-coder:480b-cloud');
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
   const [lastError, setLastError] = useState<AIError | null>(null);
@@ -92,7 +92,7 @@ const AIChat: React.FC<AIChatProps> = ({
         }
 
         setRuntimeStatus(status.runtime);
-        setSelectedModel(status.runtime.displayModel || status.runtime.effectiveModel || 'qwen2.5-coder:7b');
+        setSelectedModel(status.runtime.displayModel || status.runtime.effectiveModel || 'qwen3-coder:480b-cloud');
       } catch (error) {
         console.error('Failed to load active model:', error);
       }
@@ -857,7 +857,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
           <ChatRuntimeStatusBar
             currentModel={runtimeStatus?.displayModel || dualModel.currentModel || selectedModel}
-            complexity={dualModel.lastComplexity}
+            chatMode={chatMode}
           />
         </div>
 

@@ -1,0 +1,13 @@
+{
+  "id": "mirror-learning",
+  "name": "Mirror Learning",
+  "version": "0.1.0",
+  "description": "Persists verified run learnings into Mirror memory through the plugin host bridge.",
+  "author": "AgentPrime",
+  "keywords": ["mirror", "learning", "agentprime", "plugin"],
+  "engines": {
+    "agentprime": ">=0.1.0"
+  },
+  "main": "index.js",
+  "activationEvents": ["onStartup"]
+}

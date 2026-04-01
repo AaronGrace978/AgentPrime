@@ -63,6 +63,15 @@ export class SelfTestingLoop {
     this.task = task;
     this.verbose = verbose;
   }
+
+  /**
+   * After the specialized agent has already validated install/build/run, persist
+   * structure/technique patterns to Mirror without re-running npm or the dev server.
+   */
+  async recordLearningAfterSuccessfulVerification(): Promise<void> {
+    const patterns = await this.extractPatterns();
+    await this.storeSuccessLearning(patterns);
+  }
   
   /**
    * Run the complete self-testing loop

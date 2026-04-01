@@ -8,53 +8,29 @@ import type {
   PluginContext,
   PluginSandbox,
   ValidationResult,
-  IsolatedPlugin
+  IsolatedPlugin,
 } from '../../types/plugin-api';
 import { EventEmitter } from 'events';
 import * as vm from 'vm';
 import * as crypto from 'crypto';
-import * as path from 'path';
-import { enterpriseSecurity } from '../security/enterprise-security';
+
+interface PluginRuntime {
+  sandbox: vm.Context;
+  plugin: Record<string, any>;
+}
 
 export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
-  private contexts: Map<string, vm.Context> = new Map();
-  private scripts: Map<string, vm.Script> = new Map();
+  private runtimes: Map<string, PluginRuntime> = new Map();
 
-  /**
-   * Execute plugin code in a sandboxed environment
-   */
   async executeCode(code: string, context: PluginContext): Promise<any> {
-    // Create isolated context
-    const sandbox = this.createSandbox(context);
-
-    // Create script (timeout is applied at runtime, not script creation)
-    const script = new vm.Script(code, {
-      filename: 'plugin.js',
-      displayErrors: true
-    } as vm.ScriptOptions);
-
-    try {
-      // Execute in sandbox
-      const result = script.runInContext(sandbox, {
-        timeout: 5000,
-        displayErrors: true,
-        breakOnSigint: true
-      });
-
-      return result;
-    } catch (error: any) {
-      throw new Error(`Plugin execution failed: ${error.message}`);
-    }
+    const runtime = this.createRuntime(code, context);
+    return runtime.plugin;
   }
 
-  /**
-   * Validate plugin code for security issues
-   */
   async validateCode(code: string): Promise<ValidationResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check for dangerous patterns
     const dangerousPatterns = [
       /require\s*\(\s*['"`]fs['"`]\s*\)/g,
       /require\s*\(\s*['"`]child_process['"`]\s*\)/g,
@@ -66,7 +42,7 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
       /__filename/g,
       /eval\s*\(/g,
       /Function\s*\(/g,
-      /new\s+Function/g
+      /new\s+Function/g,
     ];
 
     for (const pattern of dangerousPatterns) {
@@ -75,84 +51,70 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
       }
     }
 
-    // Check for excessive code length
-    if (code.length > 1000000) { // 1MB limit
+    if (code.length > 1_000_000) {
       errors.push('Plugin code exceeds size limit');
     }
 
-    // Check for too many functions/classes
     const functionCount = (code.match(/function\s+\w+|class\s+\w+|const\s+\w+\s*=\s*\(/g) || []).length;
     if (functionCount > 100) {
       warnings.push('Plugin contains many functions, may impact performance');
     }
 
-    // Check for proper exports
-    if (!code.includes('module.exports') && !code.includes('export')) {
+    if (!code.includes('module.exports') && !code.includes('exports.') && !code.includes('export ')) {
       errors.push('Plugin must export an activate function');
     }
 
     return {
       valid: errors.length === 0,
       errors,
-      warnings
+      warnings,
     };
   }
 
-  /**
-   * Create an isolated plugin instance
-   */
-  async isolatePlugin(pluginId: string, manifest: PluginManifest): Promise<IsolatedPlugin> {
-    const context = this.createIsolatedContext(pluginId, manifest);
+  async isolatePlugin(
+    pluginId: string,
+    _manifest: PluginManifest,
+    code: string,
+    context: PluginContext
+  ): Promise<IsolatedPlugin> {
+    const runtime = this.createRuntime(code, context);
+    this.runtimes.set(pluginId, runtime);
 
     return {
       id: pluginId,
       context,
       execute: async (method: string, ...args: any[]) => {
-        const sandbox = this.contexts.get(pluginId);
-        if (!sandbox) {
-          throw new Error('Plugin context not found');
+        const activeRuntime = this.runtimes.get(pluginId);
+        if (!activeRuntime) {
+          throw new Error(`Plugin ${pluginId} context not found`);
         }
 
-        // Execute method in sandbox
-        const script = new vm.Script(`plugin.${method}.apply(plugin, args)`, {
-          filename: 'plugin-method.js',
-          displayErrors: true
-        } as vm.ScriptOptions);
-
-        try {
-          return await script.runInContext(sandbox, {
-            timeout: 10000,
-            displayErrors: true
-          });
-        } catch (error: any) {
-          throw new Error(`Plugin method execution failed: ${error.message}`);
+        const fn = activeRuntime.plugin?.[method];
+        if (typeof fn !== 'function') {
+          throw new Error(`Plugin method '${method}' is not defined`);
         }
+
+        return await fn.apply(activeRuntime.plugin, args);
       },
       dispose: async () => {
-        this.contexts.delete(pluginId);
-        this.scripts.delete(pluginId);
+        this.runtimes.delete(pluginId);
         this.emit('plugin_disposed', { pluginId });
-      }
+      },
     };
   }
 
-  // Private methods
+  private createRuntime(code: string, pluginContext: PluginContext): PluginRuntime {
+    const module = { exports: {} as any };
+    const exportsObject = module.exports;
 
-  private createSandbox(pluginContext: PluginContext): vm.Context {
-    // Create a restricted global object
-    const sandbox = {
-      // Safe globals
+    const sandboxObject: Record<string, any> = {
       console: {
         log: (...args: any[]) => this.safeLog('log', args),
         warn: (...args: any[]) => this.safeLog('warn', args),
         error: (...args: any[]) => this.safeLog('error', args),
-        info: (...args: any[]) => this.safeLog('info', args)
+        info: (...args: any[]) => this.safeLog('info', args),
       },
-
-      // Plugin context
       context: pluginContext,
-
-      // Safe versions of common APIs
       setTimeout: (callback: Function, delay: number) => {
         return setTimeout(() => {
           try {
@@ -160,9 +122,8 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
           } catch (error: any) {
             this.emit('plugin_error', { error: error.message });
           }
-        }, Math.min(delay, 30000)); // Max 30 second delay
+        }, Math.min(delay, 30_000));
       },
-
       setInterval: (callback: Function, delay: number) => {
         return setInterval(() => {
           try {
@@ -170,100 +131,79 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
           } catch (error: any) {
             this.emit('plugin_error', { error: error.message });
           }
-        }, Math.max(delay, 1000)); // Min 1 second interval
+        }, Math.max(delay, 1_000));
       },
-
       clearTimeout,
       clearInterval,
-
-      // Safe buffer operations
       Buffer: {
         from: (data: any, encoding?: string) => {
-          if (typeof data === 'string' && data.length > 10000) {
+          if (typeof data === 'string' && data.length > 10_000) {
             throw new Error('Buffer data too large');
           }
-          return Buffer.from(data, encoding as any);
+          return Buffer.from(data, encoding as BufferEncoding | undefined);
         },
         alloc: (size: number) => {
-          if (size > 10000) {
+          if (size > 10_000) {
             throw new Error('Buffer size too large');
           }
           return Buffer.alloc(size);
-        }
+        },
       },
-
-      // Plugin API
-      exports: {},
-      module: { exports: {} },
+      module,
+      exports: exportsObject,
       require: this.createSafeRequire(),
-
-      // Restricted process object
       process: {
         version: process.version,
         platform: process.platform,
         arch: process.arch,
         env: this.createSafeEnv(),
-        nextTick: process.nextTick,
-        hrtime: process.hrtime
-      }
+        nextTick: process.nextTick.bind(process),
+        hrtime: process.hrtime.bind(process),
+      },
+      globalThis: undefined,
     };
 
-    return vm.createContext(sandbox);
+    sandboxObject.globalThis = sandboxObject;
+
+    const sandbox = vm.createContext(sandboxObject);
+    const script = new vm.Script(code, {
+      filename: 'plugin.js',
+      displayErrors: true,
+    } as vm.ScriptOptions);
+
+    try {
+      script.runInContext(sandbox, {
+        timeout: 5_000,
+        displayErrors: true,
+        breakOnSigint: true,
+      });
+    } catch (error: any) {
+      throw new Error(`Plugin execution failed: ${error.message}`);
+    }
+
+    const plugin = this.extractPluginExports(sandboxObject);
+    if (!plugin || (typeof plugin !== 'object' && typeof plugin !== 'function')) {
+      throw new Error('Plugin must export an object with callable methods');
+    }
+
+    return {
+      sandbox,
+      plugin,
+    };
   }
 
-  private createIsolatedContext(pluginId: string, manifest: PluginManifest): PluginContext {
-    // Create a context with plugin-specific isolation
-    const context: PluginContext = {
-      subscriptions: [],
-      workspace: {
-        rootPath: process.cwd(),
-        name: path.basename(process.cwd()),
-        findFiles: async () => [],
-        openTextDocument: async () => ({ uri: '', fileName: '', isDirty: false, languageId: '', getText: () => '', lineCount: 0, save: async () => false }),
-        onDidChangeWorkspaceFolders: () => ({ dispose: () => {} })
-      },
-      commands: {
-        registerCommand: () => ({ dispose: () => {} }),
-        executeCommand: async <T>(): Promise<T> => undefined as unknown as T
-      },
-      window: {
-        showInformationMessage: async () => undefined,
-        showWarningMessage: async () => undefined,
-        showErrorMessage: async () => undefined,
-        createOutputChannel: () => ({
-          name: '',
-          append: () => {},
-          appendLine: () => {},
-          clear: () => {},
-          show: () => {},
-          hide: () => {},
-          dispose: () => {}
-        }),
-        createStatusBarItem: () => ({
-          text: '',
-          show: () => {},
-          hide: () => {},
-          dispose: () => {}
-        })
-      },
-      extensions: {
-        getExtension: () => undefined,
-        getExtensionContext: () => undefined
-      },
-      ai: {
-        registerProvider: () => ({ dispose: () => {} }),
-        chat: async () => ({ content: '' }),
-        complete: async () => ({ text: '' })
-      },
-      storage: {
-        get: async () => undefined,
-        set: async () => {},
-        delete: async () => {},
-        keys: async () => []
-      }
-    };
+  private extractPluginExports(sandboxObject: Record<string, any>): Record<string, any> {
+    const moduleExports = sandboxObject.module?.exports;
+    if (moduleExports && Object.keys(moduleExports).length > 0) {
+      return moduleExports;
+    }
 
-    return context;
+    const exportsObject = sandboxObject.exports;
+    if (exportsObject && Object.keys(exportsObject).length > 0) {
+      return exportsObject;
+    }
+
+    return {};
   }
 
   private createSafeRequire(): (module: string) => any {
@@ -275,7 +215,7 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
       'zlib',
       'querystring',
       'url',
-      'path'
+      'path',
     ]);
 
     return (moduleId: string) => {
@@ -283,7 +223,6 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
         throw new Error(`Module '${moduleId}' is not allowed in plugin sandbox`);
       }
 
-      // Return safe versions of modules
       switch (moduleId) {
         case 'crypto':
           return {
@@ -293,12 +232,12 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
                 throw new Error(`Hash algorithm '${algorithm}' not allowed`);
               }
               return crypto.createHash(algorithm);
-            }
+            },
           };
         case 'util':
           return {
             promisify: require('util').promisify,
-            inspect: require('util').inspect
+            inspect: require('util').inspect,
           };
         default:
           return require(moduleId);
@@ -307,7 +246,6 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
   }
 
   private createSafeEnv(): Record<string, string> {
-    // Only expose safe environment variables
     const safeVars = ['NODE_ENV', 'LANG', 'TZ'];
     const env: Record<string, string> = {};
 
@@ -321,13 +259,10 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
   }
 
   private safeLog(level: string, args: any[]): void {
-    const message = args.map(arg =>
+    const message = args.map((arg) =>
       typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
     ).join(' ');
-
-    // Limit log message length
-    const truncated = message.length > 1000 ? message.slice(0, 1000) + '...' : message;
-
+    const truncated = message.length > 1_000 ? `${message.slice(0, 1_000)}...` : message;
     this.emit('plugin_log', { level, message: truncated });
   }
 }

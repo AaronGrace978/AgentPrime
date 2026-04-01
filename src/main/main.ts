@@ -76,7 +76,7 @@ import {
 import { MirrorKnowledgeIngester } from './mirror/mirror-knowledge-ingester';
 
 // Import Mirror Singleton for global access
-import { setMirrorMemory } from './mirror/mirror-singleton';
+import { isMirrorReady, setMirrorMemory } from './mirror/mirror-singleton';
 
 // Import Backend Manager
 import { initializeBackendManager } from './core/backend-manager';
@@ -96,6 +96,10 @@ import { resolveEffectiveAIRuntime } from './core/ai-runtime-state';
 
 // Import Auto-Updater
 import { initializeAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getAppVersion } from './core/auto-updater';
+import { PluginManager } from './core/plugin-api';
+import { SecurePluginSandbox } from './core/plugin-sandbox';
+import { setPluginManager as setPluginManagerSingleton } from './core/plugin-singleton';
+import { SelfTestingLoop } from './agent/self-testing-loop';
 
 // Import Inference Server (shared AI for VibeHub projects)
 import { getInferenceEnvVars, getInferenceServer } from './inference-server';
@@ -235,10 +239,11 @@ if (fs.existsSync(dotenvPath)) {
   });
 }
 
-// Dual Ollama Configuration
-// Cloud models can use various endpoints - check env vars or detect from model name
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b';
-const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'qwen2.5-coder:32b';
+// Ollama defaults
+// Single-model mode should default to a strong cloud model rather than the local 7B.
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder:480b-cloud';
+const OLLAMA_FAST_MODEL = process.env.OLLAMA_FAST_MODEL || 'devstral-small-2:24b-cloud';
+const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'qwen3-coder-next:cloud';
 // Ollama API keys from environment (primary + desktop fallback)
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
 const OLLAMA_API_KEY_DESKTOP = process.env.OLLAMA_API_KEY_DESKTOP || '';
@@ -275,6 +280,7 @@ let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> 
 
 // Template Engine
 let templateEngine: any = null;
+let pluginManager: PluginManager | null = null;
 
 // Settings with multi-provider support + Dual Ollama + Dual Model System!
 let settings: Settings = {
@@ -291,13 +297,20 @@ let settings: Settings = {
   activeProvider: 'ollama',
   activeModel: OLLAMA_MODEL,
   dualOllamaEnabled: false,
+  plugins: {
+    enabled: true,
+    autoUpdate: false,
+    trustedSources: ['built-in'],
+    trustedOnly: true,
+    allowPreRelease: false,
+  },
   
   // Dual Model System - default to the same Ollama-first stack used by the agent runtime
   dualModelEnabled: true,
   dualModelConfig: {
     fastModel: {
       provider: 'ollama',
-      model: OLLAMA_MODEL,
+      model: OLLAMA_FAST_MODEL,
       enabled: true
     },
     deepModel: {
@@ -905,6 +918,60 @@ app.whenReady().then(async () => {
   // Resolve feature flags early so all subsystems can check them
   const featureFlags = resolveFeatureFlags();
 
+  const handlePluginHostInvoke = async (pluginId: string, method: string, payload?: any) => {
+    const fullyQualifiedMethod = method.includes('.') ? method : `${pluginId}.${method}`;
+
+    if (fullyQualifiedMethod === 'mirror-learning.recordVerifiedRun') {
+      if (!featureFlags.mirror) {
+        return { success: false, skipped: true, reason: 'mirror_disabled' };
+      }
+      if (!isMirrorReady()) {
+        return { success: false, skipped: true, reason: 'mirror_not_ready' };
+      }
+      if (!payload?.workspacePath || !payload?.task) {
+        throw new Error('mirror-learning.recordVerifiedRun requires workspacePath and task');
+      }
+
+      const learning = new SelfTestingLoop(payload.workspacePath, payload.task, false);
+      await learning.recordLearningAfterSuccessfulVerification();
+      return { success: true };
+    }
+
+    throw new Error(`Unknown plugin host method: ${fullyQualifiedMethod}`);
+  };
+
+  const initializePluginSystem = async () => {
+    if (settings.plugins?.enabled === false) {
+      console.log('[Plugins] Plugin system disabled in settings');
+      return;
+    }
+
+    try {
+      const sandbox = new SecurePluginSandbox();
+      sandbox.on('plugin_log', ({ level, message }) => {
+        console.log(`[Plugin:${level}] ${message}`);
+      });
+      sandbox.on('plugin_error', ({ error }) => {
+        console.warn(`[Plugin] Sandbox error: ${error}`);
+      });
+
+      pluginManager = new PluginManager(sandbox, {
+        getWorkspacePath: () => workspacePath,
+        invokeHostMethod: handlePluginHostInvoke,
+      });
+      setPluginManagerSingleton(pluginManager);
+
+      const pluginsRoot = app.isPackaged
+        ? path.join(path.dirname(process.execPath), 'plugins')
+        : path.join(getAppRoot(), 'plugins');
+
+      const loadedPlugins = await pluginManager.loadPluginsFromDirectory(pluginsRoot);
+      console.log(`[Plugins] Loaded ${loadedPlugins.length} plugin(s) from ${pluginsRoot}`);
+    } catch (error: any) {
+      console.error(`[Plugins] Failed to initialize plugin system: ${error.message}`);
+    }
+  };
+
   // Load mirror system when feature flag is enabled
   if (featureFlags.mirror) {
     setTimeout(() => {
@@ -913,6 +980,8 @@ app.whenReady().then(async () => {
   } else {
     console.log('[Main] Mirror system disabled (set AGENTPRIME_ENABLE_MIRROR=true to enable)');
   }
+
+  await initializePluginSystem();
 
   // Register IPC handlers
   registerAllHandlers({
@@ -983,7 +1052,8 @@ app.whenReady().then(async () => {
     updateSettings: (newSettings: Partial<Settings>) => {
       settings = { ...settings, ...newSettings };
       saveSettings();
-    }
+    },
+    getPluginManager: () => pluginManager,
   });
   
   // Register chat handler

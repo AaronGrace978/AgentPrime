@@ -35,6 +35,7 @@ import {
   type SpecialistId,
 } from './specialist-contracts';
 import { ProjectRunner } from './tools/projectRunner';
+import { getPluginManager } from '../core/plugin-singleton';
 import { reviewSessionManager } from './review-session-manager';
 import type {
   AgentReviewFinding,
@@ -483,6 +484,18 @@ export class SpecializedAgentLoop extends EventEmitter {
         
         if (lastVerification.isComplete) {
           await this.finalizeProject(userMessage, allCreatedFiles, isUpdate);
+          try {
+            const pluginManager = getPluginManager();
+            if (pluginManager?.getPlugin('mirror-learning')) {
+              await pluginManager.executePluginCommand('mirror-learning', 'recordVerifiedRun', {
+                workspacePath: this.context.workspacePath,
+                task: userMessage,
+              });
+            }
+          } catch (learningErr: unknown) {
+            const msg = learningErr instanceof Error ? learningErr.message : String(learningErr);
+            console.warn('[SpecializedAgent] Mirror learning plugin failed:', msg);
+          }
           verificationSucceeded = true;
           if (blackboard) {
             blackboard.status = 'completed';

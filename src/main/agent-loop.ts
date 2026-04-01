@@ -38,77 +38,13 @@ import { backupBeforeOperation, restoreLatestBackup } from './agent/project-back
 import { EventEmitter } from 'events';
 import { searchWithRipgrep } from './core/ripgrep-runner';
 import { getRecommendedMaxTokens, isOllamaCloudModel } from './core/model-output-limits';
+import { TaskMode, detectTaskMode } from './agent/task-mode';
+
+// Re-export for callers that import task mode from the agent loop module
+export { TaskMode, detectTaskMode };
 
 // 🧠 CONSCIOUSNESS SYSTEM - Deep Intent Understanding (ported from ActivatePrime)
 import { processWithConsciousness, type ConsciousnessState, type ConsciousnessInjection } from './consciousness';
-
-// ============================================================
-// 🛡️ TASK MODE SYSTEM - Prevents destructive overwrites during fix operations
-// ============================================================
-
-/**
- * TaskMode - Distinguishes between different operation types
- * 
- * CREATE: Building new projects from scratch - full write access
- * FIX: Fixing bugs in existing projects - surgical edits only, no full overwrites
- * REVIEW: Reviewing/checking code - read-only, no modifications
- * ENHANCE: Adding features to existing projects - careful writes with backup
- */
-export enum TaskMode {
-  CREATE = 'create',
-  FIX = 'fix',
-  REVIEW = 'review',
-  ENHANCE = 'enhance'
-}
-
-/**
- * Detect the task mode from user message
- * Returns the appropriate mode and confidence level
- */
-export function detectTaskMode(userMessage: string): { mode: TaskMode; confidence: number; reason: string } {
-  const message = userMessage.toLowerCase();
-  
-  // Check for CREATE indicators (highest priority if explicit)
-  const createPatterns = /\b(create|build|make|generate|new|start|scaffold|bootstrap|initialize|init)\b.*\b(project|app|application|website|game|api|server)\b/i;
-  const explicitCreate = createPatterns.test(message);
-  
-  // Check for FIX indicators
-  const fixPatterns = /\b(fix|debug|repair|solve|resolve|patch|correct|bug|error|broken|issue|problem|crash|failing|failed)\b/i;
-  const isFixing = fixPatterns.test(message);
-  
-  // Check for REVIEW indicators
-  const reviewPatterns = /\b(check|review|look|examine|inspect|audit|analyze|analyse|assess|evaluate|verify|validate)\b/i;
-  const isReviewing = reviewPatterns.test(message);
-  
-  // Check for ENHANCE indicators
-  const enhancePatterns = /\b(add|improve|enhance|upgrade|extend|expand|update|modify|change|implement|feature)\b/i;
-  const isEnhancing = enhancePatterns.test(message);
-  
-  // Priority logic: explicit create > fix > review > enhance > default create
-  
-  if (explicitCreate && !isFixing) {
-    return { mode: TaskMode.CREATE, confidence: 0.95, reason: 'Explicit project creation request' };
-  }
-  
-  if (isFixing) {
-    // If both fixing and creating mentioned, check context
-    if (explicitCreate) {
-      return { mode: TaskMode.CREATE, confidence: 0.7, reason: 'Create with fix context - defaulting to create' };
-    }
-    return { mode: TaskMode.FIX, confidence: 0.9, reason: 'Bug fix or error resolution request' };
-  }
-  
-  if (isReviewing && !isEnhancing && !explicitCreate) {
-    return { mode: TaskMode.REVIEW, confidence: 0.85, reason: 'Code review or inspection request' };
-  }
-  
-  if (isEnhancing && !explicitCreate) {
-    return { mode: TaskMode.ENHANCE, confidence: 0.8, reason: 'Feature addition or improvement request' };
-  }
-  
-  // Default to CREATE for ambiguous requests
-  return { mode: TaskMode.CREATE, confidence: 0.6, reason: 'Ambiguous request - defaulting to create mode' };
-}
 
 /**
  * Existing files tracker for FIX mode protection

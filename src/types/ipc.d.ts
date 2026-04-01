@@ -202,6 +202,11 @@ export interface AgentAPI {
   createFromTemplate: (templateId: string, targetDir: string, variables: any) => Promise<any>;
   selectDirectory: () => Promise<any>;
 
+  // Plugins
+  pluginsList: () => Promise<{ success: boolean; plugins?: any[]; error?: string }>;
+  pluginsReload: (pluginId: string) => Promise<{ success: boolean; error?: string }>;
+  pluginsExecute: (pluginId: string, command: string, payload?: any) => Promise<{ success: boolean; result?: any; error?: string }>;
+
   // Misc
   openExternal: (url: string) => Promise<any>;
 

@@ -18,7 +18,7 @@ interface RuntimeExecutionRecord {
 let lastRuntimeExecution: RuntimeExecutionRecord | null = null;
 
 function getLocalOllamaModel(settings: Partial<Settings> | null | undefined): string {
-  return settings?.providers?.ollama?.model || settings?.activeModel || 'qwen2.5-coder:7b';
+  return settings?.providers?.ollama?.model || settings?.activeModel || 'qwen3-coder:480b-cloud';
 }
 
 function providerHasCredentials(settings: Partial<Settings> | null | undefined, providerName: string): boolean {

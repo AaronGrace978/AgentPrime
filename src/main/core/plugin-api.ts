@@ -9,9 +9,7 @@ import type {
   PluginHost,
   PluginSandbox,
   Extension,
-  Disposable,
-  ValidationResult,
-  IsolatedPlugin
+  IsolatedPlugin,
 } from '../../types/plugin-api';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
@@ -19,53 +17,69 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { enterpriseSecurity } from '../security/enterprise-security';
 
+interface PluginManagerOptions {
+  getWorkspacePath?: () => string | null;
+  invokeHostMethod?: (pluginId: string, method: string, payload?: any) => Promise<any>;
+}
+
 export class PluginManager extends EventEmitter implements PluginHost {
   private plugins: Map<string, PluginInstance> = new Map();
   private sandbox: PluginSandbox;
   private pluginStorage: Map<string, Map<string, any>> = new Map();
+  private getWorkspacePath: () => string | null;
+  private hostInvoker?: (pluginId: string, method: string, payload?: any) => Promise<any>;
 
-  constructor(sandbox: PluginSandbox) {
+  constructor(sandbox: PluginSandbox, options: PluginManagerOptions = {}) {
     super();
     this.sandbox = sandbox;
+    this.getWorkspacePath = options.getWorkspacePath || (() => null);
+    this.hostInvoker = options.invokeHostMethod;
   }
 
-  /**
-   * Load and activate a plugin from its manifest
-   */
   async loadPlugin(pluginPath: string): Promise<string> {
-    // Read manifest
     const manifestPath = path.join(pluginPath, 'package.json');
     const manifestContent = await fs.promises.readFile(manifestPath, 'utf-8');
     const manifest: PluginManifest = JSON.parse(manifestContent);
 
-    // Validate manifest
     this.validateManifest(manifest);
 
-    // Create plugin instance
     const pluginInstance: PluginInstance = {
       id: manifest.id,
       manifest,
       path: pluginPath,
       state: 'loaded',
       context: this.createPluginContext(manifest),
-      isolatedPlugin: null
+      isolatedPlugin: null,
     };
 
     this.plugins.set(manifest.id, pluginInstance);
 
-    // Check activation events
     if (this.shouldActivatePlugin(manifest)) {
       await this.activatePlugin(manifest.id);
     }
 
     this.emit('plugin_loaded', { pluginId: manifest.id, manifest });
-
     return manifest.id;
   }
 
-  /**
-   * Activate a plugin
-   */
+  async loadPluginsFromDirectory(pluginsPath: string): Promise<string[]> {
+    if (!fs.existsSync(pluginsPath)) {
+      return [];
+    }
+
+    const entries = await fs.promises.readdir(pluginsPath, { withFileTypes: true });
+    const loaded: string[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const pluginPath = path.join(pluginsPath, entry.name);
+      if (!fs.existsSync(path.join(pluginPath, 'package.json'))) continue;
+      loaded.push(await this.loadPlugin(pluginPath));
+    }
+
+    return loaded;
+  }
+
   async activatePlugin(pluginId: string): Promise<void> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) {
@@ -73,36 +87,29 @@ export class PluginManager extends EventEmitter implements PluginHost {
     }
 
     if (plugin.state === 'active') {
-      return; // Already active
+      return;
     }
 
     try {
-      // Isolate the plugin for security
-      plugin.isolatedPlugin = await this.sandbox.isolatePlugin(pluginId, plugin.manifest);
-
-      // Load main module
       const mainPath = path.join(plugin.path, plugin.manifest.main);
       const mainCode = await fs.promises.readFile(mainPath, 'utf-8');
 
-      // Validate and execute main module
       const validation = await this.sandbox.validateCode(mainCode);
       if (!validation.valid) {
         throw new Error(`Plugin validation failed: ${validation.errors.join(', ')}`);
       }
 
-      // Execute activation function
-      const activateFunction = await this.sandbox.executeCode(mainCode, plugin.context);
-      if (typeof activateFunction !== 'function') {
-        throw new Error('Plugin main module must export an activate function');
-      }
+      plugin.isolatedPlugin = await this.sandbox.isolatePlugin(
+        pluginId,
+        plugin.manifest,
+        mainCode,
+        plugin.context
+      );
 
-      // Call activate function
       await plugin.isolatedPlugin.execute('activate', plugin.context);
-
       plugin.state = 'active';
 
       this.emit('plugin_activated', { pluginId, context: plugin.context });
-
     } catch (error: any) {
       plugin.state = 'error';
       this.emit('plugin_error', { pluginId, error: error.message });
@@ -110,9 +117,6 @@ export class PluginManager extends EventEmitter implements PluginHost {
     }
   }
 
-  /**
-   * Deactivate a plugin
-   */
   async deactivatePlugin(pluginId: string): Promise<void> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) {
@@ -128,57 +132,59 @@ export class PluginManager extends EventEmitter implements PluginHost {
       }
     }
 
-    // Dispose context
-    plugin.context.subscriptions.forEach(sub => sub.dispose());
+    plugin.context.subscriptions.forEach((sub) => sub.dispose());
     plugin.context.subscriptions = [];
-
     plugin.state = 'inactive';
     plugin.isolatedPlugin = null;
 
     this.emit('plugin_deactivated', { pluginId });
   }
 
-  /**
-   * Reload a plugin
-   */
   async reloadPlugin(pluginId: string): Promise<void> {
     await this.deactivatePlugin(pluginId);
     await this.activatePlugin(pluginId);
     this.emit('plugin_reloaded', { pluginId });
   }
 
-  /**
-   * Get plugin context
-   */
   getPluginContext(pluginId: string): PluginContext | undefined {
-    const plugin = this.plugins.get(pluginId);
-    return plugin?.context;
+    return this.plugins.get(pluginId)?.context;
   }
 
-  /**
-   * Get all loaded plugins
-   */
   getLoadedPlugins(): Extension<any>[] {
-    return Array.from(this.plugins.values()).map(plugin => ({
+    return Array.from(this.plugins.values()).map((plugin) => ({
       id: plugin.id,
       extensionPath: plugin.path,
       isActive: plugin.state === 'active',
       packageJSON: plugin.manifest,
       exports: plugin.isolatedPlugin,
-      activate: () => this.activatePlugin(plugin.id)
+      activate: () => this.activatePlugin(plugin.id),
     }));
   }
 
-  /**
-   * Get plugin by ID
-   */
+  listPlugins(): Array<{
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    path: string;
+    state: PluginInstance['state'];
+    isActive: boolean;
+  }> {
+    return Array.from(this.plugins.values()).map((plugin) => ({
+      id: plugin.id,
+      name: plugin.manifest.name,
+      version: plugin.manifest.version,
+      description: plugin.manifest.description,
+      path: plugin.path,
+      state: plugin.state,
+      isActive: plugin.state === 'active',
+    }));
+  }
+
   getPlugin(pluginId: string): PluginInstance | undefined {
     return this.plugins.get(pluginId);
   }
 
-  /**
-   * Execute a command from a plugin
-   */
   async executePluginCommand(pluginId: string, command: string, ...args: any[]): Promise<any> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin || plugin.state !== 'active' || !plugin.isolatedPlugin) {
@@ -187,8 +193,6 @@ export class PluginManager extends EventEmitter implements PluginHost {
 
     return plugin.isolatedPlugin.execute(command, ...args);
   }
-
-  // Private methods
 
   private validateManifest(manifest: PluginManifest): void {
     if (!manifest.id || !manifest.name || !manifest.version) {
@@ -205,35 +209,37 @@ export class PluginManager extends EventEmitter implements PluginHost {
   }
 
   private shouldActivatePlugin(manifest: PluginManifest): boolean {
-    // Check activation events
     if (!manifest.activationEvents) {
-      return true; // Activate immediately if no specific events
+      return true;
     }
 
-    // For now, activate on workspace open
     return manifest.activationEvents.includes('onStartup');
   }
 
   private createPluginContext(manifest: PluginManifest): PluginContext {
-    const context: PluginContext = {
+    return {
       subscriptions: [],
       workspace: this.createWorkspaceApi(),
       commands: this.createCommandsApi(manifest.id),
       window: this.createWindowApi(),
       extensions: this.createExtensionsApi(),
       ai: this.createAIApi(manifest.id),
-      storage: this.createStorageApi(manifest.id)
+      host: this.createHostApi(manifest.id),
+      storage: this.createStorageApi(manifest.id),
     };
-
-    return context;
   }
 
   private createWorkspaceApi() {
+    const workspaceRoot = () => this.getWorkspacePath() || process.cwd();
+
     return {
-      rootPath: process.cwd(),
-      name: path.basename(process.cwd()),
+      get rootPath() {
+        return workspaceRoot();
+      },
+      get name() {
+        return path.basename(workspaceRoot());
+      },
       findFiles: async (include: string, exclude?: string) => {
-        // Simplified file finding - would use glob in production
         const results: string[] = [];
         const scanDir = async (dir: string) => {
           const entries = await fs.promises.readdir(dir, { withFileTypes: true });
@@ -248,7 +254,8 @@ export class PluginManager extends EventEmitter implements PluginHost {
             }
           }
         };
-        await scanDir(process.cwd());
+
+        await scanDir(workspaceRoot());
         return results;
       },
       openTextDocument: async (uri: string) => {
@@ -260,10 +267,10 @@ export class PluginManager extends EventEmitter implements PluginHost {
           languageId: this.detectLanguage(uri),
           getText: () => content,
           lineCount: content.split('\n').length,
-          save: async () => true
+          save: async () => true,
         };
       },
-      onDidChangeWorkspaceFolders: this.createEventEmitter()
+      onDidChangeWorkspaceFolders: this.createEventEmitter(),
     };
   }
 
@@ -271,20 +278,17 @@ export class PluginManager extends EventEmitter implements PluginHost {
     return {
       registerCommand: (command: string, handler: (...args: any[]) => any) => {
         const fullCommand = `${pluginId}.${command}`;
-        // Register command (would integrate with main command system)
         this.emit('command_registered', { pluginId, command: fullCommand, handler });
-
         return {
           dispose: () => {
             this.emit('command_unregistered', { pluginId, command: fullCommand });
-          }
+          },
         };
       },
       executeCommand: async <T>(command: string, ...args: any[]): Promise<T> => {
-        // Execute command (would route to appropriate handler)
         this.emit('command_executed', { command, args });
         return undefined as T;
-      }
+      },
     };
   }
 
@@ -302,18 +306,16 @@ export class PluginManager extends EventEmitter implements PluginHost {
         this.emit('show_message', { type: 'error', message, items });
         return items.length > 0 ? items[0] : undefined;
       },
-      createOutputChannel: (name: string) => {
-        return {
-          name,
-          append: (value: string) => this.emit('output_append', { channel: name, value }),
-          appendLine: (value: string) => this.emit('output_append', { channel: name, value: value + '\n' }),
-          clear: () => this.emit('output_clear', { channel: name }),
-          show: () => this.emit('output_show', { channel: name }),
-          hide: () => this.emit('output_hide', { channel: name }),
-          dispose: () => this.emit('output_dispose', { channel: name })
-        };
-      },
-      createStatusBarItem: (alignment = 'right', priority = 0) => {
+      createOutputChannel: (name: string) => ({
+        name,
+        append: (value: string) => this.emit('output_append', { channel: name, value }),
+        appendLine: (value: string) => this.emit('output_append', { channel: name, value: `${value}\n` }),
+        clear: () => this.emit('output_clear', { channel: name }),
+        show: () => this.emit('output_show', { channel: name }),
+        hide: () => this.emit('output_hide', { channel: name }),
+        dispose: () => this.emit('output_dispose', { channel: name }),
+      }),
+      createStatusBarItem: (_alignment = 'right', _priority = 0) => {
         const id = crypto.randomUUID();
         return {
           text: '',
@@ -323,9 +325,9 @@ export class PluginManager extends EventEmitter implements PluginHost {
           backgroundColor: undefined,
           show: () => this.emit('status_bar_show', { id }),
           hide: () => this.emit('status_bar_hide', { id }),
-          dispose: () => this.emit('status_bar_dispose', { id })
+          dispose: () => this.emit('status_bar_dispose', { id }),
         };
-      }
+      },
     };
   }
 
@@ -341,12 +343,10 @@ export class PluginManager extends EventEmitter implements PluginHost {
           isActive: plugin.state === 'active',
           packageJSON: plugin.manifest,
           exports: plugin.isolatedPlugin,
-          activate: () => this.activatePlugin(extensionId)
+          activate: () => this.activatePlugin(extensionId),
         };
       },
-      getExtensionContext: (extensionId: string) => {
-        return this.getPluginContext(extensionId);
-      }
+      getExtensionContext: (extensionId: string) => this.getPluginContext(extensionId),
     };
   }
 
@@ -357,19 +357,22 @@ export class PluginManager extends EventEmitter implements PluginHost {
         return {
           dispose: () => {
             this.emit('ai_provider_unregistered', { pluginId, providerId: provider.id });
-          }
+          },
         };
       },
-      chat: async (messages: any[], options?: any) => {
-        // Route to AI system
-        this.emit('ai_chat', { pluginId, messages, options });
-        return { content: 'Mock AI response' };
+      chat: async (_messages: any[], _options?: any) => ({ content: 'Mock AI response' }),
+      complete: async (_prompt: string, _options?: any) => ({ text: 'Mock completion' }),
+    };
+  }
+
+  private createHostApi(pluginId: string) {
+    return {
+      invoke: async <T = any>(method: string, payload?: any): Promise<T> => {
+        if (!this.hostInvoker) {
+          throw new Error(`Plugin host bridge is unavailable for ${pluginId}`);
+        }
+        return this.hostInvoker(pluginId, method, payload) as Promise<T>;
       },
-      complete: async (prompt: string, options?: any) => {
-        // Route to AI system
-        this.emit('ai_complete', { pluginId, prompt, options });
-        return { text: 'Mock completion' };
-      }
     };
   }
 
@@ -393,9 +396,7 @@ export class PluginManager extends EventEmitter implements PluginHost {
       delete: async (key: string): Promise<void> => {
         storage.delete(key);
       },
-      keys: async (): Promise<string[]> => {
-        return Array.from(storage.keys());
-      }
+      keys: async (): Promise<string[]> => Array.from(storage.keys()),
     };
   }
 
@@ -411,20 +412,17 @@ export class PluginManager extends EventEmitter implements PluginHost {
       '.html': 'html',
       '.css': 'css',
       '.json': 'json',
-      '.md': 'markdown'
+      '.md': 'markdown',
     };
     return languageMap[ext] || 'plaintext';
   }
 
   private createEventEmitter<T = any>(): any {
-    return (listener: (e: T) => any) => {
-      // Simplified event emitter
-      return {
-        dispose: () => {
-          // Remove listener
-        }
-      };
-    };
+    return (_listener: (e: T) => any) => ({
+      dispose: () => {
+        // no-op placeholder until the renderer subscribes to plugin events
+      },
+    });
   }
 }
 
