@@ -22,10 +22,69 @@ import * as crypto from 'crypto';
  * Get the AgentPrime installation root directory
  * This is used to detect if a workspace is AgentPrime's own codebase
  */
-function getAgentPrimeRoot(): string {
-  // __dirname in compiled JS will be in dist/main/security
-  // So we go up 3 levels to get to the AgentPrime root
-  return path.resolve(__dirname, '..', '..', '..');
+const AGENTPRIME_PACKAGE_NAMES = new Set(['agentprime', 'agent-prime']);
+const AGENTPRIME_DEV_MARKERS = [
+  'src/main/agent-loop.ts',
+  'src/main/main.ts',
+];
+
+function normalizePathForComparison(targetPath: string): string {
+  const normalizedPath = path.normalize(path.resolve(targetPath));
+  return process.platform === 'win32'
+    ? normalizedPath.toLowerCase()
+    : normalizedPath;
+}
+
+function isSameOrSubdirectory(basePath: string, targetPath: string): boolean {
+  const relativePath = path.relative(
+    normalizePathForComparison(basePath),
+    normalizePathForComparison(targetPath),
+  );
+
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}
+
+function readPackageName(dirPath: string): string | null {
+  const packageJsonPath = path.join(dirPath, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    return null;
+  }
+
+  try {
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    return typeof pkg.name === 'string' ? pkg.name : null;
+  } catch {
+    return null;
+  }
+}
+
+function looksLikeAgentPrimeRoot(candidatePath: string): boolean {
+  const packageName = readPackageName(candidatePath);
+  if (packageName && AGENTPRIME_PACKAGE_NAMES.has(packageName)) {
+    return true;
+  }
+
+  return AGENTPRIME_DEV_MARKERS.every(marker => fs.existsSync(path.join(candidatePath, marker)));
+}
+
+function getAgentPrimeRoot(): string | null {
+  let currentPath = path.resolve(__dirname);
+  const visited = new Set<string>();
+
+  while (!visited.has(normalizePathForComparison(currentPath))) {
+    if (looksLikeAgentPrimeRoot(currentPath)) {
+      return path.normalize(currentPath);
+    }
+
+    visited.add(normalizePathForComparison(currentPath));
+    const parentPath = path.dirname(currentPath);
+    if (parentPath === currentPath) {
+      break;
+    }
+    currentPath = parentPath;
+  }
+
+  return null;
 }
 
 /**
@@ -34,10 +93,7 @@ function getAgentPrimeRoot(): string {
  */
 export function isAgentPrimeCodebase(targetPath: string): boolean {
   const agentPrimeRoot = getAgentPrimeRoot();
-  const normalizedTarget = path.normalize(path.resolve(targetPath));
-  const normalizedRoot = path.normalize(agentPrimeRoot);
-  
-  return normalizedTarget.startsWith(normalizedRoot);
+  return agentPrimeRoot ? isSameOrSubdirectory(agentPrimeRoot, targetPath) : false;
 }
 
 /**
@@ -46,16 +102,27 @@ export function isAgentPrimeCodebase(targetPath: string): boolean {
  */
 export function validateWorkspaceNotSelf(workspacePath: string): WorkspaceValidation {
   const agentPrimeRoot = getAgentPrimeRoot();
-  const normalizedWorkspace = path.normalize(path.resolve(workspacePath));
-  const normalizedRoot = path.normalize(agentPrimeRoot);
-  
-  const isSelfCodebase = normalizedWorkspace.startsWith(normalizedRoot);
+  const isSelfCodebase = agentPrimeRoot
+    ? isSameOrSubdirectory(agentPrimeRoot, workspacePath)
+    : false;
+  const agentPrimeRootLabel = agentPrimeRoot ?? '[unresolved]';
+
+  const workspacePackageName = readPackageName(workspacePath);
+  if (workspacePackageName && AGENTPRIME_PACKAGE_NAMES.has(workspacePackageName)) {
+    return {
+      valid: false,
+      isSelfCodebase: true,
+      reason: 'Workspace is AgentPrime\'s own codebase (detected by package.json)',
+      workspacePath,
+      agentPrimeRoot: agentPrimeRootLabel
+    };
+  }
   
   // Also check for specific AgentPrime markers
   const markers = [
     'src/main/agent-loop.ts',
-    'src/main/mirror/opus-reasoning-engine.ts',
-    'src/main/agent/task-master.ts',
+    'src/main/main.ts',
+    'dist/main/main.js',
     'package.json'
   ];
   
@@ -68,23 +135,6 @@ export function validateWorkspaceNotSelf(workspacePath: string): WorkspaceValida
       markerCount++;
       foundMarkers.push(marker);
       
-      // Extra check: if package.json exists, check if it's AgentPrime
-      if (marker === 'package.json') {
-        try {
-          const pkg = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
-          if (pkg.name === 'agentprime' || pkg.name === 'agent-prime') {
-            return {
-              valid: false,
-              isSelfCodebase: true,
-              reason: 'Workspace is AgentPrime\'s own codebase (detected by package.json)',
-              workspacePath,
-              agentPrimeRoot
-            };
-          }
-        } catch (e) {
-          // Ignore JSON parse errors
-        }
-      }
     }
   }
   
@@ -95,7 +145,7 @@ export function validateWorkspaceNotSelf(workspacePath: string): WorkspaceValida
       isSelfCodebase: true,
       reason: `Workspace appears to be AgentPrime's codebase (${markerCount} markers found: ${foundMarkers.join(', ')})`,
       workspacePath,
-      agentPrimeRoot
+      agentPrimeRoot: agentPrimeRootLabel
     };
   }
   
@@ -106,7 +156,7 @@ export function validateWorkspaceNotSelf(workspacePath: string): WorkspaceValida
       isSelfCodebase: true,
       reason: 'Workspace path is within AgentPrime installation directory',
       workspacePath,
-      agentPrimeRoot
+      agentPrimeRoot: agentPrimeRootLabel
     };
   }
   
@@ -115,7 +165,7 @@ export function validateWorkspaceNotSelf(workspacePath: string): WorkspaceValida
     isSelfCodebase: false,
     reason: 'Workspace is valid user project',
     workspacePath,
-    agentPrimeRoot
+    agentPrimeRoot: agentPrimeRootLabel
   };
 }
 
