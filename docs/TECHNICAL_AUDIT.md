@@ -4,7 +4,7 @@
 
 AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functionality. This audit identifies gaps, prioritizes improvements, and provides a roadmap to achieve feature parity with Cursor while adding unique AgentPrime capabilities.
 
-**Current Status:** Basic IDE structure with AI chat, file management, and template system. Missing critical Cursor features.
+**Current Status:** Lean IDE shell with Monaco, multi-file tabs, split view, workspace search/replace, a Source Control panel with commit flow, AI chat (multi-provider), and inline-style AI completions via ghost text (`CompletionService` / `GhostTextManager`). Gaps vs Cursor remain in LSP-grade navigation, extensions, debugger parity, and completion latency/context.
 
 ## Feature Comparison Matrix
 
@@ -19,21 +19,23 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 | **Monaco Editor** | ✅ Monaco Editor integration | ✅ Monaco Editor | **Complete** |
 | **IPC Communication** | ✅ TypeScript IPC handlers | ✅ IPC system | **Good** |
 | **Settings Management** | ✅ Provider configuration | ✅ Advanced settings | **Basic** |
+| **Multi-file editing** | ✅ Tab bar + optional split view | ✅ Advanced layouts | **Good** |
+| **Search & Replace** | ✅ Workspace panel (regex/case options) | ✅ Rich search | **Basic** |
+| **Git** | ✅ Panel + commit via IPC (not full VS Code parity) | ✅ Full integration | **Basic** |
+| **Inline AI completions** | ✅ Ghost text streaming (`CompletionService`) | ✅ Polished / fast | **Partial** |
 
-### ❌ Missing Critical Features
+### ❌ Missing or Incomplete vs Cursor-Class IDE
 
 | Feature | Priority | Complexity | Estimated Effort |
 |---------|----------|------------|------------------|
-| **Inline Code Completions** | 🔴 Critical | High | 2-3 weeks |
-| **Multi-file Editing** | 🔴 Critical | Medium | 1-2 weeks |
-| **Git Integration** | 🟡 High | Medium | 1 week |
-| **Search & Replace** | 🟡 High | Low | 3-5 days |
+| **Completion quality/latency** | 🟡 High | Medium | Ongoing tuning |
+| **LSP / symbol navigation** | 🟡 High | High | 2–4 weeks |
 | **Refactoring Tools** | 🟡 High | High | 2 weeks |
 | **Code Analysis/Linting** | 🟡 High | Medium | 1 week |
 | **Extensions System** | 🟠 Medium | High | 3-4 weeks |
 | **Debugging Support** | 🟠 Medium | High | 2-3 weeks |
 | **Live Collaboration** | 🟠 Medium | High | 4+ weeks |
-| **Custom Themes** | 🟢 Low | Low | 1 week |
+| **Git (advanced)** | 🟠 Medium | Medium | Blame, merge UI, richer graph |
 | **Performance Monitoring** | 🟢 Low | Medium | 1 week |
 
 ## Detailed Gap Analysis
@@ -41,67 +43,48 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 ### 1. AI Capabilities Gap
 
 **Current State:**
-- Basic chat with streaming
-- Multi-provider support
-- Command execution via natural language
-- Dino Buddy mode for casual interaction
+- Chat with streaming; multi-provider support
+- Inline AI completions via ghost text (not only the suggestion dropdown)
+- Command execution via natural language; Dino Buddy mode
 
-**Cursor Features Missing:**
-- Inline code completions (as you type)
-- Code generation from comments/requirements
-- Intelligent code refactoring
-- Bug detection and auto-fixing
-- Code explanations and documentation
-- Test generation
-- Performance optimization suggestions
+**Cursor-class gaps:**
+- Completion speed and codebase-wide context vs dedicated completion models
+- Deeper refactor / test-gen / perf suggestions as first-class IDE actions
 
 **Recommended Actions:**
-1. Implement inline completions API
-2. Add code generation tools
-3. Integrate ESLint/Prettier with AI suggestions
-4. Add refactoring commands
+1. Tune completion latency and context window
+2. Integrate ESLint/Prettier with AI suggestions
+3. Add refactoring commands and stronger analysis hooks
 
 ### 2. Editor Functionality Gap
 
 **Current State:**
-- Single file editing
-- Basic Monaco integration
-- Syntax highlighting
-- Basic find/replace
+- Multi-file editing (tabs) and split view
+- Monaco with syntax highlighting; inline AI edit (Ctrl+K) and ghost completions
+- Workspace search/replace with options (e.g. regex)
 
-**Cursor Features Missing:**
-- Multi-cursor editing
-- Multi-file editing (tabs, split view)
-- Advanced search/replace (regex, multi-file)
-- Code folding
-- Breadcrumbs navigation
-- Symbol search
-- Go to definition/references
-- Hover information
+**Cursor / VS Code–class gaps:**
+- Multi-cursor power-user workflows
+- Breadcrumbs, outline, and **Go to definition / references** without full LSP wiring
+- Rich hover and symbol search across the workspace
 
 **Recommended Actions:**
-1. Implement tab system for multi-file editing
-2. Add split view capability
-3. Enhance search functionality
-4. Add symbol navigation
+1. Add language server or bundled analyzers for key languages
+2. Wire go-to-definition, find references, and symbol palette
+3. Keep improving search (filters, scope) as needed
 
 ### 3. Version Control Gap
 
 **Current State:**
-- No Git integration
+- Git panel and commit flow via IPC; not a full clone of VS Code’s Source Control experience
 
-**Cursor Features Missing:**
-- Git status indicators
-- Commit, push, pull operations
-- Branch management
-- Diff viewing
-- Merge conflict resolution
-- Git blame annotations
+**Remaining gaps vs mature IDEs:**
+- Inline blame, rich merge conflict UI, integrated graph/log at Cursor quality
+- Deeper branch/remote workflows in the shell
 
 **Recommended Actions:**
-1. Integrate Git commands via IPC
-2. Add Git status UI indicators
-3. Implement commit/push workflows
+1. Expand Git IPC (status, push/pull, branch) where product priorities align
+2. Surface diff and branch state more prominently in the UI
 
 ### 4. Developer Experience Gap
 
@@ -111,19 +94,16 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 - Terminal integration
 
 **Cursor Features Missing:**
-- Command palette
-- Quick open files
-- Recent files/projects
+- Quick open (Ctrl+P) parity and rich recent files/projects
 - Workspace management
 - Task runner integration
 - Extension marketplace
 - Settings sync across devices
 
 **Recommended Actions:**
-1. Implement command palette (Ctrl+Shift+P)
-2. Add quick file opening
-3. Create workspace management
-4. Add task runner integration
+1. Add or harden quick-open and recent files
+2. Create workspace management where needed
+3. Add task runner integration
 
 ### 5. Performance & Stability Issues
 
@@ -164,22 +144,19 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 4. Implement basic testing framework
 
 ### Phase 2: Editor Enhancement (Week 3-4)
-1. Implement tab system for multi-file editing
-2. Add inline code completions
-3. Enhance search and replace functionality
-4. Add symbol navigation
+1. LSP or analyzer integration: go to definition, references, outline
+2. Tune inline AI completions (latency, context)
+3. Enhance search (scopes, filters) as needed
 
 ### Phase 3: AI Feature Expansion (Week 5-7)
-1. Implement AI-powered code generation
-2. Add intelligent refactoring tools
-3. Integrate code analysis and suggestions
-4. Add test generation capabilities
+1. Deeper AI-powered generation and refactoring
+2. Integrate code analysis and suggestions (ESLint/Prettier)
+3. Add test generation capabilities
 
 ### Phase 4: Developer Tools (Week 8-10)
-1. Implement Git integration
+1. Expand Git workflows (push/pull, branch, diff) where prioritized
 2. Add debugging support
-3. Create command palette
-4. Add task runner integration
+3. Harden quick-open, tasks, and palette workflows
 
 ### Phase 5: Ecosystem & Extensions (Week 11-14)
 1. Design extension API
@@ -235,10 +212,10 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 
 ## Success Metrics
 
-### Feature Parity (vs Cursor)
-- [ ] Inline completions: 0% → 100%
-- [ ] Multi-file editing: 20% → 100%
-- [ ] Git integration: 0% → 100%
+### Feature Parity (vs Cursor) — rough targets
+- [ ] Inline completions: partial → competitive latency and relevance
+- [ ] Multi-file editing: good (tabs/split) → advanced layouts
+- [ ] Git integration: basic panel → full workflow parity
 - [ ] Refactoring tools: 10% → 100%
 - [ ] Extensions: 0% → 100%
 
@@ -257,14 +234,12 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 ## Next Steps
 
 1. **Immediate Actions:**
-   - Fix TypeScript compilation errors
-   - Implement inline code completions
-   - Add multi-file editing tabs
+   - Keep TypeScript/build health green
+   - Improve completion UX and symbol navigation
 
 2. **Short-term Goals (1-2 months):**
-   - Achieve 80% feature parity with Cursor
-   - Implement Git integration
-   - Add comprehensive AI code tools
+   - Move key gaps (LSP-style nav, Git depth) toward Cursor-class UX
+   - Add comprehensive AI code tools where prioritized
 
 3. **Long-term Vision (3-6 months):**
    - Full Cursor parity + AgentPrime unique features
@@ -273,6 +248,6 @@ AgentPrime aims to be a comprehensive AI-powered IDE replicating Cursor's functi
 
 ---
 
-*Audit conducted on: December 22, 2025*
+*Audit last revised: March 31, 2026 (documentation aligned with current shell: tabs, split, search/replace, Git panel, ghost completions)*
 *AgentPrime version: 1.0.0*
 *Target: Cursor feature parity with AgentPrime enhancements*

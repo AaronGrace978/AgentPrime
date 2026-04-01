@@ -26,6 +26,7 @@ export type TelemetryEventType =
   | 'completion_rejected'
   | 'agent_task_start'
   | 'agent_task_complete'
+  | 'generation_phase'
   | 'error_occurred'
   | 'template_used'
   | 'provider_changed'

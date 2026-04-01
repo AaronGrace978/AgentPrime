@@ -93,14 +93,14 @@ export function getModelLabel(provider: string, model: string): string {
 
 // Default brain configuration
 export const DEFAULT_BRAIN_CONFIG = {
-  fastModel: { provider: 'ollama', model: 'minimax-m2.7:cloud', enabled: true },
-  deepModel: { provider: 'ollama', model: 'qwen3-coder-next:cloud', enabled: true }
+  fastModel: { provider: 'ollama', model: 'qwen2.5-coder:7b', enabled: true },
+  deepModel: { provider: 'ollama', model: 'qwen2.5-coder:32b', enabled: true }
 };
 
 // Default dual model state
 export const DEFAULT_DUAL_MODEL_STATE = {
   enabled: true,
-  mode: 'auto' as const,
+  mode: 'standard' as const,
   currentModel: '',
   currentProvider: '',
   lastComplexity: 5,
@@ -132,7 +132,7 @@ export const DINO_QUICK_PROMPTS = [
 // Welcome messages per mode
 export const WELCOME_MESSAGE = {
   role: 'assistant' as const,
-  content: '**AgentPrime Ready**\n\nAgent Mode is ON. I can autonomously write code, create files, and build projects for you.\n\n**Quick Start:**\n1. Select a workspace folder above\n2. Pick a model mode (Fast, Auto, or Deep)\n3. Tell me what to build\n\n*Example: "Build a todo app with React" or "Create a REST API with Express"*',
+  content: '**AgentPrime Ready**\n\nAgent Mode is ON. I can autonomously write code, create files, and build projects for you.\n\n**Quick Start:**\n1. Select a workspace folder above\n2. Pick a runtime budget (Instant, Standard, or Deep)\n3. Tell me what to build\n\n*Example: "Build a todo app with React" or "Create a REST API with Express"*',
   timestamp: new Date(),
   type: 'system' as const
 };

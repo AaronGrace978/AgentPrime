@@ -13,6 +13,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ProjectEntry, BuildEntry } from './project-registry';
+import { getProjectRuntimeProfileSync } from './project-runtime';
 
 export interface DocumentOptions {
   projectPath: string;
@@ -234,43 +235,75 @@ export class ProjectDocumenter {
    * Generate run instructions based on project type
    */
   private static generateRunInstructions(options: DocumentOptions): string {
-    const hasPackageJson = options.files.includes('package.json');
-    const hasIndexHtml = options.files.some(f => f.includes('index.html'));
-    const hasPython = options.files.some(f => f.endsWith('.py'));
-    const hasRequirements = options.files.includes('requirements.txt');
-    
+    const profile = getProjectRuntimeProfileSync(options.projectPath);
     let instructions = '';
-    
-    if (hasPackageJson) {
-      instructions += `### Node.js Project\n\n`;
-      instructions += `1. Install dependencies:\n`;
-      instructions += `   \`\`\`bash\n   npm install\n   \`\`\`\n\n`;
-      instructions += `2. Start the project:\n`;
-      instructions += `   \`\`\`bash\n   npm start\n   \`\`\`\n\n`;
-    }
-    
-    if (hasIndexHtml && !hasPackageJson) {
+
+    if (profile.kind === 'static') {
       instructions += `### Static Website\n\n`;
-      instructions += `Open \`index.html\` directly in your browser, or use a local server:\n\n`;
-      instructions += `\`\`\`bash\n`;
-      instructions += `# Using Python\n`;
-      instructions += `python -m http.server 8080\n\n`;
-      instructions += `# Using Node.js\n`;
-      instructions += `npx serve .\n`;
-      instructions += `\`\`\`\n\n`;
+      if (profile.install.required && profile.install.command) {
+        instructions += `1. Install dependencies:\n`;
+        instructions += `   \`\`\`bash\n   ${profile.install.command}\n   \`\`\`\n\n`;
+        instructions += `2. Start the project:\n`;
+      } else if (profile.run.command) {
+        instructions += `No package install is required for this starter.\n\n`;
+        instructions += `1. Start the project:\n`;
+      } else {
+        instructions += `No package install is required for this starter.\n\n`;
+        instructions += `1. Open \`index.html\` directly in your browser, or start a local server:\n\n`;
+        instructions += `   \`\`\`bash\n   npx serve .\n   \`\`\`\n\n`;
+        instructions += `2. If you prefer Python instead:\n\n`;
+        instructions += `   \`\`\`bash\n   python -m http.server 8080\n   \`\`\`\n\n`;
+      }
+
+      if (profile.run.command) {
+        instructions += `   \`\`\`bash\n   ${profile.run.command}\n   \`\`\`\n\n`;
+      }
     }
-    
-    if (hasPython) {
+
+    if (profile.kind === 'vite' || profile.kind === 'node' || profile.kind === 'tauri') {
+      const title =
+        profile.kind === 'vite'
+          ? 'Vite Project'
+          : profile.kind === 'tauri'
+            ? 'Tauri Project'
+            : 'Node.js Project';
+      instructions += `### ${title}\n\n`;
+      let step = 1;
+      if (profile.install.required && profile.install.command) {
+        instructions += `${step}. Install dependencies:\n`;
+        instructions += `   \`\`\`bash\n   ${profile.install.command}\n   \`\`\`\n\n`;
+        step += 1;
+      }
+      if (profile.build.command) {
+        instructions += `${step}. Verify the build:\n`;
+        instructions += `   \`\`\`bash\n   ${profile.build.command}\n   \`\`\`\n\n`;
+        step += 1;
+      }
+      if (profile.run.command) {
+        instructions += `${step}. Start the project:\n`;
+        instructions += `   \`\`\`bash\n   ${profile.run.command}\n   \`\`\`\n\n`;
+      } else {
+        instructions += `${step}. Refer to \`package.json\` scripts for the correct command.\n\n`;
+      }
+    }
+
+    if (profile.kind === 'python') {
       instructions += `### Python Project\n\n`;
-      if (hasRequirements) {
+      let step = 1;
+      if (profile.hasRequirements) {
         instructions += `1. Create virtual environment:\n`;
         instructions += `   \`\`\`bash\n   python -m venv venv\n   source venv/bin/activate  # or venv\\Scripts\\activate on Windows\n   \`\`\`\n\n`;
-        instructions += `2. Install dependencies:\n`;
-        instructions += `   \`\`\`bash\n   pip install -r requirements.txt\n   \`\`\`\n\n`;
+        step = 2;
       }
-      const mainFile = options.files.find(f => f.endsWith('.py')) || 'main.py';
-      instructions += `3. Run the project:\n`;
-      instructions += `   \`\`\`bash\n   python ${mainFile}\n   \`\`\`\n\n`;
+      if (profile.install.required && profile.install.command) {
+        instructions += `${step}. Install dependencies:\n`;
+        instructions += `   \`\`\`bash\n   ${profile.install.command}\n   \`\`\`\n\n`;
+        step += 1;
+      }
+      if (profile.run.command) {
+        instructions += `${step}. Run the project:\n`;
+        instructions += `   \`\`\`bash\n   ${profile.run.command}\n   \`\`\`\n\n`;
+      }
     }
     
     if (!instructions) {

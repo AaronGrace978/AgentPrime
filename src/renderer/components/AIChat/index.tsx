@@ -18,6 +18,8 @@ import {
   CHAT_QUICK_PROMPTS,
   DINO_QUICK_PROMPTS
 } from './constants';
+import { runtimeBudgetToDualMode } from '../../../types/runtime-budget';
+import type { AgentRepairScope } from '../../../types/agent-review';
 
 // Custom hooks
 import { useDualModel, usePythonBrain, useWorkspace } from './hooks';
@@ -65,8 +67,8 @@ const AIChat: React.FC<AIChatProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('gpt-4o');
-  const [useSpecializedAgents, setUseSpecializedAgents] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:7b');
+  const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
   const [lastError, setLastError] = useState<AIError | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -75,15 +77,35 @@ const AIChat: React.FC<AIChatProps> = ({
   // Progress tracking state
   const [currentTask, setCurrentTask] = useState('');
   const agentFileChangesRef = useRef<Map<string, AgentFileChange>>(new Map());
+  const pendingRepairScopeRef = useRef<AgentRepairScope | null>(null);
 
   // Load active model from settings
   useEffect(() => {
     const loadActiveModel = async () => {
       try {
         const settings = await window.agentAPI.getSettings();
-        if (settings?.activeModel) {
-          setSelectedModel(settings.activeModel);
-        }
+        const preferredProvider = settings?.activeProvider || 'ollama';
+        const requestedModel = settings?.activeModel || '';
+        const inferredProvider = requestedModel.startsWith('gpt-')
+          ? 'openai'
+          : requestedModel.startsWith('claude-')
+            ? 'anthropic'
+            : requestedModel.includes('/')
+              ? 'openrouter'
+              : preferredProvider;
+        const providerConfig = settings?.providers?.[
+          inferredProvider as 'ollama' | 'anthropic' | 'openai' | 'openrouter'
+        ];
+        const localOllamaModel =
+          settings?.providers?.ollama?.model ||
+          'qwen2.5-coder:7b';
+        const providerMissingKey =
+          inferredProvider !== 'ollama' &&
+          !providerConfig?.apiKey;
+
+        setSelectedModel(providerMissingKey
+          ? localOllamaModel
+          : (requestedModel || localOllamaModel));
       } catch (error) {
         console.error('Failed to load active model:', error);
       }
@@ -106,9 +128,23 @@ const AIChat: React.FC<AIChatProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    const handleRepairScope = (event: Event) => {
+      const customEvent = event as CustomEvent<AgentRepairScope>;
+      if (customEvent.detail) {
+        pendingRepairScopeRef.current = customEvent.detail;
+      }
+    };
+
+    window.addEventListener('agentprime:repair-scope', handleRepairScope as EventListener);
+    return () => {
+      window.removeEventListener('agentprime:repair-scope', handleRepairScope as EventListener);
+    };
+  }, []);
+
   // Custom hooks
   const { dualModel, brainConfig, setMode, saveBrainConfig } = useDualModel();
-  const { status: pythonBrainStatus, isConnected: brainConnected, routeMessage, recordOutcome } = usePythonBrain();
+  const { status: pythonBrainStatus, isConnected: brainConnected, recordOutcome } = usePythonBrain();
   const { workspacePath, openFolder, updateContext } = useWorkspace({
     openFiles,
     activeFileIndex,
@@ -140,8 +176,8 @@ const AIChat: React.FC<AIChatProps> = ({
     const loadSpecializedAgents = async () => {
       try {
         const settings = await window.agentAPI.getSettings();
-        if (settings?.useSpecializedAgents) {
-          setUseSpecializedAgents(true);
+        if (settings && typeof settings.useSpecializedAgents === 'boolean') {
+          setUseSpecializedAgents(settings.useSpecializedAgents);
         }
       } catch (error) {
         console.error('Failed to load specialized agents setting:', error);
@@ -234,7 +270,8 @@ const AIChat: React.FC<AIChatProps> = ({
         filePath: data.path,
         oldContent: existing ? existing.oldContent : (data.oldContent || ''),
         newContent: data.newContent ?? existing?.newContent ?? '',
-        action: existing ? existing.action : normalizedAction
+        action: existing ? existing.action : normalizedAction,
+        status: existing?.status ?? 'pending'
       });
 
       setMessages(prev => {
@@ -431,7 +468,8 @@ const AIChat: React.FC<AIChatProps> = ({
           just_chat_mode: chatMode === 'chat',
           dino_buddy_mode: chatMode === 'dino',
           model: selectedModel,
-          dual_mode: dualModel.mode
+          dual_mode: runtimeBudgetToDualMode(dualModel.mode),
+          runtime_budget: dualModel.mode
         });
 
         // Streaming may have filled it; fall back to full response if nothing streamed
@@ -440,7 +478,7 @@ const AIChat: React.FC<AIChatProps> = ({
             const updated = [...prev];
             updated[updated.length - 1] = {
               role: 'assistant',
-              content: result.response,
+              content: result.response || '',
               timestamp: new Date()
             };
             return updated;
@@ -500,33 +538,14 @@ const AIChat: React.FC<AIChatProps> = ({
     setCurrentTask(currentInput);
     agentFileChangesRef.current.clear();
 
-    let agentModel = selectedModel;
-    if (dualModel.enabled) {
-      if (dualModel.mode === 'fast' && brainConfig.fastModel.enabled) {
-        agentModel = brainConfig.fastModel.model;
-      } else if (dualModel.mode === 'deep' && brainConfig.deepModel.enabled) {
-        agentModel = brainConfig.deepModel.model;
-      } else if (dualModel.mode === 'auto') {
-        if (brainConnected) {
-          const routing = await routeMessage(currentInput, {
-            workspace: workspacePath,
-            hasFile: openFiles.length > 0
-          });
-          if (routing?.model_tier === 'fast' && brainConfig.fastModel.enabled) {
-            agentModel = brainConfig.fastModel.model;
-          } else if (routing?.model_tier === 'deep' && brainConfig.deepModel.enabled) {
-            agentModel = brainConfig.deepModel.model;
-          }
-        } else {
-          agentModel = brainConfig.deepModel.enabled ? brainConfig.deepModel.model : brainConfig.fastModel.model;
-        }
-      }
-    }
+    // Agent file generation must honor the model in the picker. Dual-model Fast/Deep routing
+    // is for chat streaming; overriding here caused runs to use minimax/qwen while the UI
+    // still showed gpt-5.4 — empty specialists, timeouts, and template-only output.
+    const agentModel = selectedModel;
 
-    const modeLabel = dualModel.mode === 'fast' ? 'Fast' : dualModel.mode === 'deep' ? 'Deep' : 'Auto';
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: `Working on your request using **${agentModel}** (${modeLabel} mode)...`,
+      content: `Working on your request using **${agentModel}** with the **${dualModel.mode}** runtime budget...`,
       timestamp: new Date()
     }]);
 
@@ -550,7 +569,9 @@ const AIChat: React.FC<AIChatProps> = ({
         use_agent_loop: true,
         use_specialized_agents: useSpecializedAgents,
         model: agentModel,
-        dual_mode: dualModel.mode,
+        dual_mode: runtimeBudgetToDualMode(dualModel.mode),
+        runtime_budget: dualModel.mode,
+        repair_scope: pendingRepairScopeRef.current || undefined,
         dino_buddy_mode: false,
         file_path: activeFilePath,
         open_files: openFiles.map(file => file.file.path),
@@ -562,7 +583,7 @@ const AIChat: React.FC<AIChatProps> = ({
         const failMsg = result.error ? classifyAIError(result.error).message : 'Agent run failed';
         return [...filtered, {
           role: 'assistant',
-          content: result.success ? result.response : failMsg,
+          content: result.success ? (result.response || '') : failMsg,
           timestamp: new Date()
         }];
       });
@@ -575,18 +596,22 @@ const AIChat: React.FC<AIChatProps> = ({
       }
 
       if (result.success && onAgentChangesReady) {
-        const rawChanges = Array.from(agentFileChangesRef.current.values());
+        const resultChanges = Array.isArray(result.reviewChanges) ? result.reviewChanges : null;
+        const rawChanges = resultChanges || Array.from(agentFileChangesRef.current.values());
         const hydratedChanges = await Promise.all(rawChanges.map(async (change) => {
-          if (change.action !== 'deleted' && (!change.newContent || change.newContent.length === 0)) {
-            try {
-              const readResult = await window.agentAPI.readFile(change.filePath);
-              if (typeof readResult?.content === 'string') {
-                return { ...change, newContent: readResult.content };
-              }
-            } catch (readError) {
-              console.warn(`Failed to hydrate change for ${change.filePath}:`, readError);
-            }
+          if (resultChanges || change.action === 'deleted' || (change.newContent && change.newContent.length > 0)) {
+            return change;
           }
+
+          try {
+            const readResult = await window.agentAPI.readFile(change.filePath);
+            if (typeof readResult?.content === 'string') {
+              return { ...change, newContent: readResult.content };
+            }
+          } catch (readError) {
+            console.warn(`Failed to hydrate change for ${change.filePath}:`, readError);
+          }
+
           return change;
         }));
 
@@ -597,7 +622,12 @@ const AIChat: React.FC<AIChatProps> = ({
         );
 
         if (meaningfulChanges.length > 0) {
-          onAgentChangesReady(meaningfulChanges, currentInput);
+          onAgentChangesReady(
+            meaningfulChanges,
+            currentInput,
+            result.reviewSessionId,
+            result.reviewVerification
+          );
         }
       }
 
@@ -623,6 +653,7 @@ const AIChat: React.FC<AIChatProps> = ({
         await recordOutcome(currentInput, false, agentModel, 0);
       }
     } finally {
+      pendingRepairScopeRef.current = null;
       setAgentRunning(false);
       setIsLoading(false);
     }

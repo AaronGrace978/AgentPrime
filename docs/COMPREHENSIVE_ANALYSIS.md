@@ -325,19 +325,19 @@
 
 ## 📊 FEATURE COMPLETION STATUS
 
-### Core IDE Features: ~35% Complete
+### Core IDE Features: ~45–50% Complete (revised; shell has grown)
 
 | Feature Category | Completion | Status |
 |-----------------|------------|--------|
 | File Management | 70% | ✅ Basic operations work |
-| Editor | 40% | ⚠️ Single file only, missing advanced features |
-| AI Integration | 50% | ⚠️ Chat works, missing inline completions |
+| Editor | 55% | ⚠️ Tabs + split + Monaco; LSP-grade nav still limited |
+| AI Integration | 55% | ⚠️ Chat + ghost completions; not Cursor-class on speed/context |
 | Terminal | 60% | ⚠️ Basic execution works |
-| Search | 0% | ❌ Not implemented |
-| Git | 0% | ❌ Not implemented |
+| Search | 50% | ⚠️ Workspace search/replace present; not full VS Code parity |
+| Git | 40% | ⚠️ Panel + commit; not full blame/merge/graph UX |
 | Debugging | 0% | ❌ Not implemented |
 | Extensions | 0% | ❌ Not implemented |
-| Settings | 10% | ❌ UI placeholder only |
+| Settings | 35% | ⚠️ Provider + editor options; advanced sync/features partial |
 
 ### UI/UX: ~40% Complete
 

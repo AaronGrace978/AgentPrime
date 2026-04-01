@@ -236,8 +236,8 @@ if (fs.existsSync(dotenvPath)) {
 
 // Dual Ollama Configuration
 // Cloud models can use various endpoints - check env vars or detect from model name
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder-next:cloud';
-const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'deepseek-v3.1:671b-cloud';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b';
+const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'qwen2.5-coder:32b';
 // Ollama API keys from environment (primary + desktop fallback)
 const OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || '';
 const OLLAMA_API_KEY_DESKTOP = process.env.OLLAMA_API_KEY_DESKTOP || '';
@@ -288,7 +288,7 @@ let settings: Settings = {
   dinoBuddyMode: false,
   confirmOnClose: true,  // Prevent accidental closes (can be disabled in settings)
   activeProvider: 'ollama',
-  activeModel: 'qwen3-coder-next:cloud',
+  activeModel: OLLAMA_MODEL,
   dualOllamaEnabled: false,
   
   // Dual Model System - default to the same Ollama-first stack used by the agent runtime
@@ -296,12 +296,12 @@ let settings: Settings = {
   dualModelConfig: {
     fastModel: {
       provider: 'ollama',
-      model: 'minimax-m2.7:cloud',
+      model: OLLAMA_MODEL,
       enabled: true
     },
     deepModel: {
       provider: 'ollama',
-      model: 'qwen3-coder-next:cloud',
+      model: OLLAMA_MODEL_FALLBACK,
       enabled: true
     },
     autoRoute: true,
@@ -361,10 +361,37 @@ function initializeAIProviders(): void {
   const normalizeProviderFromModel = (model: string | undefined, fallback: string) =>
     aiRouter.inferProviderForModel(model, fallback) || fallback;
 
+  const getLocalOllamaFallbackModel = () =>
+    settings.providers?.ollama?.model || OLLAMA_MODEL || 'qwen2.5-coder:7b';
+
+  const providerHasCredentials = (providerName: string | undefined) => {
+    if (!providerName || providerName === 'ollama' || providerName === 'ollamaSecondary') {
+      return true;
+    }
+    const providerConfig = (settings.providers as Record<string, any> | undefined)?.[providerName];
+    return Boolean(providerConfig?.apiKey);
+  };
+
+  const normalizeActiveSelection = () => {
+    const previousProvider = settings.activeProvider;
+    const previousModel = settings.activeModel;
+
+    settings.activeProvider = normalizeProviderFromModel(settings.activeModel, settings.activeProvider || 'ollama');
+    if (!providerHasCredentials(settings.activeProvider)) {
+      settings.activeProvider = 'ollama';
+      settings.activeModel = getLocalOllamaFallbackModel();
+    }
+    if (!settings.activeModel) {
+      settings.activeModel = getLocalOllamaFallbackModel();
+    }
+
+    return previousProvider !== settings.activeProvider || previousModel !== settings.activeModel;
+  };
+
   settings.ollamaCloudOutputLimits = normalizeOllamaCloudOutputLimits(settings.ollamaCloudOutputLimits);
   setOllamaCloudOutputLimits(settings.ollamaCloudOutputLimits);
 
-  settings.activeProvider = normalizeProviderFromModel(settings.activeModel, settings.activeProvider || 'ollama');
+  const activeSelectionChanged = normalizeActiveSelection();
   if (settings.dualModelConfig) {
     settings.dualModelConfig.fastModel.provider = normalizeProviderFromModel(
       settings.dualModelConfig.fastModel.model,
@@ -433,6 +460,11 @@ function initializeAIProviders(): void {
     console.log(`   ⚡ Fast: ${settings.dualModelConfig.fastModel.provider}/${settings.dualModelConfig.fastModel.model}`);
     console.log(`   🧠 Deep: ${settings.dualModelConfig.deepModel.provider}/${settings.dualModelConfig.deepModel.model}`);
     console.log(`   🔀 Auto-route: ${settings.dualModelConfig.autoRoute ? 'ON' : 'OFF'} (threshold: ${settings.dualModelConfig.complexityThreshold})`);
+  }
+
+  if (activeSelectionChanged) {
+    console.log(`[Settings] Normalized active AI provider to ${settings.activeProvider}/${settings.activeModel}`);
+    saveSettings();
   }
   
   console.log(`✅ AI Provider initialized: ${settings.activeProvider} (${settings.activeModel})`);

@@ -13,6 +13,13 @@ const agentAPI: AgentAPI = {
   createFolder: (folderName: string) => ipcRenderer.invoke('file:create-folder', folderName),
   setWorkspace: (path: string) => ipcRenderer.invoke('file:set-workspace', path),
   launchProject: (projectPath: string) => ipcRenderer.invoke('file:launch-project', projectPath),
+  verifyProject: (projectPath: string) => ipcRenderer.invoke('file:verify-project', projectPath),
+  updateAgentReviewStatus: (sessionId: string, filePath: string, status: 'pending' | 'accepted' | 'rejected') =>
+    ipcRenderer.invoke('agent:review-update-status', sessionId, filePath, status),
+  updatePendingAgentReviewStatuses: (sessionId: string, status: 'accepted' | 'rejected') =>
+    ipcRenderer.invoke('agent:review-update-pending', sessionId, status),
+  applyAgentReview: (sessionId: string) => ipcRenderer.invoke('agent:review-apply', sessionId),
+  discardAgentReview: (sessionId: string) => ipcRenderer.invoke('agent:review-discard', sessionId),
   readTree: (path?: string) => ipcRenderer.invoke('file:read-tree', path),
   readFile: (path: string) => ipcRenderer.invoke('file:read', path),
   writeFile: (path: string, content: string) => ipcRenderer.invoke('file:write', path, content),

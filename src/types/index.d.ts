@@ -3,6 +3,7 @@
  */
 
 import type { ProviderConfig } from './ai-providers';
+import type { RuntimeBudgetMode } from './runtime-budget';
 
 export interface Settings {
   theme: string;
@@ -152,6 +153,7 @@ export interface ChatContext {
   model?: string;
   // Dual Model System
   dual_mode?: 'fast' | 'deep' | 'auto';
+  runtime_budget?: RuntimeBudgetMode;
   has_errors?: boolean;
   just_chat_mode?: boolean;
 }

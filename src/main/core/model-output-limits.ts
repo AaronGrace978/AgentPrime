@@ -8,6 +8,8 @@ export type OutputBudgetMode =
   | 'pipeline'
   | 'provider_default';
 
+export type RuntimeBudgetMode = 'instant' | 'standard' | 'deep';
+
 export interface OllamaCloudOutputLimits {
   chatMaxTokens: number;
   justChatMaxTokens: number;
@@ -22,11 +24,11 @@ export interface OllamaCloudOutputLimits {
 export const DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS: OllamaCloudOutputLimits = {
   chatMaxTokens: 32768,
   justChatMaxTokens: 32768,
-  wordsToCodeMaxTokens: 32768,
-  agentMaxTokens: 32768,
-  specialistMaxTokens: 32768,
+  wordsToCodeMaxTokens: 16384,
+  agentMaxTokens: 16384,
+  specialistMaxTokens: 12288,
   analysisMaxTokens: 32768,
-  pipelineMaxTokens: 24576,
+  pipelineMaxTokens: 8192,
   providerDefaultMaxTokens: 32768
 };
 
@@ -135,4 +137,24 @@ export function getRecommendedMaxTokens(model?: string, mode: OutputBudgetMode =
   }
 
   return 4096;
+}
+
+export function getBudgetAdjustedMaxTokens(
+  model: string | undefined,
+  mode: OutputBudgetMode,
+  runtimeBudget: RuntimeBudgetMode = 'standard'
+): number {
+  const base = getRecommendedMaxTokens(model, mode);
+  const scaled =
+    runtimeBudget === 'instant'
+      ? Math.max(1024, Math.round(base * 0.6))
+      : runtimeBudget === 'deep'
+        ? Math.round(base * 1.35)
+        : base;
+
+  if (isOllamaCloudModel(model)) {
+    return clampTokenBudget(scaled, base);
+  }
+
+  return Math.max(1024, scaled);
 }

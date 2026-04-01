@@ -23,6 +23,7 @@ export interface ChatOptions {
   stream?: boolean;
   tools?: Tool[];
   useAnthropicCompat?: boolean;
+  disableRouterFallback?: boolean;
   [key: string]: any;
 }
 
@@ -91,6 +92,13 @@ export interface ChatResult {
   success: boolean;
   content?: string;
   error?: string;
+  servedBy?: {
+    provider: string;
+    model?: string;
+    requestedProvider?: string;
+    requestedModel?: string;
+    viaFallback?: boolean;
+  };
   usage?: {
     promptTokens?: number;
     completionTokens?: number;
@@ -98,6 +106,7 @@ export interface ChatResult {
   };
   dualModelInfo?: {
     mode: 'fast' | 'deep' | 'auto';
+    runtimeBudget?: 'instant' | 'standard' | 'deep';
     analysis?: any;
   };
   modelSelection?: {

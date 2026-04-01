@@ -25,10 +25,17 @@ import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
 import { getTelemetryService } from '../core/telemetry-service';
 import { getTaskMaster, type TaskMasterRetryContext } from './task-master';
 import {
+  getProjectRuntimeProfileSync,
+  mapRuntimeKindToRegistryType,
+} from './project-runtime';
+import {
   LEGACY_SPECIALIST_ROLE_MAP,
   type SpecialistBlackboard,
   type SpecialistId,
 } from './specialist-contracts';
+import { ProjectRunner } from './tools/projectRunner';
+import { reviewSessionManager } from './review-session-manager';
+import type { AgentReviewSessionSnapshot } from '../../types/agent-review';
 
 const MAX_RETRIES = 2;
 
@@ -44,6 +51,7 @@ export class SpecializedAgentLoop extends EventEmitter {
   private workHistory: Map<AgentRole, string[]> = new Map();
   private registry: ProjectRegistry;
   private stopRequested = false;
+  private pendingReviewSession: AgentReviewSessionSnapshot | null = null;
 
   constructor(context: AgentContext) {
     super();
@@ -55,11 +63,42 @@ export class SpecializedAgentLoop extends EventEmitter {
     this.stopRequested = true;
   }
 
+  consumePendingReviewSession(): AgentReviewSessionSnapshot | null {
+    const snapshot = this.pendingReviewSession;
+    this.pendingReviewSession = null;
+    return snapshot;
+  }
+
   private resolveMode(isUpdate: boolean, retryCount: number): SpecialistBlackboard['mode'] {
     if (retryCount > 0) {
       return 'repair';
     }
     return isUpdate ? 'edit' : 'create';
+  }
+
+  private resolveRuntimeBudget(
+    requestedBudget: AgentContext['runtimeBudget'],
+    userMessage: string,
+    isUpdate: boolean,
+    retryCount: number
+  ): 'instant' | 'standard' | 'deep' {
+    if (retryCount > 0) {
+      return 'deep';
+    }
+    if (requestedBudget === 'deep') {
+      return 'deep';
+    }
+
+    const normalizedTask = userMessage.toLowerCase();
+    const looksRisky =
+      (!isUpdate && /(scaffold|template|full app|full application|tauri|desktop|browser test|e2e|security|performance|migrate)/.test(normalizedTask)) ||
+      normalizedTask.length > 800;
+
+    if (requestedBudget === 'instant') {
+      return looksRisky ? 'standard' : 'instant';
+    }
+
+    return looksRisky ? 'deep' : 'standard';
   }
 
   private mapLegacyRoleToSpecialist(role: AgentRole): SpecialistId {
@@ -123,13 +162,16 @@ export class SpecializedAgentLoop extends EventEmitter {
   async run(userMessage: string): Promise<string> {
     console.log('[SpecializedAgent] Starting specialized agent execution...');
     this.stopRequested = false;
+    this.pendingReviewSession = null;
     this.emit('task-start', { task: userMessage });
     const telemetry = getTelemetryService();
     const taskStartedAt = Date.now();
+    const requestedRuntimeBudget = this.context.runtimeBudget || 'standard';
     telemetry.track('agent_task_start', {
       mode: 'specialized',
       workspacePath: this.context.workspacePath,
       requestedModel: this.context.model || null,
+      runtimeBudget: requestedRuntimeBudget,
     });
 
     // Start transaction for this specialized agent task
@@ -143,6 +185,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     if (isUpdate) {
       console.log(`[SpecializedAgent] 🔄 Updating existing project: ${existingProject.name}`);
     }
+    const repairScope = this.context.repairScope;
     
     let retryCount = 0;
     let allCreatedFiles: string[] = [];
@@ -168,14 +211,24 @@ export class SpecializedAgentLoop extends EventEmitter {
       if (retryCount > 0 && !roles.includes('repair_specialist')) {
         roles.push('repair_specialist');
       }
+      if (repairScope && !roles.includes('repair_specialist')) {
+        roles.push('repair_specialist');
+      }
 
       const mode = this.resolveMode(isUpdate, retryCount);
-      blackboard = this.buildBlackboard(userMessage, mode, roles, lastVerification
+      const runtimeBudget = this.resolveRuntimeBudget(requestedRuntimeBudget, userMessage, isUpdate, retryCount);
+      const retryContext = lastVerification
         ? { missingFiles: lastVerification.missingFiles, errors: lastVerification.errors }
-        : undefined);
+        : repairScope
+          ? {
+              missingFiles: repairScope.allowedFiles,
+              errors: repairScope.findings.map((finding) => finding.summary),
+            }
+          : undefined;
+      blackboard = this.buildBlackboard(userMessage, mode, roles, retryContext);
       this.emit('blackboard-update', blackboard);
 
-      console.log(`[SpecializedAgent] Attempt ${retryCount + 1}/${MAX_RETRIES + 1} - Routing to: ${roles.join(', ')}`);
+      console.log(`[SpecializedAgent] Attempt ${retryCount + 1}/${MAX_RETRIES + 1} - Routing to: ${roles.join(', ')} (budget: ${runtimeBudget})`);
 
       // Step 2: Build the task message (include missing files if retrying)
       let taskMessage = userMessage;
@@ -196,6 +249,17 @@ export class SpecializedAgentLoop extends EventEmitter {
             `Fix the concrete issues above with targeted edits only. Keep the existing scaffold and working files intact.`;
           console.log(`[SpecializedAgent] Retry with targeted verification feedback`);
         }
+      } else if (repairScope) {
+        const findingLines = repairScope.findings.map((finding) => `- [${finding.stage}] ${finding.summary}`).join('\n');
+        const allowedLines = repairScope.allowedFiles.map((filePath) => `- ${filePath}`).join('\n');
+        const blockedLines = repairScope.blockedFiles.map((filePath) => `- ${filePath}`).join('\n');
+        taskMessage =
+          `REPAIR SCOPE IS ENFORCED.\n\n` +
+          `Allowed files:\n${allowedLines || '- Use only files named in the findings.'}\n\n` +
+          `Blocked files:\n${blockedLines || '- None'}\n\n` +
+          `Verifier findings:\n${findingLines || '- No structured findings were provided.'}\n\n` +
+          `Original repair request: ${userMessage}\n\n` +
+          `Only patch allowed files, make the smallest viable fix, and do not touch blocked files.`;
       }
 
       // Step 3: Execute with specialists
@@ -240,6 +304,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             workspacePath: this.context.workspacePath,
             files: this.getProjectFiles(),
             model: this.context.model,
+            runtimeBudget,
             blackboard,
           },
           trackerMode,
@@ -311,23 +376,28 @@ export class SpecializedAgentLoop extends EventEmitter {
       // Re-run verification after auto-fix so newly introduced or corrected files are accounted for.
       lastVerification = await this.verifyProject(allCreatedFiles);
 
-      // Always attempt to install dependencies so the project is usable even
-      // if there are minor verification issues (TS errors, etc.).
-      const installResult = await this.installDependenciesIfNeeded();
-      if (!installResult.success) {
-        lastVerification.errors.push(`[Install] ${this.compactProcessOutput(installResult.output)}`);
-      }
-
       if (lastVerification.isComplete) {
         console.log('[SpecializedAgent] ✅ Project verification PASSED');
-        
-        // Build verification — failure is recorded but doesn't nuke the project
-        const buildResult = await this.buildProjectIfNeeded();
-        if (!buildResult.success) {
-          lastVerification.isComplete = false;
-          lastVerification.errors.push(`[Build] ${this.compactProcessOutput(buildResult.output)}`);
+
+        const lifecycleResult = await ProjectRunner.autoRun(this.context.workspacePath);
+        if (lifecycleResult.validation.issues.length > 0) {
+          lastVerification.errors.push(
+            ...lifecycleResult.validation.issues.map((issue) => `[Validate] ${issue}`)
+          );
         }
-        
+        if (lifecycleResult.installResult && !lifecycleResult.installResult.success) {
+          lastVerification.errors.push(`[Install] ${this.compactProcessOutput(lifecycleResult.installResult.output)}`);
+        }
+        if (lifecycleResult.buildResult && !lifecycleResult.buildResult.success) {
+          lastVerification.errors.push(`[Build] ${this.compactProcessOutput(lifecycleResult.buildResult.output)}`);
+        }
+        if (lifecycleResult.runResult && !lifecycleResult.runResult.success) {
+          lastVerification.errors.push(`[Run] ${this.compactProcessOutput(lifecycleResult.runResult.output)}`);
+        }
+        if (!lifecycleResult.success) {
+          lastVerification.isComplete = false;
+        }
+
         // Step 6: BROWSER TESTING - Test the project in a real browser
         if (lastVerification.isComplete) {
           try {
@@ -388,55 +458,63 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
     }
 
-    // Step 6: Build final response
-    // Decide whether to commit or rollback.
-    // Key principle: a project with minor build errors is far more useful than an
-    // empty folder.  Only rollback when **no** files were actually written to disk
-    // (i.e., total generation failure).  Build/TS errors are surfaced to the user
-    // but the files are kept so they can be fixed.
-    const filesActuallyExist = allCreatedFiles.some(f => {
-      try { return fs.existsSync(path.join(this.context.workspacePath, f)); } catch { return false; }
+    const operationCount = transaction.getOperationCount();
+    const stagedReview = reviewSessionManager.createSessionFromOperations(
+      this.context.workspacePath,
+      transaction.getOperations()
+    );
+    const response = this.buildResponse(allCreatedFiles, lastVerification, {
+      rolledBack: rolledBackIncomplete,
+      stagedReview: Boolean(stagedReview),
     });
-    const shouldCommit = verificationSucceeded || filesActuallyExist;
 
-    if (shouldCommit) {
-      try {
-        const operationCount = transaction.getOperationCount();
-        transactionManager.commitTransaction();
-        telemetry.track('agent_task_complete', {
-          mode: 'specialized',
-          success: verificationSucceeded,
-          rolledBack: false,
-          retryCount,
-          fileCount: allCreatedFiles.length,
-          durationMs: Date.now() - taskStartedAt,
-        });
-        if (verificationSucceeded) {
-          console.log(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
-        } else {
-          console.log(`[SpecializedAgent] ⚠️ Transaction committed with issues (${operationCount} file ops) — files kept for user to fix`);
-        }
-      } catch (txError) {
-        console.error(`[SpecializedAgent] ❌ Transaction commit failed:`, txError);
-        throw txError;
+    if (stagedReview) {
+      this.pendingReviewSession = stagedReview;
+      if (blackboard) {
+        blackboard.status = 'awaiting_review';
+        blackboard.approvalsRequired = [{
+          kind: 'apply_changes',
+          requestedBy: 'task_master',
+          granted: false,
+        }];
+        this.emit('blackboard-update', blackboard);
       }
-    } else {
+
       await transactionManager.rollbackTransaction();
-      rolledBackIncomplete = true;
       telemetry.track('agent_task_complete', {
         mode: 'specialized',
-        success: false,
-        rolledBack: true,
+        success: verificationSucceeded,
+        rolledBack: false,
         retryCount,
         fileCount: allCreatedFiles.length,
         durationMs: Date.now() - taskStartedAt,
-        verificationErrors: lastVerification?.errors || [],
-        missingFiles: lastVerification?.missingFiles || [],
+        stagedReview: true,
+        runtimeBudget: requestedRuntimeBudget,
       });
-      console.log('[SpecializedAgent] 🔄 Rolled back incomplete specialized-agent run');
+      console.log(`[SpecializedAgent] 📝 Staged ${operationCount} file operation(s) for review`);
+      return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
     }
 
-    return this.buildResponse(allCreatedFiles, lastVerification, { rolledBack: rolledBackIncomplete });
+    if (operationCount > 0) {
+      transactionManager.commitTransaction();
+      console.log(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
+    } else {
+      await transactionManager.rollbackTransaction();
+      console.log('[SpecializedAgent] 🔄 Cleared empty transaction');
+    }
+
+    telemetry.track('agent_task_complete', {
+      mode: 'specialized',
+      success: verificationSucceeded,
+      rolledBack: false,
+      retryCount,
+      fileCount: allCreatedFiles.length,
+      durationMs: Date.now() - taskStartedAt,
+      stagedReview: false,
+      runtimeBudget: requestedRuntimeBudget,
+    });
+
+    return response;
     } catch (error) {
       // On timeout, try to rollback to last checkpoint instead of full rollback
       if (error instanceof TimeoutError) {
@@ -469,6 +547,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         rolledBack: true,
         durationMs: Date.now() - taskStartedAt,
         error: error instanceof Error ? error.message : String(error),
+        runtimeBudget: requestedRuntimeBudget,
       });
       throw error; // Re-throw the original error
     }
@@ -487,7 +566,8 @@ export class SpecializedAgentLoop extends EventEmitter {
     
     // Detect project type and technologies
     const allFiles = this.getAllFiles(workspacePath);
-    const projectType = ProjectRegistry.detectProjectType(allFiles);
+    const runtimeProfile = getProjectRuntimeProfileSync(workspacePath);
+    const projectType = mapRuntimeKindToRegistryType(runtimeProfile.kind);
     const technologies = ProjectRegistry.detectTechnologies(allFiles, workspacePath);
     
     // Generate description from prompt
@@ -523,7 +603,6 @@ export class SpecializedAgentLoop extends EventEmitter {
       const packageJsonPath = path.join(workspacePath, 'package.json');
       
       if (!fs.existsSync(runBatPath) && fs.existsSync(packageJsonPath)) {
-        const { ProjectRunner } = require('./tools/projectRunner');
         const projectInfo = await ProjectRunner.detectProject(workspacePath);
         
         if (projectInfo.type === 'node' && projectInfo.startCommand) {
@@ -577,6 +656,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     const missingFiles: string[] = [];
     const errors: string[] = [];
     const workspacePath = this.context.workspacePath;
+    const runtimeProfile = getProjectRuntimeProfileSync(workspacePath);
 
     // Get all files in workspace
     const existingFiles = this.getAllFiles(workspacePath);
@@ -686,6 +766,22 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
     }
 
+    const hasIndexHtml = existingFiles.some((file) => file === 'index.html' || file.endsWith('/index.html'));
+    const hasFrontendAssets = existingFiles.some((file) =>
+      file.endsWith('.css') ||
+      file.endsWith('.html') ||
+      /^src\/.+\.(js|jsx|ts|tsx)$/.test(file) ||
+      /^public\/.+/.test(file)
+    );
+    const hasServerEntrypoint = existingFiles.some((file) =>
+      ['server.js', 'app.js', 'index.js', 'server.ts', 'app.ts', 'index.ts'].includes(file)
+    );
+
+    if (runtimeProfile.kind === 'static' && hasFrontendAssets && !hasIndexHtml && !hasServerEntrypoint) {
+      errors.push('Static website is missing index.html entrypoint');
+      missingFiles.push('index.html');
+    }
+
     // Dedupe missing files
     const uniqueMissing = [...new Set(missingFiles)];
 
@@ -703,15 +799,17 @@ export class SpecializedAgentLoop extends EventEmitter {
   private buildResponse(
     createdFiles: string[],
     verification: ProjectVerification | null,
-    options: { rolledBack?: boolean } = {}
+    options: { rolledBack?: boolean; stagedReview?: boolean } = {}
   ): string {
-    const projectType = this.detectProjectType();
-    const hasPackageJson = this.getProjectFiles().includes('package.json');
-    const hasIndexHtml = this.getProjectFiles().some(f => f === 'index.html' || f.endsWith('/index.html'));
-    const packageJson = this.readRootPackageJson();
-    const bundlerProject = this.isBundlerProject(packageJson);
-    const runCommand = this.getRecommendedRunCommand(packageJson);
-    const nodeModulesInstalled = fs.existsSync(path.join(this.context.workspacePath, 'node_modules'));
+    const runtimeProfile = getProjectRuntimeProfileSync(this.context.workspacePath);
+    const runCommand = runtimeProfile.run.command;
+    const installCommand = runtimeProfile.install.command;
+    const installSatisfied =
+      runtimeProfile.install.manager === 'npm'
+        ? fs.existsSync(path.join(this.context.workspacePath, 'node_modules'))
+        : runtimeProfile.install.manager === 'pip'
+          ? !runtimeProfile.install.required
+          : true;
     const isReady = Boolean(verification?.isComplete);
     
     let response = isReady ? `## ✅ Project Created!\n\n` : `## ⚠️ Project Needs Fixes\n\n`;
@@ -738,11 +836,14 @@ export class SpecializedAgentLoop extends EventEmitter {
     if (verification) {
       if (verification.isComplete) {
         response += `### ✅ Verification Passed\n`;
-        response += `All files created and properly linked!\n\n`;
+        response += `${runtimeProfile.readiness.summary}\n\n`;
       } else {
         if (options.rolledBack) {
           response += `### ↩️ Changes Reverted\n`;
           response += `AgentPrime rolled back the generated changes because no usable files could be kept.\n\n`;
+        } else if (options.stagedReview) {
+          response += `### 📝 Staged For Review\n`;
+          response += `Files are ready for review and have not been written into the workspace yet.\n\n`;
         } else {
           response += `### ⚠️ Project Created With Issues\n`;
           response += `Files have been kept so you can inspect and fix the remaining issues.\n\n`;
@@ -770,15 +871,17 @@ export class SpecializedAgentLoop extends EventEmitter {
 
     if (runCommand) {
       response += `**▶ Run Project:** \`${runCommand}\`\n\n`;
-      if (bundlerProject) {
+      if (runtimeProfile.kind === 'vite') {
         response += `**🌐 Open in Browser:** Start the dev server, then open the local URL it prints\n\n`;
       }
-    } else if (hasIndexHtml && !bundlerProject) {
+    } else if (runtimeProfile.kind === 'static' && runtimeProfile.hasIndexHtml) {
       response += `**🚀 Launch in Browser:** Open \`index.html\` in your browser\n\n`;
     }
 
-    if (hasPackageJson && !nodeModulesInstalled) {
-      response += `**📦 Install Dependencies:** Run \`npm install\` in the project folder\n\n`;
+    if (runtimeProfile.install.required && installCommand && !installSatisfied) {
+      response += `**📦 Install Dependencies:** Run \`${installCommand}\` in the project folder\n\n`;
+    } else if (!runtimeProfile.install.required && (runtimeProfile.kind === 'static' || runtimeProfile.kind === 'node' || runtimeProfile.kind === 'vite')) {
+      response += `**✅ No Dependency Install Needed:** This starter does not declare packages that require an install step.\n\n`;
     }
 
     // Mention the PROJECT_LOG.md
@@ -855,6 +958,15 @@ export class SpecializedAgentLoop extends EventEmitter {
     } catch {
       return null;
     }
+  }
+
+  private hasDeclaredNodeDependencies(packageJson: any | null): boolean {
+    const deps = {
+      ...(packageJson?.dependencies || {}),
+      ...(packageJson?.devDependencies || {})
+    };
+
+    return Object.keys(deps).length > 0;
   }
 
   private isBundlerProject(packageJson: any | null): boolean {
@@ -1045,14 +1157,14 @@ export class SpecializedAgentLoop extends EventEmitter {
    * Detect project type
    */
   private detectProjectType(): string | undefined {
-    const files = this.getProjectFiles();
-    if (files.includes('package.json')) {
-      return 'node';
-    }
-    if (files.includes('requirements.txt') || files.includes('pyproject.toml')) {
+    const profile = getProjectRuntimeProfileSync(this.context.workspacePath);
+    if (profile.kind === 'python') {
       return 'python';
     }
-    if (files.some(f => f.endsWith('.html'))) {
+    if (profile.kind === 'node' || profile.kind === 'vite' || profile.kind === 'tauri') {
+      return 'node';
+    }
+    if (profile.kind === 'static') {
       return 'web';
     }
     return undefined;
@@ -1075,155 +1187,16 @@ export class SpecializedAgentLoop extends EventEmitter {
    * Install dependencies automatically if package.json or requirements.txt exists
    */
   private async installDependenciesIfNeeded(): Promise<{ success: boolean; output: string }> {
-    const workspacePath = this.context.workspacePath;
-    const packageJsonPath = path.join(workspacePath, 'package.json');
-    const requirementsPath = path.join(workspacePath, 'requirements.txt');
-    const outputs: string[] = [];
-
-    // Check for Node.js project
-    if (fs.existsSync(packageJsonPath)) {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-      const { resolveCommand, getNodeEnv } = require('../core/tool-path-finder');
-      
-      const nodeModulesPath = path.join(workspacePath, 'node_modules');
-      let installAttempt = 0;
-      const maxAttempts = 2;
-      
-      while (installAttempt < maxAttempts) {
-        installAttempt++;
-        try {
-          console.log(`[SpecializedAgent] 📦 Installing npm dependencies (attempt ${installAttempt}/${maxAttempts})...`);
-          
-          // Use tool-path-finder to resolve npm command and get proper environment
-          // CRITICAL: getNodeEnv() ensures child processes (like esbuild's postinstall) can find node.exe
-          const npmCommand = resolveCommand('npm install');
-          const env = getNodeEnv();
-          
-          console.log('[SpecializedAgent] Running:', npmCommand);
-          
-          const { stdout, stderr } = await execAsync(npmCommand, {
-            cwd: workspacePath,
-            timeout: 180000, // 3 minutes (longer for large projects)
-            env: env,
-            maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
-          });
-          
-          console.log('[SpecializedAgent] ✅ Dependencies installed successfully');
-          if (stdout) console.log(stdout.substring(0, 500));
-          outputs.push(stdout || stderr || 'npm install completed successfully');
-          break; // Success, exit loop
-          
-        } catch (error: any) {
-          console.warn(`[SpecializedAgent] ⚠️ Install attempt ${installAttempt} failed:`, error.message);
-          outputs.push(error.message || 'npm install failed');
-          
-          // If first attempt fails, try cleaning node_modules and retrying
-          if (installAttempt < maxAttempts && fs.existsSync(nodeModulesPath)) {
-            console.log('[SpecializedAgent] 🧹 Cleaning corrupted node_modules for retry...');
-            try {
-              fs.rmSync(nodeModulesPath, { recursive: true, force: true });
-              const lockPath = path.join(workspacePath, 'package-lock.json');
-              if (fs.existsSync(lockPath)) {
-                fs.unlinkSync(lockPath);
-              }
-              console.log('[SpecializedAgent] ✅ Cleaned up, retrying install...');
-            } catch (cleanError: any) {
-              console.warn('[SpecializedAgent] Could not clean node_modules:', cleanError.message);
-              break; // Can't clean, don't retry
-            }
-          }
-
-          if (installAttempt >= maxAttempts) {
-            return {
-              success: false,
-              output: outputs.join('\n\n')
-            };
-          }
-        }
-      }
+    const projectInfo = await ProjectRunner.detectProject(this.context.workspacePath);
+    if (!projectInfo.requiresInstall) {
+      return { success: true, output: 'No dependencies to install' };
     }
 
-    // Check for Python project
-    if (fs.existsSync(requirementsPath)) {
-      try {
-        console.log('[SpecializedAgent] 📦 Installing Python dependencies...');
-        const { exec } = require('child_process');
-        const { promisify } = require('util');
-        const execAsync = promisify(exec);
-        
-        // Use tool-path-finder to resolve python/pip command with proper environment
-        const { resolveCommand, getPythonEnv } = require('../core/tool-path-finder');
-        const pipCommand = resolveCommand('pip install -r requirements.txt');
-        const env = getPythonEnv();
-        
-        const { stdout, stderr } = await execAsync(pipCommand, {
-          cwd: workspacePath,
-          timeout: 180000, // 3 minutes
-          env: env,
-          maxBuffer: 10 * 1024 * 1024
-        });
-        
-        console.log('[SpecializedAgent] ✅ Python dependencies installed successfully');
-        if (stdout) console.log(stdout.substring(0, 500));
-        outputs.push(stdout || stderr || 'Python dependency installation completed successfully');
-      } catch (error: any) {
-        console.warn('[SpecializedAgent] ⚠️ Failed to install Python dependencies:', error.message);
-        outputs.push(error.message || 'Python dependency installation failed');
-        return {
-          success: false,
-          output: outputs.join('\n\n')
-        };
-      }
-    }
-
-    return {
-      success: true,
-      output: outputs.join('\n\n') || 'No dependencies to install'
-    };
+    return ProjectRunner.installDependencies(this.context.workspacePath, projectInfo);
   }
 
   private async buildProjectIfNeeded(): Promise<{ success: boolean; output: string }> {
-    const workspacePath = this.context.workspacePath;
-    const packageJsonPath = path.join(workspacePath, 'package.json');
-
-    if (!fs.existsSync(packageJsonPath)) {
-      return { success: true, output: 'No package.json found; skipping build' };
-    }
-
-    try {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-      if (!packageJson?.scripts?.build || typeof packageJson.scripts.build !== 'string') {
-        return { success: true, output: 'No build script configured; skipping build' };
-      }
-
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-      const { resolveCommand, getNodeEnv } = require('../core/tool-path-finder');
-      const buildCommand = resolveCommand('npm run build');
-      const env = getNodeEnv();
-
-      console.log('[SpecializedAgent] 🏗️ Running build verification...');
-      const { stdout, stderr } = await execAsync(buildCommand, {
-        cwd: workspacePath,
-        timeout: 300000,
-        env,
-        maxBuffer: 10 * 1024 * 1024
-      });
-
-      console.log('[SpecializedAgent] ✅ Build verification passed');
-      return {
-        success: true,
-        output: stdout + stderr
-      };
-    } catch (error: any) {
-      console.warn('[SpecializedAgent] ⚠️ Build verification failed:', error.message);
-      return {
-        success: false,
-        output: error.stderr || error.stdout || error.message || 'Build failed'
-      };
-    }
+    const projectInfo = await ProjectRunner.detectProject(this.context.workspacePath);
+    return ProjectRunner.runBuild(this.context.workspacePath, projectInfo);
   }
 }

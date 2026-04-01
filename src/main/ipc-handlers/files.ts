@@ -17,6 +17,29 @@ import {
 } from '../security/ipcValidation';
 import { completionOptimizer } from '../core/completion-optimizer';
 import { scheduleWorkspaceSymbolIndexRebuildForAgents } from '../search/symbol-index';
+import type { AgentReviewFinding } from '../../types/agent-review';
+
+function extractFilesFromIssue(summary: string): string[] {
+  const matches = summary.match(/[A-Za-z0-9_./-]+\.(tsx?|jsx?|py|json|html|css|md|yml|yaml|toml|rs|js)/g) || [];
+  return [...new Set(matches.map((match) => match.replace(/\\/g, '/')))];
+}
+
+function buildFinding(
+  stage: AgentReviewFinding['stage'],
+  severity: AgentReviewFinding['severity'],
+  summary: string,
+  command?: string,
+  output?: string
+): AgentReviewFinding {
+  return {
+    stage,
+    severity,
+    summary,
+    files: extractFilesFromIssue(summary),
+    command,
+    output,
+  };
+}
 
 /**
  * Build directory tree recursively
@@ -191,72 +214,58 @@ export function register(deps: FileHandlersDeps): void {
   ipcMain.handle('file:launch-project', async (event, projectPath: string) => {
     try {
       const { ProjectRunner } = require('../agent/tools/projectRunner');
-      const projectInfo = await ProjectRunner.detectProject(projectPath);
-      
-      if (projectInfo.type === 'unknown') {
-        return { success: false, error: 'Could not detect project type' };
-      }
-
-      // For HTML projects, open index.html in browser
-      if (projectInfo.type === 'html' || projectInfo.hasIndexHtml) {
-        const indexHtmlPath = path.join(projectPath, 'index.html');
-        if (fs.existsSync(indexHtmlPath)) {
-          const { shell } = require('electron');
-          // Convert Windows path to file:// URL
-          const fileUrl = indexHtmlPath.replace(/\\/g, '/');
-          shell.openExternal(`file:///${fileUrl}`);
-          return { success: true, message: 'Opened index.html in browser' };
-        }
-      }
-
-      // For Node.js projects, install deps if needed and run
-      if (projectInfo.type === 'node' && projectInfo.startCommand) {
-        // Check if node_modules exists
-        const nodeModulesPath = path.join(projectPath, 'node_modules');
-        if (!fs.existsSync(nodeModulesPath)) {
-          // Install dependencies first with proper PATH for child processes
-          const { exec } = require('child_process');
-          const { resolveCommand, getNodeEnv } = require('../core/tool-path-finder');
-          const npmCommand = resolveCommand('npm install');
-          const env = getNodeEnv();
-          
-          return new Promise((resolve) => {
-            exec(npmCommand, { cwd: projectPath, env, timeout: 180000 }, (error: any) => {
-              if (error) {
-                resolve({ success: false, error: `Failed to install dependencies: ${error.message}` });
-                return;
-              }
-              
-              // Now run the project
-              const runResult = ProjectRunner.runProject(projectPath, projectInfo);
-              runResult.then((result: any) => {
-                if (result.success && result.port) {
-                  const url = `http://localhost:${result.port}`;
-                  const { shell } = require('electron');
-                  setTimeout(() => shell.openExternal(url), 2000);
-                  resolve({ success: true, message: `Project started on port ${result.port}`, url });
-                } else {
-                  resolve({ success: result.success, message: result.output, error: result.output });
-                }
-              });
-            });
-          });
-        } else {
-          // Dependencies already installed, just run
-          const result = await ProjectRunner.runProject(projectPath, projectInfo);
-          if (result.success && result.port) {
-            const url = `http://localhost:${result.port}`;
-            const { shell } = require('electron');
-            setTimeout(() => shell.openExternal(url), 2000);
-            return { success: true, message: `Project started on port ${result.port}`, url };
-          }
-          return { success: result.success, message: result.output, error: result.output };
-        }
-      }
-
-      return { success: false, error: 'Project type not supported for auto-launch' };
+      const result = await ProjectRunner.launchProject(projectPath);
+      return result.success
+        ? { success: true, message: result.message, url: result.url }
+        : { success: false, message: result.message, url: result.url, error: result.error || result.message };
     } catch (error: any) {
       return { success: false, error: error.message || 'Failed to launch project' };
+    }
+  });
+
+  ipcMain.handle('file:verify-project', async (event, projectPath: string) => {
+    try {
+      const { ProjectRunner } = require('../agent/tools/projectRunner');
+      const result = await ProjectRunner.autoRun(projectPath);
+      const findings: AgentReviewFinding[] = [
+        ...result.validation.issues.map((issue: string) =>
+          buildFinding('validation', 'error', issue)
+        ),
+        ...(result.installResult && !result.installResult.success
+          ? [buildFinding('install', 'error', `Install failed: ${result.installResult.output}`, result.projectInfo.installCommand, result.installResult.output)]
+          : []),
+        ...(result.buildResult && !result.buildResult.success
+          ? [buildFinding('build', 'error', `Build failed: ${result.buildResult.output}`, result.projectInfo.buildCommand, result.buildResult.output)]
+          : []),
+        ...(result.runResult && !result.runResult.success
+          ? [buildFinding('run', 'error', `Run failed: ${result.runResult.output}`, result.projectInfo.startCommand, result.runResult.output)]
+          : []),
+      ];
+      const issues = findings.map((finding) => finding.summary);
+
+      return {
+        success: result.success,
+        projectKind: result.projectInfo.kind,
+        projectTypeLabel: result.projectInfo.displayName,
+        startCommand: result.projectInfo.startCommand,
+        buildCommand: result.projectInfo.buildCommand,
+        installCommand: result.projectInfo.installCommand,
+        readinessSummary: result.projectInfo.readinessSummary,
+        url: result.runResult?.url,
+        issues,
+        findings,
+        installResult: result.installResult,
+        buildResult: result.buildResult,
+        runResult: result.runResult,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        projectKind: 'unknown',
+        projectTypeLabel: 'Unknown Project',
+        issues: [error.message || 'Verification failed'],
+        findings: [buildFinding('unknown', 'error', error.message || 'Verification failed')],
+      };
     }
   });
 

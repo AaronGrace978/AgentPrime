@@ -33,6 +33,32 @@ describe('specialist-aware tool validation', () => {
     expect(result.error).toContain('outside its writable scope');
   });
 
+  it('allows styling specialist to edit CSS but not backend files', () => {
+    const allowed = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/styles/app.css', content: '.app { color: white; }' },
+      },
+      workspacePath,
+      'Polish the dashboard UI',
+      { specialist: 'styling_ux_specialist' }
+    );
+
+    const blocked = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'backend/app.py', content: 'print("nope")' },
+      },
+      workspacePath,
+      'Polish the dashboard UI',
+      { specialist: 'styling_ux_specialist' }
+    );
+
+    expect(allowed.valid).toBe(true);
+    expect(blocked.valid).toBe(false);
+    expect(blocked.error).toContain('outside its writable scope');
+  });
+
   it('allows pipeline specialist to run bounded build commands', () => {
     const result = validateToolCall(
       {
@@ -60,6 +86,20 @@ describe('specialist-aware tool validation', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('allowed command set');
+  });
+
+  it('allows testing specialist to run bounded playwright commands', () => {
+    const result = validateToolCall(
+      {
+        name: 'run_command',
+        arguments: { command: 'playwright test tests/e2e/app.spec.js' },
+      },
+      workspacePath,
+      'Add a happy path browser test',
+      { specialist: 'testing_specialist' }
+    );
+
+    expect(result.valid).toBe(true);
   });
 
   it('keeps the orchestrator inside assigned file claims', () => {

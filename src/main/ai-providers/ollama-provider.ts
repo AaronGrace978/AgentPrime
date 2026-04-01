@@ -170,6 +170,53 @@ export class OllamaProvider extends BaseProvider {
     return Math.min(computed, isCloudModel ? 900000 : 300000);
   }
 
+  private resolveRequestContext(model: string, maxTokens: number, streaming: boolean): {
+    baseUrl: string;
+    isCloudModel: boolean;
+    isLocal: boolean;
+    isDirectApi: boolean;
+    apiModel: string;
+    requestUrl: string;
+    timeout: number;
+  } {
+    const isCloudModelByName = isOllamaCloudModel(model);
+    let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
+    if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
+      baseUrl = model.toLowerCase().includes('deepseek') ? 'https://ollama.deepseek.com' : 'https://ollama.com';
+      console.log(`[Ollama] Runtime URL override: cloud model '${model}' → ${baseUrl}`);
+    }
+
+    const isCloudModel = isCloudModelByName || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
+    const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
+    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
+    const apiModel = this.resolveModelName(model, isDirectApi);
+    const requestUrl = `${baseUrl}/api/chat`;
+    const timeout = this.getRequestTimeoutMs(model, maxTokens, streaming, isCloudModel);
+
+    return {
+      baseUrl,
+      isCloudModel,
+      isLocal,
+      isDirectApi,
+      apiModel,
+      requestUrl,
+      timeout,
+    };
+  }
+
+  private annotateServedBy(result: ChatResult, model: string): ChatResult {
+    return {
+      ...result,
+      servedBy: {
+        provider: 'ollama',
+        model,
+        requestedProvider: 'ollama',
+        requestedModel: model,
+        viaFallback: false,
+      },
+    };
+  }
+
   /**
    * Quick health check - is Ollama running?
    */
@@ -273,26 +320,15 @@ export class OllamaProvider extends BaseProvider {
 
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
-    const isCloudModelByName = isOllamaCloudModel(model);
-    // Runtime URL override: if model is cloud but baseUrl is local, fix it
-    let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
-    if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
-      baseUrl = model.toLowerCase().includes('deepseek') ? 'https://ollama.deepseek.com' : 'https://ollama.com';
-      console.log(`[Ollama] Runtime URL override: cloud model '${model}' → ${baseUrl}`);
-    }
-    const isCloudModel = isCloudModelByName || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
-    const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
-    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
-    // Resolve model name: direct API calls to ollama.com need suffix stripped
-    const apiModel = this.resolveModelName(model, isDirectApi);
-    
     const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
-    const timeout = this.getRequestTimeoutMs(model, maxTokens, false, isCloudModel);
-    
-    const requestUrl = `${baseUrl}/api/chat`;
+    const { baseUrl, isCloudModel, isLocal, apiModel, requestUrl, timeout } = this.resolveRequestContext(
+      model,
+      maxTokens,
+      false
+    );
     console.log(`[Ollama] Chat with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
     console.log(`[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}`);
-    console.log(`[Ollama] API Key present: ${!!this.apiKey}, baseUrl: ${this.baseUrl}`);
+    console.log(`[Ollama] API Key present: ${!!this.apiKey}, baseUrl: ${baseUrl}`);
     
     try {
       const response = await axios.post(requestUrl, {
@@ -308,14 +344,14 @@ export class OllamaProvider extends BaseProvider {
         timeout: timeout
       });
 
-      return {
+      return this.annotateServedBy({
         success: true,
         content: response.data?.message?.content || '',
         usage: {
           promptTokens: response.data?.prompt_eval_count,
           completionTokens: response.data?.eval_count
         }
-      };
+      }, apiModel);
     } catch (e: any) {
       // Log detailed error info for debugging
       console.error(`[Ollama] Request failed:`, {
@@ -406,21 +442,12 @@ export class OllamaProvider extends BaseProvider {
 
   async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
-    const isCloudModelByName = isOllamaCloudModel(model);
-    // Runtime URL override: if model is cloud but baseUrl is local, fix it
-    let baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
-    if (isCloudModelByName && (baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost'))) {
-      baseUrl = model.toLowerCase().includes('deepseek') ? 'https://ollama.deepseek.com' : 'https://ollama.com';
-      console.log(`[Ollama] Runtime URL override: cloud model '${model}' → ${baseUrl}`);
-    }
-    const isCloudModel = isCloudModelByName || baseUrl.includes('api.ollama.com') || baseUrl.includes('ollama.com');
-    const isLocal = baseUrl.includes('127.0.0.1') || baseUrl.includes('localhost');
-    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
-    // Resolve model name: direct API calls to ollama.com need suffix stripped
-    const apiModel = this.resolveModelName(model, isDirectApi);
-    const requestUrl = `${baseUrl}/api/chat`;
     const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
-    const timeout = this.getRequestTimeoutMs(model, maxTokens, true, isCloudModel);
+    const { isCloudModel, isLocal, apiModel, requestUrl, timeout } = this.resolveRequestContext(
+      model,
+      maxTokens,
+      true
+    );
     
     console.log(`[Ollama] Stream with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
     console.log(`[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}, API Key present: ${!!this.apiKey}`);
@@ -440,27 +467,45 @@ export class OllamaProvider extends BaseProvider {
       });
 
       let fullContent = '';
+      let lineBuffer = '';
 
       return new Promise((resolve, reject) => {
         (response.data as Readable).on('data', (chunk: Buffer) => {
-          const lines = chunk.toString().split('\n').filter((l: string) => l.trim());
-          for (const line of lines) {
+          lineBuffer += chunk.toString();
+          const parts = lineBuffer.split('\n');
+          // Keep the last (possibly incomplete) segment in the buffer
+          lineBuffer = parts.pop() || '';
+          for (const line of parts) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
             try {
-              const data = JSON.parse(line);
+              const data = JSON.parse(trimmed);
               if (data.message?.content) {
                 fullContent += data.message.content;
                 onChunk({
                   content: data.message.content,
                   done: data.done || false
                 });
+              } else if (data.done) {
+                onChunk({ content: '', done: true });
               }
             } catch (e) {
-              // Skip invalid JSON
+              // Partial JSON from a split line — will be completed with next chunk
             }
           }
         });
 
         (response.data as Readable).on('end', () => {
+          // Flush any remaining data in the buffer
+          if (lineBuffer.trim()) {
+            try {
+              const data = JSON.parse(lineBuffer.trim());
+              if (data.message?.content) {
+                fullContent += data.message.content;
+                onChunk({ content: data.message.content, done: data.done || false });
+              }
+            } catch { /* ignore trailing fragment */ }
+          }
           resolve();
         });
 
@@ -549,16 +594,12 @@ export class OllamaProvider extends BaseProvider {
 
   async complete(prompt: string, options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'llama3.2') as string;
-    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
-    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
-    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 100;
-    
-    // Adaptive timeout for completions (faster than chat)
-    const timeout = Math.max(5000, maxTokens * 50); // ~50ms per token, min 5s
+    const { baseUrl, isCloudModel, isLocal, apiModel } = this.resolveRequestContext(model, maxTokens, false);
+    const timeout = Math.max(5000, Math.min(this.getRequestTimeoutMs(model, maxTokens, false, isCloudModel), maxTokens * 75));
 
     try {
-      const response = await axios.post(`${this.baseUrl}/api/generate`, {
+      const response = await axios.post(`${baseUrl}/api/generate`, {
         model: apiModel,
         prompt,
         stream: false,
@@ -572,15 +613,23 @@ export class OllamaProvider extends BaseProvider {
         timeout: timeout
       });
 
-      return {
+      return this.annotateServedBy({
         success: true,
         content: response.data?.response || ''
-      };
+      }, apiModel);
     } catch (e: any) {
       if (e.code === 'ECONNREFUSED') {
         return {
           success: false,
           error: '❌ Ollama not running!'
+        };
+      }
+      if (e.response?.status === 404) {
+        return {
+          success: false,
+          error: isLocal
+            ? `Model '${model}' not found. Pull it with: ollama pull ${model}`
+            : `Model '${model}' not found. Check your Ollama Cloud configuration.`
         };
       }
       return {
@@ -600,15 +649,11 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'llama3.2') as string;
-    const baseUrl = this.baseUrl || 'http://127.0.0.1:11434';
-    const isDirectApi = baseUrl.includes('ollama.com') && !baseUrl.includes('127.0.0.1');
-    const isCloudModel = isOllamaCloudModel(model) || baseUrl.includes('ollama.com');
-    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
-    const timeout = this.getRequestTimeoutMs(model, maxTokens, true, isCloudModel);
+    const { baseUrl, apiModel, timeout } = this.resolveRequestContext(model, maxTokens, true);
     
     try {
-      const response = await axios.post(`${this.baseUrl}/api/chat`, {
+      const response = await axios.post(`${baseUrl}/api/chat`, {
         model: apiModel,
         messages: this.formatMessages(messages),
         stream: true,
@@ -625,13 +670,18 @@ export class OllamaProvider extends BaseProvider {
       let fullContent = '';
       let promptTokens = 0;
       let completionTokens = 0;
+      let chatStreamBuf = '';
 
       return new Promise((resolve, reject) => {
         (response.data as Readable).on('data', (chunk: Buffer) => {
-          const lines = chunk.toString().split('\n').filter((l: string) => l.trim());
-          for (const line of lines) {
+          chatStreamBuf += chunk.toString();
+          const parts = chatStreamBuf.split('\n');
+          chatStreamBuf = parts.pop() || '';
+          for (const part of parts) {
+            const trimmed = part.trim();
+            if (!trimmed) continue;
             try {
-              const data = JSON.parse(line);
+              const data = JSON.parse(trimmed);
               if (data.message?.content) {
                 fullContent += data.message.content;
                 onChunk(data.message.content, data.done || false);
@@ -639,17 +689,28 @@ export class OllamaProvider extends BaseProvider {
               if (data.prompt_eval_count) promptTokens = data.prompt_eval_count;
               if (data.eval_count) completionTokens = data.eval_count;
             } catch {
-              // Skip invalid JSON
+              // Partial JSON — next chunk will complete it
             }
           }
         });
 
         (response.data as Readable).on('end', () => {
-          resolve({
+          if (chatStreamBuf.trim()) {
+            try {
+              const data = JSON.parse(chatStreamBuf.trim());
+              if (data.message?.content) {
+                fullContent += data.message.content;
+                onChunk(data.message.content, data.done || false);
+              }
+              if (data.prompt_eval_count) promptTokens = data.prompt_eval_count;
+              if (data.eval_count) completionTokens = data.eval_count;
+            } catch { /* ignore trailing fragment */ }
+          }
+          resolve(this.annotateServedBy({
             success: true,
             content: fullContent,
             usage: { promptTokens, completionTokens }
-          });
+          }, apiModel));
         });
 
         (response.data as Readable).on('error', (err: Error) => {
@@ -901,10 +962,13 @@ export class OllamaProvider extends BaseProvider {
         responseType: 'stream'
       });
 
+      let sseBuf = '';
       return new Promise((resolve, reject) => {
         (response.data as Readable).on('data', (chunk: Buffer) => {
-          const lines = chunk.toString().split('\n');
-          for (const line of lines) {
+          sseBuf += chunk.toString();
+          const parts = sseBuf.split('\n');
+          sseBuf = parts.pop() || '';
+          for (const line of parts) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
@@ -917,7 +981,7 @@ export class OllamaProvider extends BaseProvider {
                   onChunk({ content: '', done: true });
                 }
               } catch {
-                // Skip invalid JSON
+                // Partial JSON — next chunk will complete it
               }
             }
           }

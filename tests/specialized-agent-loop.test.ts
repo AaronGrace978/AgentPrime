@@ -85,6 +85,24 @@ describe('SpecializedAgentLoop verification', () => {
     expect(verification.missingFiles).toContain('src/main.tsx');
   });
 
+  it('flags static sites that are missing index.html even when package.json exists', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-static-missing-index-');
+    fs.mkdirSync(path.join(workspacePath, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'cookie-site',
+      scripts: { dev: 'npx serve', start: 'npx serve' }
+    }, null, 2));
+    fs.writeFileSync(path.join(workspacePath, 'src/styles.css'), 'body { color: #432; }');
+    fs.writeFileSync(path.join(workspacePath, 'src/script.js'), "console.log('cookies');");
+
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+    const verification = await (loop as any).verifyProject(['package.json', 'src/styles.css', 'src/script.js']);
+
+    expect(verification.isComplete).toBe(false);
+    expect(verification.errors).toContain('Static website is missing index.html entrypoint');
+    expect(verification.missingFiles).toContain('index.html');
+  });
+
   it('collects created files from direct, wrapped, and scaffold tool shapes', () => {
     const workspacePath = createTempDir('agentprime-specialized-created-files-');
     const loop = new SpecializedAgentLoop({ workspacePath } as any);
@@ -135,6 +153,26 @@ describe('SpecializedAgentLoop verification', () => {
 
     expect(response).toContain('### ↩️ Changes Reverted');
     expect(response).toContain('rolled back the generated changes');
+  });
+
+  it('does not tell zero-dependency static starters to run npm install', () => {
+    const workspacePath = createTempDir('agentprime-specialized-static-response-');
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'cookie-site',
+      scripts: { dev: 'npx serve', start: 'npx serve' }
+    }, null, 2));
+    fs.writeFileSync(path.join(workspacePath, 'index.html'), '<!doctype html><title>Cookies</title>');
+
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+    const response = (loop as any).buildResponse([], {
+      isComplete: true,
+      missingFiles: [],
+      errors: [],
+      createdFiles: []
+    });
+
+    expect(response).toContain('No Dependency Install Needed');
+    expect(response).not.toContain('Run `npm install`');
   });
 });
 
@@ -194,6 +232,30 @@ describe('Project documentation and runner commands', () => {
     expect(log).not.toContain('npm start');
   });
 
+  it('documents zero-dependency static sites without npm install', () => {
+    const workspacePath = createTempDir('agentprime-project-docs-static-');
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'cookie-site',
+      scripts: { dev: 'npx serve', start: 'npx serve' }
+    }, null, 2));
+    fs.writeFileSync(path.join(workspacePath, 'index.html'), '<!doctype html><title>Cookies</title>');
+
+    const log = ProjectDocumenter.generateProjectLog({
+      projectPath: workspacePath,
+      projectName: 'cookie-site',
+      description: 'Static cookie site',
+      files: ['package.json', 'index.html', 'src/styles.css', 'src/script.js'],
+      technologies: ['JavaScript', 'CSS', 'HTML'],
+      buildHistory: [],
+      originalPrompt: 'Build a cookies website',
+      isUpdate: false
+    });
+
+    expect(log).toContain('No package install is required');
+    expect(log).toContain('npm run dev');
+    expect(log).not.toContain('npm install');
+  });
+
   it('prefers npm run dev for bundler projects', async () => {
     const workspacePath = createTempDir('agentprime-project-runner-');
     fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
@@ -206,6 +268,22 @@ describe('Project documentation and runner commands', () => {
     const projectInfo = await ProjectRunner.detectProject(workspacePath);
 
     expect(projectInfo.startCommand).toBe('npm run dev');
+  });
+
+  it('creates node run scripts without forced install when no dependencies are declared', async () => {
+    const workspacePath = createTempDir('agentprime-project-runner-static-');
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'cookie-site',
+      scripts: { start: 'npx serve' }
+    }, null, 2));
+
+    const projectInfo = await ProjectRunner.detectProject(workspacePath);
+    const batResult = ProjectRunner.createNodeBatchFile(workspacePath, projectInfo);
+
+    expect(batResult.success).toBe(true);
+    const batContent = fs.readFileSync(path.join(workspacePath, 'run.bat'), 'utf-8');
+    expect(batContent).toContain('No package dependencies declared; skipping npm install.');
+    expect(batContent).not.toContain('call "%NPM_EXE%" install');
   });
 
   it('verifies build scripts before reporting success', async () => {

@@ -83,7 +83,7 @@ function loadManifest(opusPath: string): OpusManifest | null {
 /**
  * Extract keywords from a task description
  */
-function extractTaskKeywords(task: string): string[] {
+export function extractTaskKeywords(task: string): string[] {
   const taskLower = task.toLowerCase();
   
   // Common keywords to look for
@@ -98,7 +98,10 @@ function extractTaskKeywords(task: string): string[] {
   if (taskLower.includes('fastapi')) keywords.push('fastapi');
   if (taskLower.includes('python')) keywords.push('python');
   if (taskLower.includes('typescript') || taskLower.includes(' ts ')) keywords.push('typescript');
-  if (taskLower.includes('electron')) keywords.push('electron');
+  if (taskLower.includes('three.js') || taskLower.includes('threejs') || taskLower.includes('webgl')) keywords.push('threejs');
+  const mentionsElectron = taskLower.includes('electron');
+  const excludesElectron = /\b(?:not|no|without)\s+electron\b/.test(taskLower);
+  if (mentionsElectron && !excludesElectron) keywords.push('electron');
   if (taskLower.includes('api')) keywords.push('api');
   if (taskLower.includes('game')) keywords.push('game');
   if (taskLower.includes('phaser')) keywords.push('phaser');

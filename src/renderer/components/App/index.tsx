@@ -48,6 +48,12 @@ const DeployPanel = React.lazy(() => import('../DeployPanel'));
 const InlineEditDialog = React.lazy(() => import('../InlineEditDialog'));
 const MultiFileDiffReview = React.lazy(() => import('../MultiFileDiffReview'));
 import type { FileChange as ReviewFileChange } from '../MultiFileDiffReview';
+import type { AgentReviewSessionSnapshot } from '../../../types/agent-review';
+import {
+  buildRepairPrompt,
+  shouldAutoVerifyReviewChanges,
+  type ReviewVerificationState,
+} from './reviewFlow';
 
 import { OpenFile, FileItem, Command } from './types';
 import {
@@ -127,7 +133,13 @@ function App() {
   const [inlineEditRequest, setInlineEditRequest] = useState<any>(null);
   const [inlineEditProcessing, setInlineEditProcessing] = useState(false);
   const [agentReviewChanges, setAgentReviewChanges] = useState<ReviewFileChange[]>([]);
+  const [agentReviewSessionId, setAgentReviewSessionId] = useState<string | undefined>();
+  const [agentReviewApplied, setAgentReviewApplied] = useState(false);
   const [agentReviewTask, setAgentReviewTask] = useState<string>('');
+  const [agentReviewVerification, setAgentReviewVerification] = useState<ReviewVerificationState>({
+    status: 'idle',
+    issues: [],
+  });
   const [codeIssues] = useState<any[]>([]);
   const [appSettings, setAppSettings] = useState<any>({
     theme: 'dark',
@@ -294,6 +306,30 @@ function App() {
     }
   }, [setOpenFiles]);
 
+  const applyReviewSessionSnapshot = useCallback((snapshot?: AgentReviewSessionSnapshot) => {
+    if (!snapshot) return;
+    setAgentReviewSessionId(snapshot.sessionId);
+    setAgentReviewApplied(Boolean(snapshot.appliedAt));
+    setAgentReviewChanges(snapshot.changes);
+  }, []);
+
+  const clearAgentReviewState = useCallback(async (discardSession: boolean = false) => {
+    const sessionId = agentReviewSessionId;
+    if (discardSession && sessionId) {
+      try {
+        await window.agentAPI.discardAgentReview(sessionId);
+      } catch (error) {
+        console.warn('Failed to discard staged review session:', error);
+      }
+    }
+
+    setAgentReviewSessionId(undefined);
+    setAgentReviewApplied(false);
+    setAgentReviewChanges([]);
+    setAgentReviewTask('');
+    setAgentReviewVerification({ status: 'idle', issues: [] });
+  }, [agentReviewSessionId]);
+
   const applyRejectedChange = useCallback(async (change: ReviewFileChange) => {
     if (change.action === 'created') {
       await window.agentAPI.deleteItem(change.filePath);
@@ -303,59 +339,256 @@ function App() {
     await syncOpenFileFromDisk(change.filePath);
   }, [syncOpenFileFromDisk]);
 
-  const handleAcceptReviewFile = useCallback((filePath: string) => {
-    setAgentReviewChanges((prev) =>
-      prev.map((change) =>
-        change.filePath === filePath ? { ...change, status: 'accepted' } : change
-      )
-    );
-  }, []);
+  const handleAcceptReviewFile = useCallback(async (filePath: string) => {
+    setAgentReviewVerification({ status: 'idle', issues: [] });
+
+    if (!agentReviewSessionId) {
+      setAgentReviewChanges((prev) =>
+        prev.map((change) =>
+          change.filePath === filePath ? { ...change, status: 'accepted' } : change
+        )
+      );
+      return;
+    }
+
+    const result = await window.agentAPI.updateAgentReviewStatus(agentReviewSessionId, filePath, 'accepted');
+    if (!result?.success || !result.session) {
+      toast.error('Review Update Failed', result?.error || filePath);
+      return;
+    }
+
+    applyReviewSessionSnapshot(result.session);
+  }, [agentReviewSessionId, applyReviewSessionSnapshot, toast]);
 
   const handleRejectReviewFile = useCallback(async (filePath: string) => {
     const target = agentReviewChanges.find((change) => change.filePath === filePath);
     if (!target) return;
 
     try {
-      await applyRejectedChange(target);
-      setAgentReviewChanges((prev) =>
-        prev.map((change) =>
-          change.filePath === filePath ? { ...change, status: 'rejected' } : change
-        )
-      );
-      if (currentPath) {
-        await loadDirectory(currentPath);
-      }
-      toast.success('Change Reverted', filePath);
-    } catch (error: any) {
-      toast.error('Failed to Revert Change', error?.message || filePath);
-    }
-  }, [agentReviewChanges, applyRejectedChange, currentPath, loadDirectory, toast]);
+      setAgentReviewVerification({ status: 'idle', issues: [] });
 
-  const handleAcceptAllReviewFiles = useCallback(() => {
-    setAgentReviewChanges((prev) =>
-      prev.map((change) => (change.status === 'pending' ? { ...change, status: 'accepted' } : change))
-    );
-  }, []);
+      if (!agentReviewSessionId) {
+        await applyRejectedChange(target);
+        setAgentReviewChanges((prev) =>
+          prev.map((change) =>
+            change.filePath === filePath ? { ...change, status: 'rejected' } : change
+          )
+        );
+        if (currentPath) {
+          await loadDirectory(currentPath);
+        }
+        toast.success('Change Reverted', filePath);
+        return;
+      }
+
+      const result = await window.agentAPI.updateAgentReviewStatus(agentReviewSessionId, filePath, 'rejected');
+      if (!result?.success || !result.session) {
+        toast.error('Review Update Failed', result?.error || filePath);
+        return;
+      }
+
+      applyReviewSessionSnapshot(result.session);
+      toast.success('Change Rejected', filePath);
+    } catch (error: any) {
+      toast.error(agentReviewSessionId ? 'Failed to Reject Change' : 'Failed to Revert Change', error?.message || filePath);
+    }
+  }, [agentReviewChanges, agentReviewSessionId, applyRejectedChange, applyReviewSessionSnapshot, currentPath, loadDirectory, toast]);
+
+  const handleAcceptAllReviewFiles = useCallback(async () => {
+    setAgentReviewVerification({ status: 'idle', issues: [] });
+
+    if (!agentReviewSessionId) {
+      setAgentReviewChanges((prev) =>
+        prev.map((change) => (change.status === 'pending' ? { ...change, status: 'accepted' } : change))
+      );
+      return;
+    }
+
+    const result = await window.agentAPI.updatePendingAgentReviewStatuses(agentReviewSessionId, 'accepted');
+    if (!result?.success || !result.session) {
+      toast.error('Review Update Failed', result?.error || 'Could not accept pending changes');
+      return;
+    }
+
+    applyReviewSessionSnapshot(result.session);
+  }, [agentReviewSessionId, applyReviewSessionSnapshot, toast]);
 
   const handleRejectAllReviewFiles = useCallback(async () => {
     const pendingChanges = agentReviewChanges.filter((change) => change.status === 'pending');
     if (pendingChanges.length === 0) return;
 
     try {
-      for (const change of pendingChanges) {
-        await applyRejectedChange(change);
+      setAgentReviewVerification({ status: 'idle', issues: [] });
+
+      if (!agentReviewSessionId) {
+        for (const change of pendingChanges) {
+          await applyRejectedChange(change);
+        }
+        setAgentReviewChanges((prev) =>
+          prev.map((change) => (change.status === 'pending' ? { ...change, status: 'rejected' } : change))
+        );
+        if (currentPath) {
+          await loadDirectory(currentPath);
+        }
+        toast.success('Changes Reverted', `${pendingChanges.length} file(s) restored`);
+        return;
       }
-      setAgentReviewChanges((prev) =>
-        prev.map((change) => (change.status === 'pending' ? { ...change, status: 'rejected' } : change))
-      );
-      if (currentPath) {
-        await loadDirectory(currentPath);
+
+      const result = await window.agentAPI.updatePendingAgentReviewStatuses(agentReviewSessionId, 'rejected');
+      if (!result?.success || !result.session) {
+        toast.error('Review Update Failed', result?.error || 'Could not reject pending changes');
+        return;
       }
-      toast.success('Changes Reverted', `${pendingChanges.length} file(s) restored`);
+
+      applyReviewSessionSnapshot(result.session);
+      toast.success('Changes Rejected', `${pendingChanges.length} file(s) marked rejected`);
     } catch (error: any) {
-      toast.error('Bulk Revert Failed', error?.message || 'Could not revert all pending files');
+      toast.error(agentReviewSessionId ? 'Bulk Reject Failed' : 'Bulk Revert Failed', error?.message || 'Could not reject all pending files');
     }
-  }, [agentReviewChanges, applyRejectedChange, currentPath, loadDirectory, toast]);
+  }, [agentReviewChanges, agentReviewSessionId, applyRejectedChange, applyReviewSessionSnapshot, currentPath, loadDirectory, toast]);
+
+  const handleApplyReviewChanges = useCallback(async () => {
+    if (!agentReviewSessionId) {
+      return;
+    }
+
+    const acceptedChanges = agentReviewChanges.filter((change) => change.status === 'accepted');
+    if (acceptedChanges.length === 0) {
+      toast.error('Nothing to Apply', 'Accept at least one staged change before applying.');
+      return;
+    }
+
+    setAgentReviewVerification({ status: 'idle', issues: [] });
+
+    const result = await window.agentAPI.applyAgentReview(agentReviewSessionId);
+    if (!result?.success || !result.session) {
+      toast.error('Apply Failed', result?.error || 'Could not apply staged changes.');
+      return;
+    }
+
+    applyReviewSessionSnapshot(result.session);
+
+    for (const change of acceptedChanges) {
+      await syncOpenFileFromDisk(change.filePath);
+    }
+
+    if (currentPath) {
+      await loadDirectory(currentPath);
+    }
+
+    toast.success('Changes Applied', `${acceptedChanges.length} file(s) written to the workspace`);
+  }, [agentReviewChanges, agentReviewSessionId, applyReviewSessionSnapshot, currentPath, loadDirectory, syncOpenFileFromDisk, toast]);
+
+  const handleVerifyReviewedProject = useCallback(async () => {
+    if (!agentReviewApplied) {
+      toast.error('Verification Unavailable', 'Apply accepted changes before verifying the project.');
+      return;
+    }
+
+    if (!currentPath) {
+      toast.error('Verification Failed', 'Open a workspace before verifying changes.');
+      return;
+    }
+
+    setAgentReviewVerification((prev) => ({
+      ...prev,
+      status: 'verifying',
+      issues: [],
+    }));
+
+    try {
+      const result = await window.agentAPI.verifyProject(currentPath);
+      const nextState: ReviewVerificationState = {
+        status: result.success ? 'passed' : 'failed',
+        projectTypeLabel: result.projectTypeLabel,
+        readinessSummary: result.readinessSummary,
+        startCommand: result.startCommand,
+        buildCommand: result.buildCommand,
+        installCommand: result.installCommand,
+        url: result.url,
+        issues: Array.isArray(result.issues) ? result.issues : [],
+        findings: Array.isArray(result.findings) ? result.findings : [],
+      };
+      setAgentReviewVerification(nextState);
+
+      if (result.success) {
+        toast.success('Verification Passed', result.projectTypeLabel || 'Accepted changes are runnable.');
+      } else {
+        toast.error('Verification Failed', (nextState.issues[0] || result.readinessSummary || 'Accepted changes need repair.'));
+      }
+    } catch (error: any) {
+      const message = error?.message || 'Verification failed';
+      setAgentReviewVerification({
+        status: 'failed',
+        issues: [message],
+      });
+      toast.error('Verification Failed', message);
+    }
+  }, [agentReviewApplied, currentPath, toast]);
+
+  const handleRunReviewedProject = useCallback(async () => {
+    if (!agentReviewApplied) {
+      toast.error('Run Unavailable', 'Apply accepted changes before running the project.');
+      return;
+    }
+
+    if (!currentPath) {
+      toast.error('Run Failed', 'Open a workspace before running the project.');
+      return;
+    }
+
+    try {
+      const result = await window.agentAPI.launchProject(currentPath);
+      if (!result?.success) {
+        throw new Error(result?.error || result?.message || 'Run failed');
+      }
+      if (result.url && /^(https?|file):\/\//.test(result.url)) {
+        setLivePreviewUrl(result.url);
+        setLivePreviewOpen(true);
+      }
+      toast.success('Project Running', result.message || 'Project launched successfully.');
+    } catch (error: any) {
+      toast.error('Run Failed', error?.message || 'Could not launch the project.');
+    }
+  }, [agentReviewApplied, currentPath, toast]);
+
+  const handleRepairReviewedProject = useCallback(() => {
+    if (!agentReviewApplied) {
+      toast.error('Repair Unavailable', 'Apply accepted changes before starting a repair pass.');
+      return;
+    }
+
+    const acceptedFiles = agentReviewChanges
+      .filter((change) => change.status === 'accepted')
+      .map((change) => change.filePath);
+    const rejectedFiles = agentReviewChanges
+      .filter((change) => change.status === 'rejected')
+      .map((change) => change.filePath);
+    const findingFiles = new Set((agentReviewVerification.findings || []).flatMap((finding) => finding.files));
+    const targetedAcceptedFiles = findingFiles.size > 0
+      ? acceptedFiles.filter((filePath) => findingFiles.has(filePath))
+      : acceptedFiles;
+    const prompt = buildRepairPrompt(agentReviewTask, agentReviewVerification, targetedAcceptedFiles, rejectedFiles);
+    setComposerOpen(true);
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('agentprime:repair-scope', {
+        detail: {
+          allowedFiles: targetedAcceptedFiles,
+          blockedFiles: rejectedFiles,
+          findings: agentReviewVerification.findings || [],
+        }
+      }));
+      window.dispatchEvent(new CustomEvent('agentprime:prefill-message', {
+        detail: prompt
+      }));
+    }, 200);
+  }, [agentReviewApplied, agentReviewChanges, agentReviewTask, agentReviewVerification, toast]);
+
+  useEffect(() => {
+    if (shouldAutoVerifyReviewChanges(agentReviewChanges, agentReviewVerification, agentReviewApplied)) {
+      void handleVerifyReviewedProject();
+    }
+  }, [agentReviewApplied, agentReviewChanges, agentReviewVerification, handleVerifyReviewedProject]);
 
   // Listen for Cmd+K inline edit events from Monaco
   useEffect(() => {
@@ -872,11 +1105,17 @@ function App() {
                     }
                     handleContentChange(code);
                   }}
-                  onAgentChangesReady={(changes, taskDescription) => {
+                  onAgentChangesReady={(changes, taskDescription, reviewSessionId, reviewVerification) => {
+                    if (agentReviewSessionId) {
+                      void window.agentAPI.discardAgentReview(agentReviewSessionId);
+                    }
                     setAgentReviewTask(taskDescription);
+                    setAgentReviewSessionId(reviewSessionId);
+                    setAgentReviewApplied(!reviewSessionId);
+                    setAgentReviewVerification(reviewVerification || { status: 'idle', issues: [] });
                     setAgentReviewChanges(changes.map((change) => ({
                       ...change,
-                      status: 'pending'
+                      status: change.status || 'pending'
                     })));
                   }}
                 />
@@ -971,11 +1210,18 @@ function App() {
               <Suspense fallback={<div className="loading-placeholder">Loading Change Review...</div>}>
                 <MultiFileDiffReview
                   changes={agentReviewChanges}
-                  onAcceptFile={handleAcceptReviewFile}
+                  onAcceptFile={(filePath) => { void handleAcceptReviewFile(filePath); }}
                   onRejectFile={(filePath) => { void handleRejectReviewFile(filePath); }}
-                  onAcceptAll={handleAcceptAllReviewFiles}
+                  onAcceptAll={() => { void handleAcceptAllReviewFiles(); }}
                   onRejectAll={() => { void handleRejectAllReviewFiles(); }}
-                  onClose={() => setAgentReviewChanges([])}
+                  onApplyAccepted={() => { void handleApplyReviewChanges(); }}
+                  onVerifyAccepted={() => { void handleVerifyReviewedProject(); }}
+                  onRunProject={() => { void handleRunReviewedProject(); }}
+                  onRepair={handleRepairReviewedProject}
+                  verification={agentReviewVerification}
+                  isStaged={Boolean(agentReviewSessionId)}
+                  applied={agentReviewApplied}
+                  onClose={() => { void clearAgentReviewState(Boolean(agentReviewSessionId)); }}
                   taskDescription={agentReviewTask}
                 />
               </Suspense>

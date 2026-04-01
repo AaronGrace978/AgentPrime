@@ -19,6 +19,8 @@ export class TimeoutError extends Error {
   }
 }
 
+export type RuntimeBudgetMode = 'instant' | 'standard' | 'deep';
+
 /**
  * Model size categories for adaptive timeouts
  */
@@ -33,6 +35,22 @@ export function detectModelSize(modelName: string): ModelSize {
   
   // Cloud models (external API calls) - need longer timeouts
   if (name.includes('cloud') || name.includes('api')) return 'cloud';
+
+  // Hosted provider models are always cloud-speed (network round-trip + inference).
+  // GPT-5.x, GPT-4o, Claude, Gemini, etc. don't have a "7b" tag, so the param-size
+  // heuristics below would misclassify them as 'medium' and give a 68s timeout that
+  // kills the request before the API responds.
+  if (
+    name.startsWith('gpt-') ||
+    name.startsWith('o1') ||
+    name.startsWith('o3') ||
+    name.startsWith('o4') ||
+    name.startsWith('claude') ||
+    name.startsWith('gemini') ||
+    name.includes('openrouter/')
+  ) {
+    return 'cloud';
+  }
   
   // XLarge models (>100B params)
   if (name.includes('671b') || name.includes('405b') || name.includes('180b')) return 'xlarge';
@@ -63,9 +81,18 @@ function getModelTimeoutMultiplier(modelSize: ModelSize): number {
     medium: 1.5,
     large: 3,
     xlarge: 6,    // 671B models need 6x timeout
-    cloud: 4      // Cloud models need extra headroom, but should fail over promptly
+    cloud: 2      // Cloud models need headroom, but interactive flows should fail over quickly
   };
   return multipliers[modelSize];
+}
+
+function getRuntimeBudgetTimeoutMultiplier(runtimeBudget: RuntimeBudgetMode): number {
+  const multipliers: Record<RuntimeBudgetMode, number> = {
+    instant: 0.7,
+    standard: 1,
+    deep: 1.35,
+  };
+  return multipliers[runtimeBudget];
 }
 
 /**
@@ -131,24 +158,25 @@ const MAX_TIMEOUTS: Record<OperationType, number> = {
 export async function withAITimeout<T>(
   aiPromise: Promise<T>,
   operationType: OperationType = 'chat',
-  modelName?: string
+  modelName?: string,
+  runtimeBudget: RuntimeBudgetMode = 'standard'
 ): Promise<T> {
   const baseTimeout = BASE_TIMEOUTS[operationType];
   
   // Calculate adaptive timeout based on model size
   const modelSize = modelName ? detectModelSize(modelName) : 'medium';
-  const multiplier = getModelTimeoutMultiplier(modelSize);
+  const multiplier = getModelTimeoutMultiplier(modelSize) * getRuntimeBudgetTimeoutMultiplier(runtimeBudget);
   const adaptiveTimeout = Math.round(baseTimeout * multiplier);
   const timeout = Math.min(adaptiveTimeout, MAX_TIMEOUTS[operationType]);
   
-  const errorMsg = `${operationType} operation timed out after ${Math.round(timeout/1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}). Falling back to faster model...`;
+  const errorMsg = `${operationType} operation timed out after ${Math.round(timeout/1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}, budget: ${runtimeBudget}). Falling back to faster model...`;
 
   if (timeout < adaptiveTimeout) {
     console.log(
       `[Timeout] ${operationType} timeout capped from ${Math.round(adaptiveTimeout / 1000)}s to ${Math.round(timeout / 1000)}s for ${modelSize} model`
     );
   }
-  console.log(`[Timeout] ${operationType} timeout set to ${Math.round(timeout/1000)}s for ${modelSize} model`);
+  console.log(`[Timeout] ${operationType} timeout set to ${Math.round(timeout/1000)}s for ${modelSize} model (${runtimeBudget} budget)`);
   
   return withTimeout(aiPromise, timeout, errorMsg);
 }
@@ -181,17 +209,16 @@ export async function withFileTimeout<T>(
  * Using Anthropic/OpenAI since they're confirmed working!
  */
 export const FALLBACK_MODEL_CHAIN = [
-  // Ollama cloud models first -- always available, no billing surprises
+  // Prefer faster interactive models before deeper long-running fallbacks.
+  { provider: 'ollama', model: 'minimax-m2.7:cloud', size: 'cloud' as ModelSize },
+  { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
+  { provider: 'openai', model: 'gpt-4o-mini', size: 'fast' as ModelSize },
   { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },
   { provider: 'ollama', model: 'qwen3-coder:480b-cloud', size: 'cloud' as ModelSize },
-
-  // Cloud providers (may require active billing)
   { provider: 'anthropic', model: 'claude-sonnet-4-20250514', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-4o', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-opus-4-6', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-5.2-2025-12-11', size: 'cloud' as ModelSize },
-  { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
-  { provider: 'openai', model: 'gpt-4o-mini', size: 'fast' as ModelSize },
 ];
 
 const recentProviderFailures: Map<string, { count: number; lastFailed: number }> = new Map();
@@ -225,6 +252,7 @@ function shouldSkipProvider(provider: string): boolean {
 export interface RetryResult<T> {
   result: T;
   usedFallback: boolean;
+  finalProvider?: string;
   finalModel?: string;
   attempts: number;
 }
@@ -296,10 +324,11 @@ export async function withAITimeoutAndRetry<T>(
   aiOperation: () => Promise<T>,
   operationType: OperationType = 'chat',
   modelName?: string,
-  maxRetries: number = 1
+  maxRetries: number = 1,
+  runtimeBudget: RuntimeBudgetMode = 'standard'
 ): Promise<T> {
   return withRetry(
-    () => withAITimeout(aiOperation(), operationType, modelName),
+    () => withAITimeout(aiOperation(), operationType, modelName, runtimeBudget),
     maxRetries,
     500
   );
@@ -313,14 +342,15 @@ export async function withSmartFallback<T>(
   operation: (provider: string, model: string) => Promise<T>,
   primaryProvider: string,
   primaryModel: string,
-  operationType: OperationType = 'chat'
+  operationType: OperationType = 'chat',
+  runtimeBudget: RuntimeBudgetMode = 'standard'
 ): Promise<RetryResult<T>> {
   let attempts = 0;
 
   const primaryModelSize = detectModelSize(primaryModel);
-  // For cloud models on long-running operations, skip retry to fail over faster.
+  // For cloud models, fail over faster instead of repeating the same large request.
   const primaryRetries =
-    primaryModelSize === 'cloud' && (operationType === 'analysis' || operationType === 'complex' || operationType === 'project')
+    primaryModelSize === 'cloud' && (operationType === 'chat' || operationType === 'analysis' || operationType === 'complex' || operationType === 'project')
       ? 0
       : 1;
   
@@ -332,9 +362,17 @@ export async function withSmartFallback<T>(
       () => operation(primaryProvider, primaryModel),
       operationType,
       primaryModel,
-      primaryRetries
+      primaryRetries,
+      runtimeBudget
     );
-    return { result, usedFallback: false, finalModel: primaryModel, attempts };
+    const servedBy = (result as any)?.servedBy;
+    return {
+      result,
+      usedFallback: false,
+      finalProvider: servedBy?.provider || primaryProvider,
+      finalModel: servedBy?.model || primaryModel,
+      attempts
+    };
   } catch (primaryError) {
     console.log(`[SmartFallback] Primary model failed: ${(primaryError as Error).message}`);
     
@@ -356,10 +394,18 @@ export async function withSmartFallback<T>(
           () => operation(fallback.provider, fallback.model),
           operationType,
           fallback.model,
-          0
+          0,
+          runtimeBudget
         );
         console.log(`[SmartFallback] ✅ Fallback succeeded: ${fallback.model}`);
-        return { result, usedFallback: true, finalModel: fallback.model, attempts };
+        const servedBy = (result as any)?.servedBy;
+        return {
+          result,
+          usedFallback: true,
+          finalProvider: servedBy?.provider || fallback.provider,
+          finalModel: servedBy?.model || fallback.model,
+          attempts
+        };
       } catch (fallbackError) {
         const errMsg = (fallbackError as Error).message || String(fallbackError);
         console.log(`[SmartFallback] Fallback ${fallback.model} failed: ${errMsg.substring(0, 200)}`);

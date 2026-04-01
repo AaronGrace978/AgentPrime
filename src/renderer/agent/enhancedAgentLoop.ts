@@ -994,6 +994,7 @@ Do NOT call read_file on cached files unless verifying a write.
     const result = await window.agentAPI.chat(prompt, {
       agent_mode: true,
       use_agent_loop: true,
+      use_specialized_agents: true,
       model: this.selectedModel
     });
 

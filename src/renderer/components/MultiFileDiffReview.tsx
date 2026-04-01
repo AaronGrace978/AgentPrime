@@ -7,14 +7,9 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import InlineDiff, { DiffHunk, useInlineDiff } from './InlineDiff';
+import type { AgentReviewChange, AgentReviewVerificationState } from '../../types/agent-review';
 
-export interface FileChange {
-  filePath: string;
-  oldContent: string;
-  newContent: string;
-  action: 'modified' | 'created' | 'deleted';
-  status: 'pending' | 'accepted' | 'rejected';
-}
+export type FileChange = AgentReviewChange;
 
 interface MultiFileDiffReviewProps {
   changes: FileChange[];
@@ -22,8 +17,15 @@ interface MultiFileDiffReviewProps {
   onRejectFile: (filePath: string) => void;
   onAcceptAll: () => void;
   onRejectAll: () => void;
+  onApplyAccepted?: () => void;
+  onVerifyAccepted?: () => void;
+  onRunProject?: () => void;
+  onRepair?: () => void;
   onClose: () => void;
   taskDescription?: string;
+  verification?: AgentReviewVerificationState;
+  isStaged?: boolean;
+  applied?: boolean;
 }
 
 const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
@@ -32,8 +34,15 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   onRejectFile,
   onAcceptAll,
   onRejectAll,
+  onApplyAccepted,
+  onVerifyAccepted,
+  onRunProject,
+  onRepair,
   onClose,
   taskDescription,
+  verification,
+  isStaged = false,
+  applied = false,
 }) => {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
     new Set(changes.slice(0, 3).map(c => c.filePath))
@@ -58,6 +67,18 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     return { pending, accepted, rejected, total: changes.length };
   }, [changes]);
   const reviewComplete = stats.pending === 0;
+  const acceptedCount = stats.accepted;
+  const showVerificationActions = reviewComplete && acceptedCount > 0 && (!isStaged || applied);
+  const showApplyAction = isStaged && reviewComplete && acceptedCount > 0 && !applied;
+  const reviewDecisionCopy = isStaged
+    ? reviewComplete
+      ? applied
+        ? 'Review complete. Accepted changes are now in the workspace and rejected ones were discarded before apply.'
+        : 'Review complete. Apply writes accepted files to disk, and rejected ones stay out of the workspace.'
+      : 'Accept marks a staged change for apply. Reject keeps it out of the workspace.'
+    : reviewComplete
+      ? 'Review complete. Accepted changes stay in the workspace, and rejected ones have already been reverted.'
+      : 'Accept keeps a change in the workspace. Reject immediately restores the prior file contents.';
 
   const renderStatPill = (
     label: string,
@@ -139,9 +160,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
               </span>
             </div>
             <div style={{ fontSize: '12px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
-              {reviewComplete
-                ? 'Review complete. Accepted changes stay in the workspace, and rejected ones have already been reverted.'
-                : 'Accept keeps a change in the workspace. Reject immediately restores the prior file contents.'}
+              {reviewDecisionCopy}
             </div>
             {taskDescription && (
               <div style={{
@@ -166,14 +185,17 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             borderRadius: '8px',
             flexShrink: 0,
           }}>
-            {reviewComplete ? 'Done' : 'Hide Review'}
+            {isStaged && !applied ? 'Discard Review' : reviewComplete ? 'Done' : 'Hide Review'}
           </button>
         </div>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           {renderStatPill('Pending', stats.pending, '#f59e0b', 'rgba(245, 158, 11, 0.12)')}
           {renderStatPill('Accepted', stats.accepted, '#3fb950', 'rgba(63, 185, 80, 0.12)')}
-          {renderStatPill('Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.12)')}
+          {renderStatPill(isStaged ? 'Rejected' : 'Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.12)')}
+          {verification?.status === 'verifying' && renderStatPill('Verifying', 1, '#58a6ff', 'rgba(88, 166, 255, 0.12)')}
+          {verification?.status === 'passed' && renderStatPill('Verified', 1, '#3fb950', 'rgba(63, 185, 80, 0.12)')}
+          {verification?.status === 'failed' && renderStatPill('Repair Needed', verification.issues.length || 1, '#ff7b72', 'rgba(255, 123, 114, 0.12)')}
           {stats.pending > 0 && (
             <>
               <button onClick={onAcceptAll} style={{
@@ -198,11 +220,142 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                 fontWeight: 700,
                 cursor: 'pointer',
               }}>
-                Revert Pending
+                {isStaged ? 'Reject Pending' : 'Revert Pending'}
               </button>
             </>
           )}
+          {showApplyAction && onApplyAccepted && (
+            <button onClick={onApplyAccepted} style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: 'none',
+              background: '#238636',
+              color: '#fff',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              Apply Accepted Changes
+            </button>
+          )}
+          {showVerificationActions && verification?.status === 'idle' && onVerifyAccepted && (
+            <button onClick={onVerifyAccepted} style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'rgba(88, 166, 255, 0.12)',
+              color: '#58a6ff',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              Verify Accepted Changes
+            </button>
+          )}
+          {showVerificationActions && verification?.status === 'verifying' && (
+            <button disabled style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'rgba(88, 166, 255, 0.12)',
+              color: '#58a6ff',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'wait',
+              opacity: 0.8,
+            }}>
+              Verifying...
+            </button>
+          )}
+          {showVerificationActions && verification?.status === 'passed' && onRunProject && (
+            <button onClick={onRunProject} style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: 'none',
+              background: '#238636',
+              color: '#fff',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              Run Project
+            </button>
+          )}
+          {showVerificationActions && verification?.status === 'failed' && onVerifyAccepted && (
+            <button onClick={onVerifyAccepted} style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'transparent',
+              color: '#58a6ff',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              Retry Verification
+            </button>
+          )}
+          {showVerificationActions && verification?.status === 'failed' && onRepair && (
+            <button onClick={onRepair} style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: 'none',
+              background: '#f59e0b',
+              color: '#111',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              Repair With Agent
+            </button>
+          )}
         </div>
+        {verification && verification.status !== 'idle' && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            padding: '10px 12px',
+            borderRadius: '8px',
+            background:
+              verification.status === 'failed'
+                ? 'rgba(255, 123, 114, 0.08)'
+                : verification.status === 'passed'
+                  ? 'rgba(63, 185, 80, 0.08)'
+                  : 'rgba(88, 166, 255, 0.08)',
+            border: '1px solid var(--prime-border)',
+          }}>
+            <div style={{ fontSize: '12px', color: 'var(--prime-text)', fontWeight: 600 }}>
+              {verification.status === 'verifying'
+                ? 'Running verification on accepted changes...'
+                : verification.status === 'passed'
+                  ? `${verification.projectTypeLabel || 'Project'} verified successfully`
+                  : `${verification.projectTypeLabel || 'Project'} failed verification`}
+            </div>
+            {verification.readinessSummary && (
+              <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
+                {verification.readinessSummary}
+              </div>
+            )}
+            {verification.startCommand && (
+              <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
+                Run: <code>{verification.startCommand}</code>
+              </div>
+            )}
+            {verification.buildCommand && (
+              <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
+                Build: <code>{verification.buildCommand}</code>
+              </div>
+            )}
+            {verification.issues.length > 0 && (
+              <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
+                {verification.issues.slice(0, 5).map((issue, index) => (
+                  <div key={`${issue}-${index}`}>- {issue}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* File list */}

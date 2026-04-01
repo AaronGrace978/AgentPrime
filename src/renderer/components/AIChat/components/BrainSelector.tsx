@@ -1,5 +1,5 @@
 /**
- * BrainSelector - Fast/Auto/Deep mode toggle with organized model configuration
+ * BrainSelector - Instant/Standard/Deep budget toggle with organized model configuration
  */
 
 import React, { useState } from 'react';
@@ -180,23 +180,23 @@ export const BrainSelector: React.FC<BrainSelectorProps> = ({
         border: '1px solid var(--prime-border)'
       }}>
         <button
-          onClick={() => onModeChange('fast')}
-          style={modeButtonStyle('fast')}
-          title={`Fast - ${getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)}`}
+          onClick={() => onModeChange('instant')}
+          style={modeButtonStyle('instant')}
+          title={`Instant - keep turns fast with ${getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)}`}
         >
-          Fast
+          Instant
         </button>
         <button
-          onClick={() => onModeChange('auto')}
-          style={modeButtonStyle('auto')}
-          title={`Auto - routes between ${getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)} and ${getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}`}
+          onClick={() => onModeChange('standard')}
+          style={modeButtonStyle('standard')}
+          title={`Standard - default budget between ${getModelLabel(brainConfig.fastModel.provider, brainConfig.fastModel.model)} and ${getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}`}
         >
-          Auto
+          Standard
         </button>
         <button
           onClick={() => onModeChange('deep')}
           style={modeButtonStyle('deep')}
-          title={`Deep - ${getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}`}
+          title={`Deep - maximum reflection with ${getModelLabel(brainConfig.deepModel.provider, brainConfig.deepModel.model)}`}
         >
           Deep
         </button>
@@ -244,10 +244,10 @@ export const BrainSelector: React.FC<BrainSelectorProps> = ({
           }}>
             <div>
               <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--prime-text)' }}>
-                Model routing
+                Runtime budget
               </div>
               <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)', marginTop: '4px' }}>
-                Keep fast and deep models organized by provider.
+                Keep instant and deep models organized by provider.
               </div>
             </div>
             <button

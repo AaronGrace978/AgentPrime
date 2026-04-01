@@ -1,10 +1,11 @@
 /**
- * useDualModel - Hook for managing dual model (fast/deep) routing state
+ * useDualModel - Hook for managing runtime budget and dual-model routing state
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { DualModelState, BrainConfig, DualMode } from '../types';
 import { DEFAULT_BRAIN_CONFIG, DEFAULT_DUAL_MODEL_STATE } from '../constants';
+import { dualModeToRuntimeBudget } from '../../../../types/runtime-budget';
 
 interface UseDualModelReturn {
   dualModel: DualModelState;
@@ -27,7 +28,7 @@ export function useDualModel(): UseDualModelReturn {
         currentProvider: data.provider,
         lastComplexity: data.complexity,
         lastReasoning: data.reasoning,
-        mode: data.mode
+        mode: data.runtimeBudget || dualModeToRuntimeBudget(data.mode)
       }));
     };
     

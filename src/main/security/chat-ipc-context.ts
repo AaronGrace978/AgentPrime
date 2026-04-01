@@ -6,6 +6,19 @@
 import { z } from 'zod';
 
 const dualModeSchema = z.enum(['auto', 'fast', 'deep']);
+const runtimeBudgetSchema = z.enum(['instant', 'standard', 'deep']);
+const repairScopeSchema = z.object({
+  allowedFiles: z.array(z.string().max(4096)).max(500),
+  blockedFiles: z.array(z.string().max(4096)).max(500),
+  findings: z.array(z.object({
+    stage: z.enum(['validation', 'install', 'build', 'run', 'browser', 'unknown']),
+    severity: z.enum(['info', 'warning', 'error', 'critical']),
+    summary: z.string().max(8000),
+    files: z.array(z.string().max(4096)).max(200),
+    command: z.string().max(4096).optional(),
+    output: z.string().max(16000).optional(),
+  })).max(200)
+});
 
 export const chatIpcContextSchema = z
   .object({
@@ -23,6 +36,8 @@ export const chatIpcContextSchema = z
     just_chat_mode: z.boolean().optional(),
     justChatMode: z.boolean().optional(),
     dual_mode: dualModeSchema.optional(),
+    runtime_budget: runtimeBudgetSchema.optional(),
+    repair_scope: repairScopeSchema.optional(),
     file_content: z.string().max(600000).optional(),
     has_errors: z.boolean().optional(),
     mentioned_files: z.array(z.string().max(4096)).max(1000).optional(),

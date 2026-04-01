@@ -924,6 +924,466 @@
           "prompt": "Build a simple browser-based game with HTML, CSS, and JavaScript"
         }
       ]
+    },
+    {
+      "id": "proj_1774924179756_a6hlr8sys",
+      "name": "ThreeJSGame",
+      "path": "G:\\ThreeJSGame",
+      "type": "web",
+      "description": "Build me a ThreeJs game, a flight simulator please I want to fly around in space",
+      "createdAt": "2026-03-31T02:29:39.755Z",
+      "updatedAt": "2026-03-31T12:38:49.508Z",
+      "files": [],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "Three.js",
+        "Vite",
+        "CSS",
+        "TypeScript",
+        "React"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T02:29:39.755Z",
+          "action": "create",
+          "description": "Build me a ThreeJs game, a flight simulator please I want to fly around in space",
+          "filesChanged": [],
+          "prompt": "Build me a ThreeJs game, a flight simulator please I want to fly around in space "
+        },
+        {
+          "timestamp": "2026-03-31T02:36:19.124Z",
+          "action": "update",
+          "description": "========================================\n  Running: dev\n========================================\nUsi...",
+          "filesChanged": [],
+          "prompt": "========================================\n  Running: dev\n========================================\nUsing Node.js: C:\\Program Files\\nodejs\\node.exe\n\nStarting project...\n\n> space-flight-simulator@1.0.0 dev\n> vite\n\nThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.\n\n  VITE v5.4.21  ready in 242 ms\n\n  ➜  Local:   http://localhost:3000/\n  ➜  Network: http://172.22.32.1:3000/\n  ➜  Network: http://192.168.56.1:3000/\n  ➜  Network: http://10.0.0.59:3000/\n  ➜  press h + enter to show help\n10:31:28 PM [vite] Pre-transform error: Failed to resolve import \"./style.css\" from \"src/main.js\". Does the file exist?\n10:31:28 PM [vite] Internal server error: Failed to resolve import \"./style.css\" from \"src/main.js\". Does the file exist?\n  Plugin: vite:import-analysis\n  File: G:/ThreeJSGame/src/main.js:1:9\n  1  |  import './style.css'\n     |          ^\n  2  |  import Game from './game/Game.js'\n  3  |\n      at TransformPluginContext._formatError (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49258:41)\n      at TransformPluginContext.error (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49253:16)\n      at normalizeUrl (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64307:23)\n      at async file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64439:39\n      at async Promise.all (index 0)\n      at async TransformPluginContext.transform (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64366:7)\n      at async PluginContainer.transform (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49099:18)\n      at async loadAndTransform (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51978:27)\n      at async viteTransformMiddleware (file:///G:/ThreeJSGame/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:62106:24)\n^A\n\n\n\n"
+        },
+        {
+          "timestamp": "2026-03-31T03:00:10.254Z",
+          "action": "update",
+          "description": "Can you build me a three",
+          "filesChanged": [],
+          "prompt": "Can you build me a three.js space simulator so I can fly around in space for fun? "
+        },
+        {
+          "timestamp": "2026-03-31T03:14:14.601Z",
+          "action": "update",
+          "description": "Can you build me a three",
+          "filesChanged": [],
+          "prompt": "Can you build me a three.js game where I can fly around in a ship and have a good time, I want to be able to thrust with tab, and just fly around in a ship<3 "
+        },
+        {
+          "timestamp": "2026-03-31T12:38:49.508Z",
+          "action": "update",
+          "description": "Build a simple browser-based game with HTML, CSS, and JavaScript",
+          "filesChanged": [],
+          "prompt": "Build a simple browser-based game with HTML, CSS, and JavaScript"
+        }
+      ]
+    },
+    {
+      "id": "proj_1774966964174_usoe6gar7",
+      "name": "agentprime-e2e-FWHBto",
+      "path": "C:\\Users\\AGrac\\AppData\\Local\\Temp\\agentprime-e2e-FWHBto",
+      "type": "web",
+      "description": "Can you build me a three",
+      "createdAt": "2026-03-31T14:22:44.174Z",
+      "updatedAt": "2026-03-31T14:22:44.174Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/world/Chunk.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T14:22:44.174Z",
+          "action": "create",
+          "description": "Can you build me a three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/world/Chunk.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Can you build me a three.js game in space? I want to fly in the sky."
+        }
+      ]
+    },
+    {
+      "id": "proj_1774967214000_wewy072qm",
+      "name": "minecrafters",
+      "path": "G:\\minecrafters",
+      "type": "web",
+      "description": "Can you build me a three",
+      "createdAt": "2026-03-31T14:26:54.000Z",
+      "updatedAt": "2026-03-31T14:50:47.716Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/world/Chunk.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T14:26:54.000Z",
+          "action": "create",
+          "description": "Can you build me a three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/world/Chunk.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Can you build me a three.js game in space? I want to fly in the sky."
+        },
+        {
+          "timestamp": "2026-03-31T14:50:47.716Z",
+          "action": "update",
+          "description": "Three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/world/Chunk.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Three.js game please"
+        }
+      ]
+    },
+    {
+      "id": "proj_1774968470139_kfkm0w2wd",
+      "name": "agentprime-e2e-TBH2pa",
+      "path": "C:\\Users\\AGrac\\AppData\\Local\\Temp\\agentprime-e2e-TBH2pa",
+      "type": "web",
+      "description": "Build me a three",
+      "createdAt": "2026-03-31T14:47:50.139Z",
+      "updatedAt": "2026-03-31T15:03:49.957Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/world/Chunk.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T14:47:50.139Z",
+          "action": "create",
+          "description": "Build me a three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/world/Chunk.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a three.js space game. I want to fly a spaceship."
+        },
+        {
+          "timestamp": "2026-03-31T15:03:49.957Z",
+          "action": "create",
+          "description": "build me a three",
+          "filesChanged": [],
+          "prompt": "build me a three.js minecraft game please"
+        }
+      ]
+    },
+    {
+      "id": "proj_1774969041753_ni15ilnoj",
+      "name": "DinoSpace9",
+      "path": "G:\\minecrafters\\DinoSpace9",
+      "type": "web",
+      "description": "We need a Dino Buddy Space Three",
+      "createdAt": "2026-03-31T14:57:21.753Z",
+      "updatedAt": "2026-03-31T14:57:21.753Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/world/Chunk.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T14:57:21.753Z",
+          "action": "create",
+          "description": "We need a Dino Buddy Space Three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/world/Chunk.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "We need a Dino Buddy Space Three.js game I want to fly around <3 lets lock it in baby<3"
+        }
+      ]
+    },
+    {
+      "id": "proj_1774970547919_u4l9d5l04",
+      "name": "AgentPrime test",
+      "path": "G:\\AgentPrime test",
+      "type": "web",
+      "description": "Build me a space three",
+      "createdAt": "2026-03-31T15:22:27.919Z",
+      "updatedAt": "2026-03-31T15:22:27.919Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/world/Chunk.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T15:22:27.919Z",
+          "action": "create",
+          "description": "Build me a space three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/world/Chunk.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a space three.js game please "
+        }
+      ]
+    },
+    {
+      "id": "proj_1774996988801_s6kl84kuy",
+      "name": "test",
+      "path": "G:\\test",
+      "type": "node",
+      "description": "Can you build me a cookies website please",
+      "createdAt": "2026-03-31T22:43:08.801Z",
+      "updatedAt": "2026-03-31T22:43:08.801Z",
+      "files": [
+        "package.json",
+        "src/styles.css",
+        "src/script.js",
+        "README.md",
+        ".gitignore"
+      ],
+      "technologies": [
+        "JavaScript",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-03-31T22:43:08.801Z",
+          "action": "create",
+          "description": "Can you build me a cookies website please",
+          "filesChanged": [
+            "package.json",
+            "src/styles.css",
+            "src/script.js",
+            "README.md",
+            ".gitignore"
+          ],
+          "prompt": "Can you build me a cookies website please? in javascript or w.e they do to build"
+        }
+      ]
     }
   ]
 }

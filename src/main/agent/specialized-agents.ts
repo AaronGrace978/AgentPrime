@@ -21,10 +21,10 @@ import { getRelevantPatterns, getAntiPatterns, storeTaskLearning } from '../mirr
 import { loadOpusExamples } from '../mirror/opus-example-loader';
 import * as fs from 'fs';
 import * as path from 'path';
-import { withAITimeoutAndRetry, withSmartFallback, TimeoutError, FALLBACK_MODEL_CHAIN, detectModelSize } from '../core/timeout-utils';
+import { withAITimeoutAndRetry, withSmartFallback, TimeoutError, FALLBACK_MODEL_CHAIN, detectModelSize, type RuntimeBudgetMode } from '../core/timeout-utils';
 import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
 import { transactionManager } from '../core/transaction-manager';
-import { getRecommendedMaxTokens } from '../core/model-output-limits';
+import { getBudgetAdjustedMaxTokens, getRecommendedMaxTokens } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
 import { validateToolCall, fixToolCall, resetFileTracker, populateFileTracker, validatePackageJson, validateIndexHtml, validateJavaScriptFile, detectOrphanedFiles, getFileTrackerState, FileTrackerMode } from './tool-validation';
 import { sanitizeFileName } from '../security/ipcValidation';
@@ -387,6 +387,13 @@ EVERY index.html MUST have:
 This is the #1 cause of "blank/unstyled page" bugs!
 If you create styles.css or src/styles.css, you MUST link it.`,
 
+    styling_ux_specialist: `
+## 🎯 MIRROR: PRODUCT-QUALITY UX POLISH
+- Mirror strong visual hierarchy, spacing, and interaction clarity
+- Prefer focused CSS/layout changes over wholesale rewrites
+- Make loading, hover, focus, and empty states feel intentional
+- Preserve accessibility and readability while improving polish`,
+
     python_specialist: `
 ## 🎯 MIRROR: PYTHONIC EXCELLENCE
 - Mirror clean, readable Python from expert engineers
@@ -413,6 +420,13 @@ If you create styles.css or src/styles.css, you MUST link it.`,
 - Include ALL required config files (webpack.config.js, etc.)
 - Test scripts that actually run
 - Clear documentation for setup`,
+
+    testing_specialist: `
+## 🎯 MIRROR: HIGH-SIGNAL TEST ENGINEERING
+- Add the smallest test that proves the requested behavior
+- Prefer stable browser and runtime evidence over snapshot churn
+- Keep fixtures focused and deterministic
+- Avoid tests that just restate implementation details`,
 
     integration_analyst: `
 ## 🎯 MIRROR: SENIOR ENGINEER CODE REVIEW
@@ -441,9 +455,11 @@ This is the #1 cause of "unstyled page" bugs!`,
 export type AgentRole = 
   | 'tool_orchestrator'  // Handles tool calls, parsing, execution flow
   | 'javascript_specialist'  // JS/TS/React/Node code
+  | 'styling_ux_specialist'  // Styling, UX, and visual polish
   | 'python_specialist'  // Python code
   | 'tauri_specialist'  // Tauri v2 / Rust desktop apps
   | 'pipeline_specialist'  // Build/deploy/CI/CD
+  | 'testing_specialist'  // Automated tests and browser checks
   | 'integration_analyst'  // Reviews, verifies, and ensures coherence
   | 'repair_specialist';  // Applies narrow fixes after verification failures
 
@@ -800,6 +816,28 @@ If the project imports \`three\`, React, Vue, or any npm module in \`src/*.js\`:
 ${TOOL_CALL_FORMAT}`
   },
 
+  styling_ux_specialist: {
+    role: 'styling_ux_specialist',
+    model: 'minimax-m2.7:cloud',
+    provider: 'ollama',
+    temperature: 0.2,
+    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
+    systemPrompt: `You are a styling and UX specialist. You improve visual polish, CSS, layout, interaction feedback, and presentation details.
+
+## YOUR JOB
+- Refine spacing, hierarchy, and readable visual structure
+- Improve hover/focus/active states and empty/loading states
+- Keep edits tightly scoped to styling and presentation
+- Avoid rewriting unrelated business logic unless strictly necessary for UI wiring
+
+## RULES
+- Prefer CSS, markup, and small UI wiring edits over broad rewrites
+- Keep the UI accessible and readable
+- Do not change backend, packaging, or unrelated pipeline files
+
+${TOOL_CALL_FORMAT}`
+  },
+
   python_specialist: {
     role: 'python_specialist',
     model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
@@ -935,6 +973,28 @@ ${TOOL_CALL_FORMAT}`
 - CI/CD pipelines (GitHub Actions)
 - Docker, containerization
 - Package management (npm, pip, cargo)
+
+${TOOL_CALL_FORMAT}`
+  },
+
+  testing_specialist: {
+    role: 'testing_specialist',
+    model: 'minimax-m2.7:cloud',
+    provider: 'ollama',
+    temperature: 0.2,
+    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'analysis'),
+    systemPrompt: `You are a testing specialist. You add and update focused automated tests and browser checks that prove the requested behavior.
+
+## YOUR JOB
+- Add the smallest useful tests that materially reduce regression risk
+- Prefer stable integration, runtime, and browser checks over brittle snapshots
+- Keep fixtures deterministic and easy to understand
+- Avoid noisy tests that restate the implementation
+
+## RULES
+- Touch only test harness, test files, and tightly related support scripts unless a repair plan explicitly allows more
+- Do not broaden product scope while adding tests
+- If a bug can be proven with one focused test, do not add five
 
 ${TOOL_CALL_FORMAT}`
   },
@@ -1127,15 +1187,42 @@ export function routeToSpecialists(
     taskLower.includes('package.json') ||
     taskLower.includes('requirements.txt');
 
+  const needsStylingUx =
+    taskLower.includes('style') ||
+    taskLower.includes('styling') ||
+    taskLower.includes('ux') ||
+    taskLower.includes('ui polish') ||
+    taskLower.includes('visual') ||
+    taskLower.includes('layout') ||
+    taskLower.includes('responsive') ||
+    taskLower.includes('animation') ||
+    taskLower.includes('theme') ||
+    taskLower.includes('accessibility');
+
+  const needsTesting =
+    taskLower.includes('test') ||
+    taskLower.includes('playwright') ||
+    taskLower.includes('smoke') ||
+    taskLower.includes('verify') ||
+    taskLower.includes('verification') ||
+    taskLower.includes('e2e') ||
+    taskLower.includes('end-to-end');
+
   // Add specialists
   if (isJavaScript) {
     roles.push('javascript_specialist');
+  }
+  if (needsStylingUx) {
+    roles.push('styling_ux_specialist');
   }
   if (isPython) {
     roles.push('python_specialist');
   }
   if (needsPipeline) {
     roles.push('pipeline_specialist');
+  }
+  if (needsTesting) {
+    roles.push('testing_specialist');
   }
 
   // Always add integration analyst for multi-file projects
@@ -1818,7 +1905,7 @@ export async function executeWithSpecialists(
   const phaseStarts = new Map<string, number>();
   const beginPhase = (phase: string, data: Record<string, any> = {}) => {
     phaseStarts.set(phase, Date.now());
-    telemetry.track('generation_phase', { phase, status: 'start', ...data });
+    telemetry.track('generation_phase', { phase, status: 'start', runtimeBudget, ...data });
   };
   const endPhase = (phase: string, status: 'success' | 'failure', data: Record<string, any> = {}) => {
     const startedAt = phaseStarts.get(phase) || Date.now();
@@ -1826,6 +1913,7 @@ export async function executeWithSpecialists(
       phase,
       status,
       durationMs: Date.now() - startedAt,
+      runtimeBudget,
       ...data,
     });
   };
@@ -1836,11 +1924,35 @@ export async function executeWithSpecialists(
   };
   assertNotCancelled();
   const blackboard: SpecialistBlackboard | undefined = context.blackboard;
+  const runtimeBudget: RuntimeBudgetMode =
+    context.runtimeBudget === 'instant' || context.runtimeBudget === 'deep'
+      ? context.runtimeBudget
+      : 'standard';
+  const applyBudgetPrompt = (basePrompt: string): string => {
+    if (runtimeBudget === 'instant') {
+      return `${basePrompt}\n\n## RUNTIME BUDGET\nUse the instant budget. Prefer the smallest viable patch, keep reasoning terse, and skip speculative refactors.`;
+    }
+    if (runtimeBudget === 'deep') {
+      return `${basePrompt}\n\n## RUNTIME BUDGET\nUse the deep budget. Spend extra effort on failure modes, architecture risks, and verifier-facing correctness before finalizing.`;
+    }
+    return `${basePrompt}\n\n## RUNTIME BUDGET\nUse the standard budget. Stay balanced: complete the task with bounded reflection and no unnecessary detours.`;
+  };
+  const budgetedTokens = (model: string | undefined, mode: 'analysis' | 'words_to_code' | 'specialist' | 'pipeline') =>
+    getBudgetAdjustedMaxTokens(model, mode, runtimeBudget);
+  const orderBudgetChain = <T extends { tier?: string }>(entries: T[]): T[] => {
+    if (runtimeBudget === 'instant') {
+      return [...entries].sort((left, right) => Number(right.tier === 'fast') - Number(left.tier === 'fast'));
+    }
+    if (runtimeBudget === 'deep') {
+      return [...entries].sort((left, right) => Number(right.tier === 'deep') - Number(left.tier === 'deep'));
+    }
+    return entries;
+  };
   addBlackboardArtifact(blackboard, {
     type: 'user_intent',
     author: 'executive_router',
     summary: 'User goal received by specialized execution loop.',
-    payload: { task, roles },
+    payload: { task, roles, runtimeBudget },
   });
 
   // 🛡️ FILE TRACKER MODE - Behavior depends on task type
@@ -1897,13 +2009,13 @@ export async function executeWithSpecialists(
   // Get best available model for planning.
   // Ollama cloud models listed first so the agent works out of the box
   // without requiring paid API credits.
-  const defaultModelChain = [
+  const defaultModelChain = orderBudgetChain([
     { name: 'Qwen3-Coder-Next Cloud', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
     { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
     { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },
-  ];
+  ]);
 
   const planningModels = [
     ...(requestedModel && requestedProvider ? [{ provider: requestedProvider, model: requestedModel }] : []),
@@ -1931,11 +2043,11 @@ export async function executeWithSpecialists(
   aiRouter.setActiveProvider(planningModel.provider, planningModel.model);
   
   const planningOrchestrator = AGENT_CONFIGS.tool_orchestrator;
-  const planningPrompt = await buildMirrorEnhancedPrompt(
+  const planningPrompt = applyBudgetPrompt(await buildMirrorEnhancedPrompt(
     task,
     'tool_orchestrator',
     planningOrchestrator.systemPrompt
-  );
+  ));
 
   let planningResponse;
   try {
@@ -1955,11 +2067,13 @@ Output as a structured list. Be specific and comprehensive.` }
       ], {
         model: planningModel.model,
         temperature: 0.3,
-        maxTokens: 2000,
+        maxTokens: budgetedTokens(planningModel.model, 'analysis'),
         disableRouterFallback: true
       }),
       'analysis',
-      planningModel.model
+      planningModel.model,
+      1,
+      runtimeBudget
     );
   } catch (error) {
     console.warn('[MirrorAgents] ⚠️ Planning phase failed, continuing without structured plan');
@@ -2044,7 +2158,7 @@ Output as a structured list. Be specific and comprehensive.` }
 
   // 🧠 MIRROR: Build pattern-enhanced prompt for orchestrator
   const enhancedOrchestratorPrompt = appendScaffoldCustomizationInstructions(
-    await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt),
+    applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt)),
     scaffoldApplied,
     scaffoldTemplateId
   );
@@ -2078,7 +2192,7 @@ Output as a structured list. Be specific and comprehensive.` }
           {
             model: model,
             temperature: orchestrator.temperature,
-            maxTokens: orchestrator.maxTokens,
+            maxTokens: budgetedTokens(model, 'words_to_code'),
             disableRouterFallback: true
           }
         );
@@ -2091,7 +2205,8 @@ Output as a structured list. Be specific and comprehensive.` }
       },
       orchestratorProvider,
       orchestratorModel,
-      scaffoldApplied ? 'project' : 'complex'
+      scaffoldApplied ? 'project' : 'complex',
+      runtimeBudget
     );
     
     orchestratorResponse = result.result;
@@ -2252,7 +2367,7 @@ Output as a structured list. Be specific and comprehensive.` }
 
     // 🧠 MIRROR: Build pattern-enhanced prompt for this specialist
     const enhancedPrompt = appendScaffoldCustomizationInstructions(
-      await buildMirrorEnhancedPrompt(task, role, config.systemPrompt),
+      applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, role, config.systemPrompt)),
       scaffoldApplied,
       scaffoldTemplateId
     );
@@ -2274,7 +2389,10 @@ ${buildSharedContext(sharedContext)}`
           ], {
             model: model,
             temperature: config.temperature,
-            maxTokens: config.maxTokens,
+            maxTokens: budgetedTokens(
+              model,
+              role === 'integration_analyst' ? 'analysis' : role === 'pipeline_specialist' ? 'pipeline' : 'specialist'
+            ),
             disableRouterFallback: true
           });
           
@@ -2286,7 +2404,8 @@ ${buildSharedContext(sharedContext)}`
         },
         requestedRoleProvider,
         requestedRoleModel,
-        scaffoldApplied ? 'project' : 'complex'
+        scaffoldApplied ? 'project' : 'complex',
+        runtimeBudget
       );
 
       const response = specialistResult.result;
@@ -2436,7 +2555,7 @@ ${buildSharedContext(sharedContext)}`
 
     // 🧠 MIRROR: Build pattern-enhanced prompt for analyst
     const enhancedAnalystPrompt = appendScaffoldCustomizationInstructions(
-      await buildMirrorEnhancedPrompt(task, 'integration_analyst', analyst.systemPrompt),
+      applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, 'integration_analyst', analyst.systemPrompt)),
       scaffoldApplied,
       scaffoldTemplateId
     );
@@ -2456,7 +2575,7 @@ ${buildSharedContext(sharedContext)}`
           ], {
             model: model,
             temperature: analyst.temperature,
-            maxTokens: analyst.maxTokens,
+            maxTokens: budgetedTokens(model, 'analysis'),
             disableRouterFallback: true
           });
           
@@ -2468,7 +2587,8 @@ ${buildSharedContext(sharedContext)}`
         },
         analyst.provider,
         analyst.model,
-        'analysis'
+        'analysis',
+        runtimeBudget
       );
       
       analysis = analysisResult.result;

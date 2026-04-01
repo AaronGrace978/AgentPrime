@@ -27,6 +27,7 @@ import type {
 } from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
 import { injectCreed } from '../core/dino-buddy-creed';
+import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget, runtimeBudgetToDualMode } from '../../types/runtime-budget';
 
 interface ProviderEntry {
   Class: new (config: ProviderConfig) => BaseProvider;
@@ -38,6 +39,7 @@ interface ProviderEntry {
  * Model selection mode for dual-model routing
  */
 type ModelMode = 'fast' | 'deep' | 'auto';
+type RuntimeBudgetMode = 'instant' | 'standard' | 'deep';
 
 /**
  * Complexity analysis result
@@ -363,6 +365,18 @@ class AIProviderRouter {
       mode: 'deep'
     };
   }
+
+  routeRuntimeBudget(
+    message: string,
+    runtimeBudget: RuntimeBudgetMode = DEFAULT_RUNTIME_BUDGET_MODE,
+    context?: any
+  ): { provider: string; model: string; mode: ModelMode; runtimeBudget: RuntimeBudgetMode; analysis?: ComplexityAnalysis } {
+    const routing = this.routeDualModel(message, runtimeBudgetToDualMode(runtimeBudget), context);
+    return {
+      ...routing,
+      runtimeBudget,
+    };
+  }
   
   /**
    * Chat with dual-model routing
@@ -371,6 +385,7 @@ class AIProviderRouter {
     messages: ChatMessage[],
     options: ChatOptions & { 
       dualMode?: ModelMode;
+      runtimeBudget?: RuntimeBudgetMode;
       context?: any;
     } = {}
   ): Promise<ChatResult & { dualModelInfo?: { mode: ModelMode; analysis?: ComplexityAnalysis } }> {
@@ -382,7 +397,8 @@ class AIProviderRouter {
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
     const messageContent = lastUserMessage?.content || '';
     
-    const routing = this.routeDualModel(messageContent, options.dualMode || 'auto', options.context);
+    const runtimeBudget = options.runtimeBudget || dualModeToRuntimeBudget(options.dualMode || 'auto');
+    const routing = this.routeRuntimeBudget(messageContent, runtimeBudget, options.context);
     
     // Temporarily switch provider
     const originalProvider = this.activeProvider;
@@ -396,6 +412,7 @@ class AIProviderRouter {
         ...result,
         dualModelInfo: {
           mode: routing.mode,
+          runtimeBudget: routing.runtimeBudget,
           analysis: routing.analysis
         }
       };
@@ -413,6 +430,7 @@ class AIProviderRouter {
     onChunk: StreamCallback,
     options: ChatOptions & { 
       dualMode?: ModelMode;
+      runtimeBudget?: RuntimeBudgetMode;
       context?: any;
       onRouting?: (info: { mode: ModelMode; provider: string; model: string; analysis?: ComplexityAnalysis }) => void;
     } = {}
@@ -425,7 +443,8 @@ class AIProviderRouter {
     const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
     const messageContent = lastUserMessage?.content || '';
     
-    const routing = this.routeDualModel(messageContent, options.dualMode || 'auto', options.context);
+    const runtimeBudget = options.runtimeBudget || dualModeToRuntimeBudget(options.dualMode || 'auto');
+    const routing = this.routeRuntimeBudget(messageContent, runtimeBudget, options.context);
     
     // Notify about routing decision
     if (options.onRouting) {
@@ -872,24 +891,61 @@ class AIProviderRouter {
     return safeOptions;
   }
 
+  private annotateChatResult(
+    result: ChatResult,
+    actualProvider: string,
+    requestedProvider: string,
+    requestedModel?: string,
+    viaFallback: boolean = false
+  ): ChatResult {
+    const actualModel =
+      result.servedBy?.model ||
+      result.modelSelection?.model ||
+      requestedModel;
+
+    return {
+      ...result,
+      servedBy: {
+        provider: actualProvider,
+        model: actualModel,
+        requestedProvider,
+        requestedModel,
+        viaFallback
+      }
+    };
+  }
+
   /**
    * Chat with the active provider (with fallback)
    */
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
     const provider = this.getActiveProvider();
     const model = (options.model || this.activeModel) as string | undefined;
+    const requestedProvider = this.activeProvider || provider.name || 'ollama';
+    const routerFallbackEnabled = !options.disableRouterFallback;
 
     // ═══ DINO BUDDY CREED — Injected at the deepest level ═══
     const messagesWithCreed = injectCreed(messages);
 
     try {
-      const result = await provider.chat(messagesWithCreed, { ...options, model });
+      const result = this.annotateChatResult(
+        await provider.chat(messagesWithCreed, { ...options, model }),
+        requestedProvider,
+        requestedProvider,
+        model,
+        false
+      );
       
       // Check for rate limit in result error
       const shouldFallback = !result.success && 
         (this.isRateLimitError(result) || this.isRateLimitError({ message: result.error }));
       
-      if ((shouldFallback || !result.success) && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
+      if (
+        routerFallbackEnabled &&
+        (shouldFallback || !result.success) &&
+        this.fallbackProvider &&
+        this.fallbackProvider !== this.activeProvider
+      ) {
         if (shouldFallback) {
           console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
         } else {
@@ -918,12 +974,18 @@ class AIProviderRouter {
         
         const fallback = this.getProvider(this.fallbackProvider);
         const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
-        return fallback.chat(messagesWithCreed, fallbackOptions);
+        return this.annotateChatResult(
+          await fallback.chat(messagesWithCreed, fallbackOptions),
+          this.fallbackProvider,
+          requestedProvider,
+          (fallbackOptions.model || model) as string | undefined,
+          true
+        );
       }
 
       return result;
     } catch (e: any) {
-      if (this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
+      if (routerFallbackEnabled && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
         console.log(`Primary provider error, trying fallback: ${this.fallbackProvider}`);
         
         // Check if fallback is Ollama and verify it's available
@@ -948,7 +1010,13 @@ class AIProviderRouter {
         
         const fallback = this.getProvider(this.fallbackProvider);
         const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
-        return fallback.chat(messagesWithCreed, fallbackOptions);
+        return this.annotateChatResult(
+          await fallback.chat(messagesWithCreed, fallbackOptions),
+          this.fallbackProvider,
+          requestedProvider,
+          (fallbackOptions.model || model) as string | undefined,
+          true
+        );
       }
       throw e;
     }
@@ -1008,7 +1076,14 @@ class AIProviderRouter {
   async complete(prompt: string, options: ChatOptions = {}): Promise<ChatResult> {
     const provider = this.getActiveProvider();
     const model = (options.model || this.activeModel) as string | undefined;
-    return provider.complete(prompt, { ...options, model });
+    const requestedProvider = this.activeProvider || provider.name || 'ollama';
+    return this.annotateChatResult(
+      await provider.complete(prompt, { ...options, model }),
+      requestedProvider,
+      requestedProvider,
+      model,
+      false
+    );
   }
 
   /**
@@ -1075,7 +1150,7 @@ class AIProviderRouter {
         'deepseek-v3.1:671b-cloud': {
           strengths: ['analysis', 'creative', 'complex', 'chat'],
           speed: 'medium',
-          contextWindow: 128000,
+          context: 128000,
           cost: 'low'
         },
         'glm-4.6:cloud': {

@@ -20,7 +20,7 @@ interface AIStatus {
 
 const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) => {
   const [aiStatus, setAiStatus] = useState<AIStatus>({
-    provider: 'openai',
+    provider: 'ollama',
     model: 'loading...',
     connected: false,
     dualModelEnabled: false
@@ -32,12 +32,29 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
     const loadStatus = async () => {
       try {
         const settings = await window.agentAPI.getSettings();
-        const activeProvider = settings?.activeProvider || 'openai';
-        const providerStatus = await window.agentAPI.testProvider(activeProvider);
+        const activeProvider = settings?.activeProvider || 'ollama';
+        const requestedModel = settings?.activeModel || '';
+        const inferredProvider = requestedModel.startsWith('gpt-')
+          ? 'openai'
+          : requestedModel.startsWith('claude-')
+            ? 'anthropic'
+            : requestedModel.includes('/')
+              ? 'openrouter'
+              : activeProvider;
+        const providerConfig = settings?.providers?.[
+          inferredProvider as 'ollama' | 'anthropic' | 'openai' | 'openrouter'
+        ];
+        const providerMissingKey =
+          inferredProvider !== 'ollama' &&
+          !providerConfig?.apiKey;
+        const effectiveProvider = providerMissingKey ? 'ollama' : inferredProvider;
+        const providerStatus = await window.agentAPI.testProvider(effectiveProvider);
 
         setAiStatus({
-          provider: activeProvider,
-          model: settings?.activeModel || 'gpt-4o',
+          provider: effectiveProvider,
+          model: providerMissingKey
+            ? (settings?.providers?.ollama?.model || 'qwen2.5-coder:7b')
+            : (requestedModel || settings?.providers?.ollama?.model || 'qwen2.5-coder:7b'),
           connected: providerStatus?.success || false,
           dualModelEnabled: settings?.dualModelEnabled || false
         });

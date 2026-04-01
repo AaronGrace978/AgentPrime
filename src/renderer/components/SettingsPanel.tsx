@@ -43,12 +43,12 @@ interface SettingsPanelProps {
 const DEFAULT_DUAL_MODEL_CONFIG: Settings['dualModelConfig'] = {
   fastModel: {
     provider: 'ollama',
-    model: 'minimax-m2.7:cloud',
+    model: 'qwen2.5-coder:7b',
     enabled: true
   },
   deepModel: {
     provider: 'ollama',
-    model: 'qwen3-coder-next:cloud',
+    model: 'qwen2.5-coder:32b',
     enabled: true
   },
   autoRoute: true,
@@ -124,7 +124,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       dinoBuddyMode: false,
       useSpecializedAgents: false,
       activeProvider: 'ollama',
-      activeModel: 'qwen3-coder-next:cloud',
+      activeModel: 'qwen2.5-coder:7b',
       dualOllamaEnabled: false,
       dualModelEnabled: true,
       dualModelConfig: DEFAULT_DUAL_MODEL_CONFIG,

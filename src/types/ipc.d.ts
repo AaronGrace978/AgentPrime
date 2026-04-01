@@ -4,6 +4,13 @@
  */
 
 import type { Settings } from './index';
+import type {
+  AgentReviewChange,
+  AgentReviewChangeStatus,
+  AgentReviewFinding,
+  AgentReviewSessionSnapshot,
+  AgentReviewVerificationState,
+} from './agent-review';
 
 export interface TelemetryStats {
   totalEvents: number;
@@ -22,6 +29,32 @@ export interface AgentAPI {
   createFolder: (folderName: string) => Promise<{ success: boolean; path?: string; error?: string; cancelled?: boolean }>;
   setWorkspace: (path: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   launchProject: (projectPath: string) => Promise<{ success: boolean; message?: string; url?: string; error?: string }>;
+  verifyProject: (projectPath: string) => Promise<{
+    success: boolean;
+    projectKind: string;
+    projectTypeLabel: string;
+    startCommand?: string;
+    buildCommand?: string;
+    installCommand?: string;
+    readinessSummary?: string;
+    url?: string;
+    issues?: string[];
+    findings?: AgentReviewFinding[];
+    installResult?: { success: boolean; output: string };
+    buildResult?: { success: boolean; output: string };
+    runResult?: { success: boolean; output: string; port?: number; url?: string };
+  }>;
+  updateAgentReviewStatus: (
+    sessionId: string,
+    filePath: string,
+    status: AgentReviewChangeStatus
+  ) => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot; error?: string }>;
+  updatePendingAgentReviewStatuses: (
+    sessionId: string,
+    status: 'accepted' | 'rejected'
+  ) => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot; error?: string }>;
+  applyAgentReview: (sessionId: string) => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot; error?: string }>;
+  discardAgentReview: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   readTree: (path?: string) => Promise<any>;
   readFile: (path: string) => Promise<{
     success?: boolean;
@@ -42,7 +75,16 @@ export interface AgentAPI {
   getFolderContext: (folderPath: string) => Promise<any>;
 
   // AI chat and completions
-  chat: (message: string, context: any) => Promise<any>;
+  chat: (message: string, context: any) => Promise<{
+    success: boolean;
+    response?: string;
+    error?: string;
+    requestId?: string;
+    reviewSessionId?: string;
+    reviewChanges?: AgentReviewChange[];
+    reviewVerification?: AgentReviewVerificationState;
+    [key: string]: any;
+  }>;
   quickAction: (action: string, code: string, language?: string) => Promise<any>;
   aiStatus: () => Promise<any>;
   clearHistory: () => Promise<any>;

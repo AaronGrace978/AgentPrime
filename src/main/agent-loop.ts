@@ -18,6 +18,7 @@ import { validateToolCall } from './agent/tool-validation';
 import { TaskMaster } from './agent/task-master';
 import { getBudgetManager } from './core/budget-manager';
 import { getOpusReasoningEngine } from './mirror/opus-reasoning-engine';
+import { scaffoldProjectFromTemplate } from './agent/scaffold-resolver';
 import { 
   validateWorkspaceNotSelf, 
   validateFileExists, 
@@ -1057,6 +1058,20 @@ export interface AgentContext {
   terminalHistory: string[];
   gitStatus?: string;
   model?: string;
+  runtimeBudget?: 'instant' | 'standard' | 'deep';
+  repairScope?: {
+    allowedFiles: string[];
+    blockedFiles: string[];
+    findings: Array<{
+      stage: 'validation' | 'install' | 'build' | 'run' | 'browser' | 'unknown';
+      severity: 'info' | 'warning' | 'error' | 'critical';
+      summary: string;
+      files: string[];
+      command?: string;
+      output?: string;
+    }>;
+  };
+  userMessage?: string;
   onFileWrite?: (change: { path: string; oldContent: string; newContent: string; action: 'created' | 'modified' }) => void;
   isCancellationRequested?: () => boolean;
 }
@@ -1524,9 +1539,7 @@ Use read_file first to see the exact content you want to replace.`,
           return;
         }
 
-        // Use resolved command, but split properly for spawn
-        const [cmd, ...args] = resolvedCommand.split(' ');
-        const child = spawn(cmd, args, {
+        const child = spawn(resolvedCommand, {
           cwd: workDir,
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: true,
@@ -1951,6 +1964,34 @@ Use read_file first to see the exact content you want to replace.`,
       required: ['project_type', 'project_name']
     },
     execute: async ({ project_type, project_name }, context) => {
+      const canonicalScaffold = await scaffoldProjectFromTemplate(
+        context.workspacePath,
+        context.userMessage || `${project_type} ${project_name}`,
+        {
+          projectType: project_type,
+          projectName: project_name,
+          runPostCreate: false,
+        }
+      );
+
+      if (canonicalScaffold.success) {
+        return {
+          success: true,
+          scaffolded: canonicalScaffold.templateId || project_type,
+          name: project_name,
+          pattern: canonicalScaffold.templateId || project_type,
+          createdFiles: canonicalScaffold.createdFiles,
+          requiredFiles: canonicalScaffold.createdFiles,
+          filesToCustomize: canonicalScaffold.createdFiles.filter((file) => file !== 'package.json' && file !== 'README.md'),
+          dependencies: [],
+          nextSteps: [
+            'Run npm install to install dependencies',
+            'Customize the generated files with project-specific logic',
+            'Run npm run dev to launch the scaffolded project'
+          ]
+        };
+      }
+
       const { PROJECT_PATTERNS } = await import('./agent/tools/projectPatterns');
       const pattern = PROJECT_PATTERNS[project_type];
       
@@ -2732,6 +2773,10 @@ pause >nul
       }
       
       // Create README
+      const recommendedStartCommand =
+        pattern.launchConfig?.command ||
+        (pattern.structure.scripts?.dev ? 'npm run dev' : pattern.structure.scripts?.start ? 'npm start' : 'npm start');
+
       const readme = `# ${project_name}
 
 ${pattern.description}
@@ -2740,7 +2785,7 @@ ${pattern.description}
 
 \`\`\`bash
 npm install
-npm start
+${recommendedStartCommand}
 \`\`\`
 
 ## Project Structure
@@ -2767,7 +2812,7 @@ ${instructions.length > 0 ? instructions.map(i => `- ${i}`).join('\n') : 'Start 
           ...instructions,
           'Run npm install to install dependencies',
           'Customize the created files with your game logic',
-          'Run npm start to launch the development server'
+          `Run ${recommendedStartCommand} to launch the project`
         ]
       };
     }
@@ -4706,7 +4751,8 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
               
               // 🛡️ PRE-WRITE VALIDATION: Additional technical validation
               if (toolCall.function.name === 'write_file' && args.path && args.content) {
-                const validation = validateToolCall(toolCall, this.context.workspacePath, this.currentTask);
+                const normalizedForValidation = { name: toolCall.function.name, arguments: args };
+                const validation = validateToolCall(normalizedForValidation, this.context.workspacePath, this.currentTask);
                 
                 if (!validation.valid) {
                   console.error(`[Agent] 🚨 PRE-WRITE VALIDATION FAILED: ${validation.error}`);
@@ -6640,7 +6686,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
         name: 'write_file',
         arguments: JSON.stringify({
           path: 'README.md',
-          content: '# Project\n\nGenerated project.\n\n## Setup\n\n```bash\nnpm install\nnpm start\n```'
+          content: '# Project\n\nGenerated project.\n\n## Setup\n\n```bash\nnpm install\n# Then run the appropriate script from package.json, usually npm run dev or npm start\n```'
         })
       }
     };

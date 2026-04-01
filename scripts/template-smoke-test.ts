@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import TemplateEngine from '../src/main/legacy/template-engine';
+import { ProjectBrowserTester } from '../src/main/agent/tools/projectTester';
 
 type CommandSpec = {
   command: string;
@@ -34,6 +35,16 @@ const templateCommands: Record<string, CommandSpec[]> = {
   'rust-cli': [{ command: 'cargo build', requiredTools: ['cargo'] }],
   'threejs-game': [{ command: 'npm run build', requiredTools: ['npm'] }]
 };
+
+const browserSmokeTemplates = new Set([
+  'electron-react',
+  'fullstack-react-express',
+  'fullstack-react-fastapi',
+  'nextjs-fullstack',
+  'vue-vite',
+  'sveltekit',
+  'threejs-game',
+]);
 
 function isToolAvailable(commandSpec: string): boolean {
   const [command, ...args] = commandSpec.split(' ').filter(Boolean);
@@ -126,6 +137,21 @@ async function main(): Promise<void> {
         const cwd = spec.cwd ? path.join(result.projectPath, spec.cwd) : result.projectPath;
         console.log(`\n--- ${templateId}: ${spec.command} (${cwd}) ---`);
         await runCommand(spec.command, cwd);
+      }
+
+      if (browserSmokeTemplates.has(templateId)) {
+        console.log(`\n--- ${templateId}: browser smoke ---`);
+        const browserResult = await new ProjectBrowserTester(result.projectPath).test();
+        const fallbackOnly = browserResult.issues.some((issue) => issue.description.includes('Playwright not installed'));
+        const criticalIssues = browserResult.issues.filter((issue) => issue.severity === 'critical');
+
+        if ((process.env.CI === 'true' && fallbackOnly) || criticalIssues.length > 0) {
+          throw new Error(
+            fallbackOnly
+              ? 'Playwright browser smoke is required for this web template in CI.'
+              : criticalIssues.map((issue) => issue.description).join('; ')
+          );
+        }
       }
     } catch (error: any) {
       failures.push({

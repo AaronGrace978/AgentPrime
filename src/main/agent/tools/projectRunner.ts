@@ -7,164 +7,86 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import {
+  getProjectRuntimeProfileSync,
+  getProjectKindLabel,
+  type ProjectKind,
+} from '../project-runtime';
+import { getTelemetryService } from '../../core/telemetry-service';
 
 const execAsync = promisify(exec);
 
 export interface ProjectInfo {
   type: 'node' | 'python' | 'html' | 'tauri' | 'unknown';
+  kind: ProjectKind;
+  displayName: string;
   hasPackageJson: boolean;
   hasRequirements: boolean;
   hasIndexHtml: boolean;
   name?: string;
   mainFile?: string;
   startCommand?: string;
+  buildCommand?: string;
+  installCommand?: string;
+  requiresInstall: boolean;
+  readinessSummary: string;
   pythonPath?: string;
   hasVirtualEnv?: boolean;
   virtualEnvPath?: string;
 }
 
 export class ProjectRunner {
-  private static isBundlerProject(workspacePath: string, packageJson: any): boolean {
-    if (fs.existsSync(path.join(workspacePath, 'vite.config.ts')) || fs.existsSync(path.join(workspacePath, 'vite.config.js'))) {
-      return true;
+  private static shouldInstallNodeDependencies(workspacePath: string, projectInfo: ProjectInfo): boolean {
+    if (projectInfo.type !== 'node' && projectInfo.type !== 'tauri') {
+      return false;
     }
 
-    const deps = {
-      ...(packageJson?.dependencies || {}),
-      ...(packageJson?.devDependencies || {})
-    };
-
-    return Boolean(deps.vite || deps.webpack || deps.parcel || deps.next || deps['@vitejs/plugin-react']);
+    return projectInfo.requiresInstall;
   }
 
   /**
    * Detect project type and structure
    */
   static async detectProject(workspacePath: string): Promise<ProjectInfo> {
+    const profile = getProjectRuntimeProfileSync(workspacePath);
     const info: ProjectInfo = {
-      type: 'unknown',
-      hasPackageJson: false,
-      hasRequirements: false,
-      hasIndexHtml: false
+      type: profile.type,
+      kind: profile.kind,
+      displayName: profile.displayName,
+      hasPackageJson: profile.hasPackageJson,
+      hasRequirements: profile.hasRequirements,
+      hasIndexHtml: profile.hasIndexHtml,
+      name: profile.packageJson?.name || getProjectKindLabel(profile.kind),
+      mainFile: profile.type === 'python' ? profile.pythonEntrypoint : profile.nodeEntrypoint,
+      startCommand: profile.run.command || undefined,
+      buildCommand: profile.build.command || undefined,
+      installCommand: profile.install.command || undefined,
+      requiresInstall: profile.install.required,
+      readinessSummary: profile.readiness.summary,
+      hasVirtualEnv: profile.hasVirtualEnv,
+      virtualEnvPath: profile.virtualEnvPath,
     };
 
     try {
-      const files = fs.readdirSync(workspacePath);
-      
-      // Check for Node.js project
-      if (files.includes('package.json')) {
-        info.hasPackageJson = true;
-
-        try {
-          const packageJson = JSON.parse(
-            fs.readFileSync(path.join(workspacePath, 'package.json'), 'utf-8')
-          );
-
-          // Check for Tauri project (has @tauri-apps dependencies and src-tauri directory)
-          const hasTauriDeps = packageJson.dependencies?.['@tauri-apps/api'] ||
-                              packageJson.devDependencies?.['@tauri-apps/api'] ||
-                              packageJson.devDependencies?.['@tauri-apps/cli'];
-          const hasTauriDir = files.includes('src-tauri');
-
-          if (hasTauriDeps && hasTauriDir) {
-            info.type = 'tauri';
-            info.name = packageJson.name || 'Tauri App';
-            // For Tauri, prefer tauri:dev over regular dev
-            if (packageJson.scripts?.['tauri:dev']) {
-              info.startCommand = `npm run tauri:dev`;
-            } else if (packageJson.scripts?.dev) {
-              info.startCommand = `npm run dev`;
-            } else if (packageJson.scripts?.start) {
-              info.startCommand = `npm start`;
-            }
-          } else {
-            info.type = 'node';
-            info.name = packageJson.name || 'Node.js App';
-            const bundlerProject = this.isBundlerProject(workspacePath, packageJson);
-            // Get start command for regular Node.js projects
-            if (bundlerProject && packageJson.scripts?.dev) {
-              info.startCommand = `npm run dev`;
-            } else if (packageJson.scripts?.start) {
-              info.startCommand = `npm start`;
-            } else if (packageJson.scripts?.dev) {
-              info.startCommand = `npm run dev`;
-            } else if (packageJson.main) {
-              info.mainFile = packageJson.main;
-              info.startCommand = `node ${packageJson.main}`;
-            } else if (files.includes('server.js')) {
-              info.mainFile = 'server.js';
-              info.startCommand = 'node server.js';
-            } else if (files.includes('index.js')) {
-              info.mainFile = 'index.js';
-              info.startCommand = 'node index.js';
-            }
-          }
-        } catch (e) {
-          console.warn('[ProjectRunner] Failed to parse package.json:', e);
-        }
-      }
-      
-      // Check for Python project
-      const hasPyFiles = files.some(f => f.endsWith('.py'));
-      if (files.includes('requirements.txt') || files.includes('main.py') || files.includes('app.py') || hasPyFiles) {
-        info.hasRequirements = files.includes('requirements.txt');
-        if (info.type === 'unknown') {
-          info.type = 'python';
-        }
-        
-        // Detect Python installation
+      if (info.type === 'python') {
         info.pythonPath = await this.findPython();
-        
-        // Check for virtual environment (directories only — .env files are dotenv, not venvs)
-        const venvCandidates = ['venv', '.venv', 'env'];
-        for (const candidate of venvCandidates) {
-          const candidatePath = path.join(workspacePath, candidate);
-          try {
-            if (fs.existsSync(candidatePath) && fs.statSync(candidatePath).isDirectory()) {
-              const hasActivate = fs.existsSync(path.join(candidatePath, 'Scripts', 'activate')) ||
-                                  fs.existsSync(path.join(candidatePath, 'bin', 'activate'));
-              if (hasActivate) {
-                info.hasVirtualEnv = true;
-                info.virtualEnvPath = candidatePath;
-                break;
-              }
-            }
-          } catch { /* stat failed — skip */ }
+        if (!info.hasVirtualEnv && info.virtualEnvPath) {
+          info.hasVirtualEnv = true;
         }
-        
-        // Find main Python file
-        const pyFiles = files.filter(f => f.endsWith('.py'));
-        if (files.includes('main.py')) {
-          info.mainFile = 'main.py';
-        } else if (files.includes('app.py')) {
-          info.mainFile = 'app.py';
-        } else if (pyFiles.length > 0) {
-          info.mainFile = pyFiles[0];
-        }
-        
-        // Set start command with virtual environment if available
+
         if (info.mainFile) {
-          if (info.hasVirtualEnv && info.virtualEnvPath) {
-            const isWindows = process.platform === 'win32';
-            const activateScript = isWindows ? 'activate.bat' : 'activate';
-            const pythonExe = isWindows ? 'python.exe' : 'python';
-            const venvPython = path.join(info.virtualEnvPath, 'Scripts', pythonExe);
-            info.startCommand = `${venvPython} ${info.mainFile}`;
-          } else {
-            const pythonCmd = info.pythonPath || 'python';
-            info.startCommand = `${pythonCmd} ${info.mainFile}`;
-          }
+          const pythonCmd =
+            info.hasVirtualEnv && info.virtualEnvPath
+              ? path.join(
+                  info.virtualEnvPath,
+                  process.platform === 'win32' ? 'Scripts' : 'bin',
+                  process.platform === 'win32' ? 'python.exe' : 'python'
+                )
+              : info.pythonPath || 'python';
+
+          info.startCommand = `${pythonCmd} ${info.mainFile}`;
         }
       }
-      
-      // Check for HTML project
-      if (files.includes('index.html')) {
-        info.hasIndexHtml = true;
-        if (info.type === 'unknown') {
-          info.type = 'html';
-        }
-      }
-      
     } catch (error) {
       console.error('[ProjectRunner] Error detecting project:', error);
     }
@@ -177,13 +99,13 @@ export class ProjectRunner {
    */
   static async installDependencies(workspacePath: string, projectInfo: ProjectInfo): Promise<{ success: boolean; output: string }> {
     try {
-      if (projectInfo.type === 'node' && projectInfo.hasPackageJson) {
+      if (this.shouldInstallNodeDependencies(workspacePath, projectInfo) && projectInfo.installCommand) {
         console.log('[ProjectRunner] Installing npm dependencies...');
         
         // Import tool-path-finder to get proper npm command and environment
         // CRITICAL: getNodeEnv() ensures child processes can find node.exe
         const { resolveCommand, getNodeEnv } = require('../../core/tool-path-finder');
-        const npmCommand = resolveCommand('npm install');
+        const npmCommand = resolveCommand(projectInfo.installCommand);
         const env = getNodeEnv();
         
         console.log('[ProjectRunner] Running:', npmCommand);
@@ -197,7 +119,7 @@ export class ProjectRunner {
         return { success: true, output: stdout + stderr };
       }
       
-      if (projectInfo.type === 'python' && projectInfo.hasRequirements) {
+      if (projectInfo.type === 'python' && projectInfo.requiresInstall) {
         console.log('[ProjectRunner] Installing Python dependencies...');
         
         // Use virtual environment pip if available
@@ -211,7 +133,11 @@ export class ProjectRunner {
           pipCmd = `${pythonCmd} -m pip`;
         }
         
-        const { stdout, stderr } = await execAsync(`${pipCmd} install -r requirements.txt`, {
+        const installCommand = projectInfo.installCommand || 'pip install -r requirements.txt';
+        const pipInstallCommand = installCommand.includes('pip install -r requirements.txt')
+          ? `${pipCmd} install -r requirements.txt`
+          : installCommand;
+        const { stdout, stderr } = await execAsync(pipInstallCommand, {
           cwd: workspacePath,
           timeout: 120000
         });
@@ -231,178 +157,333 @@ export class ProjectRunner {
   /**
    * Run the project
    */
-  static async runProject(workspacePath: string, projectInfo: ProjectInfo): Promise<{ success: boolean; output: string; port?: number }> {
+  static async runProject(
+    workspacePath: string,
+    projectInfo: ProjectInfo,
+    options: { probeOnly?: boolean; waitMs?: number } = {}
+  ): Promise<{ success: boolean; output: string; port?: number; url?: string }> {
+    const waitMs = options.waitMs ?? 3000;
+
+    if (projectInfo.kind === 'static' && projectInfo.hasIndexHtml) {
+      const indexHtmlPath = path.join(workspacePath, 'index.html');
+      if (!fs.existsSync(indexHtmlPath)) {
+        return { success: false, output: 'index.html not found' };
+      }
+
+      const url = `file:///${indexHtmlPath.replace(/\\/g, '/')}`;
+      return {
+        success: true,
+        output: `Static site ready at ${url}`,
+        url,
+      };
+    }
+
     if (!projectInfo.startCommand) {
       return { success: false, output: 'No start command found' };
     }
-    
-    // Check if dependencies need to be installed first
-    if (projectInfo.type === 'node' && projectInfo.hasPackageJson) {
+
+    if (this.shouldInstallNodeDependencies(workspacePath, projectInfo)) {
       const nodeModulesPath = path.join(workspacePath, 'node_modules');
       if (!fs.existsSync(nodeModulesPath)) {
         console.log('[ProjectRunner] 📦 Dependencies not found, installing...');
         const installResult = await this.installDependencies(workspacePath, projectInfo);
         if (!installResult.success) {
-          return { 
-            success: false, 
-            output: `Failed to install dependencies: ${installResult.output}\n\nPlease run 'npm install' manually in the project directory.` 
+          return {
+            success: false,
+            output: `Failed to install dependencies: ${installResult.output}`,
           };
         }
         console.log('[ProjectRunner] ✅ Dependencies installed successfully');
       }
     }
-    
-    // For Node.js servers, try to detect port (also used for port-conflict recovery in catch blocks)
-    let port: number | undefined;
+
+    const runtimeProfile = getProjectRuntimeProfileSync(workspacePath);
+    let runtimeCommand = projectInfo.startCommand;
+    let port = this.detectConfiguredPort(workspacePath, projectInfo);
+
+    if (projectInfo.kind === 'vite' && runtimeCommand === 'npm run dev') {
+      const preferredPort = options.probeOnly
+        ? 45000 + Math.floor(Math.random() * 1000)
+        : port || 5173;
+      const availablePort = await this.findAvailablePort(preferredPort);
+      if (availablePort) {
+        port = availablePort;
+        const viteScript = runtimeProfile.scripts.dev || 'vite';
+        runtimeCommand = /--port\s+\d+/.test(viteScript)
+          ? viteScript.replace(/--port\s+\d+/, `--port ${availablePort}`)
+          : `${viteScript} --port ${availablePort}`;
+      }
+    }
 
     try {
-      console.log(`[ProjectRunner] 🚀 Running: ${projectInfo.startCommand}`);
-      
-      // For Node.js servers, try to detect port
-      if (projectInfo.type === 'node') {
-        // Try to extract port from common patterns
-        try {
-          const serverFiles = ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean);
-          for (const file of serverFiles) {
-            if (file) {
-              const content = fs.readFileSync(path.join(workspacePath, file), 'utf-8');
-              const portMatch = content.match(/\.listen\((\d+)/) || content.match(/port[:\s=]+(\d+)/i);
-              if (portMatch) {
-                port = parseInt(portMatch[1]);
-                break;
-              }
-            }
-          }
-        } catch (e) {
-          // Ignore
-        }
-      }
-      
-      // Start the project in background
-      // CRITICAL: Use getNodeEnv() to ensure npm scripts can find node and binaries in node_modules/.bin
-      const { getNodeEnv } = require('../../core/tool-path-finder');
-      const nodeEnv = getNodeEnv();
-      
-      const child = exec(projectInfo.startCommand, {
+      console.log(`[ProjectRunner] 🚀 Running: ${runtimeCommand}`);
+
+      const env = this.getRuntimeEnv(projectInfo, workspacePath);
+      const child = exec(runtimeCommand, {
         cwd: workspacePath,
-        env: { ...nodeEnv, NODE_ENV: 'development' }
+        env,
       });
-      
-      // Collect output
+
       let output = '';
       child.stdout?.on('data', (data) => {
         output += data.toString();
         console.log(`[ProjectRunner] ${data.toString().trim()}`);
       });
-      
+
       child.stderr?.on('data', (data) => {
         output += data.toString();
         console.error(`[ProjectRunner] ${data.toString().trim()}`);
       });
-      
-      // Wait a bit to see if it starts successfully
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Check for EADDRINUSE error in output
+
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+      const detectedUrl = this.detectRuntimeUrl(output, projectInfo, port);
+      if (!port && detectedUrl?.port) {
+        port = detectedUrl.port;
+      }
+
       if (output.includes('EADDRINUSE') || output.includes('address already in use')) {
         console.log('[ProjectRunner] 🔧 Port conflict detected, finding available port...');
-        
-        // Try to auto-fix port conflict
-        if (projectInfo.type === 'node' && port) {
+
+        if ((projectInfo.type === 'node' || projectInfo.kind === 'vite') && port) {
           const newPort = await this.findAvailablePort(port);
           if (newPort && newPort !== port) {
             console.log(`[ProjectRunner] 🔧 Switching from port ${port} to ${newPort}`);
-            
-            // Update server file with new port
-            const serverFiles = ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean);
-            for (const file of serverFiles) {
-              if (file) {
-                try {
-                  const filePath = path.join(workspacePath, file);
-                  let content = fs.readFileSync(filePath, 'utf-8');
-                  
-                  // Replace port in various formats
-                  content = content.replace(
-                    new RegExp(`(PORT|port)[\\s:=]+${port}`, 'g'),
-                    `$1 = ${newPort}`
-                  );
-                  content = content.replace(
-                    new RegExp(`\\.listen\\(${port}`, 'g'),
-                    `.listen(${newPort}`
-                  );
-                  content = content.replace(
-                    new RegExp(`:${port}`, 'g'),
-                    `:${newPort}`
-                  );
-                  
-                  fs.writeFileSync(filePath, content, 'utf-8');
-                  console.log(`[ProjectRunner] ✅ Updated ${file} with port ${newPort}`);
-                  
-                  // Kill the failed process
-                  try { child.kill(); } catch (e) {}
-                  
-                  // Retry with new port
-                  return await this.runProject(workspacePath, { ...projectInfo, startCommand: projectInfo.startCommand?.replace(String(port), String(newPort)) });
-                } catch (e) {
-                  console.warn(`[ProjectRunner] Failed to update ${file}:`, e);
-                }
-              }
+            const rewired =
+              projectInfo.kind === 'vite'
+                ? true
+                : await this.rewirePortConflict(workspacePath, projectInfo, port, newPort);
+            try {
+              await this.terminateChildProcess(child);
+            } catch {
+              // Ignore kill failures for already-exited children.
+            }
+            if (rewired) {
+              const updatedStartCommand =
+                projectInfo.kind === 'vite' && projectInfo.startCommand === 'npm run dev'
+                  ? (/--port\s+\d+/.test(runtimeProfile.scripts.dev || '')
+                      ? (runtimeProfile.scripts.dev || 'vite').replace(/--port\s+\d+/, `--port ${newPort}`)
+                      : `${runtimeProfile.scripts.dev || 'vite'} --port ${newPort}`)
+                  : projectInfo.startCommand?.replace(String(port), String(newPort));
+              return this.runProject(workspacePath, {
+                ...projectInfo,
+                startCommand: updatedStartCommand,
+              }, options);
             }
           }
         }
-        
-        return { 
-          success: false, 
-          output: `Port ${port} is in use. Please stop the process using that port or change the port in your server file.` 
+
+        return {
+          success: false,
+          output: `Port ${port} is in use. Please stop the conflicting process or change the project port.`,
         };
       }
-      
-      // Check if process is still running
-      if (child.killed || child.exitCode !== null) {
-        return { 
-          success: false, 
-          output: output || 'Process exited immediately' 
+
+      if (child.exitCode !== null) {
+        const exitCode = child.exitCode;
+        const succeeded = exitCode === 0;
+        return {
+          success: succeeded,
+          output: output || (succeeded ? 'Process completed successfully' : 'Process exited immediately'),
+          port,
+          url: detectedUrl?.url,
         };
       }
-      
-      return { 
-        success: true, 
+
+      if (options.probeOnly) {
+        try {
+          await this.terminateChildProcess(child);
+        } catch {
+          // Ignore cleanup errors during probe mode.
+        }
+      }
+
+      return {
+        success: true,
         output: output || 'Project started successfully',
-        port 
+        port,
+        url: detectedUrl?.url,
       };
-      
     } catch (error: any) {
       console.error('[ProjectRunner] Run failed:', error);
-      
-      // Check if it's a port conflict error
-      const errorMsg = error.message || String(error);
-      if (errorMsg.includes('EADDRINUSE') || errorMsg.includes('address already in use')) {
-        if (projectInfo.type === 'node' && port) {
-          const newPort = await this.findAvailablePort(port);
-          if (newPort && newPort !== port) {
-            console.log(`[ProjectRunner] 🔧 Auto-fixing port conflict: ${port} → ${newPort}`);
-            // Recursively retry with new port (will update file in recursive call)
-            const serverFiles = ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean);
-            for (const file of serverFiles) {
-              if (file) {
-                try {
-                  const filePath = path.join(workspacePath, file);
-                  let content = fs.readFileSync(filePath, 'utf-8');
-                  content = content.replace(new RegExp(String(port), 'g'), String(newPort));
-                  fs.writeFileSync(filePath, content, 'utf-8');
-                  return await this.runProject(workspacePath, { ...projectInfo, startCommand: projectInfo.startCommand?.replace(String(port), String(newPort)) });
-                } catch (e) {
-                  // Continue to next file
-                }
-              }
-            }
-          }
-        }
+      return {
+        success: false,
+        output: error.message || 'Failed to run project',
+      };
+    }
+  }
+
+  private static getRuntimeEnv(projectInfo: ProjectInfo, workspacePath: string): NodeJS.ProcessEnv {
+    if (projectInfo.type === 'python') {
+      return { ...process.env, PYTHONUNBUFFERED: '1' };
+    }
+
+    try {
+      const { getNodeEnv } = require('../../core/tool-path-finder');
+      const nodeEnv = { ...getNodeEnv(), NODE_ENV: 'development' };
+      const nodeBinPath = path.join(workspacePath, 'node_modules', '.bin');
+      const existingPath = nodeEnv.PATH || nodeEnv.Path || process.env.PATH || '';
+      return {
+        ...nodeEnv,
+        PATH: fs.existsSync(nodeBinPath) ? `${nodeBinPath}${path.delimiter}${existingPath}` : existingPath,
+      };
+    } catch {
+      return { ...process.env, NODE_ENV: 'development' };
+    }
+  }
+
+  private static detectConfiguredPort(workspacePath: string, projectInfo: ProjectInfo): number | undefined {
+    const commandPortMatch = projectInfo.startCommand?.match(/--port\s+(\d+)/);
+    if (commandPortMatch) {
+      return parseInt(commandPortMatch[1], 10);
+    }
+
+    const runtimeProfile = getProjectRuntimeProfileSync(workspacePath);
+    const scriptSource =
+      projectInfo.startCommand === 'npm run dev'
+        ? runtimeProfile.scripts.dev
+        : projectInfo.startCommand === 'npm start'
+          ? runtimeProfile.scripts.start
+          : undefined;
+    const scriptPortMatch = scriptSource?.match(/--port\s+(\d+)/);
+    if (scriptPortMatch) {
+      return parseInt(scriptPortMatch[1], 10);
+    }
+
+    if (projectInfo.type !== 'node') {
+      return undefined;
+    }
+
+    const serverFiles = ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean);
+    for (const file of serverFiles) {
+      if (!file) {
+        continue;
       }
-      
-      return { 
-        success: false, 
-        output: error.message || 'Failed to run project' 
+
+      try {
+        const content = fs.readFileSync(path.join(workspacePath, file), 'utf-8');
+        const portMatch = content.match(/\.listen\((\d+)/) || content.match(/port[:\s=]+(\d+)/i);
+        if (portMatch) {
+          return parseInt(portMatch[1], 10);
+        }
+      } catch {
+        // Ignore unreadable candidates.
+      }
+    }
+
+    return projectInfo.kind === 'vite' ? 5173 : undefined;
+  }
+
+  private static detectRuntimeUrl(
+    output: string,
+    projectInfo: ProjectInfo,
+    configuredPort?: number
+  ): { url: string; port?: number } | null {
+    const urlMatch = output.match(/https?:\/\/(?:127\.0\.0\.1|localhost):(\d+)/i);
+    if (urlMatch) {
+      const url = urlMatch[0];
+      return { url, port: parseInt(urlMatch[1], 10) };
+    }
+
+    if (configuredPort && (projectInfo.kind === 'vite' || projectInfo.type === 'node')) {
+      return {
+        url: `http://localhost:${configuredPort}`,
+        port: configuredPort,
+      };
+    }
+
+    return null;
+  }
+
+  private static async rewirePortConflict(
+    workspacePath: string,
+    projectInfo: ProjectInfo,
+    oldPort: number,
+    newPort: number
+  ): Promise<boolean> {
+    const serverFiles = ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean);
+    for (const file of serverFiles) {
+      if (!file) {
+        continue;
+      }
+
+      try {
+        const filePath = path.join(workspacePath, file);
+        let content = fs.readFileSync(filePath, 'utf-8');
+        content = content.replace(new RegExp(String(oldPort), 'g'), String(newPort));
+        fs.writeFileSync(filePath, content, 'utf-8');
+        return true;
+      } catch {
+        // Try the next file.
+      }
+    }
+
+    return false;
+  }
+
+  private static async awaitChildExit(child: ReturnType<typeof exec>, timeoutMs: number): Promise<void> {
+    if (child.exitCode !== null) {
+      return;
+    }
+
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        child.once('exit', () => resolve());
+        child.once('close', () => resolve());
+      }),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
+
+  private static async terminateChildProcess(child: ReturnType<typeof exec>): Promise<void> {
+    if (child.exitCode !== null) {
+      return;
+    }
+
+    try {
+      if (process.platform === 'win32' && child.pid) {
+        await execAsync(`taskkill /PID ${child.pid} /T /F`, { timeout: 5000 });
+      } else {
+        child.kill('SIGTERM');
+      }
+    } catch {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // Ignore follow-up kill failures.
+      }
+    }
+
+    await this.awaitChildExit(child, 5000);
+  }
+  
+  static async runBuild(workspacePath: string, projectInfo: ProjectInfo): Promise<{ success: boolean; output: string }> {
+    if (!projectInfo.buildCommand) {
+      return { success: true, output: 'No build command configured' };
+    }
+
+    try {
+      const command = projectInfo.buildCommand;
+      console.log(`[ProjectRunner] 🏗️ Running build: ${command}`);
+      const env = this.getRuntimeEnv(projectInfo, workspacePath);
+      const shellCommand =
+        command.startsWith('npm ')
+          ? require('../../core/tool-path-finder').resolveCommand(command)
+          : command;
+      const { stdout, stderr } = await execAsync(shellCommand, {
+        cwd: workspacePath,
+        timeout: 300000,
+        env,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      return {
+        success: true,
+        output: `${stdout}${stderr}`.trim() || 'Build completed successfully',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        output: error.stderr || error.stdout || error.message || 'Build failed',
       };
     }
   }
@@ -439,18 +520,16 @@ export class ProjectRunner {
     const issues: string[] = [];
     
     try {
-      if (projectInfo.type === 'node' && projectInfo.hasPackageJson) {
-        // Check if main file exists
+      if ((projectInfo.type === 'node' || projectInfo.type === 'tauri') && projectInfo.hasPackageJson) {
         if (projectInfo.mainFile) {
           const mainPath = path.join(workspacePath, projectInfo.mainFile);
           if (!fs.existsSync(mainPath)) {
             issues.push(`Main file ${projectInfo.mainFile} not found`);
           }
         }
-        
-        // Check for node_modules (dependencies installed)
-        if (!fs.existsSync(path.join(workspacePath, 'node_modules'))) {
-          issues.push('Dependencies not installed (run npm install)');
+
+        if (!projectInfo.startCommand) {
+          issues.push(`No run command found for ${projectInfo.displayName}`);
         }
       }
       
@@ -460,6 +539,8 @@ export class ProjectRunner {
           if (!fs.existsSync(mainPath)) {
             issues.push(`Main file ${projectInfo.mainFile} not found`);
           }
+        } else {
+          issues.push('No Python entrypoint found');
         }
       }
       
@@ -468,6 +549,12 @@ export class ProjectRunner {
         if (!fs.existsSync(indexPath)) {
           issues.push('index.html not found');
         }
+      } else if (projectInfo.type === 'html' && !projectInfo.hasIndexHtml) {
+        issues.push('index.html not found');
+      }
+
+      if (projectInfo.kind === 'vite' && !projectInfo.buildCommand) {
+        issues.push('Vite app is missing a build command');
       }
       
     } catch (error) {
@@ -491,9 +578,10 @@ export class ProjectRunner {
     
     for (const cmd of pythonCommands) {
       try {
-        const { stdout } = await execAsync(`${cmd} --version`, { timeout: 5000 });
-        if (stdout.includes('Python')) {
-          console.log(`[ProjectRunner] ✅ Found Python: ${cmd} (${stdout.trim()})`);
+        const { stdout, stderr } = await execAsync(`${cmd} --version`, { timeout: 5000 });
+        const versionOutput = `${stdout}${stderr}`;
+        if (versionOutput.includes('Python')) {
+          console.log(`[ProjectRunner] ✅ Found Python: ${cmd} (${versionOutput.trim()})`);
           return cmd;
         }
       } catch (e) {
@@ -821,6 +909,21 @@ pause
       // Get the npm script to run (e.g., 'start', 'dev', 'build')
       const npmScriptMatch = projectInfo.startCommand.match(/npm\s+(?:run\s+)?(\w+)/);
       const npmScript = npmScriptMatch ? npmScriptMatch[1] : 'start';
+      const installBlock = this.shouldInstallNodeDependencies(workspacePath, projectInfo)
+        ? `REM Install dependencies if node_modules doesn't exist
+if not exist "node_modules" (
+    echo Installing dependencies...
+    call "%NPM_EXE%" install
+    if errorlevel 1 (
+        echo [ERROR] Failed to install dependencies
+        pause
+        exit /b 1
+    )
+    echo.
+)
+`
+        : `REM No package dependencies declared; skipping npm install.
+`;
       
       const batContent = `@echo off
 cd /d "%~dp0"
@@ -931,17 +1034,7 @@ exit /b 1
 echo Using Node.js: %NODE_EXE%
 echo.
 
-REM Install dependencies if node_modules doesn't exist
-if not exist "node_modules" (
-    echo Installing dependencies...
-    call "%NPM_EXE%" install
-    if errorlevel 1 (
-        echo [ERROR] Failed to install dependencies
-        pause
-        exit /b 1
-    )
-    echo.
-)
+${installBlock}
 
 REM Run the project
 echo Starting project...
@@ -971,6 +1064,16 @@ pause
     try {
       const npmScriptMatch = projectInfo.startCommand.match(/npm\s+(?:run\s+)?(\w+)/);
       const npmScript = npmScriptMatch ? npmScriptMatch[1] : 'start';
+      const installBlock = this.shouldInstallNodeDependencies(workspacePath, projectInfo)
+        ? `# Check if node_modules exists
+if [ ! -d "node_modules" ]; then
+    echo "Installing dependencies..."
+    npm install || { echo "Failed to install dependencies"; exit 1; }
+    echo
+fi
+`
+        : `# No package dependencies declared; skipping npm install.
+`;
       
       const shPath = path.join(workspacePath, 'run.sh');
       const shContent = `#!/bin/bash
@@ -979,12 +1082,7 @@ echo "========================================"
 echo "  Running: ${npmScript}"
 echo "========================================"
 
-# Check if node_modules exists
-if [ ! -d "node_modules" ]; then
-    echo "Installing dependencies..."
-    npm install || { echo "Failed to install dependencies"; exit 1; }
-    echo
-fi
+${installBlock}
 
 # Run the project
 echo "Starting project..."
@@ -1130,12 +1228,37 @@ npm run ${npmScript}
     projectInfo: ProjectInfo;
     validation: { valid: boolean; issues: string[] };
     installResult?: { success: boolean; output: string };
-    runResult?: { success: boolean; output: string; port?: number };
+    buildResult?: { success: boolean; output: string };
+    runResult?: { success: boolean; output: string; port?: number; url?: string };
   }> {
     console.log(`[ProjectRunner] 🔍 Detecting project in ${workspacePath}...`);
+    const telemetry = getTelemetryService();
+    const runPhase = async <T>(phase: string, operation: () => Promise<T>): Promise<T> => {
+      const startedAt = Date.now();
+      telemetry.track('generation_phase', { phase, status: 'start', workspacePath });
+      try {
+        const result = await operation();
+        telemetry.track('generation_phase', {
+          phase,
+          status: 'success',
+          workspacePath,
+          durationMs: Date.now() - startedAt,
+        });
+        return result;
+      } catch (error: any) {
+        telemetry.track('generation_phase', {
+          phase,
+          status: 'failure',
+          workspacePath,
+          durationMs: Date.now() - startedAt,
+          error: error?.message || String(error),
+        });
+        throw error;
+      }
+    };
     
-    const projectInfo = await this.detectProject(workspacePath);
-    console.log(`[ProjectRunner] Detected: ${projectInfo.type} project`);
+    const projectInfo = await runPhase('project_runner:detect', () => this.detectProject(workspacePath));
+    console.log(`[ProjectRunner] Detected: ${projectInfo.displayName}`);
     
     // For Python projects: create virtual environment if needed
     if (projectInfo.type === 'python' && !projectInfo.hasVirtualEnv) {
@@ -1178,24 +1301,119 @@ npm run ${npmScript}
       }
     }
     
-    const validation = await this.validateProject(workspacePath, projectInfo);
+    const validation = await runPhase('project_runner:validate', () => this.validateProject(workspacePath, projectInfo));
     
     let installResult;
-    if (projectInfo.type !== 'unknown' && projectInfo.type !== 'html') {
-      installResult = await this.installDependencies(workspacePath, projectInfo);
+    if (projectInfo.requiresInstall) {
+      installResult = await runPhase('project_runner:install', () => this.installDependencies(workspacePath, projectInfo));
+    }
+
+    let buildResult;
+    if (projectInfo.buildCommand && (installResult?.success ?? true)) {
+      buildResult = await runPhase('project_runner:build', () => this.runBuild(workspacePath, projectInfo));
     }
     
     let runResult;
-    if (projectInfo.startCommand && validation.valid) {
-      runResult = await this.runProject(workspacePath, projectInfo);
+    if ((projectInfo.startCommand || projectInfo.kind === 'static') && validation.valid && (buildResult?.success ?? true) && (installResult?.success ?? true)) {
+      runResult = await runPhase('project_runner:run', () => this.runProject(workspacePath, projectInfo, { probeOnly: true }));
     }
     
     return {
-      success: validation.valid && (runResult?.success ?? false),
+      success: validation.valid && (installResult?.success ?? true) && (buildResult?.success ?? true) && (runResult?.success ?? false),
       projectInfo,
       validation,
       installResult,
+      buildResult,
       runResult
+    };
+  }
+
+  static async launchProject(workspacePath: string): Promise<{
+    success: boolean;
+    message: string;
+    url?: string;
+    error?: string;
+    projectInfo?: ProjectInfo;
+  }> {
+    const projectInfo = await this.detectProject(workspacePath);
+
+    if (projectInfo.type === 'unknown') {
+      return {
+        success: false,
+        message: 'Could not detect project type',
+        error: 'Could not detect project type',
+        projectInfo,
+      };
+    }
+
+    const validation = await this.validateProject(workspacePath, projectInfo);
+    if (!validation.valid) {
+      return {
+        success: false,
+        message: validation.issues.join('; '),
+        error: validation.issues.join('; '),
+        projectInfo,
+      };
+    }
+
+    if (projectInfo.requiresInstall) {
+      const installResult = await this.installDependencies(workspacePath, projectInfo);
+      if (!installResult.success) {
+        return {
+          success: false,
+          message: installResult.output,
+          error: installResult.output,
+          projectInfo,
+        };
+      }
+    }
+
+    if (projectInfo.buildCommand) {
+      const buildResult = await this.runBuild(workspacePath, projectInfo);
+      if (!buildResult.success) {
+        return {
+          success: false,
+          message: buildResult.output,
+          error: buildResult.output,
+          projectInfo,
+        };
+      }
+    }
+
+    const runResult = await this.runProject(workspacePath, projectInfo);
+    if (!runResult.success) {
+      return {
+        success: false,
+        message: runResult.output,
+        error: runResult.output,
+        url: runResult.url,
+        projectInfo,
+      };
+    }
+
+    if (projectInfo.kind === 'static' && runResult.url) {
+      const { shell } = require('electron');
+      await shell.openExternal(runResult.url);
+      return {
+        success: true,
+        message: 'Opened static site in browser',
+        url: runResult.url,
+        projectInfo,
+      };
+    }
+
+    if (runResult.url) {
+      const { shell } = require('electron');
+      setTimeout(() => {
+        void shell.openExternal(runResult.url);
+      }, 2000);
+    }
+
+    return {
+      success: true,
+      message: runResult.output,
+      url: runResult.url,
+      projectInfo,
     };
   }
 }

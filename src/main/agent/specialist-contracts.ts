@@ -3,9 +3,11 @@ export type SpecialistId =
   | 'task_master'
   | 'template_scaffold_specialist'
   | 'javascript_specialist'
+  | 'styling_ux_specialist'
   | 'python_specialist'
   | 'tauri_specialist'
   | 'pipeline_specialist'
+  | 'testing_specialist'
   | 'integration_verifier'
   | 'repair_specialist';
 
@@ -14,9 +16,11 @@ export type SpecialistDiscipline =
   | 'planning'
   | 'scaffolding'
   | 'frontend_application'
+  | 'styling_and_ux'
   | 'backend_services'
   | 'desktop_runtime'
   | 'build_and_release'
+  | 'test_engineering'
   | 'verification'
   | 'repair';
 
@@ -159,9 +163,11 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     escalatesTo: [
       'template_scaffold_specialist',
       'javascript_specialist',
+      'styling_ux_specialist',
       'python_specialist',
       'tauri_specialist',
       'pipeline_specialist',
+      'testing_specialist',
       'integration_verifier',
       'repair_specialist',
     ],
@@ -213,6 +219,26 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     consumes: ['execution_plan', 'scaffold_result', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['pipeline_specialist', 'integration_verifier', 'repair_specialist'],
+    mustReportTo: ['task_master'],
+  },
+  styling_ux_specialist: {
+    id: 'styling_ux_specialist',
+    discipline: 'styling_and_ux',
+    phase: 'implement',
+    title: 'Styling / UX Specialist',
+    purpose: 'Own visual polish, CSS, layout, interaction feedback, and user-facing presentation details inside assigned files.',
+    reflectionFocus: [
+      'Did I improve clarity, hierarchy, and interaction affordances instead of just adding decoration?',
+      'Did I stay inside styling and UX concerns without rewriting unrelated application logic?',
+    ],
+    writableGlobs: ['src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'public/**'],
+    readableGlobs: ['src/**', 'public/**', 'tests/**', 'index.html'],
+    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
+    allowedCommandPrefixes: [],
+    forbiddenActions: ['edit backend service files', 'change dependency or packaging policy', 'rewrite core business logic'],
+    consumes: ['execution_plan', 'scaffold_result', 'repair_plan'],
+    produces: ['file_patch_set'],
+    escalatesTo: ['javascript_specialist', 'integration_verifier', 'repair_specialist'],
     mustReportTo: ['task_master'],
   },
   python_specialist: {
@@ -285,6 +311,26 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     escalatesTo: ['integration_verifier', 'repair_specialist'],
     mustReportTo: ['task_master'],
   },
+  testing_specialist: {
+    id: 'testing_specialist',
+    discipline: 'test_engineering',
+    phase: 'verify',
+    title: 'Testing Specialist',
+    purpose: 'Own automated test coverage, browser checks, fixtures, and test harness updates inside bounded test files.',
+    reflectionFocus: [
+      'Did I add the smallest useful test evidence for the requested behavior?',
+      'Did I avoid test-only churn that restates the implementation without reducing risk?',
+    ],
+    writableGlobs: ['tests/**', 'playwright.config.*', 'package.json', 'scripts/**/*.ts'],
+    readableGlobs: ['src/**', 'tests/**', 'playwright.config.*', 'package.json', 'scripts/**'],
+    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols', 'run_command'],
+    allowedCommandPrefixes: ['npm test', 'npm run test', 'npm run test:e2e', 'playwright test', 'npx playwright test'],
+    forbiddenActions: ['ship production feature code outside test scaffolding', 'modify backend service logic unless part of a dedicated repair plan'],
+    consumes: ['execution_plan', 'verification_report', 'repair_plan'],
+    produces: ['file_patch_set', 'command_result', 'verification_report'],
+    escalatesTo: ['integration_verifier', 'repair_specialist'],
+    mustReportTo: ['task_master'],
+  },
   integration_verifier: {
     id: 'integration_verifier',
     discipline: 'verification',
@@ -332,9 +378,11 @@ export const SPECIALIST_EXECUTION_ORDER: SpecialistId[] = [
   'task_master',
   'template_scaffold_specialist',
   'javascript_specialist',
+  'styling_ux_specialist',
   'python_specialist',
   'tauri_specialist',
   'pipeline_specialist',
+  'testing_specialist',
   'integration_verifier',
   'repair_specialist',
 ];

@@ -364,9 +364,11 @@ export class TaskMaster {
       task_master: [],
       template_scaffold_specialist: [],
       javascript_specialist: [],
+      styling_ux_specialist: [],
       python_specialist: [],
       tauri_specialist: [],
       pipeline_specialist: [],
+      testing_specialist: [],
       integration_verifier: [],
       repair_specialist: [],
     };
@@ -404,6 +406,8 @@ export class TaskMaster {
             : [];
       case 'javascript_specialist':
         return ['src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx', 'tests/**/*.ts', 'tests/**/*.tsx'];
+      case 'styling_ux_specialist':
+        return ['src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'public/**'];
       case 'python_specialist':
         return ['backend/**/*.py', 'scripts/**/*.py', 'tests/**/*.py'];
       case 'tauri_specialist':
@@ -420,6 +424,8 @@ export class TaskMaster {
           'tsconfig*.json',
           '.github/workflows/**',
         ];
+      case 'testing_specialist':
+        return ['tests/**', 'playwright.config.*', 'package.json', 'scripts/**/*.ts'];
       default:
         return [];
     }
@@ -442,12 +448,16 @@ export class TaskMaster {
         return `${prefix} the deterministic baseline scaffold without drifting from the chosen project shape.`;
       case 'javascript_specialist':
         return `${prefix} the JS/TS application files required by the user request.`;
+      case 'styling_ux_specialist':
+        return `${prefix} the styling, layout, and UX refinements required by the user request.`;
       case 'python_specialist':
         return `${prefix} the Python/backend files required by the user request.`;
       case 'tauri_specialist':
         return `${prefix} the desktop bridge and Tauri-specific files.`;
       case 'pipeline_specialist':
         return `${prefix} only build, dependency, and automation files needed to run and verify the project.`;
+      case 'testing_specialist':
+        return `${prefix} the focused test coverage and browser checks needed to prove the requested behavior.`;
       case 'integration_verifier':
         return 'Verify the current diff, runtime wiring, and command results without changing files.';
       default:
@@ -483,6 +493,9 @@ export class TaskMaster {
     if (specialist === 'pipeline_specialist') {
       criteria.push('Keep commands cross-platform and verification-oriented.');
     }
+    if (specialist === 'testing_specialist') {
+      criteria.push('Add only tests that materially reduce regression risk.');
+    }
     return criteria;
   }
 
@@ -499,7 +512,7 @@ export class TaskMaster {
       return existingSteps.map((step) => step.id).filter((stepId) => stepId !== previousStep.id);
     }
 
-    if (specialist === 'pipeline_specialist' || specialist === 'repair_specialist') {
+    if (specialist === 'pipeline_specialist' || specialist === 'testing_specialist' || specialist === 'repair_specialist') {
       return [previousStep.id];
     }
 

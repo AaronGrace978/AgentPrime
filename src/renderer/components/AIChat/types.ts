@@ -2,6 +2,9 @@
  * AIChat Types - Shared type definitions for the chat component
  */
 
+import type { AgentReviewChange, AgentReviewVerificationState } from '../../../types/agent-review';
+import type { RuntimeBudgetMode } from '../../../types/runtime-budget';
+
 export interface FileItem {
   name: string;
   path: string;
@@ -24,12 +27,7 @@ export interface Message {
   type?: 'system' | 'action' | 'result' | 'chat';
 }
 
-export interface AgentFileChange {
-  filePath: string;
-  oldContent: string;
-  newContent: string;
-  action: 'modified' | 'created' | 'deleted';
-}
+export type AgentFileChange = AgentReviewChange;
 
 export interface AIChatProps {
   /** When false, the chat stays mounted but is hidden (preserves in-flight agent state when the sidebar is collapsed). */
@@ -42,14 +40,19 @@ export interface AIChatProps {
   onOpenFolder?: () => void;
   onOpenTemplates?: () => void;
   onApplyCode?: (code: string, filePath?: string) => void;
-  onAgentChangesReady?: (changes: AgentFileChange[], taskDescription: string) => void;
+  onAgentChangesReady?: (
+    changes: AgentFileChange[],
+    taskDescription: string,
+    reviewSessionId?: string,
+    verification?: AgentReviewVerificationState
+  ) => void;
 }
 
 // Chat interaction mode
 export type ChatMode = 'agent' | 'chat' | 'dino';
 
-// Dual model mode type
-export type DualMode = 'fast' | 'deep' | 'auto';
+// Runtime budget selector type
+export type DualMode = RuntimeBudgetMode;
 
 export interface DualModelState {
   enabled: boolean;
