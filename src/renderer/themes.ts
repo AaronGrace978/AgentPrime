@@ -19,7 +19,11 @@ export type ThemeId =
   | 'nord'
   | 'dracula'
   | 'monokai'
-  | 'matrix';
+  | 'matrix'
+  | 'dino-buddy'
+  | 'aurora'
+  | 'blossom'
+  | 'ember';
 
 export interface Theme {
   id: ThemeId;
@@ -605,6 +609,187 @@ const matrixTheme: Theme = {
   }
 };
 
+// Dino Buddy — friendly prehistoric jungle (moss, coral “belly”, sky blue)
+const dinoBuddyTheme: Theme = {
+  id: 'dino-buddy',
+  name: 'Dino Buddy',
+  type: 'dark',
+  description: 'Friendly prehistoric jungle — moss greens, warm coral, and sky blue',
+  monaco: 'vs-dark',
+  colors: {
+    bgPrimary: '#1a221c',
+    bgSecondary: '#232e26',
+    bgTertiary: '#2d3d32',
+    bgHover: '#3a4d40',
+    bgActive: '#f4a261',
+    textPrimary: '#f5f0e6',
+    textSecondary: '#c9d4c4',
+    textMuted: '#8a9f88',
+    borderColor: '#3a4d40',
+    borderHover: '#f4a261',
+    borderSubtle: '#2d3d32',
+    accentPrimary: '#f4a261',
+    accentSecondary: '#e8a87c',
+    accentLight: 'rgba(244, 162, 97, 0.12)',
+    accentGlow: 'rgba(244, 162, 97, 0.3)',
+    blue: '#7eb8da',
+    green: '#7dce82',
+    purple: '#c9a0dc',
+    amber: '#f6d58e',
+    success: '#7dce82',
+    error: '#f87171',
+    warning: '#f6d58e',
+    info: '#7eb8da',
+    sidebarBg: '#232e26',
+    panelBg: '#1a221c',
+    headerBg: '#232e26',
+    editorBg: '#1a221c',
+    editorLineNumber: '#8a9f88',
+    editorSelection: '#3d5a45',
+    scrollbarThumb: '#3a4d40',
+    scrollbarTrack: '#232e26',
+    surface: '#232e26',
+    surfaceElevated: '#2d3d32',
+    surfaceHover: '#3a4d40',
+    shadowOpacity: 0.42
+  }
+};
+
+const auroraTheme: Theme = {
+  id: 'aurora',
+  name: 'Aurora',
+  type: 'dark',
+  description: 'Northern lights — teal and violet on polar night',
+  monaco: 'vs-dark',
+  colors: {
+    bgPrimary: '#0c1220',
+    bgSecondary: '#121a2e',
+    bgTertiary: '#1a2744',
+    bgHover: '#243554',
+    bgActive: '#22d3ee',
+    textPrimary: '#e8f4fc',
+    textSecondary: '#94a8c8',
+    textMuted: '#5c6b8a',
+    borderColor: '#243554',
+    borderHover: '#22d3ee',
+    borderSubtle: '#1a2744',
+    accentPrimary: '#22d3ee',
+    accentSecondary: '#e879f9',
+    accentLight: 'rgba(34, 211, 238, 0.1)',
+    accentGlow: 'rgba(232, 121, 249, 0.25)',
+    blue: '#38bdf8',
+    green: '#34d399',
+    purple: '#e879f9',
+    amber: '#fbbf24',
+    success: '#34d399',
+    error: '#fb7185',
+    warning: '#fbbf24',
+    info: '#22d3ee',
+    sidebarBg: '#121a2e',
+    panelBg: '#0c1220',
+    headerBg: '#121a2e',
+    editorBg: '#0c1220',
+    editorLineNumber: '#5c6b8a',
+    editorSelection: '#1e3a5f',
+    scrollbarThumb: '#243554',
+    scrollbarTrack: '#121a2e',
+    surface: '#121a2e',
+    surfaceElevated: '#1a2744',
+    surfaceHover: '#243554',
+    shadowOpacity: 0.5
+  }
+};
+
+const blossomTheme: Theme = {
+  id: 'blossom',
+  name: 'Blossom',
+  type: 'dark',
+  description: 'Night sakura — plum tones and soft pink accents',
+  monaco: 'vs-dark',
+  colors: {
+    bgPrimary: '#1f1419',
+    bgSecondary: '#2a1822',
+    bgTertiary: '#36202d',
+    bgHover: '#4a2d3d',
+    bgActive: '#fda4af',
+    textPrimary: '#fce7f3',
+    textSecondary: '#d8b4c8',
+    textMuted: '#9d7a8a',
+    borderColor: '#4a2d3d',
+    borderHover: '#fda4af',
+    borderSubtle: '#36202d',
+    accentPrimary: '#fda4af',
+    accentSecondary: '#f472b6',
+    accentLight: 'rgba(253, 164, 175, 0.12)',
+    accentGlow: 'rgba(244, 114, 182, 0.3)',
+    blue: '#93c5fd',
+    green: '#86efac',
+    purple: '#e879f9',
+    amber: '#fcd34d',
+    success: '#86efac',
+    error: '#fb7185',
+    warning: '#fcd34d',
+    info: '#93c5fd',
+    sidebarBg: '#2a1822',
+    panelBg: '#1f1419',
+    headerBg: '#2a1822',
+    editorBg: '#1f1419',
+    editorLineNumber: '#9d7a8a',
+    editorSelection: '#5c2d3f',
+    scrollbarThumb: '#4a2d3d',
+    scrollbarTrack: '#2a1822',
+    surface: '#2a1822',
+    surfaceElevated: '#36202d',
+    surfaceHover: '#4a2d3d',
+    shadowOpacity: 0.48
+  }
+};
+
+const emberTheme: Theme = {
+  id: 'ember',
+  name: 'Ember',
+  type: 'dark',
+  description: 'Warm embers — charcoal and copper glow',
+  monaco: 'vs-dark',
+  colors: {
+    bgPrimary: '#1a1210',
+    bgSecondary: '#241a16',
+    bgTertiary: '#30241e',
+    bgHover: '#3c3228',
+    bgActive: '#fb923c',
+    textPrimary: '#f5ebe6',
+    textSecondary: '#c9b8a8',
+    textMuted: '#8a7a6c',
+    borderColor: '#3c3228',
+    borderHover: '#fb923c',
+    borderSubtle: '#30241e',
+    accentPrimary: '#fb923c',
+    accentSecondary: '#f97316',
+    accentLight: 'rgba(251, 146, 60, 0.12)',
+    accentGlow: 'rgba(251, 146, 60, 0.28)',
+    blue: '#7dd3fc',
+    green: '#86efac',
+    purple: '#d8b4fe',
+    amber: '#fcd34d',
+    success: '#86efac',
+    error: '#f87171',
+    warning: '#fcd34d',
+    info: '#7dd3fc',
+    sidebarBg: '#241a16',
+    panelBg: '#1a1210',
+    headerBg: '#241a16',
+    editorBg: '#1a1210',
+    editorLineNumber: '#8a7a6c',
+    editorSelection: '#5a3d24',
+    scrollbarThumb: '#3c3228',
+    scrollbarTrack: '#241a16',
+    surface: '#241a16',
+    surfaceElevated: '#30241e',
+    surfaceHover: '#3c3228',
+    shadowOpacity: 0.46
+  }
+};
+
 // All available themes
 export const themes: Theme[] = [
   lightTheme,
@@ -617,7 +802,11 @@ export const themes: Theme[] = [
   nordTheme,
   draculaTheme,
   monokaiTheme,
-  matrixTheme
+  matrixTheme,
+  dinoBuddyTheme,
+  auroraTheme,
+  blossomTheme,
+  emberTheme
 ];
 
 // Get theme by ID
