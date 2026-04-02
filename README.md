@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/agentprime-readme-banner.png" alt="AgentPrime banner" />
+  <img src="assets/agentprime-cloud-hero.svg" alt="AgentPrime cloud hero" />
 </p>
 
 <h1 align="center">AgentPrime</h1>
 
 <p align="center">
-  Local-first AI coding workspace for desktop.
+  Cloud-ready, local-capable AI coding workspace for desktop.
 </p>
 
 <p align="center">
@@ -85,6 +85,11 @@ This is not the finish line yet, but it is a meaningful step past the earlier "a
 - Better specialized-agent execution with bounded parallel tool work and stronger review/verification plumbing.
 - Improved Ollama handling so cloud-style endpoints do not get treated like a local daemon health check path.
 - Shortcut behavior aligned with the UI: `Ctrl+K` opens the command palette outside the editor, while `Ctrl+K` in Monaco remains inline AI edit.
+- Added a model capability estimator for the chat status bar so the active-model "Power" meter updates from model IDs (size and named frontier tiers).
+- Switched default dual-model routing in chat to Ollama cloud-first models (`devstral-small-2:24b-cloud` fast, `qwen3-coder-next:cloud` deep).
+- Raised default Ollama cloud `agent` and `words_to_code` token budgets to `32768` and added regression coverage.
+- Added focused renderer tests for model capability scoring and stabilized the e2e agent-mode input path.
+- Ignored transient local artifacts (`playwright-report/`, `test-results/`, `build_output.txt`, `tsc_output.txt`) for cleaner commit hygiene.
 
 ## Next Goals
 
@@ -114,7 +119,7 @@ For the current specialist architecture direction, see `docs/BOUNDED_SPECIALIST_
 - Multi-provider support: OpenAI, Anthropic, Ollama, and OpenRouter
 - Fast, deep, and auto routing modes
 - In-app model selection and settings persistence
-- Local-model friendly workflows through Ollama
+- Cloud-first Ollama workflows by default, with local-model support still available
 
 ### Coding Tools
 
