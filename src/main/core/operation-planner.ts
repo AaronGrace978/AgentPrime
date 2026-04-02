@@ -98,6 +98,15 @@ export class OperationPlanner {
           canUndo = false; // Opening doesn't modify anything
         }
         break;
+
+      case 'organize':
+        const organizePlan = this.planOrganize(command, workspacePath);
+        if (organizePlan) {
+          steps.push(...organizePlan.steps);
+          totalFiles = organizePlan.totalFiles;
+          requiresConfirmation = true;
+        }
+        break;
     }
 
     if (steps.length === 0) {
@@ -153,7 +162,7 @@ export class OperationPlanner {
 
     return {
       steps: [{
-        type: command.operation,
+        type: command.operation === 'copy' ? 'copy' : 'move',
         source: sourceResolved.path,
         destination: destResolved.path,
         files,
@@ -286,6 +295,65 @@ export class OperationPlanner {
   }
 
   /**
+   * Plan organize operation by grouping files into category folders.
+   */
+  private planOrganize(
+    command: ParsedCommand,
+    workspacePath?: string
+  ): { steps: OperationStep[]; totalFiles: number } | null {
+    if (!command.source) {
+      return null;
+    }
+
+    const sourceResolved = this.pathResolver.resolve(command.source, workspacePath);
+    if (!sourceResolved.exists || !sourceResolved.isDirectory) {
+      return null;
+    }
+
+    const organizeBy = command.options?.organizeBy || 'type';
+    const recursive = command.options?.recursive || false;
+    const files = this.collectOrganizableFiles(sourceResolved.path, recursive);
+
+    if (files.length === 0) {
+      return null;
+    }
+
+    const steps: OperationStep[] = [];
+    for (const filePath of files) {
+      const category = this.categorizeFileForOrganize(filePath, organizeBy);
+      if (!category) continue;
+
+      const destinationDir = path.join(sourceResolved.path, category);
+      if (path.dirname(filePath).toLowerCase() === destinationDir.toLowerCase()) {
+        continue; // Skip files already organized into that category.
+      }
+
+      const destinationPath = this.generateUniqueName(
+        path.join(destinationDir, path.basename(filePath))
+      );
+
+      steps.push({
+        type: 'move',
+        source: filePath,
+        destination: destinationPath,
+        files: [filePath],
+        options: {
+          overwrite: false
+        }
+      });
+    }
+
+    if (steps.length === 0) {
+      return null;
+    }
+
+    return {
+      steps,
+      totalFiles: steps.length
+    };
+  }
+
+  /**
    * Collect files for operation (handles directories, patterns, etc.)
    */
   private collectFiles(
@@ -367,6 +435,101 @@ export class OperationPlanner {
     } catch (error) {
       // Skip directories we can't read
     }
+  }
+
+  /**
+   * Collect all files eligible for organization.
+   */
+  private collectOrganizableFiles(dirPath: string, recursive: boolean): string[] {
+    const files: string[] = [];
+
+    const walk = (currentPath: string): void => {
+      try {
+        const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(currentPath, entry.name);
+          if (entry.isDirectory()) {
+            if (recursive) {
+              walk(fullPath);
+            }
+          } else if (entry.isFile()) {
+            files.push(fullPath);
+          }
+        }
+      } catch {
+        // Skip unreadable folders.
+      }
+    };
+
+    walk(dirPath);
+    return files;
+  }
+
+  /**
+   * Determine destination category for organized files.
+   */
+  private categorizeFileForOrganize(filePath: string, organizeBy: 'type' | 'extension'): string | null {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ext) {
+      return null;
+    }
+
+    if (organizeBy === 'extension') {
+      return ext.replace('.', '').toUpperCase();
+    }
+
+    const extensionCategoryMap: Record<string, string> = {
+      '.jpg': 'Images',
+      '.jpeg': 'Images',
+      '.png': 'Images',
+      '.gif': 'Images',
+      '.bmp': 'Images',
+      '.webp': 'Images',
+      '.svg': 'Images',
+      '.heic': 'Images',
+      '.avif': 'Images',
+      '.tif': 'Images',
+      '.tiff': 'Images',
+      '.pdf': 'Documents',
+      '.doc': 'Documents',
+      '.docx': 'Documents',
+      '.txt': 'Documents',
+      '.rtf': 'Documents',
+      '.md': 'Documents',
+      '.csv': 'Documents',
+      '.xls': 'Documents',
+      '.xlsx': 'Documents',
+      '.ppt': 'Documents',
+      '.pptx': 'Documents',
+      '.zip': 'Archives',
+      '.rar': 'Archives',
+      '.7z': 'Archives',
+      '.tar': 'Archives',
+      '.gz': 'Archives',
+      '.bz2': 'Archives',
+      '.xz': 'Archives',
+      '.mp3': 'Audio',
+      '.wav': 'Audio',
+      '.flac': 'Audio',
+      '.aac': 'Audio',
+      '.m4a': 'Audio',
+      '.ogg': 'Audio',
+      '.mp4': 'Videos',
+      '.mkv': 'Videos',
+      '.mov': 'Videos',
+      '.avi': 'Videos',
+      '.webm': 'Videos',
+      '.m4v': 'Videos',
+      '.exe': 'Installers',
+      '.msi': 'Installers',
+      '.dmg': 'Installers',
+      '.pkg': 'Installers',
+      '.deb': 'Installers',
+      '.rpm': 'Installers',
+      '.appimage': 'Installers'
+    };
+
+    return extensionCategoryMap[ext] || null;
   }
 
   /**

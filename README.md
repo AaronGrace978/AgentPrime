@@ -72,6 +72,7 @@ This is not the finish line yet, but it is a meaningful step past the earlier "a
 - Review streamed agent progress and capture file changes for review
 - Apply inline AI edits directly from the editor
 - Use ghost text completions and contextual coding assistance
+- Run natural-language file operations (including one-shot folder organization) with confirmation prompts before bulk moves
 - Generate projects from built-in templates
 - Preview and deploy projects from inside the app
 - Work with Git actions and VibeHub-style repository workflows
@@ -99,6 +100,7 @@ This is not the finish line yet, but it is a meaningful step past the earlier "a
 - Upgraded staged multi-file review with file search, status filters, expand/collapse visible controls, and per-file diff impact badges.
 - Improved semantic indexing reliability by reusing the shared workspace indexer and handling in-flight indexing requests more predictably.
 - Refreshed the README hero artwork for a stronger AgentPrime visual identity.
+- Added a dedicated organize intent in the command pipeline so prompts like `organize my downloads folder` route to file operations (with safety confirmation) instead of coding mode.
 
 ## Next Goals
 
@@ -147,6 +149,18 @@ For the current specialist architecture direction, see `docs/BOUNDED_SPECIALIST_
 - Live preview
 - Deploy helpers for common frontend hosting workflows
 - Recent projects and workspace-aware startup flow
+
+### File Operations (Natural Language)
+
+- Parse plain-language file requests before normal AI chat routing
+- Support direct organize/sort commands for folders with confirmation before execution
+- Keep operations explicit and reversible where possible through the existing undo/safety path
+
+Examples:
+
+- `organize my downloads folder`
+- `sort this folder by extension`
+- `organize "C:\Users\yourname\Desktop"`
 
 ### Optional Brain Backend
 

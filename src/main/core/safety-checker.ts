@@ -5,6 +5,7 @@
 
 import { OperationPlan, OperationStep } from './operation-planner';
 import { ParsedCommand } from './command-parser';
+import * as path from 'path';
 
 export type RiskLevel = 'low' | 'medium' | 'high';
 
@@ -171,7 +172,22 @@ export class SafetyChecker {
         messages.push('⚠️ This action cannot be undone!');
       }
     } else if (step.type === 'move') {
-      messages.push(`This will move ${plan.totalFiles} file(s) to ${step.destination || 'destination'}`);
+      if (plan.steps.length > 1) {
+        const destinationFolders = new Set(
+          plan.steps
+            .map((planStep) => planStep.destination ? path.dirname(planStep.destination) : null)
+            .filter((value): value is string => Boolean(value))
+        );
+
+        if (destinationFolders.size > 1) {
+          messages.push(`This will move ${plan.totalFiles} file(s) into ${destinationFolders.size} folder(s)`);
+        } else {
+          messages.push(`This will move ${plan.totalFiles} file(s)`);
+        }
+      } else {
+        messages.push(`This will move ${plan.totalFiles} file(s) to ${step.destination || 'destination'}`);
+      }
+
       if (step.destination?.toLowerCase().includes('recycle bin')) {
         messages.push('Files will be moved to Recycle Bin');
       }
@@ -201,6 +217,10 @@ export class SafetyChecker {
     const newName = step.newName ? ` to "${step.newName}"` : '';
 
     let prompt = `${operation} ${source}${dest}${newName}?`;
+
+    if (assessment.affectedFilesCount > 1) {
+      prompt = `Execute ${assessment.affectedFilesCount} ${step.type} operation(s)?`;
+    }
 
     if (assessment.warningMessage) {
       prompt += `\n\n${assessment.warningMessage}`;

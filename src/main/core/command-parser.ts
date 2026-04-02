@@ -3,7 +3,7 @@
  * Parses conversational commands into structured intents for file operations
  */
 
-export type OperationType = 'move' | 'copy' | 'delete' | 'rename' | 'create' | 'open';
+export type OperationType = 'move' | 'copy' | 'delete' | 'rename' | 'create' | 'open' | 'organize';
 
 export interface ParsedCommand {
   operation: OperationType;
@@ -15,6 +15,7 @@ export interface ParsedCommand {
     useRecycleBin?: boolean;
     overwrite?: boolean;
     pattern?: string; // For bulk operations like "all .jpg files"
+    organizeBy?: 'type' | 'extension';
   };
   confidence: number; // 0-1, how confident we are in the parse
   rawCommand: string;
@@ -27,7 +28,8 @@ export class CommandParser {
     delete: ['delete', 'remove', 'trash', 'rm', 'del', 'erase', 'drop'],
     rename: ['rename', 'ren', 'call', 'change name', 'name', 'rechristen'],
     create: ['create', 'make', 'new', 'mkdir', 'add folder'],
-    open: ['open', 'show', 'reveal', 'display', 'launch', 'run']
+    open: ['open', 'show', 'reveal', 'display', 'launch', 'run'],
+    organize: ['organize', 'sort', 'tidy', 'tidy up', 'cleanup', 'clean up', 'declutter', 'arrange']
   };
 
   private destinationKeywords = ['to', 'in', 'into', 'on', 'onto', 'at'];
@@ -74,6 +76,10 @@ export class CommandParser {
       case 'open':
         source = this.extractSource(normalized, context);
         break;
+      case 'organize':
+        source = this.extractOrganizeSource(normalized, context);
+        options.organizeBy = normalized.includes('extension') ? 'extension' : 'type';
+        break;
     }
 
     // Extract options
@@ -109,16 +115,49 @@ export class CommandParser {
    * Detect operation type from command
    */
   private detectOperation(command: string): OperationType | null {
+    let bestMatch: { operation: OperationType; index: number } | null = null;
+
     for (const [operation, keywords] of Object.entries(this.operationKeywords)) {
       for (const keyword of keywords) {
         // Check if keyword appears early in command (higher priority)
-        const index = command.indexOf(keyword);
+        const index = this.getKeywordIndex(command, keyword);
         if (index !== -1 && index < 20) { // Within first 20 chars
-          return operation as OperationType;
+          const op = operation as OperationType;
+          if (op === 'organize' && !this.looksLikeFolderOrganizeIntent(command)) {
+            continue;
+          }
+
+          if (!bestMatch || index < bestMatch.index) {
+            bestMatch = { operation: op, index };
+          }
         }
       }
     }
-    return null;
+
+    return bestMatch?.operation || null;
+  }
+
+  private getKeywordIndex(command: string, keyword: string): number {
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escapedKeyword}\\b`, 'i');
+    const match = command.match(regex);
+    return match && typeof match.index === 'number' ? match.index : -1;
+  }
+
+  private looksLikeFolderOrganizeIntent(command: string): boolean {
+    if (/\b(folder|directory|downloads?|desktop|documents?|pictures?|music|videos?|files?)\b/i.test(command)) {
+      return true;
+    }
+    if (/\bthis folder\b|\bcurrent folder\b|\bhere\b/i.test(command)) {
+      return true;
+    }
+    if (/[a-z]:[\\/]/i.test(command)) {
+      return true;
+    }
+    if (/["'][^"']+["']/.test(command)) {
+      return true;
+    }
+    return command.includes('/') || command.includes('\\');
   }
 
   /**
@@ -267,9 +306,17 @@ export class CommandParser {
       return context.currentFolder;
     }
 
+    // Handle direct references to known system folders.
+    const systemFolderMatch = part.match(/\b(desktop|documents|pictures|music|videos|downloads|download)\b/i);
+    if (systemFolderMatch) {
+      const normalizedFolder = systemFolderMatch[1].toLowerCase();
+      return normalizedFolder === 'download' ? 'downloads' : normalizedFolder;
+    }
+
     // Remove common filler words
     const cleaned = part
-      .replace(/\b(the|a|an|folder|file|directory|dir)\b/gi, '')
+      .replace(/\b(can you|could you|would you|please|pls|for me|just|kindly)\b/gi, '')
+      .replace(/\b(the|a|an|my|folder|file|directory|dir|files)\b/gi, '')
       .trim();
 
     if (!cleaned) return undefined;
@@ -282,6 +329,41 @@ export class CommandParser {
 
     // Return cleaned path
     return cleaned || undefined;
+  }
+
+  /**
+   * Extract source folder for organize/sort intents.
+   */
+  private extractOrganizeSource(
+    command: string,
+    context?: { currentFile?: string; currentFolder?: string }
+  ): string | undefined {
+    if ((command.includes('this folder') || command.includes('current folder') || command.includes('here')) && context?.currentFolder) {
+      return context.currentFolder;
+    }
+
+    const explicitLocation = command.match(/\b(?:in|inside|from)\s+(.+)$/i);
+    if (explicitLocation?.[1]) {
+      const extracted = this.extractPathFromPart(explicitLocation[1], context);
+      if (extracted) return extracted;
+    }
+
+    const systemFolderMatch = command.match(/\b(desktop|documents|pictures|music|videos|downloads|download)\b/i);
+    if (systemFolderMatch) {
+      const normalizedFolder = systemFolderMatch[1].toLowerCase();
+      return normalizedFolder === 'download' ? 'downloads' : normalizedFolder;
+    }
+
+    const stripped = command
+      .replace(/\b(can you|could you|would you|please|pls|for me|just|kindly)\b/gi, '')
+      .replace(/\b(organize|sort|tidy|tidy up|cleanup|clean up|declutter|arrange)\b/gi, '')
+      .replace(/\b(the|a|an|my|folder|directory|files)\b/gi, '')
+      .trim();
+    const inferred = this.extractPathFromPart(stripped, context);
+    if (inferred) return inferred;
+
+    // Fallback: organize current focused folder when user points at one.
+    return context?.currentFolder;
   }
 
   /**
@@ -338,9 +420,17 @@ export class CommandParser {
       confidence += 0.15;
     }
 
+    if (operation === 'organize' && source) {
+      confidence += 0.2;
+    }
+
     // Lower confidence if operation requires destination but we don't have it
     if (['move', 'copy'].includes(operation) && !destination) {
       confidence -= 0.2;
+    }
+
+    if (operation === 'organize' && !source) {
+      confidence -= 0.25;
     }
 
     return Math.max(0, Math.min(1, confidence));
