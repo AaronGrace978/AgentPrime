@@ -1,11 +1,15 @@
 <p align="center">
-  <img src="assets/agentprime-cloud-hero.svg" alt="AgentPrime cloud hero" />
+  <img src="assets/agentprime-cloud-hero.svg" alt="AgentPrime cloud hero" width="1200" />
 </p>
 
 <h1 align="center">AgentPrime</h1>
 
 <p align="center">
   Cloud-ready, local-capable AI coding workspace for desktop.
+</p>
+
+<p align="center">
+  <strong>Now shipping:</strong> Agent autonomy dial, staged multi-file review controls, and faster semantic indexing at scale.
 </p>
 
 <p align="center">
@@ -64,6 +68,7 @@ This is not the finish line yet, but it is a meaningful step past the earlier "a
 - Route requests through fast, deep, or auto model selection
 - Use multiple providers without locking the app to a single vendor
 - Run specialized agents for more structured multi-step work
+- Tune Agent Mode from guided to hands-off with runtime guardrails for tools, commands, and file writes
 - Review streamed agent progress and capture file changes for review
 - Apply inline AI edits directly from the editor
 - Use ghost text completions and contextual coding assistance
@@ -90,6 +95,10 @@ This is not the finish line yet, but it is a meaningful step past the earlier "a
 - Raised default Ollama cloud `agent` and `words_to_code` token budgets to `32768` and added regression coverage.
 - Added focused renderer tests for model capability scoring and stabilized the e2e agent-mode input path.
 - Ignored transient local artifacts (`playwright-report/`, `test-results/`, `build_output.txt`, `tsc_output.txt`) for cleaner commit hygiene.
+- Added an Agent Autonomy dial in settings/composer and enforced backend autonomy policies for tool calls, command usage, and file-write limits.
+- Upgraded staged multi-file review with file search, status filters, expand/collapse visible controls, and per-file diff impact badges.
+- Improved semantic indexing reliability by reusing the shared workspace indexer and handling in-flight indexing requests more predictably.
+- Refreshed the README hero artwork for a stronger AgentPrime visual identity.
 
 ## Next Goals
 

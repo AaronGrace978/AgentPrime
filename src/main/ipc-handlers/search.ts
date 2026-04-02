@@ -10,22 +10,25 @@ import type { IpcMainInvokeEvent } from 'electron';
 interface HandlerDeps {
   ipcMain: any;
   getWorkspacePath: () => string | null;
+  getCodebaseIndexer?: () => CodebaseIndexer | null;
 }
 
-let codebaseIndexer: CodebaseIndexer | null = null;
+let fallbackIndexer: CodebaseIndexer | null = null;
+let fallbackWorkspacePath: string | null = null;
 
-function getIndexer(workspacePath: string | null): CodebaseIndexer | null {
+function getFallbackIndexer(workspacePath: string | null): CodebaseIndexer | null {
   if (!workspacePath) return null;
 
-  if (!codebaseIndexer || codebaseIndexer['workspacePath'] !== workspacePath) {
-    codebaseIndexer = new CodebaseIndexer(workspacePath);
+  if (!fallbackIndexer || fallbackWorkspacePath !== workspacePath) {
+    fallbackIndexer = new CodebaseIndexer(workspacePath);
+    fallbackWorkspacePath = workspacePath;
   }
 
-  return codebaseIndexer;
+  return fallbackIndexer;
 }
 
 export function register(deps: HandlerDeps): void {
-  const { ipcMain, getWorkspacePath } = deps;
+  const { ipcMain, getWorkspacePath, getCodebaseIndexer } = deps;
 
   // Initialize embeddings on startup
   void embeddings.initialize();
@@ -47,7 +50,9 @@ export function register(deps: HandlerDeps): void {
   // Search relevant files
   ipcMain.handle('search:relevant-files', async (_event: IpcMainInvokeEvent, query: string, topK: number = 5) => {
     try {
-      const indexer = getIndexer(getWorkspacePath());
+      const workspacePath = getWorkspacePath();
+      const sharedIndexer = getCodebaseIndexer?.() || null;
+      const indexer = sharedIndexer || getFallbackIndexer(workspacePath);
       if (!indexer) {
         return [];
       }

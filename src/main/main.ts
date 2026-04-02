@@ -100,6 +100,7 @@ import { PluginManager } from './core/plugin-api';
 import { SecurePluginSandbox } from './core/plugin-sandbox';
 import { setPluginManager as setPluginManagerSingleton } from './core/plugin-singleton';
 import { SelfTestingLoop } from './agent/self-testing-loop';
+import { clampAgentAutonomyLevel } from './agent/autonomy-policy';
 
 // Import Inference Server (shared AI for VibeHub projects)
 import { getInferenceEnvVars, getInferenceServer } from './inference-server';
@@ -297,6 +298,7 @@ let settings: Settings = {
   activeProvider: 'ollama',
   activeModel: OLLAMA_MODEL,
   dualOllamaEnabled: false,
+  agentAutonomyLevel: 3,
   plugins: {
     enabled: true,
     autoUpdate: false,
@@ -514,6 +516,8 @@ function loadSettings(): void {
       settings.providers.ollamaSecondary.endpoint = fixLocalhost(settings.providers.ollamaSecondary.endpoint);
       console.log('[Settings] 🔧 Fixed Ollama Secondary endpoint: localhost → 127.0.0.1 (IPv6 fix)');
     }
+
+    settings.agentAutonomyLevel = clampAgentAutonomyLevel(settings.agentAutonomyLevel);
   } catch (e) {
     console.log('Error loading settings:', e);
   }
@@ -1159,6 +1163,10 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
       ...(settings.ollamaCloudOutputLimits || DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS),
       ...(newSettings.ollamaCloudOutputLimits || {})
     });
+  }
+
+  if (newSettings.agentAutonomyLevel !== undefined) {
+    newSettings.agentAutonomyLevel = clampAgentAutonomyLevel(newSettings.agentAutonomyLevel);
   }
   
   settings = { ...settings, ...newSettings };

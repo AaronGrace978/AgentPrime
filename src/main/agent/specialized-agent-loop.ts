@@ -37,6 +37,7 @@ import {
 import { ProjectRunner } from './tools/projectRunner';
 import { getPluginManager } from '../core/plugin-singleton';
 import { reviewSessionManager } from './review-session-manager';
+import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from './autonomy-policy';
 import type {
   AgentReviewFinding,
   AgentReviewSessionSnapshot,
@@ -210,11 +211,15 @@ export class SpecializedAgentLoop extends EventEmitter {
     const telemetry = getTelemetryService();
     const taskStartedAt = Date.now();
     const requestedRuntimeBudget = this.context.runtimeBudget || 'standard';
+    const autonomyLevel = clampAgentAutonomyLevel(this.context.autonomyLevel);
+    const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
     telemetry.track('agent_task_start', {
       mode: 'specialized',
       workspacePath: this.context.workspacePath,
       requestedModel: this.context.model || null,
       runtimeBudget: requestedRuntimeBudget,
+      autonomyLevel,
+      autonomyLabel: autonomyPolicy.label,
     });
 
     // Start transaction for this specialized agent task
@@ -357,6 +362,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             files: this.getProjectFiles(),
             model: this.context.model,
             runtimeBudget,
+            autonomyLevel,
             deterministicScaffoldOnly: this.context.deterministicScaffoldOnly,
             blackboard,
           },
@@ -555,6 +561,8 @@ export class SpecializedAgentLoop extends EventEmitter {
         durationMs: Date.now() - taskStartedAt,
         stagedReview: true,
         runtimeBudget: requestedRuntimeBudget,
+        autonomyLevel,
+        autonomyLabel: autonomyPolicy.label,
       });
       console.log(`[SpecializedAgent] 📝 Staged ${operationCount} file operation(s) for review`);
       return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
@@ -577,6 +585,8 @@ export class SpecializedAgentLoop extends EventEmitter {
       durationMs: Date.now() - taskStartedAt,
       stagedReview: false,
       runtimeBudget: requestedRuntimeBudget,
+      autonomyLevel,
+      autonomyLabel: autonomyPolicy.label,
     });
 
     return response;
@@ -613,6 +623,8 @@ export class SpecializedAgentLoop extends EventEmitter {
         durationMs: Date.now() - taskStartedAt,
         error: error instanceof Error ? error.message : String(error),
         runtimeBudget: requestedRuntimeBudget,
+        autonomyLevel,
+        autonomyLabel: autonomyPolicy.label,
       });
       throw error; // Re-throw the original error
     }

@@ -22,6 +22,7 @@ import { getTelemetryService } from '../core/telemetry-service';
 import axios from 'axios';
 import { reviewSessionManager } from '../agent/review-session-manager';
 import { detectCanonicalTemplateId, workspaceNeedsDeterministicScaffold } from '../agent/scaffold-resolver';
+import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from '../agent/autonomy-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
 import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
@@ -392,6 +393,8 @@ export function register(deps: ChatHandlerDeps): void {
           activeProvider,
           runtime: requestedRuntime,
         } = resolveConfiguredModel(agentSettings, context.model);
+        const autonomyLevel = clampAgentAutonomyLevel(context.agent_autonomy ?? agentSettings?.agentAutonomyLevel);
+        const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
         
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
@@ -453,7 +456,9 @@ export function register(deps: ChatHandlerDeps): void {
         // Choose between specialized and monolithic agents
         if (useSpecializedAgents) {
           // Use specialized agent architecture
-          console.log(`[Chat] Specialized agent mode enabled, provider: ${activeProvider}, model: ${selectedModel}, cloud: ${isOllamaCloud}`);
+          console.log(
+            `[Chat] Specialized agent mode enabled, provider: ${activeProvider}, model: ${selectedModel}, cloud: ${isOllamaCloud}, autonomy: L${autonomyPolicy.level} (${autonomyPolicy.label})`
+          );
           const deterministicScaffoldOnly =
             Boolean((context as any).deterministic_scaffold_only) ||
             (
@@ -493,6 +498,7 @@ export function register(deps: ChatHandlerDeps): void {
             terminalHistory: context.terminal_history || [],
             model: selectedModel,
             runtimeBudget,
+            autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly,
           };
@@ -526,6 +532,8 @@ export function register(deps: ChatHandlerDeps): void {
               mode: 'specialized_dispatch',
               model: selectedModel,
               provider: activeProvider,
+              autonomyLevel,
+              autonomyLabel: autonomyPolicy.label,
               ...flattenRuntimeForTelemetry(requestedRuntime),
               workspacePath,
             });
@@ -542,6 +550,8 @@ export function register(deps: ChatHandlerDeps): void {
               success: true,
               model: selectedModel,
               provider: activeProvider,
+              autonomyLevel,
+              autonomyLabel: autonomyPolicy.label,
               ...flattenRuntimeForTelemetry(responseRuntime),
               workspacePath,
               durationMs: Date.now() - agentStartedAt,
@@ -573,6 +583,8 @@ export function register(deps: ChatHandlerDeps): void {
               success: false,
               model: selectedModel,
               provider: activeProvider,
+              autonomyLevel,
+              autonomyLabel: autonomyPolicy.label,
               ...flattenRuntimeForTelemetry(responseRuntime),
               workspacePath,
               durationMs: Date.now() - agentStartedAt,
@@ -599,7 +611,9 @@ export function register(deps: ChatHandlerDeps): void {
           }
         } else {
           // Monolithic path: plan → execute → validate via AgentPipeline (wraps AgentLoop)
-          console.log(`[Chat] Monolithic agent mode enabled, model: ${selectedModel}`);
+          console.log(
+            `[Chat] Monolithic agent mode enabled, model: ${selectedModel}, autonomy: L${autonomyPolicy.level} (${autonomyPolicy.label})`
+          );
           emitRuntimeInfo(event.sender, requestId, requestedRuntime);
 
           const agentContext: AgentContext = {
@@ -609,6 +623,7 @@ export function register(deps: ChatHandlerDeps): void {
             terminalHistory: context.terminal_history || [],
             model: selectedModel,
             runtimeBudget,
+            autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly: Boolean((context as any).deterministic_scaffold_only),
           };

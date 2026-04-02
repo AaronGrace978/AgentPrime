@@ -89,7 +89,8 @@ export function registerAllHandlers(deps: HandlerDeps): void {
   });
   registerSearch({
     ipcMain: deps.ipcMain,
-    getWorkspacePath: deps.getWorkspacePath
+    getWorkspacePath: deps.getWorkspacePath,
+    getCodebaseIndexer: deps.getCodebaseIndexer
   });
   registerAgent({
     ipcMain: deps.ipcMain,

@@ -33,6 +33,7 @@ function isOneDrivePlaceholderError(error: any): boolean {
 export class CodebaseIndexer {
   private chunks: CodeChunk[] = [];
   private isIndexing = false;
+  private indexingPromise: Promise<void> | null = null;
   private oneDriveSkipped = 0;
   private readonly supportedExtensions = ['.ts', '.tsx', '.js', '.jsx', '.html', '.css'];
   private readonly maxChunkSize = 500; // tokens
@@ -41,28 +42,42 @@ export class CodebaseIndexer {
   constructor(private workspacePath: string) {}
 
   async indexCodebase(): Promise<void> {
-    if (this.isIndexing) return;
+    if (this.indexingPromise) {
+      return this.indexingPromise;
+    }
 
-    this.isIndexing = true;
-    this.chunks = [];
-    this.oneDriveSkipped = 0;
-
-    try {
-      const embeddingsReady = await embeddings.initialize();
-      if (!embeddingsReady) {
-        console.warn('[CodebaseIndexer] Embeddings unavailable; semantic indexing disabled for this session');
+    this.indexingPromise = (async () => {
+      if (this.isIndexing) {
         return;
       }
-      console.log(`[CodebaseIndexer] Starting indexing for workspace: ${this.workspacePath}`);
-      await this.walkDirectory(this.workspacePath);
-      console.log(`[CodebaseIndexer] Indexed ${this.chunks.length} code chunks from ${this.workspacePath}`);
-      if (this.oneDriveSkipped > 0) {
-        console.warn(`[CodebaseIndexer] ⚠️ Skipped ${this.oneDriveSkipped} OneDrive placeholder file(s) (not downloaded locally). Open them in Explorer or disable Files On-Demand to hydrate.`);
+
+      this.isIndexing = true;
+      this.chunks = [];
+      this.oneDriveSkipped = 0;
+
+      try {
+        const embeddingsReady = await embeddings.initialize();
+        if (!embeddingsReady) {
+          console.warn('[CodebaseIndexer] Embeddings unavailable; semantic indexing disabled for this session');
+          return;
+        }
+        console.log(`[CodebaseIndexer] Starting indexing for workspace: ${this.workspacePath}`);
+        await this.walkDirectory(this.workspacePath);
+        console.log(`[CodebaseIndexer] Indexed ${this.chunks.length} code chunks from ${this.workspacePath}`);
+        if (this.oneDriveSkipped > 0) {
+          console.warn(`[CodebaseIndexer] ⚠️ Skipped ${this.oneDriveSkipped} OneDrive placeholder file(s) (not downloaded locally). Open them in Explorer or disable Files On-Demand to hydrate.`);
+        }
+      } catch (error) {
+        console.error('[CodebaseIndexer] Failed to index codebase:', error);
+      } finally {
+        this.isIndexing = false;
       }
-    } catch (error) {
-      console.error('[CodebaseIndexer] Failed to index codebase:', error);
+    })();
+
+    try {
+      await this.indexingPromise;
     } finally {
-      this.isIndexing = false;
+      this.indexingPromise = null;
     }
   }
 

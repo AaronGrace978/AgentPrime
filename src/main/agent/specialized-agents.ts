@@ -47,6 +47,7 @@ import {
   type SpecialistBlackboard,
   type SpecialistId,
 } from './specialist-contracts';
+import { resolveAgentAutonomyPolicy } from './autonomy-policy';
 
 interface AgentPendingFileChange {
   filePath: string;
@@ -1929,14 +1930,83 @@ export async function executeWithSpecialists(
     context.runtimeBudget === 'instant' || context.runtimeBudget === 'deep'
       ? context.runtimeBudget
       : 'standard';
+  const autonomyPolicy = resolveAgentAutonomyPolicy(context.autonomyLevel);
+  const autonomyUsage = {
+    toolCalls: 0,
+    commandCalls: 0,
+    writtenFiles: new Set<string>(),
+  };
+  const normalizeTrackedPath = (value: unknown): string | null => {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      return null;
+    }
+    return value.replace(/\\/g, '/').replace(/^\.?\//, '');
+  };
+  const reserveAutonomyBudget = (toolName: string): void => {
+    autonomyUsage.toolCalls += 1;
+    if (toolName === 'run_command') {
+      autonomyUsage.commandCalls += 1;
+    }
+  };
+  const captureAutonomyWriteTargets = (toolName: string, toolArgs: Record<string, any>, result: any): void => {
+    if (toolName === 'write_file' || toolName === 'create_file') {
+      const trackedPath = normalizeTrackedPath(result?.path ?? toolArgs.path);
+      if (trackedPath) {
+        autonomyUsage.writtenFiles.add(trackedPath);
+      }
+      return;
+    }
+
+    if (result?.action === 'scaffold_project' && Array.isArray(result.files)) {
+      for (const file of result.files) {
+        const trackedPath = normalizeTrackedPath(file);
+        if (trackedPath) {
+          autonomyUsage.writtenFiles.add(trackedPath);
+        }
+      }
+    }
+  };
+  const getAutonomyBlockReason = (toolName: string, toolArgs: Record<string, any>): string | null => {
+    if (autonomyUsage.toolCalls + 1 > autonomyPolicy.maxToolCalls) {
+      return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) reached its tool-call limit (${autonomyPolicy.maxToolCalls}).`;
+    }
+
+    if (toolName === 'run_command') {
+      if (!autonomyPolicy.allowRunCommands) {
+        return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) does not allow shell commands.`;
+      }
+      if (autonomyUsage.commandCalls + 1 > autonomyPolicy.maxCommandCalls) {
+        return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) reached its command limit (${autonomyPolicy.maxCommandCalls}).`;
+      }
+    }
+
+    if (toolName === 'write_file' || toolName === 'create_file') {
+      const trackedPath = normalizeTrackedPath(toolArgs.path);
+      const nextWriteCount =
+        trackedPath && !autonomyUsage.writtenFiles.has(trackedPath)
+          ? autonomyUsage.writtenFiles.size + 1
+          : autonomyUsage.writtenFiles.size;
+      if (nextWriteCount > autonomyPolicy.maxWriteFiles) {
+        return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) reached its file-write limit (${autonomyPolicy.maxWriteFiles}).`;
+      }
+    }
+
+    if (toolName === 'scaffold_project' && autonomyUsage.writtenFiles.size >= autonomyPolicy.maxWriteFiles) {
+      return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) blocked scaffold_project after reaching the file-write limit (${autonomyPolicy.maxWriteFiles}).`;
+    }
+
+    return null;
+  };
+  const policyPrompt = `\n\n## AUTONOMY GUARDRAILS\nAutonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}). ${autonomyPolicy.description}\n- Max tool calls: ${autonomyPolicy.maxToolCalls}\n- Max run_command calls: ${autonomyPolicy.maxCommandCalls}${autonomyPolicy.allowRunCommands ? '' : ' (commands disabled)'}\n- Max unique file writes: ${autonomyPolicy.maxWriteFiles}\nStay within these limits by planning compact, high-signal edits.`;
   const applyBudgetPrompt = (basePrompt: string): string => {
+    const withPolicy = `${basePrompt}${policyPrompt}`;
     if (runtimeBudget === 'instant') {
-      return `${basePrompt}\n\n## RUNTIME BUDGET\nUse the instant budget. Prefer the smallest viable patch, keep reasoning terse, and skip speculative refactors.`;
+      return `${withPolicy}\n\n## RUNTIME BUDGET\nUse the instant budget. Prefer the smallest viable patch, keep reasoning terse, and skip speculative refactors.`;
     }
     if (runtimeBudget === 'deep') {
-      return `${basePrompt}\n\n## RUNTIME BUDGET\nUse the deep budget. Spend extra effort on failure modes, architecture risks, and verifier-facing correctness before finalizing.`;
+      return `${withPolicy}\n\n## RUNTIME BUDGET\nUse the deep budget. Spend extra effort on failure modes, architecture risks, and verifier-facing correctness before finalizing.`;
     }
-    return `${basePrompt}\n\n## RUNTIME BUDGET\nUse the standard budget. Stay balanced: complete the task with bounded reflection and no unnecessary detours.`;
+    return `${withPolicy}\n\n## RUNTIME BUDGET\nUse the standard budget. Stay balanced: complete the task with bounded reflection and no unnecessary detours.`;
   };
   const budgetedTokens = (model: string | undefined, mode: 'analysis' | 'words_to_code' | 'specialist' | 'pipeline') =>
     getBudgetAdjustedMaxTokens(model, mode, runtimeBudget);
@@ -1953,7 +2023,7 @@ export async function executeWithSpecialists(
     type: 'user_intent',
     author: 'executive_router',
     summary: 'User goal received by specialized execution loop.',
-    payload: { task, roles, runtimeBudget },
+    payload: { task, roles, runtimeBudget, autonomyPolicy },
   });
 
   // 🛡️ FILE TRACKER MODE - Behavior depends on task type
@@ -2305,8 +2375,28 @@ Output as a structured list. Be specific and comprehensive.` }
       const toolName = normalized.name || 'unknown_tool';
       const toolArgs = normalized.arguments || {};
       const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+      const autonomyBlockReason = getAutonomyBlockReason(toolName, toolArgs);
+      if (autonomyBlockReason) {
+        mistakes.push(`Autonomy guardrail: ${autonomyBlockReason}`);
+        callbacks?.onToolComplete?.({
+          type: toolName,
+          title: toolTitle,
+          success: false,
+          specialist: 'tool_orchestrator',
+          error: autonomyBlockReason
+        });
+        addBlackboardArtifact(blackboard, {
+          type: 'verification_report',
+          author: 'task_master',
+          summary: `Blocked ${toolName} due to autonomy policy.`,
+          payload: { toolName, reason: autonomyBlockReason, policy: autonomyPolicy },
+        });
+        continue;
+      }
+      reserveAutonomyBudget(toolName);
       callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: 'tool_orchestrator' });
       const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
+      captureAutonomyWriteTargets(toolName, toolArgs, result);
       const toolSuccess = result?.success !== false;
       callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: toolSuccess, specialist: 'tool_orchestrator' });
       executedTools.push({ toolCall: normalized, result, specialist: 'tool_orchestrator' });
@@ -2477,8 +2567,28 @@ ${buildSharedContext(sharedContext)}`
             const toolName = normalized.name || 'unknown_tool';
             const toolArgs = normalized.arguments || {};
             const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+            const autonomyBlockReason = getAutonomyBlockReason(toolName, toolArgs);
+            if (autonomyBlockReason) {
+              mistakes.push(`Autonomy guardrail: ${autonomyBlockReason}`);
+              callbacks?.onToolComplete?.({
+                type: toolName,
+                title: toolTitle,
+                success: false,
+                specialist: role,
+                error: autonomyBlockReason
+              });
+              addBlackboardArtifact(blackboard, {
+                type: 'verification_report',
+                author: resolveBlackboardSpecialistId(role),
+                summary: `Blocked ${toolName} due to autonomy policy.`,
+                payload: { toolName, reason: autonomyBlockReason, policy: autonomyPolicy },
+              });
+              continue;
+            }
+            reserveAutonomyBudget(toolName);
             callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: role });
             const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
+            captureAutonomyWriteTargets(toolName, toolArgs, result);
             const toolSuccess = result?.success !== false;
             callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: toolSuccess, specialist: role });
             executedTools.push({ toolCall: normalized, result, specialist: role });
@@ -2666,8 +2776,28 @@ ${buildSharedContext(sharedContext)}`
           const toolName = normalized.name || 'unknown_tool';
           const toolArgs = normalized.arguments || {};
           const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
+          const autonomyBlockReason = getAutonomyBlockReason(toolName, toolArgs);
+          if (autonomyBlockReason) {
+            mistakes.push(`Autonomy guardrail: ${autonomyBlockReason}`);
+            callbacks?.onToolComplete?.({
+              type: toolName,
+              title: toolTitle,
+              success: false,
+              specialist: 'integration_analyst',
+              error: autonomyBlockReason
+            });
+            addBlackboardArtifact(blackboard, {
+              type: 'verification_report',
+              author: 'integration_verifier',
+              summary: `Blocked ${toolName} due to autonomy policy.`,
+              payload: { toolName, reason: autonomyBlockReason, policy: autonomyPolicy },
+            });
+            continue;
+          }
+          reserveAutonomyBudget(toolName);
           callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: 'integration_analyst' });
           const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
+          captureAutonomyWriteTargets(toolName, toolArgs, result);
           const toolSuccess = result?.success !== false;
           callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: toolSuccess, specialist: 'integration_analyst' });
           executedTools.push({ toolCall: normalized, result, specialist: 'integration_analyst' });

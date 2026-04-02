@@ -1,129 +1,158 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
-  <title id="title">AgentPrime Cloud Hero</title>
-  <desc id="desc">Futuristic cloud-first coding control room illustration for AgentPrime.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1000" role="img" aria-labelledby="title desc">
+  <title id="title">AgentPrime Neon Mission Control Hero</title>
+  <desc id="desc">Futuristic mission-control style illustration with an autonomy dial, multi-file diff rails, and cloud AI routing signals.</desc>
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#030817"/>
-      <stop offset="45%" stop-color="#081534"/>
-      <stop offset="100%" stop-color="#060b1d"/>
+    <linearGradient id="bgCore" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#040716"/>
+      <stop offset="45%" stop-color="#090f2a"/>
+      <stop offset="100%" stop-color="#040814"/>
     </linearGradient>
-    <radialGradient id="glowCyan" cx="50%" cy="45%" r="45%">
-      <stop offset="0%" stop-color="#2de2e6" stop-opacity="0.42"/>
-      <stop offset="60%" stop-color="#2de2e6" stop-opacity="0.08"/>
-      <stop offset="100%" stop-color="#2de2e6" stop-opacity="0"/>
+    <radialGradient id="auroraCyan" cx="48%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#35f2ff" stop-opacity="0.42"/>
+      <stop offset="55%" stop-color="#35f2ff" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#35f2ff" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="glowViolet" cx="72%" cy="28%" r="35%">
-      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.4"/>
-      <stop offset="65%" stop-color="#8b5cf6" stop-opacity="0.1"/>
-      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    <radialGradient id="auroraMagenta" cx="78%" cy="25%" r="42%">
+      <stop offset="0%" stop-color="#b174ff" stop-opacity="0.42"/>
+      <stop offset="62%" stop-color="#b174ff" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#b174ff" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="panelStroke" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#3cf0ff" stop-opacity="0.6"/>
-      <stop offset="50%" stop-color="#8b5cf6" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#24d3ee" stop-opacity="0.5"/>
+      <stop offset="0%" stop-color="#3df2ff" stop-opacity="0.72"/>
+      <stop offset="50%" stop-color="#b174ff" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#3df2ff" stop-opacity="0.72"/>
     </linearGradient>
-    <linearGradient id="beam" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="beamHot" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#2de2e6" stop-opacity="0"/>
-      <stop offset="45%" stop-color="#2de2e6" stop-opacity="0.55"/>
-      <stop offset="55%" stop-color="#8b5cf6" stop-opacity="0.55"/>
+      <stop offset="45%" stop-color="#2de2e6" stop-opacity="0.64"/>
+      <stop offset="55%" stop-color="#8b5cf6" stop-opacity="0.64"/>
       <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
     </linearGradient>
-    <filter id="softBlur">
+    <linearGradient id="beamCool" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#35f2ff" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#35f2ff" stop-opacity="0.78"/>
+      <stop offset="100%" stop-color="#35f2ff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="macroGrid" width="64" height="64" patternUnits="userSpaceOnUse">
+      <path d="M64 0H0V64" fill="none" stroke="#203154" stroke-opacity="0.34" stroke-width="1"/>
+    </pattern>
+    <pattern id="microGrid" width="12" height="12" patternUnits="userSpaceOnUse">
+      <path d="M12 0H0V12" fill="none" stroke="#2f416c" stroke-opacity="0.2" stroke-width="0.8"/>
+    </pattern>
+    <filter id="blurSoft">
       <feGaussianBlur stdDeviation="10"/>
     </filter>
-    <filter id="strongBlur">
-      <feGaussianBlur stdDeviation="22"/>
+    <filter id="blurStrong">
+      <feGaussianBlur stdDeviation="24"/>
     </filter>
-    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse">
-      <path d="M52 0H0V52" fill="none" stroke="#1e2f56" stroke-opacity="0.28" stroke-width="1"/>
-    </pattern>
-    <pattern id="tinyGrid" width="10" height="10" patternUnits="userSpaceOnUse">
-      <path d="M10 0H0V10" fill="none" stroke="#2b3f6b" stroke-opacity="0.18" stroke-width="0.8"/>
-    </pattern>
   </defs>
 
-  <rect width="1600" height="900" fill="url(#bg)"/>
-  <rect width="1600" height="900" fill="url(#grid)"/>
-  <rect width="1600" height="900" fill="url(#tinyGrid)" opacity="0.45"/>
+  <rect width="1800" height="1000" fill="url(#bgCore)"/>
+  <rect width="1800" height="1000" fill="url(#macroGrid)"/>
+  <rect width="1800" height="1000" fill="url(#microGrid)" opacity="0.6"/>
 
-  <ellipse cx="760" cy="410" rx="520" ry="280" fill="url(#glowCyan)"/>
-  <ellipse cx="1120" cy="240" rx="420" ry="240" fill="url(#glowViolet)"/>
-  <ellipse cx="460" cy="170" rx="270" ry="140" fill="#43f0f3" fill-opacity="0.11" filter="url(#softBlur)"/>
+  <ellipse cx="850" cy="430" rx="640" ry="340" fill="url(#auroraCyan)"/>
+  <ellipse cx="1260" cy="260" rx="520" ry="280" fill="url(#auroraMagenta)"/>
+  <ellipse cx="420" cy="180" rx="340" ry="160" fill="#3df2ff" fill-opacity="0.12" filter="url(#blurSoft)"/>
 
-  <!-- Cloud routing arcs -->
-  <g stroke-linecap="round" fill="none">
-    <path d="M300 660C520 500 790 505 980 375" stroke="#2de2e6" stroke-opacity="0.45" stroke-width="3"/>
-    <path d="M420 700C640 530 860 510 1170 318" stroke="#8b5cf6" stroke-opacity="0.4" stroke-width="3"/>
-    <path d="M210 590C500 460 760 430 1290 220" stroke="#2de2e6" stroke-opacity="0.22" stroke-width="2"/>
-    <path d="M360 760C670 565 970 500 1360 340" stroke="#8b5cf6" stroke-opacity="0.24" stroke-width="2"/>
+  <!-- Orbiting cloud routes -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M230 740C560 540 760 500 1090 340" stroke="#35f2ff" stroke-opacity="0.44" stroke-width="3"/>
+    <path d="M350 790C660 590 940 520 1370 300" stroke="#b174ff" stroke-opacity="0.4" stroke-width="3"/>
+    <path d="M150 650C520 490 880 430 1560 240" stroke="#35f2ff" stroke-opacity="0.22" stroke-width="2"/>
+    <path d="M360 890C760 670 1060 540 1670 350" stroke="#b174ff" stroke-opacity="0.2" stroke-width="2"/>
   </g>
 
-  <!-- Floating model nodes -->
   <g>
-    <circle cx="980" cy="375" r="12" fill="#2de2e6"/>
-    <circle cx="1170" cy="318" r="12" fill="#8b5cf6"/>
-    <circle cx="1290" cy="220" r="9" fill="#2de2e6"/>
-    <circle cx="1360" cy="340" r="9" fill="#8b5cf6"/>
-    <circle cx="980" cy="375" r="24" fill="#2de2e6" fill-opacity="0.14" filter="url(#softBlur)"/>
-    <circle cx="1170" cy="318" r="24" fill="#8b5cf6" fill-opacity="0.14" filter="url(#softBlur)"/>
+    <circle cx="1090" cy="340" r="12" fill="#35f2ff"/>
+    <circle cx="1370" cy="300" r="12" fill="#b174ff"/>
+    <circle cx="1560" cy="240" r="9" fill="#35f2ff"/>
+    <circle cx="1670" cy="350" r="9" fill="#b174ff"/>
+    <circle cx="1090" cy="340" r="30" fill="#35f2ff" fill-opacity="0.14" filter="url(#blurSoft)"/>
+    <circle cx="1370" cy="300" r="30" fill="#b174ff" fill-opacity="0.14" filter="url(#blurSoft)"/>
   </g>
 
-  <!-- Main holographic panel -->
-  <g transform="translate(190 180)">
-    <rect x="0" y="0" width="1220" height="470" rx="26" fill="#09162f" fill-opacity="0.65" stroke="url(#panelStroke)" stroke-opacity="0.7" stroke-width="2"/>
-    <rect x="18" y="18" width="1184" height="434" rx="18" fill="none" stroke="#33d6ff" stroke-opacity="0.24" stroke-width="1"/>
+  <!-- Main control frame -->
+  <g transform="translate(170 160)">
+    <rect x="0" y="0" width="1460" height="600" rx="30" fill="#071126" fill-opacity="0.68" stroke="url(#panelStroke)" stroke-width="2"/>
+    <rect x="18" y="18" width="1424" height="564" rx="22" fill="none" stroke="#35f2ff" stroke-opacity="0.24" stroke-width="1"/>
 
-    <rect x="36" y="54" width="430" height="330" rx="14" fill="#071226" fill-opacity="0.8" stroke="#2de2e6" stroke-opacity="0.35"/>
-    <rect x="496" y="54" width="688" height="190" rx="14" fill="#071226" fill-opacity="0.78" stroke="#8b5cf6" stroke-opacity="0.35"/>
-    <rect x="496" y="266" width="688" height="118" rx="14" fill="#071226" fill-opacity="0.72" stroke="#2de2e6" stroke-opacity="0.3"/>
-
-    <!-- Faux code lines -->
+    <!-- Left coding rail -->
+    <rect x="34" y="62" width="500" height="460" rx="18" fill="#071227" fill-opacity="0.82" stroke="#35f2ff" stroke-opacity="0.34"/>
     <g stroke-linecap="round">
-      <line x1="58" y1="88" x2="220" y2="88" stroke="#2de2e6" stroke-width="5" stroke-opacity="0.8"/>
-      <line x1="58" y1="114" x2="330" y2="114" stroke="#7dd3fc" stroke-width="4" stroke-opacity="0.7"/>
-      <line x1="58" y1="140" x2="286" y2="140" stroke="#c084fc" stroke-width="4" stroke-opacity="0.7"/>
-      <line x1="58" y1="166" x2="374" y2="166" stroke="#5eead4" stroke-width="4" stroke-opacity="0.66"/>
-      <line x1="58" y1="206" x2="240" y2="206" stroke="#7dd3fc" stroke-width="4" stroke-opacity="0.7"/>
-      <line x1="58" y1="232" x2="350" y2="232" stroke="#2de2e6" stroke-width="4" stroke-opacity="0.7"/>
-      <line x1="58" y1="258" x2="260" y2="258" stroke="#c084fc" stroke-width="4" stroke-opacity="0.7"/>
-      <line x1="58" y1="284" x2="312" y2="284" stroke="#5eead4" stroke-width="4" stroke-opacity="0.7"/>
-      <line x1="58" y1="310" x2="196" y2="310" stroke="#2de2e6" stroke-width="4" stroke-opacity="0.65"/>
+      <line x1="62" y1="96" x2="270" y2="96" stroke="#35f2ff" stroke-width="5" stroke-opacity="0.86"/>
+      <line x1="62" y1="126" x2="392" y2="126" stroke="#8ad9ff" stroke-width="4" stroke-opacity="0.74"/>
+      <line x1="62" y1="156" x2="322" y2="156" stroke="#d39dff" stroke-width="4" stroke-opacity="0.76"/>
+      <line x1="62" y1="186" x2="424" y2="186" stroke="#5debd7" stroke-width="4" stroke-opacity="0.72"/>
+      <line x1="62" y1="228" x2="256" y2="228" stroke="#8ad9ff" stroke-width="4" stroke-opacity="0.74"/>
+      <line x1="62" y1="258" x2="410" y2="258" stroke="#35f2ff" stroke-width="4" stroke-opacity="0.72"/>
+      <line x1="62" y1="288" x2="290" y2="288" stroke="#d39dff" stroke-width="4" stroke-opacity="0.72"/>
+      <line x1="62" y1="318" x2="372" y2="318" stroke="#5debd7" stroke-width="4" stroke-opacity="0.72"/>
+      <line x1="62" y1="348" x2="230" y2="348" stroke="#35f2ff" stroke-width="4" stroke-opacity="0.68"/>
+      <line x1="62" y1="390" x2="446" y2="390" stroke="#8ad9ff" stroke-width="4" stroke-opacity="0.7"/>
+      <line x1="62" y1="420" x2="318" y2="420" stroke="#b174ff" stroke-width="4" stroke-opacity="0.7"/>
+      <line x1="62" y1="450" x2="268" y2="450" stroke="#35f2ff" stroke-width="4" stroke-opacity="0.66"/>
     </g>
 
-    <!-- Token graph -->
-    <g transform="translate(530 85)">
-      <polyline points="0,100 90,72 180,78 270,38 360,58 450,20 538,44" fill="none" stroke="#2de2e6" stroke-width="4"/>
-      <polyline points="0,120 90,112 180,98 270,89 360,96 450,84 538,72" fill="none" stroke="#8b5cf6" stroke-width="3" stroke-opacity="0.8"/>
-      <circle cx="270" cy="38" r="6" fill="#2de2e6"/>
-      <circle cx="450" cy="20" r="6" fill="#2de2e6"/>
-      <circle cx="538" cy="44" r="6" fill="#2de2e6"/>
+    <!-- Center intelligence core -->
+    <g transform="translate(560 78)">
+      <rect x="0" y="0" width="480" height="230" rx="18" fill="#08142d" fill-opacity="0.82" stroke="#b174ff" stroke-opacity="0.36"/>
+      <circle cx="240" cy="116" r="86" fill="#0f1a3a" stroke="#35f2ff" stroke-opacity="0.4"/>
+      <circle cx="240" cy="116" r="52" fill="none" stroke="#35f2ff" stroke-opacity="0.8" stroke-width="4"/>
+      <circle cx="240" cy="116" r="30" fill="#35f2ff" fill-opacity="0.2" stroke="#b174ff" stroke-opacity="0.8" stroke-width="3"/>
+      <path d="M156 116H324" stroke="url(#beamHot)" stroke-width="4"/>
+      <path d="M240 32V200" stroke="url(#beamCool)" stroke-width="4"/>
+      <circle cx="240" cy="116" r="6" fill="#ffffff"/>
+      <g fill="#9fe9ff" font-family="'JetBrains Mono', Consolas, monospace" font-size="13" letter-spacing="1">
+        <text x="26" y="36">CONTEXT GRAPH</text>
+        <text x="282" y="36">RUNTIME CORE</text>
+      </g>
     </g>
 
-    <!-- Runtime bars -->
-    <g transform="translate(530 298)">
-      <rect x="0" y="0" width="548" height="20" rx="10" fill="#122447"/>
-      <rect x="0" y="0" width="480" height="20" rx="10" fill="url(#beam)"/>
-      <rect x="0" y="36" width="548" height="20" rx="10" fill="#122447"/>
-      <rect x="0" y="36" width="404" height="20" rx="10" fill="#2de2e6" fill-opacity="0.7"/>
-      <rect x="0" y="72" width="548" height="20" rx="10" fill="#122447"/>
-      <rect x="0" y="72" width="516" height="20" rx="10" fill="#8b5cf6" fill-opacity="0.72"/>
+    <!-- Right mission rail -->
+    <g transform="translate(1070 78)">
+      <rect x="0" y="0" width="360" height="444" rx="18" fill="#08142d" fill-opacity="0.82" stroke="#35f2ff" stroke-opacity="0.34"/>
+      <text x="24" y="34" fill="#b8ccf8" font-family="'JetBrains Mono', Consolas, monospace" font-size="14" letter-spacing="1.4">MISSION CONTROL</text>
+
+      <!-- Autonomy dial -->
+      <g transform="translate(180 150)">
+        <circle cx="0" cy="0" r="86" fill="#0e1a39" stroke="#263a66" stroke-width="2"/>
+        <circle cx="0" cy="0" r="72" fill="none" stroke="#35f2ff" stroke-opacity="0.3" stroke-width="2"/>
+        <path d="M0 -72A72 72 0 1 1 62 36" fill="none" stroke="url(#beamHot)" stroke-width="7" stroke-linecap="round"/>
+        <line x1="0" y1="0" x2="36" y2="-44" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="0" cy="0" r="10" fill="#ffffff"/>
+        <text x="-66" y="108" fill="#9fe9ff" font-family="'JetBrains Mono', Consolas, monospace" font-size="13">AUTONOMY L4</text>
+      </g>
+
+      <!-- Multi-file diff bars -->
+      <g transform="translate(28 272)">
+        <rect x="0" y="0" width="304" height="22" rx="11" fill="#16284d"/>
+        <rect x="0" y="0" width="264" height="22" rx="11" fill="url(#beamHot)"/>
+        <rect x="0" y="38" width="304" height="22" rx="11" fill="#16284d"/>
+        <rect x="0" y="38" width="214" height="22" rx="11" fill="#35f2ff" fill-opacity="0.72"/>
+        <rect x="0" y="76" width="304" height="22" rx="11" fill="#16284d"/>
+        <rect x="0" y="76" width="286" height="22" rx="11" fill="#b174ff" fill-opacity="0.72"/>
+        <text x="0" y="128" fill="#9eb3df" font-family="'JetBrains Mono', Consolas, monospace" font-size="12">REVIEW + VERIFY + RUN</text>
+      </g>
     </g>
 
-    <!-- UI chips -->
+    <!-- Bottom chips -->
     <g font-family="'JetBrains Mono', Consolas, monospace" font-size="16" font-weight="700">
-      <rect x="44" y="400" width="170" height="30" rx="15" fill="#102a50" stroke="#2de2e6" stroke-opacity="0.6"/>
-      <text x="66" y="420" fill="#9fe7ff">OLLAMA CLOUD</text>
-      <rect x="222" y="400" width="120" height="30" rx="15" fill="#1a1e46" stroke="#8b5cf6" stroke-opacity="0.6"/>
-      <text x="248" y="420" fill="#dbc8ff">DEEP</text>
+      <rect x="44" y="540" width="204" height="34" rx="17" fill="#102a50" stroke="#35f2ff" stroke-opacity="0.6"/>
+      <text x="68" y="562" fill="#a5efff">OLLAMA CLOUD</text>
+      <rect x="264" y="540" width="180" height="34" rx="17" fill="#171f49" stroke="#b174ff" stroke-opacity="0.62"/>
+      <text x="304" y="562" fill="#e2cfff">HANDS-OFF AI</text>
+      <rect x="462" y="540" width="246" height="34" rx="17" fill="#102a50" stroke="#35f2ff" stroke-opacity="0.6"/>
+      <text x="492" y="562" fill="#a5efff">MULTI-FILE REVIEW</text>
     </g>
   </g>
 
   <!-- Ground glow -->
-  <ellipse cx="800" cy="815" rx="610" ry="42" fill="#1cc7ea" fill-opacity="0.2" filter="url(#strongBlur)"/>
+  <ellipse cx="900" cy="918" rx="700" ry="44" fill="#1cc7ea" fill-opacity="0.24" filter="url(#blurStrong)"/>
 
-  <!-- Branding -->
-  <g transform="translate(210 112)">
-    <text x="0" y="0" font-family="'Segoe UI', Arial, sans-serif" font-size="22" font-weight="700" letter-spacing="4" fill="#39dcff">AGENTPRIME</text>
-    <text x="0" y="34" font-family="'Segoe UI', Arial, sans-serif" font-size="14" letter-spacing="2" fill="#9ab3db">CLOUD-FIRST AI WORKSPACE</text>
+  <!-- Brand lockup -->
+  <g transform="translate(190 110)">
+    <text x="0" y="0" font-family="'Segoe UI', Arial, sans-serif" font-size="24" font-weight="800" letter-spacing="4.5" fill="#40deff">AGENTPRIME</text>
+    <text x="0" y="36" font-family="'Segoe UI', Arial, sans-serif" font-size="14" letter-spacing="2.1" fill="#9ab3db">AUTONOMY DIAL " MULTI-FILE MAGIC " CLOUD-SPEED CODING</text>
   </g>
 </svg>

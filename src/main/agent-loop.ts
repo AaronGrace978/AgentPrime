@@ -995,6 +995,7 @@ export interface AgentContext {
   gitStatus?: string;
   model?: string;
   runtimeBudget?: 'instant' | 'standard' | 'deep';
+  autonomyLevel?: 1 | 2 | 3 | 4 | 5;
   deterministicScaffoldOnly?: boolean;
   repairScope?: {
     allowedFiles: string[];

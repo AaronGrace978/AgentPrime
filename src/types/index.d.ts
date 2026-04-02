@@ -21,6 +21,7 @@ export interface Settings {
   activeModel: string;
   dualOllamaEnabled: boolean;
   useSpecializedAgents?: boolean; // Enable specialized agent architecture
+  agentAutonomyLevel?: 1 | 2 | 3 | 4 | 5; // How aggressively the agent can act end-to-end
   
   // Telemetry
   telemetryEnabled?: boolean; // Send anonymous usage data to help improve AgentPrime
@@ -154,6 +155,7 @@ export interface ChatContext {
   // Dual Model System
   dual_mode?: 'fast' | 'deep' | 'auto';
   runtime_budget?: RuntimeBudgetMode;
+  agent_autonomy?: 1 | 2 | 3 | 4 | 5;
   deterministic_scaffold_only?: boolean;
   has_errors?: boolean;
   just_chat_mode?: boolean;

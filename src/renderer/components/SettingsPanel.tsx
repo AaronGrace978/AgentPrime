@@ -57,6 +57,39 @@ const DEFAULT_DUAL_MODEL_CONFIG: Settings['dualModelConfig'] = {
   fastModelTriggers: ['quick', 'simple', 'format', 'rename']
 };
 
+const AUTONOMY_LABELS: Record<number, { label: string; description: string }> = {
+  1: {
+    label: 'Guided',
+    description: 'Small, review-first edits. Commands are disabled.',
+  },
+  2: {
+    label: 'Cautious',
+    description: 'Constrained edits with a small command budget.',
+  },
+  3: {
+    label: 'Balanced',
+    description: 'Default autonomy for normal multi-file implementation work.',
+  },
+  4: {
+    label: 'Extended',
+    description: 'Broader execution with higher tool and command budgets.',
+  },
+  5: {
+    label: 'Hands-off',
+    description: 'Maximum autonomy for end-to-end feature loops.',
+  },
+};
+
+function clampAgentAutonomyLevel(value: unknown): 1 | 2 | 3 | 4 | 5 {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 3;
+  }
+  const rounded = Math.round(value);
+  if (rounded <= 1) return 1;
+  if (rounded >= 5) return 5;
+  return rounded as 1 | 2 | 3 | 4 | 5;
+}
+
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   isOpen,
   onClose,
@@ -126,6 +159,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       activeProvider: 'ollama',
       activeModel: 'qwen3-coder:480b-cloud',
       dualOllamaEnabled: false,
+      agentAutonomyLevel: 3,
       dualModelEnabled: true,
       dualModelConfig: DEFAULT_DUAL_MODEL_CONFIG,
       ollamaCloudOutputLimits: DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS,
@@ -490,6 +524,44 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     handleActiveProviderChange,
                     handleActiveModelChange
                   )}
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Agent Autonomy</span>
+                    <span className="setting-description">
+                      Choose how hands-off Agent Mode should be across multi-file edits and command execution
+                    </span>
+                  </label>
+                  <div className="setting-input-group setting-input-group--wide" style={{ alignItems: 'center' }}>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      step="1"
+                      value={clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)}
+                      onChange={(e) => updateSetting('agentAutonomyLevel', clampAgentAutonomyLevel(parseInt(e.target.value, 10)))}
+                      className="setting-range"
+                    />
+                    <span className="setting-value">{clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)}</span>
+                    <span className="setting-model-badge">
+                      {AUTONOMY_LABELS[clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)].label}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Autonomy Profile</span>
+                    <span className="setting-description">
+                      {AUTONOMY_LABELS[clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)].description}
+                    </span>
+                  </label>
+                  <div className="setting-model-meta" style={{ justifyContent: 'flex-end' }}>
+                    <span className="setting-model-current">
+                      Level {clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)} - {AUTONOMY_LABELS[clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)].label}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="setting-group">

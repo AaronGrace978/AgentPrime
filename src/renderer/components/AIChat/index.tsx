@@ -44,6 +44,24 @@ import type { AIError } from './components';
 // 🦖 DINO BUDDY: Agent Progress Tracker
 import AgentProgressTracker from '../AgentProgressTracker';
 
+const AUTONOMY_LABELS: Record<number, string> = {
+  1: 'Guided',
+  2: 'Cautious',
+  3: 'Balanced',
+  4: 'Extended',
+  5: 'Hands-off'
+};
+
+function clampAgentAutonomyLevel(value: unknown): 1 | 2 | 3 | 4 | 5 {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 3;
+  }
+  const rounded = Math.round(value);
+  if (rounded <= 1) return 1;
+  if (rounded >= 5) return 5;
+  return rounded as 1 | 2 | 3 | 4 | 5;
+}
+
 const AIChat: React.FC<AIChatProps> = ({
   isVisible = true,
   onClose,
@@ -71,6 +89,8 @@ const AIChat: React.FC<AIChatProps> = ({
   const [agentRunning, setAgentRunning] = useState(false);
   const [selectedModel, setSelectedModel] = useState('qwen3-coder:480b-cloud');
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
+  const [agentAutonomyLevel, setAgentAutonomyLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [agentPrefsHydrated, setAgentPrefsHydrated] = useState(false);
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
   const [lastError, setLastError] = useState<AIError | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
@@ -178,21 +198,28 @@ const AIChat: React.FC<AIChatProps> = ({
 
   // Load specialized agents preference from settings
   useEffect(() => {
-    const loadSpecializedAgents = async () => {
+    const loadAgentPreferences = async () => {
       try {
         const settings = await window.agentAPI.getSettings();
         if (settings && typeof settings.useSpecializedAgents === 'boolean') {
           setUseSpecializedAgents(settings.useSpecializedAgents);
         }
+        setAgentAutonomyLevel(clampAgentAutonomyLevel(settings?.agentAutonomyLevel));
       } catch (error) {
         console.error('Failed to load specialized agents setting:', error);
+      } finally {
+        setAgentPrefsHydrated(true);
       }
     };
-    loadSpecializedAgents();
+    loadAgentPreferences();
   }, []);
 
   // Save specialized agents preference when changed
   useEffect(() => {
+    if (!agentPrefsHydrated) {
+      return;
+    }
+
     const saveSpecializedAgents = async () => {
       try {
         await window.agentAPI.updateSettings({ useSpecializedAgents });
@@ -200,11 +227,23 @@ const AIChat: React.FC<AIChatProps> = ({
         console.error('Failed to save specialized agents setting:', error);
       }
     };
-    // Only save if we've loaded settings first (avoid saving on initial mount)
-    if (useSpecializedAgents !== undefined) {
-      saveSpecializedAgents();
+    saveSpecializedAgents();
+  }, [agentPrefsHydrated, useSpecializedAgents]);
+
+  useEffect(() => {
+    if (!agentPrefsHydrated) {
+      return;
     }
-  }, [useSpecializedAgents]);
+
+    const saveAutonomyPreference = async () => {
+      try {
+        await window.agentAPI.updateSettings({ agentAutonomyLevel });
+      } catch (error) {
+        console.error('Failed to save agent autonomy level:', error);
+      }
+    };
+    saveAutonomyPreference();
+  }, [agentAutonomyLevel, agentPrefsHydrated]);
 
   // Load chat history
   useEffect(() => {
@@ -561,7 +600,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: `Working on your request using **${agentModel}** with the **${dualModel.mode}** runtime budget...`,
+      content: `Working on your request using **${agentModel}** with the **${dualModel.mode}** runtime budget and **${AUTONOMY_LABELS[agentAutonomyLevel]}** autonomy...`,
       timestamp: new Date()
     }]);
 
@@ -588,6 +627,7 @@ const AIChat: React.FC<AIChatProps> = ({
         model: agentModel,
         dual_mode: runtimeBudgetToDualMode(dualModel.mode),
         runtime_budget: dualModel.mode,
+        agent_autonomy: agentAutonomyLevel,
         repair_scope: pendingRepairScopeRef.current || undefined,
         dino_buddy_mode: false,
         file_path: activeFilePath,
@@ -818,6 +858,31 @@ const AIChat: React.FC<AIChatProps> = ({
                   enabled={useSpecializedAgents}
                   onChange={setUseSpecializedAgents}
                 />
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px 8px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--prime-border)',
+                  background: 'var(--prime-surface)'
+                }}>
+                  <span style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>Autonomy</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={agentAutonomyLevel}
+                    onChange={(e) => setAgentAutonomyLevel(clampAgentAutonomyLevel(parseInt(e.target.value, 10)))}
+                    disabled={isLoading || agentRunning}
+                    style={{ width: '90px', accentColor: 'var(--prime-accent)', cursor: isLoading || agentRunning ? 'not-allowed' : 'pointer' }}
+                    title={`Agent autonomy level ${agentAutonomyLevel}: ${AUTONOMY_LABELS[agentAutonomyLevel]}`}
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--prime-text)', fontWeight: 700, minWidth: '70px', textAlign: 'right' }}>
+                    {AUTONOMY_LABELS[agentAutonomyLevel]}
+                  </span>
+                </div>
               </>
             )}
 

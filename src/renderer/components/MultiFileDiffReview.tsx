@@ -6,7 +6,6 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import InlineDiff, { DiffHunk, useInlineDiff } from './InlineDiff';
 import type { AgentReviewChange, AgentReviewVerificationState } from '../../types/agent-review';
 
 export type FileChange = AgentReviewChange;
@@ -28,6 +27,47 @@ interface MultiFileDiffReviewProps {
   applied?: boolean;
 }
 
+type FileStatusFilter = 'all' | 'pending' | 'accepted' | 'rejected';
+
+function computeDiffStats(oldContent: string, newContent: string): { added: number; removed: number } {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  let oi = 0;
+  let ni = 0;
+  let added = 0;
+  let removed = 0;
+
+  while (oi < oldLines.length || ni < newLines.length) {
+    const oldLine = oi < oldLines.length ? oldLines[oi] : undefined;
+    const newLine = ni < newLines.length ? newLines[ni] : undefined;
+
+    if (oldLine === newLine) {
+      oi++;
+      ni++;
+      continue;
+    }
+
+    if (oldLine === undefined) {
+      added++;
+      ni++;
+      continue;
+    }
+
+    if (newLine === undefined) {
+      removed++;
+      oi++;
+      continue;
+    }
+
+    removed++;
+    added++;
+    oi++;
+    ni++;
+  }
+
+  return { added, removed };
+}
+
 const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   changes,
   onAcceptFile,
@@ -47,6 +87,8 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
     new Set(changes.slice(0, 3).map(c => c.filePath))
   );
+  const [statusFilter, setStatusFilter] = useState<FileStatusFilter>('all');
+  const [fileQuery, setFileQuery] = useState('');
 
   const toggleFile = useCallback((filePath: string) => {
     setExpandedFiles(prev => {
@@ -66,6 +108,21 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     const rejected = changes.filter(c => c.status === 'rejected').length;
     return { pending, accepted, rejected, total: changes.length };
   }, [changes]);
+  const diffStatsByFile = useMemo(() => {
+    const map = new Map<string, { added: number; removed: number }>();
+    for (const change of changes) {
+      map.set(change.filePath, computeDiffStats(change.oldContent, change.newContent));
+    }
+    return map;
+  }, [changes]);
+  const normalizedQuery = fileQuery.trim().toLowerCase();
+  const visibleChanges = useMemo(() => {
+    return changes.filter((change) => {
+      const statusMatches = statusFilter === 'all' || change.status === statusFilter;
+      const queryMatches = normalizedQuery.length === 0 || change.filePath.toLowerCase().includes(normalizedQuery);
+      return statusMatches && queryMatches;
+    });
+  }, [changes, normalizedQuery, statusFilter]);
   const acceptedFiles = useMemo(
     () => changes.filter((change) => change.status === 'accepted').map((change) => change.filePath),
     [changes]
@@ -89,6 +146,22 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     : reviewComplete
       ? 'Review complete. Accepted changes stay in the workspace, and rejected ones have already been reverted.'
       : 'Accept keeps a change in the workspace. Reject immediately restores the prior file contents.';
+  const toggleExpandVisible = useCallback(() => {
+    const allVisibleExpanded = visibleChanges.length > 0 && visibleChanges.every((change) => expandedFiles.has(change.filePath));
+    setExpandedFiles((prev) => {
+      const next = new Set(prev);
+      if (allVisibleExpanded) {
+        for (const change of visibleChanges) {
+          next.delete(change.filePath);
+        }
+      } else {
+        for (const change of visibleChanges) {
+          next.add(change.filePath);
+        }
+      }
+      return next;
+    });
+  }, [expandedFiles, visibleChanges]);
 
   const renderStatPill = (
     label: string,
@@ -320,6 +393,64 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             </button>
           )}
         </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={fileQuery}
+            onChange={(event) => setFileQuery(event.target.value)}
+            placeholder="Filter files..."
+            style={{
+              minWidth: '220px',
+              padding: '7px 10px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'var(--prime-surface)',
+              color: 'var(--prime-text)',
+              fontSize: '12px',
+              fontFamily: '"JetBrains Mono", monospace',
+            }}
+          />
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as FileStatusFilter)}
+            style={{
+              padding: '7px 10px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'var(--prime-surface)',
+              color: 'var(--prime-text)',
+              fontSize: '12px',
+              fontFamily: 'inherit',
+            }}
+          >
+            <option value="all">All statuses</option>
+            <option value="pending">Pending only</option>
+            <option value="accepted">Accepted only</option>
+            <option value="rejected">Rejected only</option>
+          </select>
+          <button
+            onClick={toggleExpandVisible}
+            disabled={visibleChanges.length === 0}
+            style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'transparent',
+              color: 'var(--prime-text-secondary)',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: visibleChanges.length === 0 ? 'not-allowed' : 'pointer',
+              opacity: visibleChanges.length === 0 ? 0.6 : 1,
+            }}
+          >
+            {visibleChanges.length > 0 && visibleChanges.every((change) => expandedFiles.has(change.filePath))
+              ? 'Collapse Visible'
+              : 'Expand Visible'}
+          </button>
+          <span style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
+            Showing {visibleChanges.length} of {changes.length} files
+          </span>
+        </div>
         {verification && verification.status !== 'idle' && (
           <div style={{
             display: 'flex',
@@ -400,98 +531,122 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
 
       {/* File list */}
       <div style={{ overflow: 'auto', flex: 1 }}>
-        {changes.map((change) => (
-          <div key={change.filePath} style={{
-            borderBottom: '1px solid var(--prime-border)',
-            opacity: change.status === 'rejected' ? 0.4 : 1,
+        {visibleChanges.length === 0 ? (
+          <div style={{
+            padding: '20px',
+            fontSize: '12px',
+            color: 'var(--prime-text-muted)',
+            textAlign: 'center',
+            borderTop: '1px solid var(--prime-border)',
           }}>
-            {/* File header */}
-            <div
-              onClick={() => toggleFile(change.filePath)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 16px',
-                cursor: 'pointer',
-                fontSize: '12px',
-                background:
-                  change.status === 'accepted'
-                    ? 'rgba(63, 185, 80, 0.06)'
-                    : change.status === 'rejected'
-                      ? 'rgba(255, 123, 114, 0.04)'
-                      : 'transparent',
-              }}
-            >
-              <span style={{ color: 'var(--prime-text-muted)', fontSize: '10px' }}>
-                {expandedFiles.has(change.filePath) ? '▼' : '▶'}
-              </span>
-              {getActionBadge(change.action)}
-              <span style={{
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: '12px',
-                color: 'var(--prime-text)',
-                flex: 1,
-              }}>
-                {change.filePath}
-              </span>
-
-              {change.status === 'pending' && (
-                <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                  <button onClick={() => onAcceptFile(change.filePath)} style={{
-                    padding: '2px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: 'rgba(63, 185, 80, 0.15)',
-                    color: '#3fb950',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}>
-                    Accept
-                  </button>
-                  <button onClick={() => onRejectFile(change.filePath)} style={{
-                    padding: '2px 10px',
-                    borderRadius: '4px',
-                    border: 'none',
-                    background: 'rgba(255, 123, 114, 0.15)',
-                    color: '#ff7b72',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}>
-                    Reject
-                  </button>
-                </div>
-              )}
-
-              {change.status !== 'pending' && (
+            No files match the current filter.
+          </div>
+        ) : visibleChanges.map((change) => {
+          const diffStats = diffStatsByFile.get(change.filePath) || { added: 0, removed: 0 };
+          return (
+            <div key={change.filePath} style={{
+              borderBottom: '1px solid var(--prime-border)',
+              opacity: change.status === 'rejected' ? 0.4 : 1,
+            }}>
+              {/* File header */}
+              <div
+                onClick={() => toggleFile(change.filePath)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  background:
+                    change.status === 'accepted'
+                      ? 'rgba(63, 185, 80, 0.06)'
+                      : change.status === 'rejected'
+                        ? 'rgba(255, 123, 114, 0.04)'
+                        : 'transparent',
+                }}
+              >
+                <span style={{ color: 'var(--prime-text-muted)', fontSize: '10px' }}>
+                  {expandedFiles.has(change.filePath) ? '▼' : '▶'}
+                </span>
+                {getActionBadge(change.action)}
+                <span style={{
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontSize: '12px',
+                  color: 'var(--prime-text)',
+                  flex: 1,
+                }}>
+                  {change.filePath}
+                </span>
                 <span style={{
                   padding: '2px 8px',
-                  borderRadius: '10px',
+                  borderRadius: '999px',
                   fontSize: '10px',
                   fontWeight: 700,
-                  background: change.status === 'accepted' ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255, 123, 114, 0.15)',
-                  color: change.status === 'accepted' ? '#3fb950' : '#ff7b72',
+                  background: 'rgba(88, 166, 255, 0.12)',
+                  color: '#58a6ff',
+                  fontFamily: '"JetBrains Mono", monospace',
                 }}>
-                  {change.status === 'accepted' ? 'Accepted' : 'Reverted'}
+                  +{diffStats.added} / -{diffStats.removed}
                 </span>
+
+                {change.status === 'pending' && (
+                  <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                    <button onClick={() => onAcceptFile(change.filePath)} style={{
+                      padding: '2px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: 'rgba(63, 185, 80, 0.15)',
+                      color: '#3fb950',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>
+                      Accept
+                    </button>
+                    <button onClick={() => onRejectFile(change.filePath)} style={{
+                      padding: '2px 10px',
+                      borderRadius: '4px',
+                      border: 'none',
+                      background: 'rgba(255, 123, 114, 0.15)',
+                      color: '#ff7b72',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>
+                      Reject
+                    </button>
+                  </div>
+                )}
+
+                {change.status !== 'pending' && (
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    background: change.status === 'accepted' ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255, 123, 114, 0.15)',
+                    color: change.status === 'accepted' ? '#3fb950' : '#ff7b72',
+                  }}>
+                    {change.status === 'accepted' ? 'Accepted' : 'Reverted'}
+                  </span>
+                )}
+              </div>
+
+              {/* File diff */}
+              {expandedFiles.has(change.filePath) && (
+                <div style={{
+                  background: '#0d1117',
+                  borderTop: '1px solid var(--prime-border)',
+                  maxHeight: '240px',
+                  overflow: 'auto',
+                }}>
+                  <FileDiff oldContent={change.oldContent} newContent={change.newContent} />
+                </div>
               )}
             </div>
-
-            {/* File diff */}
-            {expandedFiles.has(change.filePath) && (
-              <div style={{
-                background: '#0d1117',
-                borderTop: '1px solid var(--prime-border)',
-                maxHeight: '200px',
-                overflow: 'auto',
-              }}>
-                <FileDiff oldContent={change.oldContent} newContent={change.newContent} />
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
