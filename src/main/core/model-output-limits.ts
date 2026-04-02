@@ -24,8 +24,8 @@ export interface OllamaCloudOutputLimits {
 export const DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS: OllamaCloudOutputLimits = {
   chatMaxTokens: 32768,
   justChatMaxTokens: 32768,
-  wordsToCodeMaxTokens: 16384,
-  agentMaxTokens: 16384,
+  wordsToCodeMaxTokens: 32768,
+  agentMaxTokens: 32768,
   specialistMaxTokens: 12288,
   analysisMaxTokens: 32768,
   pipelineMaxTokens: 8192,

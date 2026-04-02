@@ -93,8 +93,8 @@ export function getModelLabel(provider: string, model: string): string {
 
 // Default brain configuration
 export const DEFAULT_BRAIN_CONFIG = {
-  fastModel: { provider: 'ollama', model: 'qwen2.5-coder:7b', enabled: true },
-  deepModel: { provider: 'ollama', model: 'qwen2.5-coder:32b', enabled: true }
+  fastModel: { provider: 'ollama', model: 'devstral-small-2:24b-cloud', enabled: true },
+  deepModel: { provider: 'ollama', model: 'qwen3-coder-next:cloud', enabled: true }
 };
 
 // Default dual model state

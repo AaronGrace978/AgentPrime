@@ -76,7 +76,7 @@ test.describe('Application Smoke', () => {
     await window.evaluate(async (nextWorkspacePath) => {
       await window.agentAPI.updateSettings({
         activeProvider: 'ollama',
-        activeModel: 'qwen2.5-coder:7b',
+        activeModel: 'qwen3-coder-next:cloud',
         useSpecializedAgents: true
       });
       await window.agentAPI.setWorkspace(nextWorkspacePath);
@@ -87,8 +87,13 @@ test.describe('Application Smoke', () => {
 
     const chatInput = window.getByPlaceholder('Describe what you want to build... (@ to mention files)');
     if (!(await chatInput.isVisible())) {
-      await window.keyboard.press(process.platform === 'darwin' ? 'Meta+L' : 'Control+L');
-      await expect(chatInput).toBeVisible();
+      const agentModeButton = window.getByRole('button', { name: /^Agent$/ }).first();
+      if (await agentModeButton.isVisible()) {
+        await agentModeButton.click();
+      } else {
+        await window.keyboard.press(process.platform === 'darwin' ? 'Meta+L' : 'Control+L');
+      }
+      await expect(chatInput).toBeVisible({ timeout: 10000 });
     }
     await chatInput.fill('__AGENTPRIME_TEST_REVIEW__');
     await window.getByRole('button', { name: 'Run Agent' }).click();
@@ -117,7 +122,7 @@ test.describe('Application Smoke', () => {
     const result = await window.evaluate(async (nextWorkspacePath) => {
       await window.agentAPI.updateSettings({
         activeProvider: 'ollama',
-        activeModel: 'qwen2.5-coder:7b',
+        activeModel: 'qwen3-coder-next:cloud',
         useSpecializedAgents: true
       });
       await window.agentAPI.setWorkspace(nextWorkspacePath);
@@ -128,7 +133,7 @@ test.describe('Application Smoke', () => {
           use_agent_loop: true,
           use_specialized_agents: true,
           deterministic_scaffold_only: true,
-          model: 'qwen2.5-coder:7b',
+          model: 'qwen3-coder-next:cloud',
           runtime_budget: 'standard',
           dual_mode: 'auto'
         }

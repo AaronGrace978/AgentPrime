@@ -157,3 +157,7 @@ pitch-deck/
 crash-log.txt
 Screenshot*.png
 pitch/
+playwright-report/
+test-results/
+build_output.txt
+tsc_output.txt
