@@ -125,6 +125,7 @@ const agentAPI: AgentAPI = {
 
   // Settings and providers
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  getStartupPreflightReport: () => ipcRenderer.invoke('startup-preflight:get-report'),
   updateSettings: (settings: any) => ipcRenderer.invoke('update-settings', settings),
   setTitleBarOverlay: (options: { color: string; symbolColor: string; height?: number }) =>
     ipcRenderer.invoke('set-title-bar-overlay', options),

@@ -88,7 +88,8 @@ import { getSecureKeyStorage } from './security/secureKeyStorage';
 import { stateManager } from './core/state-manager';
 
 // Import Feature Flags
-import { resolveFeatureFlags, getFeatureFlags } from './core/feature-flags';
+import { resolveFeatureFlags } from './core/feature-flags';
+import { runStartupConfigPreflight, type StartupConfigPreflightReport } from './core/startup-config-preflight';
 
 // Import Telemetry Service
 import { initializeTelemetry, getTelemetryService } from './core/telemetry-service';
@@ -352,6 +353,14 @@ let settings: Settings = {
     }
   }
 };
+
+let startupPreflightReport: StartupConfigPreflightReport | null = null;
+
+function refreshStartupPreflightReport(log: boolean = false): StartupConfigPreflightReport {
+  const featureFlags = resolveFeatureFlags();
+  startupPreflightReport = runStartupConfigPreflight(settings, featureFlags, { log });
+  return startupPreflightReport;
+}
 
 // Initialize AI providers from settings
 function initializeAIProviders(): void {
@@ -765,6 +774,7 @@ app.whenReady().then(async () => {
   initOptionalSentry();
 
   loadSettings();
+  const featureFlags = resolveFeatureFlags();
 
   // Load API keys from secure storage (migrates from plain text if needed)
   await loadSecureApiKeys();
@@ -780,10 +790,13 @@ app.whenReady().then(async () => {
   // Initialize state manager for persistence
   await stateManager.loadState();
 
+  // Validate runtime configuration early with actionable diagnostics.
+  startupPreflightReport = runStartupConfigPreflight(settings, featureFlags, { log: true });
+
   initializeAIProviders();
   
   // Initialize backend manager (auto-starts Python backend if needed)
-  if (getFeatureFlags().pythonBrain) {
+  if (featureFlags.pythonBrain) {
     await initializeBackendManager();
   } else {
     console.log('[Main] Python Brain disabled (set AGENTPRIME_ENABLE_BRAIN=true to enable)');
@@ -919,9 +932,6 @@ app.whenReady().then(async () => {
     }
   };
   
-  // Resolve feature flags early so all subsystems can check them
-  const featureFlags = resolveFeatureFlags();
-
   const handlePluginHostInvoke = async (pluginId: string, method: string, payload?: any) => {
     const fullyQualifiedMethod = method.includes('.') ? method : `${pluginId}.${method}`;
 
@@ -1116,6 +1126,13 @@ ipcMain.handle('get-settings', () => {
   return settings;
 });
 
+ipcMain.handle('startup-preflight:get-report', () => {
+  if (!startupPreflightReport) {
+    return refreshStartupPreflightReport(false);
+  }
+  return startupPreflightReport;
+});
+
 ipcMain.handle(
   'set-title-bar-overlay',
   (_event, options: { color: string; symbolColor: string; height?: number }) => {
@@ -1184,6 +1201,9 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
     console.log('[Settings] AI providers reinitialized due to settings change');
   }
 
+  // Keep startup diagnostics in sync with current settings.
+  refreshStartupPreflightReport(false);
+
   return settings;
 });
 
@@ -1229,6 +1249,7 @@ ipcMain.handle('set-active-provider', async (event, providerName: string, model:
     settings.activeModel = model;
     saveSettings();
     initializeAIProviders();
+    refreshStartupPreflightReport(false);
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] set-active-provider error:', error);
@@ -1248,6 +1269,7 @@ ipcMain.handle('configure-provider', async (event, providerName: string, config:
     };
     saveSettings();
     initializeAIProviders();
+    refreshStartupPreflightReport(false);
     return { success: true };
   } catch (error: any) {
     console.error('[IPC] configure-provider error:', error);

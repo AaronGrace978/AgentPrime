@@ -26,7 +26,7 @@ AgentPrime/
 
 ### Prerequisites
 
-- Node.js 16+
+- Node.js 18+ (20 LTS recommended)
 - npm or yarn
 - Python 3.9+ (for backend)
 - Git

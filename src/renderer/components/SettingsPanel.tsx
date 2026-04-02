@@ -28,6 +28,7 @@ import {
 } from '../../main/core/model-output-limits';
 import { ThemeId } from '../themes';
 import type { Settings } from '../../types';
+import type { StartupPreflightReport } from '../../types/ipc';
 
 type SettingsTab = 'general' | 'editor' | 'appearance' | 'ai' | 'shortcuts' | 'advanced';
 
@@ -101,6 +102,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
   const [hasChanges, setHasChanges] = useState(false);
+  const [startupDiagnostics, setStartupDiagnostics] = useState<StartupPreflightReport | null>(null);
+  const [startupDiagnosticsLoading, setStartupDiagnosticsLoading] = useState(false);
+  const [startupDiagnosticsError, setStartupDiagnosticsError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -144,6 +148,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setLocalSettings(settings);
     setHasChanges(false);
   }, [settings]);
+
+  const loadStartupDiagnostics = useCallback(async () => {
+    setStartupDiagnosticsLoading(true);
+    setStartupDiagnosticsError(null);
+    try {
+      const report = await window.agentAPI.getStartupPreflightReport();
+      setStartupDiagnostics(report);
+    } catch (error: any) {
+      setStartupDiagnosticsError(error?.message || 'Failed to load startup diagnostics.');
+    } finally {
+      setStartupDiagnosticsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'advanced') {
+      void loadStartupDiagnostics();
+    }
+  }, [activeTab, isOpen, loadStartupDiagnostics]);
 
   const resetAllSettings = useCallback(() => {
     const defaults: Partial<Settings> = {
@@ -750,6 +773,70 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                   />
                 </div>
 
+                <div className="setting-group full-width">
+                  <label className="setting-label">
+                    <span className="setting-name">Startup Diagnostics</span>
+                    <span className="setting-description">
+                      Runtime preflight warnings captured during startup and settings updates
+                    </span>
+                  </label>
+                  <div className="startup-diagnostics-card">
+                    <div className="startup-diagnostics-header">
+                      <div className="startup-diagnostics-summary">
+                        <span className="startup-diagnostics-pill startup-diagnostics-pill--warn">
+                          {startupDiagnostics?.warningCount ?? 0} warning(s)
+                        </span>
+                        <span className="startup-diagnostics-pill startup-diagnostics-pill--info">
+                          {startupDiagnostics?.infoCount ?? 0} info
+                        </span>
+                        <span className="startup-diagnostics-generated">
+                          {startupDiagnostics?.generatedAt
+                            ? `Last updated ${new Date(startupDiagnostics.generatedAt).toLocaleString()}`
+                            : 'No diagnostic snapshot loaded yet'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => void loadStartupDiagnostics()}
+                        disabled={startupDiagnosticsLoading}
+                      >
+                        <IconRefresh size="sm" /> {startupDiagnosticsLoading ? 'Refreshing...' : 'Refresh'}
+                      </button>
+                    </div>
+
+                    {startupDiagnosticsError && (
+                      <div className="startup-diagnostics-error">{startupDiagnosticsError}</div>
+                    )}
+
+                    {!startupDiagnosticsError && startupDiagnostics && startupDiagnostics.issues.length === 0 && (
+                      <div className="startup-diagnostics-empty">No startup warnings detected.</div>
+                    )}
+
+                    {!startupDiagnosticsError && startupDiagnostics && startupDiagnostics.issues.length > 0 && (
+                      <ul className="startup-diagnostics-list">
+                        {startupDiagnostics.issues.map((issue, index) => (
+                          <li
+                            key={`${issue.code}-${index}`}
+                            className={`startup-diagnostics-item startup-diagnostics-item--${issue.severity}`}
+                          >
+                            <div className="startup-diagnostics-item-head">
+                              <span className="startup-diagnostics-item-severity">
+                                {issue.severity === 'warn' ? 'Warning' : 'Info'}
+                              </span>
+                              <span className="startup-diagnostics-item-code">{issue.code}</span>
+                            </div>
+                            <div className="startup-diagnostics-item-message">{issue.message}</div>
+                            {issue.action && (
+                              <div className="startup-diagnostics-item-action">Action: {issue.action}</div>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
                 <div className="setting-group">
                   <button className="btn btn-secondary" onClick={resetAllSettings}>
                     <IconRefresh size="sm" /> Reset All Settings
@@ -1121,6 +1208,126 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             font-size: 12px;
             line-height: 1.5;
             color: var(--prime-text-muted);
+          }
+
+          .startup-diagnostics-card {
+            width: 100%;
+            border: 1px solid var(--prime-border);
+            border-radius: 10px;
+            background: var(--prime-surface);
+            padding: 12px;
+            display: grid;
+            gap: 10px;
+          }
+
+          .startup-diagnostics-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+          }
+
+          .startup-diagnostics-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+          }
+
+          .startup-diagnostics-pill {
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+          }
+
+          .startup-diagnostics-pill--warn {
+            background: rgba(255, 166, 0, 0.16);
+            color: #d29922;
+          }
+
+          .startup-diagnostics-pill--info {
+            background: rgba(88, 166, 255, 0.16);
+            color: #58a6ff;
+          }
+
+          .startup-diagnostics-generated {
+            font-size: 11px;
+            color: var(--prime-text-muted);
+          }
+
+          .startup-diagnostics-error {
+            font-size: 12px;
+            color: #ff7b72;
+            background: rgba(255, 123, 114, 0.12);
+            border: 1px solid rgba(255, 123, 114, 0.35);
+            padding: 8px 10px;
+            border-radius: 8px;
+          }
+
+          .startup-diagnostics-empty {
+            font-size: 12px;
+            color: var(--prime-text-secondary);
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: var(--prime-bg);
+            border: 1px dashed var(--prime-border);
+          }
+
+          .startup-diagnostics-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: grid;
+            gap: 8px;
+          }
+
+          .startup-diagnostics-item {
+            border: 1px solid var(--prime-border);
+            border-radius: 8px;
+            padding: 9px 10px;
+            display: grid;
+            gap: 6px;
+            background: var(--prime-bg);
+          }
+
+          .startup-diagnostics-item--warn {
+            border-color: rgba(210, 153, 34, 0.4);
+          }
+
+          .startup-diagnostics-item--info {
+            border-color: rgba(88, 166, 255, 0.35);
+          }
+
+          .startup-diagnostics-item-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .startup-diagnostics-item-severity {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--prime-text);
+          }
+
+          .startup-diagnostics-item-code {
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--prime-text-muted);
+          }
+
+          .startup-diagnostics-item-message {
+            font-size: 12px;
+            color: var(--prime-text-secondary);
+            line-height: 1.4;
+          }
+
+          .startup-diagnostics-item-action {
+            font-size: 12px;
+            color: var(--prime-text);
+            line-height: 1.4;
           }
 
           .shortcuts-section {

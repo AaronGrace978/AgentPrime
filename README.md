@@ -172,6 +172,8 @@ AgentPrime
 └── tests             Unit, integration, and e2e coverage
 ```
 
+For a runtime-focused walkthrough (startup order, config contract, and optional Brain behavior), see `docs/ARCHITECTURE_RUNTIME_GUIDE.md`.
+
 ## Security Model
 
 AgentPrime is desktop-first, but it still treats the renderer like an untrusted surface.
@@ -187,7 +189,7 @@ AgentPrime is desktop-first, but it still treats the renderer like an untrusted 
 
 ### Prerequisites
 
-- Node.js LTS, 18+ recommended
+- Node.js 18+ (20 LTS recommended)
 - npm
 - Git
 
@@ -322,8 +324,24 @@ Desktop packaging is handled through Electron Builder.
 - Windows: NSIS and portable targets
 - macOS: DMG and ZIP targets
 - Linux: AppImage, DEB, and RPM targets
+- Distribution scripts now run `npm run preflight:dist` first to validate `build.extraResources` inputs.
+- Distribution scripts pass `--build-backend`, so preflight will attempt `backend/dist` auto-build via PyInstaller when available.
+- If backend artifacts are still missing, build manually: `cd backend && pyinstaller agentprime-backend.spec`.
+- You can enable backend auto-build when running preflight directly with `AGENTPRIME_BUILD_BACKEND_DIST=true npm run preflight:dist`.
+- You can bypass the preflight intentionally with `AGENTPRIME_SKIP_DIST_PREFLIGHT=true` (not recommended for release builds).
 
 Build outputs are emitted under the configured release directory during distribution builds.
+
+### Release Smoke Test (Windows)
+
+After `npm run dist:win` succeeds:
+
+1. Launch `release/win-unpacked/AgentPrime.exe`
+2. Verify the app window opens and remains running for at least 10 seconds
+3. Close the app cleanly
+4. Verify installer artifacts exist:
+   - `release/AgentPrime Setup <version>.exe`
+   - `release/AgentPrime <version>.exe` (portable)
 
 ## Troubleshooting
 
@@ -333,6 +351,9 @@ Build outputs are emitted under the configured release directory during distribu
 - Run `npm run typecheck`
 - Run `npm run lint`
 - Rebuild with `npm run build`
+- If you hit `MSB8040` while rebuilding native modules (for example `node-pty`), install the Visual Studio Spectre libraries:
+  - `MSVC v143 - VS 2022 C++ x64/x86 Spectre-mitigated libs (Latest)`
+- If packaging fails with `EPERM` on `node_modules/sharp/build/Release/libglib-2.0-0.dll`, close any running `AgentPrime.exe` processes and rerun packaging.
 
 ### App Launch Issues
 

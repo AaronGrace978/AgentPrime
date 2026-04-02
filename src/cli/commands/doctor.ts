@@ -71,12 +71,12 @@ export async function runDoctor() {
   check('Node.js', () => {
     const version = process.version;
     const major = parseInt(version.slice(1).split('.')[0]);
-    if (major >= 22) {
-      return { status: 'pass', message: `${version} (required: ≥22)` };
+    if (major >= 20) {
+      return { status: 'pass', message: `${version} (recommended: ≥20 LTS)` };
     } else if (major >= 18) {
-      return { status: 'warn', message: `${version} (recommended: ≥22)` };
+      return { status: 'warn', message: `${version} (supported: ≥18, recommended: ≥20 LTS)` };
     } else {
-      return { status: 'fail', message: `${version} (required: ≥22)` };
+      return { status: 'fail', message: `${version} (required: ≥18)` };
     }
   });
   

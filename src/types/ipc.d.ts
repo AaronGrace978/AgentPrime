@@ -21,6 +21,20 @@ export interface TelemetryStats {
   oldestEventTime: number | null;
 }
 
+export interface StartupPreflightIssue {
+  code: string;
+  severity: 'warn' | 'info';
+  message: string;
+  action?: string;
+}
+
+export interface StartupPreflightReport {
+  issues: StartupPreflightIssue[];
+  warningCount: number;
+  infoCount: number;
+  generatedAt: string;
+}
+
 export interface AgentAPI {
   [key: string]: any;
 
@@ -143,6 +157,7 @@ export interface AgentAPI {
 
   // Settings and provider management
   getSettings: () => Promise<Settings>;
+  getStartupPreflightReport: () => Promise<StartupPreflightReport>;
   updateSettings: (settings: Partial<Settings>) => Promise<Settings>;
   setTitleBarOverlay: (options: {
     color: string;

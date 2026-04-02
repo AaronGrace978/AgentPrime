@@ -158,11 +158,19 @@ async function startBackend(): Promise<boolean> {
   console.log(`[BackendManager]   CWD: ${backendPath}`);
 
   try {
+    const resolvedOllamaBaseUrl =
+      process.env.OLLAMA_BASE_URL ||
+      process.env.OLLAMA_URL ||
+      'http://127.0.0.1:11434';
+
     // Set environment variables
     const env = {
       ...process.env,
       OLLAMA_API_KEY: process.env.OLLAMA_API_KEY || '',  // No API key for local Ollama
       OLLAMA_MODEL: process.env.OLLAMA_MODEL || 'qwen2.5-coder:14b',  // Local model
+      // Keep backend + desktop env contracts in sync.
+      OLLAMA_BASE_URL: resolvedOllamaBaseUrl,
+      OLLAMA_URL: process.env.OLLAMA_URL || resolvedOllamaBaseUrl,
       WORKSPACE_ROOT: process.env.WORKSPACE_ROOT || ''
     };
 
