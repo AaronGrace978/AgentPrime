@@ -150,9 +150,23 @@ function isCloudProvider(provider: string, model: string): boolean {
   if (provider === 'anthropic' || provider === 'openai' || provider === 'openrouter') {
     return true;
   }
-  // Ollama cloud models have 'cloud' in the name
-  if (provider === 'ollama' && (model.includes('-cloud') || model.includes(':cloud') || model.includes('cloud'))) {
-    return true;
+  if (provider === 'ollama') {
+    // Ollama cloud models often include "cloud" in the model id.
+    if (model.includes('-cloud') || model.includes(':cloud') || model.includes('cloud')) {
+      return true;
+    }
+
+    // Also treat Ollama cloud endpoints as cloud even when model ids don't include ":cloud"
+    // (e.g. gemma4, gemma4:31b on https://ollama.com).
+    try {
+      const ollamaProvider = aiRouter.getProvider('ollama') as any;
+      const baseUrl = String(ollamaProvider?.baseUrl || '').toLowerCase();
+      if (baseUrl.includes('ollama.com') || baseUrl.includes('deepseek.com')) {
+        return true;
+      }
+    } catch {
+      // Ignore provider inspection errors and fall through.
+    }
   }
   return false;
 }
@@ -2083,6 +2097,7 @@ export async function executeWithSpecialists(
   const defaultModelChain = orderBudgetChain([
     { name: 'Qwen3-Coder-Next Cloud', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
+    { name: 'Gemma 4', provider: 'ollama', model: 'gemma4', tier: 'deep' },
     { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
     { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },

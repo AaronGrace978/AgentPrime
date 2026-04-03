@@ -47,6 +47,7 @@ const LivePreview = React.lazy(() => import('../LivePreview'));
 const DeployPanel = React.lazy(() => import('../DeployPanel'));
 const InlineEditDialog = React.lazy(() => import('../InlineEditDialog'));
 const MultiFileDiffReview = React.lazy(() => import('../MultiFileDiffReview'));
+const MatrixRain = React.lazy(() => import('../MatrixRain'));
 import type { FileChange as ReviewFileChange } from '../MultiFileDiffReview';
 import type { AgentReviewSessionSnapshot } from '../../../types/agent-review';
 import {
@@ -488,8 +489,26 @@ function App() {
       return;
     }
 
-    if (!currentPath) {
-      toast.error('Verification Failed', 'Open a workspace before verifying changes.');
+    let workspaceToVerify = currentPath;
+    if (!workspaceToVerify) {
+      try {
+        const workspace = await window.agentAPI.getWorkspace();
+        if (workspace) {
+          workspaceToVerify = workspace;
+          await loadDirectory(workspace);
+        }
+      } catch (workspaceError) {
+        console.warn('Failed to resolve workspace before verification:', workspaceError);
+      }
+    }
+
+    if (!workspaceToVerify) {
+      const message = 'Open a workspace before verifying changes.';
+      setAgentReviewVerification({
+        status: 'failed',
+        issues: [message],
+      });
+      toast.error('Verification Failed', message);
       return;
     }
 
@@ -500,7 +519,7 @@ function App() {
     }));
 
     try {
-      const result = await window.agentAPI.verifyProject(currentPath);
+      const result = await window.agentAPI.verifyProject(workspaceToVerify);
       const nextState: ReviewVerificationState = {
         status: result.success ? 'passed' : 'failed',
         projectTypeLabel: result.projectTypeLabel,
@@ -527,7 +546,7 @@ function App() {
       });
       toast.error('Verification Failed', message);
     }
-  }, [agentReviewApplied, currentPath, toast]);
+  }, [agentReviewApplied, currentPath, loadDirectory, toast]);
 
   const handleRunReviewedProject = useCallback(async () => {
     if (!agentReviewApplied) {
@@ -535,13 +554,26 @@ function App() {
       return;
     }
 
-    if (!currentPath) {
+    let workspaceToRun = currentPath;
+    if (!workspaceToRun) {
+      try {
+        const workspace = await window.agentAPI.getWorkspace();
+        if (workspace) {
+          workspaceToRun = workspace;
+          await loadDirectory(workspace);
+        }
+      } catch (workspaceError) {
+        console.warn('Failed to resolve workspace before run:', workspaceError);
+      }
+    }
+
+    if (!workspaceToRun) {
       toast.error('Run Failed', 'Open a workspace before running the project.');
       return;
     }
 
     try {
-      const result = await window.agentAPI.launchProject(currentPath);
+      const result = await window.agentAPI.launchProject(workspaceToRun);
       if (!result?.success) {
         throw new Error(result?.error || result?.message || 'Run failed');
       }
@@ -553,7 +585,7 @@ function App() {
     } catch (error: any) {
       toast.error('Run Failed', error?.message || 'Could not launch the project.');
     }
-  }, [agentReviewApplied, currentPath, toast]);
+  }, [agentReviewApplied, currentPath, loadDirectory, toast]);
 
   const handleRepairReviewedProject = useCallback(() => {
     if (!agentReviewApplied) {
@@ -1270,6 +1302,12 @@ function App() {
         )}
 
         <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
+
+        {currentTheme === 'matrix' && (
+          <Suspense fallback={null}>
+            <MatrixRain />
+          </Suspense>
+        )}
       </div>
     </ErrorBoundary>
   );

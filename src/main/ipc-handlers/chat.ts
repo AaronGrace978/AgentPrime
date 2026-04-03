@@ -98,13 +98,27 @@ function resolveProviderForModel(model: string | undefined, preferredProvider: s
   return aiRouter.inferProviderForModel(model, preferredProvider || 'ollama') || preferredProvider || 'ollama';
 }
 
-function resolveConfiguredModel(settings: any, requestedModel?: string) {
+function resolveConfiguredModel(
+  settings: any,
+  requestedModel?: string,
+  runtimeBudget: 'instant' | 'standard' | 'deep' = DEFAULT_RUNTIME_BUDGET_MODE
+) {
   const localOllamaModel =
     settings?.providers?.ollama?.model ||
     settings?.activeModel ||
     'qwen3-coder:480b-cloud';
 
-  const runtime = resolveEffectiveAIRuntime(settings, requestedModel, settings?.activeProvider || 'ollama');
+  const dualConfig = settings?.dualModelEnabled ? settings?.dualModelConfig : null;
+  const budgetModel = !requestedModel && dualConfig
+    ? runtimeBudget === 'instant'
+      ? dualConfig.fastModel?.model
+      : runtimeBudget === 'deep'
+        ? dualConfig.deepModel?.model
+        : (dualConfig.deepModel?.model || dualConfig.fastModel?.model)
+    : undefined;
+
+  const requestedModelForRun = requestedModel || budgetModel;
+  const runtime = resolveEffectiveAIRuntime(settings, requestedModelForRun, settings?.activeProvider || 'ollama');
   const activeModel = runtime.effectiveModel || localOllamaModel;
   const activeProvider = runtime.effectiveProvider || resolveProviderForModel(activeModel, settings?.activeProvider || 'ollama');
 
@@ -392,7 +406,7 @@ export function register(deps: ChatHandlerDeps): void {
           activeModel: selectedModel,
           activeProvider,
           runtime: requestedRuntime,
-        } = resolveConfiguredModel(agentSettings, context.model);
+        } = resolveConfiguredModel(agentSettings, context.model, runtimeBudget);
         const autonomyLevel = clampAgentAutonomyLevel(context.agent_autonomy ?? agentSettings?.agentAutonomyLevel);
         const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
@@ -400,6 +414,7 @@ export function register(deps: ChatHandlerDeps): void {
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
         const isOllamaCloud = selectedModel?.includes('cloud') || 
                               selectedModel?.includes('-cloud') ||
+                              agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.com') ||
                               agentSettings?.providers?.ollama?.baseUrl?.includes('api.ollama.com') ||
                               agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.deepseek.com');
 
@@ -954,7 +969,7 @@ Separate files with blank lines.
         activeModel,
         activeProvider,
         runtime: initialRuntime,
-      } = resolveConfiguredModel(settings, context.model);
+      } = resolveConfiguredModel(settings, context.model, runtimeBudget);
       emitRuntimeInfo(event.sender, requestId, initialRuntime);
       
       // Add system prompt as first message if provided
@@ -1165,7 +1180,7 @@ Separate files with blank lines.
       
       // Get model and provider info for error context
       const settings = getSettings();
-      const { runtime } = resolveConfiguredModel(settings, context.model);
+      const { runtime } = resolveConfiguredModel(settings, context.model, runtimeBudget);
       getTelemetryService().track('ai_response', {
         mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
         success: false,

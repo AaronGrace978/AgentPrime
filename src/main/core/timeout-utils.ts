@@ -211,6 +211,7 @@ export async function withFileTimeout<T>(
 export const FALLBACK_MODEL_CHAIN = [
   // Prefer faster interactive models before deeper long-running fallbacks.
   { provider: 'ollama', model: 'minimax-m2.7:cloud', size: 'cloud' as ModelSize },
+  { provider: 'ollama', model: 'gemma4', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
   { provider: 'openai', model: 'gpt-4o-mini', size: 'fast' as ModelSize },
   { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },

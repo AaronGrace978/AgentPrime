@@ -5,7 +5,7 @@
  * by extracting types, constants, hooks, and sub-components.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { promptBuilder } from '../../agent';
 import type { AIRuntimeSnapshot } from '../../../types/ai-providers';
 
@@ -176,6 +176,28 @@ const AIChat: React.FC<AIChatProps> = ({
     getSelectedText,
     getCursorPosition
   });
+
+  /**
+   * Resolve the model that Agent mode should request for the current runtime budget.
+   * This must come from the Fast/Deep selectors, not the last runtime status snapshot.
+   */
+  const agentBudgetModel = useMemo(() => {
+    if (dualModel.mode === 'instant') {
+      return brainConfig.fastModel.model || selectedModel;
+    }
+    if (dualModel.mode === 'deep') {
+      return brainConfig.deepModel.model || selectedModel;
+    }
+    // Standard mode keeps orchestration flexible while still honoring configured models.
+    return brainConfig.deepModel.model || brainConfig.fastModel.model || selectedModel;
+  }, [brainConfig.deepModel.model, brainConfig.fastModel.model, dualModel.mode, selectedModel]);
+
+  const statusBarModel = useMemo(() => {
+    if (chatMode === 'agent') {
+      return agentBudgetModel;
+    }
+    return runtimeStatus?.displayModel || dualModel.currentModel || selectedModel;
+  }, [agentBudgetModel, chatMode, dualModel.currentModel, runtimeStatus?.displayModel, selectedModel]);
 
   // Load saved chat mode from settings
   useEffect(() => {
@@ -391,14 +413,31 @@ const AIChat: React.FC<AIChatProps> = ({
 
   // Handle folder selection
   const handleOpenFolder = async () => {
-    const folderPath = await openFolder();
-    if (folderPath) {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `Workspace opened: **${folderPath.split(/[/\\]/).pop()}**\n\nI can now access all files in this project. What would you like me to do?`,
-        timestamp: new Date(),
-        type: 'system'
-      }]);
+    try {
+      let folderPath: string | null = null;
+
+      // Prefer parent App workspace opener so explorer/currentPath stays in sync.
+      if (onOpenFolder) {
+        await Promise.resolve(onOpenFolder());
+        await updateContext();
+        const workspaceResult = await window.agentAPI.getWorkspace();
+        folderPath = typeof workspaceResult === 'string' && workspaceResult.length > 0
+          ? workspaceResult
+          : null;
+      } else {
+        folderPath = await openFolder();
+      }
+
+      if (folderPath) {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: `Workspace opened: **${folderPath.split(/[/\\]/).pop()}**\n\nI can now access all files in this project. What would you like me to do?`,
+          timestamp: new Date(),
+          type: 'system'
+        }]);
+      }
+    } catch (error) {
+      console.error('Failed to open workspace folder:', error);
     }
   };
 
@@ -593,10 +632,9 @@ const AIChat: React.FC<AIChatProps> = ({
     setCurrentTask(currentInput);
     agentFileChangesRef.current.clear();
 
-    // Agent file generation must honor the model in the picker. Dual-model Fast/Deep routing
-    // is for chat streaming; overriding here caused runs to use minimax/qwen while the UI
-    // still showed gpt-5.4 — empty specialists, timeouts, and template-only output.
-    const agentModel = runtimeStatus?.displayModel || runtimeStatus?.effectiveModel || selectedModel;
+    // Agent file generation must honor Runtime Budget model selectors.
+    // Pull directly from Fast/Deep model config, not last runtime snapshot.
+    const agentModel = agentBudgetModel;
 
     setMessages(prev => [...prev, {
       role: 'assistant',
@@ -921,7 +959,7 @@ const AIChat: React.FC<AIChatProps> = ({
           </div>
 
           <ChatRuntimeStatusBar
-            currentModel={runtimeStatus?.displayModel || dualModel.currentModel || selectedModel}
+            currentModel={statusBarModel}
             chatMode={chatMode}
           />
         </div>

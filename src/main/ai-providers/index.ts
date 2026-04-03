@@ -559,6 +559,7 @@ class AIProviderRouter {
       normalized.startsWith('ministral') ||
       normalized.startsWith('nemotron') ||
       normalized.startsWith('kimi-') ||
+      normalized.startsWith('gemma4') ||
       normalized.startsWith('gemini-3') ||
       normalized.startsWith('qwen2.5-coder')
     ) {
