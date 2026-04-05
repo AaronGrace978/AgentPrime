@@ -279,6 +279,9 @@ export class SmartRouter {
     modelUsed: string;
   }> = [];
 
+  // Cache for identical recent queries to save compute
+  private analysisCache = new Map<string, TaskAnalysis>();
+
   configure(config: {
     fastModel?: string;
     deepModel?: string;
@@ -315,7 +318,22 @@ export class SmartRouter {
       previousCategory: context.previousCategory
     };
     
-    const analysis = analyzeTask(task, fullContext);
+    // Create a cache key based on task and context fingerprint
+    const cacheKey = `${task.substring(0, 200)}|${fullContext.fileCount}|${fullContext.hasErrors}|${fullContext.consecutiveErrors}`;
+    
+    let analysis: TaskAnalysis;
+    if (this.analysisCache.has(cacheKey)) {
+      analysis = this.analysisCache.get(cacheKey)!;
+    } else {
+      analysis = analyzeTask(task, fullContext);
+      
+      // Cache management (max 100 entries)
+      if (this.analysisCache.size >= 100) {
+        const firstKey = this.analysisCache.keys().next().value;
+        if (firstKey) this.analysisCache.delete(firstKey);
+      }
+      this.analysisCache.set(cacheKey, analysis);
+    }
     
     if (!this.enabled) {
       // If disabled, always use deep model

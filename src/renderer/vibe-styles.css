@@ -7544,6 +7544,16 @@ button:active:not(:disabled) {
   background: var(--prime-purple);
 }
 
+.badge-brain-offline {
+  background: rgba(255, 80, 80, 0.25);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: help;
+}
+
 .chat-header-close {
   width: 28px;
   height: 28px;

@@ -1,4 +1,7 @@
-import { detectProjectType, isContentIncompatibleWithTask, validateIndexHtml, validateToolCall } from '../src/main/agent/tool-validation';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { detectProjectType, isContentIncompatibleWithTask, resetFileTracker, validateIndexHtml, validateToolCall } from '../src/main/agent/tool-validation';
 import { extractTaskKeywords } from '../src/main/mirror/opus-example-loader';
 
 describe('tool validation project typing', () => {
@@ -30,6 +33,44 @@ export class Player {
   }
 }`;
 
+  const threeJsPhysicsContent = `import * as THREE from 'three';
+
+export class Player {
+  private mesh: THREE.Mesh;
+  private velocity = new THREE.Vector3();
+
+  constructor(scene: THREE.Scene) {
+    const geometry = new THREE.ConeGeometry(0.4, 1.2, 8);
+    const material = new THREE.MeshStandardMaterial({ color: 0x44ccff });
+    this.mesh = new THREE.Mesh(geometry, material);
+    scene.add(this.mesh);
+  }
+
+  update(deltaTime: number) {
+    const thrustResult = this.calculateThrust(deltaTime);
+    this.velocity.add(thrustResult);
+    this.mesh.position.add(this.velocity);
+  }
+
+  private calculateThrust(deltaTime: number): THREE.Vector3 {
+    return new THREE.Vector3(0, 0, -5 * deltaTime);
+  }
+}`;
+
+  const calculatorContent = `const display = document.querySelector('#display');
+let currentOperand = '0';
+let operator = '+';
+let expression = '';
+
+function clearAll() {
+  currentOperand = '0';
+  expression = '';
+}
+
+function equals() {
+  return eval(expression);
+}`;
+
   it('prefers explicit Three.js tasks over generic game keywords', () => {
     expect(detectProjectType(threeJsTask)).toBe('threejs');
   });
@@ -39,6 +80,59 @@ export class Player {
       incompatible: false,
       reason: '',
     });
+  });
+
+  it('does not misclassify Three.js movement math as calculator content', () => {
+    expect(isContentIncompatibleWithTask(threeJsTask, threeJsPhysicsContent)).toEqual({
+      incompatible: false,
+      reason: '',
+    });
+  });
+
+  it('still blocks calculator content for a Three.js task', () => {
+    const validation = isContentIncompatibleWithTask(threeJsTask, calculatorContent);
+    expect(validation.incompatible).toBe(true);
+    expect(validation.reason).toContain('calculator');
+  });
+});
+
+describe('write_file project type validation', () => {
+  const threeJsTask = 'Build a complete playable Three.js space game in the current workspace.';
+  const threeJsPhysicsContent = `import * as THREE from 'three';
+
+export class Player {
+  private velocity = new THREE.Vector3();
+
+  update(deltaTime: number) {
+    const thrustResult = this.calculateThrust(deltaTime);
+    this.velocity.add(thrustResult);
+  }
+
+  private calculateThrust(deltaTime: number): THREE.Vector3 {
+    return new THREE.Vector3(0, 0, -5 * deltaTime);
+  }
+}`;
+
+  beforeEach(() => {
+    resetFileTracker('create');
+  });
+
+  it('allows threejs player files that include movement math terms', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-validator-'));
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: {
+          path: 'src/game/entities/Player.ts',
+          content: threeJsPhysicsContent,
+        },
+      },
+      workspace,
+      threeJsTask
+    );
+
+    expect(result.valid).toBe(true);
   });
 });
 

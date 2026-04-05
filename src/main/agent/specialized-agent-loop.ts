@@ -45,7 +45,9 @@ import type {
 } from '../../types/agent-review';
 
 import { PromptSanitizer } from '../security/prompt-sanitizer';
+import { createLogger } from '../core/logger';
 
+const log = createLogger('SpecializedAgent');
 const MAX_RETRIES = 2;
 
 interface ProjectVerification {

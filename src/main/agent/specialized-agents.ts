@@ -257,15 +257,40 @@ function appendScaffoldCustomizationInstructions(
 }
 
 /**
- * Build pattern-enhanced prompt for a specialist
- * This is what makes specialists MIRROR engineering excellence
+ * Per-task cache for mirror context (patterns, opus examples, anti-patterns).
+ * Fetched once per task, reused across all specialist calls to cut token waste.
+ */
+let _mirrorCache: {
+  taskKey: string;
+  patterns: Awaited<ReturnType<typeof getRelevantPatterns>>;
+  opusExamples: string[];
+  antiPatterns: Awaited<ReturnType<typeof getAntiPatterns>>;
+} | null = null;
+
+async function getMirrorContext(task: string) {
+  const taskKey = task.substring(0, 200);
+  if (_mirrorCache && _mirrorCache.taskKey === taskKey) {
+    return _mirrorCache;
+  }
+  const [patterns, opusExamples, antiPatterns] = await Promise.all([
+    getRelevantPatterns(task, 5),
+    loadOpusExamples(task, 2),
+    getAntiPatterns(3),
+  ]);
+  _mirrorCache = { taskKey, patterns, opusExamples, antiPatterns };
+  return _mirrorCache;
+}
+
+/**
+ * Build pattern-enhanced prompt for a specialist.
+ * Mirror context (patterns, opus examples, anti-patterns) is fetched once
+ * per task and reused across all specialist calls.
  */
 async function buildMirrorEnhancedPrompt(
   task: string, 
   role: AgentRole, 
   basePrompt: string
 ): Promise<string> {
-  // 🎯 OPUS MIRROR WRAPPER: Start with Opus-style identity
   let enhancedPrompt = `You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
 
 Claude Opus is known for:
@@ -283,61 +308,44 @@ Claude Opus is known for:
 ${basePrompt}`;
   
   try {
-    // 🧠 MIRROR STEP 1: Get relevant patterns from mirror memory
-    const patterns = await getRelevantPatterns(task, 5);
-    if (patterns.length > 0) {
+    const mirror = await getMirrorContext(task);
+
+    if (mirror.patterns.length > 0) {
       enhancedPrompt += '\n\n## 🧠 LEARNED PATTERNS (Mirror these!)\n';
       enhancedPrompt += 'These patterns have worked well in the past. Apply them:\n';
-      for (const pattern of patterns) {
+      for (const pattern of mirror.patterns) {
         const confidence = pattern.confidence ? ` (${(pattern.confidence * 100).toFixed(0)}% confident)` : '';
         enhancedPrompt += `• ${pattern.type || 'pattern'}: ${pattern.description || 'N/A'}${confidence}\n`;
         if (pattern.examples && pattern.examples.length > 0) {
-          // Include a snippet of the example (first 200 chars)
           const example = pattern.examples[0].substring(0, 200).replace(/\n/g, ' ');
           enhancedPrompt += `  Example: ${example}...\n`;
         }
       }
     }
     
-    // 🧠 MIRROR STEP 2: Load real code examples from opus-examples
-    // INCREASED: Load more examples to better mirror Opus behavior
-    const opusExampleLimit =
-      role === 'tool_orchestrator'
-        ? 2
-        : role === 'integration_analyst'
-          ? 1
-          : 1;
-    const opusExamples = await loadOpusExamples(task, opusExampleLimit);
-    if (opusExamples.length > 0) {
+    // Only inject full opus examples for the orchestrator (planning phase).
+    // Specialists get a compact reference instead of the full examples.
+    if (role === 'tool_orchestrator' && mirror.opusExamples.length > 0) {
       enhancedPrompt += '\n\n## 🎯 CRITICAL: ACT EXACTLY LIKE CLAUDE OPUS\n';
       enhancedPrompt += 'You MUST mirror Claude Opus\'s behavior, thinking, and code quality.\n';
       enhancedPrompt += 'These are REAL examples from Claude Opus. Study them carefully and REPLICATE this exact style:\n\n';
       
-      for (const example of opusExamples) {
+      for (const example of mirror.opusExamples) {
         enhancedPrompt += `${example}\n\n`;
       }
       
-      if (role === 'tool_orchestrator') {
-        enhancedPrompt += '\n## 🧬 OPUS BEHAVIOR PATTERNS (MANDATORY)\n';
-        enhancedPrompt += 'Claude Opus exhibits these behaviors - you MUST mirror them:\n';
-        enhancedPrompt += '1. **Deep Thinking**: Opus thinks through problems step-by-step before coding\n';
-        enhancedPrompt += '2. **Complete Solutions**: Opus creates FULL, working code - no placeholders\n';
-        enhancedPrompt += '3. **Error Handling**: Opus always includes proper error handling\n';
-        enhancedPrompt += '4. **Code Quality**: Opus writes clean, readable, well-structured code\n';
-        enhancedPrompt += '5. **Context Awareness**: Opus understands the full project context\n';
-        enhancedPrompt += '6. **Best Practices**: Opus follows industry best practices automatically\n';
-        enhancedPrompt += '\n**YOUR GOAL**: Generate code that is INDISTINGUISHABLE from Claude Opus output.\n';
-      } else {
-        enhancedPrompt += '\nMirror the example style, but keep your output concise and implementation-focused.\n';
-      }
+      enhancedPrompt += '\n## 🧬 OPUS BEHAVIOR PATTERNS (MANDATORY)\n';
+      enhancedPrompt += '1. Deep thinking before coding  2. Complete, working code  3. Proper error handling\n';
+      enhancedPrompt += '4. Clean, readable structure  5. Full project context awareness  6. Industry best practices\n';
+      enhancedPrompt += '\n**YOUR GOAL**: Generate code that is INDISTINGUISHABLE from Claude Opus output.\n';
+    } else if (mirror.opusExamples.length > 0) {
+      enhancedPrompt += '\nProduce complete, production-ready code following Opus quality standards.\n';
     }
     
-    // 🧠 MIRROR STEP 3: Get anti-patterns (mistakes to avoid)
-    const antiPatterns = await getAntiPatterns(3);
-    if (antiPatterns.length > 0) {
+    if (mirror.antiPatterns.length > 0) {
       enhancedPrompt += '\n\n## ⚠️ AVOID THESE MISTAKES\n';
       enhancedPrompt += 'These have caused failures before. DO NOT do these:\n';
-      for (const anti of antiPatterns) {
+      for (const anti of mirror.antiPatterns) {
         enhancedPrompt += `• DON'T: ${anti.description || 'Unknown mistake'}\n`;
       }
     }

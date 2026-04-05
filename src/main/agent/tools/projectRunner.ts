@@ -465,7 +465,7 @@ export class ProjectRunner {
     try {
       const command = projectInfo.buildCommand;
       console.log(`[ProjectRunner] 🏗️ Running build: ${command}`);
-      const env = this.getRuntimeEnv(projectInfo, workspacePath);
+      const env = { ...this.getRuntimeEnv(projectInfo, workspacePath), NODE_ENV: 'production' };
       const shellCommand =
         command.startsWith('npm ')
           ? require('../../core/tool-path-finder').resolveCommand(command)

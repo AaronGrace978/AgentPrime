@@ -40,12 +40,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             {chatMode === 'dino' && (
               <span className="badge badge-rawr">RAWR</span>
             )}
-            {pythonBrainStatus.connected && (
+            {pythonBrainStatus.connected ? (
               <span 
                 title={`Python Brain: ${pythonBrainStatus.memories} memories, ${pythonBrainStatus.patterns} patterns`}
                 className="badge badge-brain"
               >
                 Brain
+              </span>
+            ) : (
+              <span
+                title="Python Brain is offline — memory and learning are unavailable"
+                className="badge badge-brain-offline"
+              >
+                Brain Offline
               </span>
             )}
           </div>

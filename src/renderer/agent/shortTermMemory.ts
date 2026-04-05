@@ -334,10 +334,26 @@ class ShortTermMemory {
     this.accessLog = [];
     this.hits = 0;
     this.misses = 0;
+    this.stopCleanupTimer();
     console.log('[STM] 🗑️ Memory cleared');
+  }
+
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  startCleanupTimer(intervalMs: number = 60_000): void {
+    this.stopCleanupTimer();
+    this.cleanupTimer = setInterval(() => this.cleanup(), intervalMs);
+  }
+
+  stopCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
   }
 }
 
 // Singleton instance
 export const shortTermMemory = new ShortTermMemory();
+shortTermMemory.startCleanupTimer();
 

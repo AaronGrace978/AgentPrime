@@ -8,6 +8,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as http from 'http';
 import { app } from 'electron';
+import { createLogger } from './logger';
+
+const log = createLogger('BackendManager');
 
 const BRAIN_URL = process.env.BRAIN_URL || 'http://127.0.0.1:8000';
 const BACKEND_CHECK_INTERVAL = 10000; // Check every 10 seconds (was 2s — too aggressive)
@@ -220,24 +223,21 @@ async function startBackend(): Promise<boolean> {
       backendProcess = null;
     });
 
-    // Wait a bit and check if it started successfully
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    const isRunning = await isBackendRunning();
-    if (isRunning) {
-      console.log('[BackendManager] ✅ Backend started successfully');
-      return true;
-    } else {
-      console.warn('[BackendManager] ⚠️  Backend process started but not responding yet');
-      // Give it more time
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      const stillRunning = await isBackendRunning();
-      if (stillRunning) {
-        console.log('[BackendManager] ✅ Backend is now responding');
+    // Poll with exponential backoff instead of fixed waits
+    const maxAttempts = 8;
+    let delayMs = 500;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+      const isRunning = await isBackendRunning();
+      if (isRunning) {
+        console.log(`[BackendManager] ✅ Backend started successfully (attempt ${attempt}/${maxAttempts})`);
         return true;
       }
-      return false;
+      // Double the delay each attempt: 500, 1000, 2000, 4000...
+      delayMs = Math.min(delayMs * 2, 5000);
     }
+    console.warn(`[BackendManager] ⚠️  Backend not responding after ${maxAttempts} health checks`);
+    return false;
   } catch (error: any) {
     console.error(`[BackendManager] ❌ Error starting backend: ${error.message}`);
     backendProcess = null;

@@ -11,6 +11,9 @@
 
 import { ipcMain, IpcMainInvokeEvent } from 'electron';
 import * as http from 'http';
+import { createLogger } from '../core/logger';
+
+const log = createLogger('Brain');
 
 // Use 127.0.0.1 explicitly to avoid IPv6 issues (::1 vs 127.0.0.1)
 const BRAIN_URL = process.env.BRAIN_URL || 'http://127.0.0.1:8000';
@@ -21,17 +24,46 @@ interface BrainResponse {
     error?: string;
 }
 
+let brainReady = false;
+let brainReadyPromise: Promise<void> | null = null;
+
 /**
- * Make a request to the Python Brain API
+ * Wait for the Brain backend to come online (called once at startup).
+ * Resolves as soon as /api/status returns 200.
  */
-async function brainRequest(
+function waitForBrain(): Promise<void> {
+    if (brainReady) return Promise.resolve();
+    if (brainReadyPromise) return brainReadyPromise;
+
+    brainReadyPromise = (async () => {
+        const maxAttempts = 15;
+        let delayMs = 500;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const ok = await rawBrainRequest('GET', '/api/status');
+            if (ok.success) {
+                brainReady = true;
+                log.info(`Backend connected (attempt ${attempt}/${maxAttempts})`);
+                return;
+            }
+            await new Promise(r => setTimeout(r, delayMs));
+            delayMs = Math.min(delayMs * 2, 4000);
+        }
+        log.warn('Backend did not respond after startup polling — requests will use fallbacks');
+    })();
+    return brainReadyPromise;
+}
+
+/**
+ * Low-level HTTP request (no retry, no startup gate).
+ */
+function rawBrainRequest(
     method: 'GET' | 'POST',
     endpoint: string,
     body?: any
 ): Promise<BrainResponse> {
     return new Promise((resolve) => {
         const url = new URL(`${BRAIN_URL}${endpoint}`);
-        
+
         const options = {
             hostname: url.hostname,
             port: url.port || 8000,
@@ -41,7 +73,7 @@ async function brainRequest(
                 'Content-Type': 'application/json',
             },
         };
-        
+
         const req = http.request(options, (res) => {
             let data = '';
             res.on('data', (chunk) => { data += chunk; });
@@ -54,18 +86,16 @@ async function brainRequest(
                 }
             });
         });
-        
-        req.on('error', (error) => {
-            console.warn(`[Brain] Request failed: ${error.message}`);
-            resolve({ success: false, error: error.message });
+
+        req.on('error', () => {
+            resolve({ success: false, error: 'Connection refused' });
         });
-        
-        // Set timeout
+
         req.setTimeout(10000, () => {
             req.destroy();
             resolve({ success: false, error: 'Request timeout' });
         });
-        
+
         if (body) {
             req.write(JSON.stringify(body));
         }
@@ -74,10 +104,27 @@ async function brainRequest(
 }
 
 /**
+ * Make a request to the Python Brain API.
+ * Waits for backend readiness on the first call, then passes through.
+ */
+async function brainRequest(
+    method: 'GET' | 'POST',
+    endpoint: string,
+    body?: any
+): Promise<BrainResponse> {
+    if (!brainReady) {
+        await waitForBrain();
+    }
+    return rawBrainRequest(method, endpoint, body);
+}
+
+/**
  * Check if Python Brain is available
  */
 async function isBrainAvailable(): Promise<boolean> {
-    const response = await brainRequest('GET', '/api/status');
+    if (brainReady) return true;
+    const response = await rawBrainRequest('GET', '/api/status');
+    if (response.success) brainReady = true;
     return response.success;
 }
 
@@ -85,7 +132,7 @@ async function isBrainAvailable(): Promise<boolean> {
  * Register all brain IPC handlers
  */
 export function registerBrainHandlers(): void {
-    console.log('[Brain Handler] Registering IPC handlers...');
+    log.info('Registering IPC handlers...');
     
     // ============ ORCHESTRATION ============
     
@@ -101,7 +148,7 @@ export function registerBrainHandlers(): void {
         
         if (!response.success) {
             // Fallback routing if brain is unavailable
-            console.warn('[Brain] Brain unavailable, using fallback routing');
+            log.warn('Brain unavailable, using fallback routing');
             return {
                 task_type: 'code_generation',
                 model_tier: 'standard',
@@ -341,7 +388,10 @@ export function registerBrainHandlers(): void {
         return await isBrainAvailable();
     });
     
-    console.log('[Brain Handler] IPC handlers registered');
+    log.info('IPC handlers registered');
+
+    // Start background polling so first real request doesn't block
+    waitForBrain().catch(() => {});
 }
 
 // Export for use in main process

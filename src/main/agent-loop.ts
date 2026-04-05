@@ -989,6 +989,8 @@ interface Tool {
   execute: (params: any, context: AgentContext) => Promise<any>;
 }
 
+import { PromptSanitizer } from './security/prompt-sanitizer';
+
 export interface AgentContext {
   workspacePath: string;
   currentFile?: string;
@@ -3337,7 +3339,19 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     }
   }
 
-  async run(userMessage: string): Promise<string> {
+  async run(rawUserMessage: string): Promise<string> {
+    const sanitization = PromptSanitizer.sanitize(rawUserMessage);
+    const userMessage = sanitization.sanitizedText;
+    
+    if (!sanitization.isSafe) {
+      console.warn(`[Security] Blocked malicious prompt. Flags: ${sanitization.flags.join(', ')}`);
+      this.emit('message', {
+        role: 'assistant',
+        content: `⚠️ **Security Alert:** Your input contained potentially unsafe instructions (${sanitization.flags.join(', ')}). The request has been neutralized to protect the workspace.`
+      });
+      // Continue with the sanitized (blocked) message so the agent just acknowledges the block
+    }
+
     // Create or get session for state persistence
     if (!this.sessionId) {
       this.sessionId = stateManager.createSession();

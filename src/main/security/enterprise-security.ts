@@ -300,9 +300,13 @@ export class EnterpriseSecurityManager {
    * Verify password
    */
   private async verifyPassword(userId: string, password: string): Promise<boolean> {
-    // In production, would verify against hashed password in database
-    // For now, simplified
-    return true; // Placeholder
+    const keyStorage = getSecureKeyStorage();
+    const storedHash = await keyStorage.getSecret(`user-password-hash:${userId}`);
+    if (!storedHash) {
+      return false;
+    }
+    const inputHash = crypto.createHash('sha256').update(password).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(inputHash), Buffer.from(storedHash));
   }
 
   /**

@@ -13,12 +13,21 @@ import sqlite3
 import json
 import hashlib
 import re
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from dataclasses import dataclass, asdict
 import math
 from collections import Counter
+import numpy as np
+
+# Optional embedding support
+try:
+    from sentence_transformers import SentenceTransformer
+    HAS_EMBEDDINGS = True
+except ImportError:
+    HAS_EMBEDDINGS = False
 
 
 @dataclass
@@ -49,7 +58,7 @@ class MemoryStore:
     Uses SQLite for storage and TF-IDF for similarity when embeddings unavailable
     """
     
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, use_embeddings: bool = True):
         if db_path is None:
             # Default to data directory
             data_dir = Path(__file__).parent.parent.parent / "data"
@@ -61,12 +70,24 @@ class MemoryStore:
         self.conn.row_factory = sqlite3.Row
         self._init_db()
         
-        # TF-IDF index for semantic search
+        # Initialize embeddings if available and requested
+        self.use_embeddings = use_embeddings and HAS_EMBEDDINGS
+        self.encoder = None
+        if self.use_embeddings:
+            try:
+                # Use a small, fast model for local embeddings
+                self.encoder = SentenceTransformer('all-MiniLM-L6-v2')
+                print("[Memory] Initialized with Vector Embeddings (sentence-transformers)")
+            except Exception as e:
+                print(f"[Memory] Failed to load embedding model: {e}. Falling back to TF-IDF.")
+                self.use_embeddings = False
+        
+        # TF-IDF index for semantic search (used as fallback or primary if embeddings disabled)
         self._document_frequencies: Dict[str, int] = {}
         self._total_documents = 0
         self._rebuild_index()
         
-        print(f"[Memory] Initialized at {db_path}")
+        print(f"[Memory] Initialized at {db_path} (Embeddings: {'ON' if self.use_embeddings else 'OFF'})")
     
     def _init_db(self):
         """Initialize database schema"""
@@ -206,11 +227,22 @@ class MemoryStore:
     def store(self, type: str, content: str, metadata: Dict[str, Any] = None) -> Memory:
         """Store a new memory"""
         now = datetime.now().isoformat()
+        
+        # Generate embedding if enabled
+        embedding_json = None
+        if self.use_embeddings and self.encoder:
+            try:
+                embedding = self.encoder.encode(content).tolist()
+                embedding_json = json.dumps(embedding)
+            except Exception as e:
+                print(f"[Memory] Failed to generate embedding: {e}")
+
         memory = Memory(
             id=self._generate_id(content, type),
             type=type,
             content=content,
             metadata=metadata or {},
+            embedding=json.loads(embedding_json) if embedding_json else None,
             created_at=now,
             updated_at=now
         )
@@ -218,11 +250,11 @@ class MemoryStore:
         cursor = self.conn.cursor()
         cursor.execute("""
             INSERT OR REPLACE INTO memories 
-            (id, type, content, metadata, created_at, updated_at, access_count, success_rate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (id, type, content, metadata, embedding, created_at, updated_at, access_count, success_rate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             memory.id, memory.type, memory.content, 
-            json.dumps(memory.metadata), memory.created_at, memory.updated_at,
+            json.dumps(memory.metadata), embedding_json, memory.created_at, memory.updated_at,
             memory.access_count, memory.success_rate
         ))
         self.conn.commit()
@@ -262,7 +294,68 @@ class MemoryStore:
         )
     
     def search(self, query: str, type: str = None, limit: int = 10) -> List[SearchResult]:
-        """Semantic search using TF-IDF similarity"""
+        """Semantic search using Vector Embeddings or TF-IDF similarity"""
+        if self.use_embeddings and self.encoder:
+            return self._search_embeddings(query, type, limit)
+        return self._search_tfidf(query, type, limit)
+
+    def _search_embeddings(self, query: str, type: str = None, limit: int = 10) -> List[SearchResult]:
+        """Search using vector embeddings"""
+        try:
+            query_embedding = self.encoder.encode(query)
+        except Exception:
+            return self._search_tfidf(query, type, limit)
+
+        cursor = self.conn.cursor()
+        if type:
+            cursor.execute("SELECT * FROM memories WHERE type = ? AND embedding IS NOT NULL", (type,))
+        else:
+            cursor.execute("SELECT * FROM memories WHERE embedding IS NOT NULL")
+        
+        rows = cursor.fetchall()
+        results = []
+        
+        for row in rows:
+            try:
+                doc_embedding = np.array(json.loads(row['embedding']))
+                # Cosine similarity for embeddings
+                score = np.dot(query_embedding, doc_embedding) / (np.linalg.norm(query_embedding) * np.linalg.norm(doc_embedding))
+                
+                if score > 0.3:  # Minimum threshold for embeddings
+                    memory = Memory(
+                        id=row['id'],
+                        type=row['type'],
+                        content=row['content'],
+                        metadata=json.loads(row['metadata']),
+                        created_at=row['created_at'],
+                        updated_at=row['updated_at'],
+                        access_count=row['access_count'],
+                        success_rate=row['success_rate']
+                    )
+                    
+                    # Boost by success rate and recency
+                    recency_boost = 1.0
+                    try:
+                        days_old = (datetime.now() - datetime.fromisoformat(row['created_at'])).days
+                        recency_boost = 1.0 / (1.0 + days_old / 30)
+                    except:
+                        pass
+                    
+                    final_score = float(score * (0.5 + 0.5 * memory.success_rate) * (0.7 + 0.3 * recency_boost))
+                    
+                    results.append(SearchResult(
+                        memory=memory,
+                        score=final_score,
+                        reason=f"Vector Sim: {score:.2f}, Success: {memory.success_rate:.2f}"
+                    ))
+            except Exception:
+                continue
+        
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results[:limit]
+
+    def _search_tfidf(self, query: str, type: str = None, limit: int = 10) -> List[SearchResult]:
+        """Semantic search using TF-IDF similarity (Fallback)"""
         query_vec = self._compute_tfidf(query)
         if not query_vec:
             return []

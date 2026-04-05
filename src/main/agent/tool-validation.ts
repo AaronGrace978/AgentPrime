@@ -1487,6 +1487,34 @@ export function validatePackageJson(content: string): ValidationResult {
       );
     }
     
+    // Catch hallucinated version ranges that are clearly impossible
+    const allDeps: Record<string, string> = {
+      ...(pkg.dependencies || {}),
+      ...(pkg.devDependencies || {})
+    };
+
+    const KNOWN_MAX_MAJORS: Record<string, number> = {
+      react: 19, 'react-dom': 19, next: 15, vue: 3, svelte: 5, vite: 6,
+      express: 5, fastify: 5, three: 0, typescript: 5, tailwindcss: 4,
+      webpack: 5, rollup: 4, prisma: 6, '@prisma/client': 6, zod: 3,
+      bcryptjs: 2, bcrypt: 5, jsonwebtoken: 9, mongoose: 8, sequelize: 6,
+      axios: 1, lodash: 4, dayjs: 1, moment: 2, uuid: 10,
+    };
+
+    for (const [depName, depRange] of Object.entries(allDeps)) {
+      if (typeof depRange !== 'string') continue;
+      const majorMatch = depRange.match(/(\d+)/);
+      if (!majorMatch) continue;
+      const major = parseInt(majorMatch[1], 10);
+      const knownMax = KNOWN_MAX_MAJORS[depName];
+      if (knownMax !== undefined && major > knownMax) {
+        errors.push(
+          `🚨 "${depName}@${depRange}" specifies a version that does not exist (latest major is ${knownMax}.x). ` +
+          `The AI likely hallucinated this version. Fix: use "^${knownMax}.0.0" or run "npm view ${depName} version" to confirm.`
+        );
+      }
+    }
+
     if (errors.length > 0) {
       return {
         valid: false,
@@ -1496,7 +1524,7 @@ export function validatePackageJson(content: string): ValidationResult {
     
     if (warnings.length > 0) {
       return {
-        valid: true,  // Don't block, just warn
+        valid: true,
         warning: `Cross-platform warnings in package.json:\n${warnings.join('\n')}`
       };
     }

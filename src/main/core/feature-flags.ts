@@ -28,7 +28,7 @@ export interface FeatureFlags {
 }
 
 const DEFAULTS: FeatureFlags = {
-  mirror: false,
+  mirror: true,
   activatePrime: true,
   pythonBrain: true,
   telemetry: true,
