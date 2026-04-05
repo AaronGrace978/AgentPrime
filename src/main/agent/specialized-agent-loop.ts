@@ -235,11 +235,18 @@ export class SpecializedAgentLoop extends EventEmitter {
         );
       }
 
-      // Check if this is an update to an existing project
+    // Check if this is an update to an existing project.
+    // If registry state exists but workspace is empty, treat this run as CREATE to avoid
+    // unnecessary ENHANCE/FIX-style rewrite warnings on fresh scaffolds.
     const existingProject = this.registry.findByPath(this.context.workspacePath);
-    const isUpdate = existingProject !== undefined;
-    
-    if (isUpdate) {
+    const workspaceFileCount = this.getAllFiles(this.context.workspacePath).length;
+    const isUpdate = existingProject !== undefined && workspaceFileCount > 0;
+
+    if (existingProject && workspaceFileCount === 0) {
+      console.log(
+        `[SpecializedAgent] ℹ️ Registry entry "${existingProject.name}" found, but workspace is empty; switching to create mode`
+      );
+    } else if (isUpdate) {
       console.log(`[SpecializedAgent] 🔄 Updating existing project: ${existingProject.name}`);
     }
     const repairScope = this.context.repairScope;

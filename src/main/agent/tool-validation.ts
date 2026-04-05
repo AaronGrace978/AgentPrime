@@ -38,6 +38,18 @@ interface JavaScriptValidationOptions {
   workspacePath?: string;
 }
 
+const BUNDLER_HINT_FILES = [
+  'vite.config.ts',
+  'vite.config.js',
+  'vite.config.mts',
+  'vite.config.mjs',
+  'webpack.config.ts',
+  'webpack.config.js',
+  'rollup.config.ts',
+  'rollup.config.js',
+  'parcel.config.js',
+];
+
 /**
  * Track files being created in a session to detect duplicates
  * Key: basename (e.g., "script.js"), Value: array of full paths
@@ -164,6 +176,23 @@ function hasBundlerRuntime(workspacePath?: string): boolean {
   }
 
   try {
+    const hasBundlerConfigHints = BUNDLER_HINT_FILES.some((fileName) =>
+      fs.existsSync(path.join(workspacePath, fileName))
+    );
+    if (hasBundlerConfigHints) {
+      return true;
+    }
+
+    const indexHtmlPath = path.join(workspacePath, 'index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+      const indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');
+      const hasModuleScript = /<script[^>]+type=["']module["']/i.test(indexHtml);
+      const referencesSrcEntry = /src=["'][^"']*\/?src\/main\.(ts|tsx|js|jsx)["']/i.test(indexHtml);
+      if (hasModuleScript && referencesSrcEntry) {
+        return true;
+      }
+    }
+
     const pkgPath = path.join(workspacePath, 'package.json');
     if (!fs.existsSync(pkgPath)) {
       return false;
@@ -188,6 +217,11 @@ function hasBundlerRuntime(workspacePath?: string): boolean {
   } catch {
     return false;
   }
+}
+
+function looksLikeBundlerSourcePath(filePath: string): boolean {
+  const normalized = normalizeForGlob(filePath).toLowerCase();
+  return /^src\/.+\.(ts|tsx|js|jsx)$/.test(normalized) || /^main\.(ts|tsx|js|jsx)$/.test(normalized);
 }
 
 /**
@@ -874,7 +908,7 @@ function validateWriteFile(
   
   // ==========================================
   // CHECK 2b: Content Similarity Check for Existing Files
-  // Prevents complete file replacement in FIX mode
+  // Warns about full rewrites in explicit repair/fix flows.
   // ==========================================
   if (taskContext && content.length > 200) {
     const existingFilePath = sessionFileTracker.get(fileName)?.[0];
@@ -882,17 +916,22 @@ function validateWriteFile(
       // This file was already created - check if new content is completely different
       // This catches the case where the AI "fixes" by generating entirely new content
       const taskLower = taskContext.toLowerCase();
-      const isFix = /fix|debug|repair|check|review|issue|bug|problem/i.test(taskLower);
-      
-      if (isFix) {
-        // In fix mode, warn about complete rewrites
-        console.warn(`[ToolValidation] ⚠️ FIX MODE: Overwriting existing file "${filePath}"`);
+      const isExplicitFixPass =
+        taskLower.includes('critical fix pass required') ||
+        taskLower.includes('repair scope is enforced');
+      const isLikelyFixIntent =
+        /\b(fix|bugfix|debug|repair|regression|hotfix)\b/i.test(taskContext) &&
+        !/\b(create|generate|scaffold|new project|build from scratch)\b/i.test(taskContext);
+
+      if (isExplicitFixPass || isLikelyFixIntent) {
+        console.warn(`[ToolValidation] ⚠️ Updating existing file during repair flow: "${filePath}"`);
         console.warn(`[ToolValidation] ⚠️ Consider using patch_file for surgical edits instead`);
-        
+
         return {
           valid: true,
-          warning: `FIX MODE WARNING: You are completely overwriting "${filePath}". ` +
-                   `For bug fixes, use patch_file to make surgical edits instead of full file rewrites.`
+          warning:
+            `REPAIR FLOW WARNING: You are completely overwriting "${filePath}". ` +
+            `For bug fixes, use patch_file to make surgical edits instead of full file rewrites.`,
         };
       }
     }
@@ -1286,26 +1325,36 @@ export function validateJavaScriptFile(
 ): ValidationResult {
   const warnings: string[] = [];
   const bundlerProject = hasBundlerRuntime(options.workspacePath);
+  const likelyBundlerLayout = looksLikeBundlerSourcePath(filePath);
   
   // Check for CSS imports (Vite-specific, won't work in browser)
   const cssImportMatch = content.match(/import\s+['"][^'"]+\.css['"]/g);
   if (cssImportMatch && !bundlerProject) {
-    warnings.push(
-      `CRITICAL: File "${filePath}" uses Vite-style CSS import: "${cssImportMatch[0]}"\n` +
-      `This ONLY works when running through a bundler (npm run dev).\n` +
-      `If user opens index.html directly, the ENTIRE JavaScript will FAIL to load!\n` +
-      `Either:\n` +
-      `  1. Add <link rel="stylesheet" href="..."> to index.html AND remove CSS import, OR\n` +
-      `  2. Make sure README clearly states user MUST run "npm run dev" to use the project`
-    );
+    if (likelyBundlerLayout) {
+      warnings.push(
+        `NOTE: File "${filePath}" imports CSS ("${cssImportMatch[0]}").\n` +
+        `No bundler runtime was detected yet, but this layout looks bundler-oriented (src/* entry style).\n` +
+        `If this project targets Vite/Webpack, this is expected. Otherwise add stylesheet links in HTML.`
+      );
+    } else {
+      warnings.push(
+        `WARNING: File "${filePath}" uses CSS import syntax: "${cssImportMatch[0]}".\n` +
+        `This only works when running through a bundler (for example, npm run dev).\n` +
+        `If users open index.html directly, JavaScript may fail to load.\n` +
+        `Either:\n` +
+        `  1. Add <link rel="stylesheet" href="..."> to index.html and remove CSS import, OR\n` +
+        `  2. Document that users must run a bundler/dev server.`
+      );
+    }
   }
   
   // Check for other bundler-only imports
   const assetImports = content.match(/import\s+\w+\s+from\s+['"][^'"]+\.(png|jpg|svg|gif|woff|woff2)['"]/) ;
-  if (assetImports) {
+  if (assetImports && !bundlerProject) {
+    const severity = likelyBundlerLayout ? 'NOTE' : 'WARNING';
     warnings.push(
-      `WARNING: File "${filePath}" imports assets directly: "${assetImports[0]}"\n` +
-      `This requires a bundler. Ensure README specifies "npm run dev" is required.`
+      `${severity}: File "${filePath}" imports assets directly: "${assetImports[0]}".\n` +
+      `This requires a bundler runtime. Ensure runtime docs make that explicit.`
     );
   }
   
