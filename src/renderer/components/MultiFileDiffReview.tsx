@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import type { AgentReviewChange, AgentReviewVerificationState } from '../../types/agent-review';
+import type { AgentReviewChange, AgentReviewFinding, AgentReviewVerificationState } from '../../types/agent-review';
 
 export type FileChange = AgentReviewChange;
 
@@ -213,24 +213,23 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
       flexDirection: 'column',
       background: 'var(--prime-surface)',
       border: '1px solid var(--prime-border)',
-      borderRadius: '10px',
+      borderRadius: '12px',
       overflow: 'hidden',
-      maxHeight: '560px',
-      boxShadow: '0 20px 60px rgba(0, 0, 0, 0.28)',
+      maxHeight: '70vh',
+      boxShadow: '0 24px 80px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.04)',
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '12px',
-        padding: '14px 16px',
+        gap: '10px',
+        padding: '16px 18px 14px',
         background: 'linear-gradient(180deg, var(--prime-bg) 0%, var(--prime-surface) 100%)',
         borderBottom: '1px solid var(--prime-border)',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '14px' }}>✏</span>
               <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--prime-text)' }}>Review Agent Changes</span>
               <span style={{
                 fontSize: '11px',
@@ -243,11 +242,11 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
               </span>
               {isStaged && !applied && (
                 <span style={{
-                  fontSize: '11px',
+                  fontSize: '10px',
                   color: '#fbbf24',
                   background: 'rgba(251, 191, 36, 0.12)',
-                  border: '1px solid rgba(251, 191, 36, 0.35)',
-                  padding: '3px 8px',
+                  border: '1px solid rgba(251, 191, 36, 0.30)',
+                  padding: '2px 8px',
                   borderRadius: '10px',
                   fontWeight: 700,
                 }}>
@@ -255,7 +254,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                 </span>
               )}
             </div>
-            <div style={{ fontSize: '12px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
+            <div style={{ fontSize: '11.5px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
               {reviewDecisionCopy}
             </div>
             {taskDescription && (
@@ -277,21 +276,26 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             cursor: 'pointer',
             fontSize: '12px',
             fontWeight: 600,
-            padding: '8px 12px',
+            padding: '8px 14px',
             borderRadius: '8px',
             flexShrink: 0,
-          }}>
+            transition: 'background 0.15s ease',
+          }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--prime-surface-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
             {isStaged && !applied ? 'Discard Review' : reviewComplete ? 'Done' : 'Hide Review'}
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {renderStatPill('Pending', stats.pending, '#f59e0b', 'rgba(245, 158, 11, 0.12)')}
-          {renderStatPill('Accepted', stats.accepted, '#3fb950', 'rgba(63, 185, 80, 0.12)')}
-          {renderStatPill(isStaged ? 'Rejected' : 'Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.12)')}
-          {verification?.status === 'verifying' && renderStatPill('Verifying', 1, '#58a6ff', 'rgba(88, 166, 255, 0.12)')}
-          {verification?.status === 'passed' && renderStatPill('Verified', 1, '#3fb950', 'rgba(63, 185, 80, 0.12)')}
-          {verification?.status === 'failed' && renderStatPill('Repair Needed', verification.issues.length || 1, '#ff7b72', 'rgba(255, 123, 114, 0.12)')}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {renderStatPill('Pending', stats.pending, '#f59e0b', 'rgba(245, 158, 11, 0.10)')}
+          {renderStatPill('Accepted', stats.accepted, '#3fb950', 'rgba(63, 185, 80, 0.10)')}
+          {renderStatPill(isStaged ? 'Rejected' : 'Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.10)')}
+          {verification?.status === 'verifying' && renderStatPill('Verifying', 1, '#58a6ff', 'rgba(88, 166, 255, 0.10)')}
+          {verification?.status === 'passed' && renderStatPill('Verified', 1, '#3fb950', 'rgba(63, 185, 80, 0.10)')}
+          {verification?.status === 'failed' && renderStatPill('Repair Needed', (verification.findings?.length || verification.issues.length) || 1, '#ff7b72', 'rgba(255, 123, 114, 0.10)')}
+          <span style={{ width: '1px', height: '16px', background: 'var(--prime-border)', margin: '0 2px', flexShrink: 0 }} />
           {stats.pending > 0 && (
             <>
               <button onClick={onAcceptAll} style={{
@@ -465,80 +469,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
           </span>
         </div>
         {verification && verification.status !== 'idle' && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-            padding: '10px 12px',
-            borderRadius: '8px',
-            background:
-              verification.status === 'failed'
-                ? 'rgba(255, 123, 114, 0.08)'
-                : verification.status === 'passed'
-                  ? 'rgba(63, 185, 80, 0.08)'
-                  : 'rgba(88, 166, 255, 0.08)',
-            border: '1px solid var(--prime-border)',
-          }}>
-            <div style={{ fontSize: '12px', color: 'var(--prime-text)', fontWeight: 600 }}>
-              {verification.status === 'verifying'
-                ? 'Running verification on accepted changes...'
-                : verification.status === 'passed'
-                  ? `${verification.projectTypeLabel || 'Project'} verified successfully`
-                  : `${verification.projectTypeLabel || 'Project'} failed verification`}
-            </div>
-            {verification.readinessSummary && (
-              <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
-                {verification.readinessSummary}
-              </div>
-            )}
-            {verification.startCommand && (
-              <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
-                Run: <code>{verification.startCommand}</code>
-              </div>
-            )}
-            {verification.buildCommand && (
-              <div style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
-                Build: <code>{verification.buildCommand}</code>
-              </div>
-            )}
-            {verification.status === 'failed' && repairTargets.length > 0 && (
-              <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
-                Repair scope: {repairTargets.map((filePath) => `\`${filePath}\``).join(', ')}
-              </div>
-            )}
-            {verification.findings && verification.findings.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {verification.findings.slice(0, 6).map((finding, index) => (
-                  <div key={`${finding.summary}-${index}`} style={{
-                    padding: '8px 10px',
-                    borderRadius: '8px',
-                    background: 'rgba(15, 23, 42, 0.28)',
-                    border: '1px solid rgba(148, 163, 184, 0.12)',
-                    fontSize: '11px',
-                    color: 'var(--prime-text-secondary)',
-                    lineHeight: 1.45,
-                  }}>
-                    <div style={{ color: 'var(--prime-text)', fontWeight: 600 }}>
-                      [{finding.stage}] {finding.summary}
-                    </div>
-                    {finding.files.length > 0 && (
-                      <div>Files: {finding.files.map((filePath) => `\`${filePath}\``).join(', ')}</div>
-                    )}
-                    {finding.command && (
-                      <div>Command: <code>{finding.command}</code></div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {verification.issues.length > 0 && (
-              <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
-                {verification.issues.slice(0, 5).map((issue, index) => (
-                  <div key={`${issue}-${index}`}>- {issue}</div>
-                ))}
-              </div>
-            )}
-          </div>
+          <VerificationPanel verification={verification} repairTargets={repairTargets} />
         )}
       </div>
 
@@ -664,6 +595,434 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     </div>
   );
 };
+
+/* ─── Verification Panel ──────────────────────────────────────────── */
+
+const STAGE_META: Record<string, { icon: string; label: string }> = {
+  validation: { icon: '📋', label: 'Validate' },
+  install: { icon: '📦', label: 'Install' },
+  build: { icon: '🔨', label: 'Build' },
+  run: { icon: '▶', label: 'Run' },
+  browser: { icon: '🌐', label: 'Browser' },
+  unknown: { icon: '❓', label: 'Check' },
+};
+
+const SEVERITY_STYLE: Record<string, { accent: string; bg: string; border: string }> = {
+  critical: { accent: '#ff7b72', bg: 'rgba(255, 123, 114, 0.08)', border: 'rgba(255, 123, 114, 0.25)' },
+  error: { accent: '#ff7b72', bg: 'rgba(255, 123, 114, 0.06)', border: 'rgba(255, 123, 114, 0.18)' },
+  warning: { accent: '#f59e0b', bg: 'rgba(245, 158, 11, 0.06)', border: 'rgba(245, 158, 11, 0.18)' },
+  info: { accent: '#58a6ff', bg: 'rgba(88, 166, 255, 0.06)', border: 'rgba(88, 166, 255, 0.18)' },
+};
+
+function truncateErrorText(text: string, maxLen: number): { truncated: string; wasTruncated: boolean } {
+  if (text.length <= maxLen) return { truncated: text, wasTruncated: false };
+  const ellipsis = ' …';
+  return { truncated: text.slice(0, maxLen - ellipsis.length) + ellipsis, wasTruncated: true };
+}
+
+function splitSummaryFromDetails(raw: string): { headline: string; details: string } {
+  const firstSentenceEnd = raw.search(/(?<=[.!?])\s/);
+  if (firstSentenceEnd > 20 && firstSentenceEnd < 200) {
+    return { headline: raw.slice(0, firstSentenceEnd + 1).trim(), details: raw.slice(firstSentenceEnd + 1).trim() };
+  }
+  const lineBreak = raw.indexOf('\n');
+  if (lineBreak > 0 && lineBreak < 200) {
+    return { headline: raw.slice(0, lineBreak).trim(), details: raw.slice(lineBreak + 1).trim() };
+  }
+  const { truncated, wasTruncated } = truncateErrorText(raw, 180);
+  return { headline: truncated, details: wasTruncated ? raw : '' };
+}
+
+const FindingCard: React.FC<{ finding: AgentReviewFinding; index: number }> = ({ finding, index }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const stage = STAGE_META[finding.stage] || STAGE_META.unknown;
+  const severity = SEVERITY_STYLE[finding.severity] || SEVERITY_STYLE.error;
+  const { headline, details } = splitSummaryFromDetails(finding.summary);
+  const hasDetails = details.length > 0 || (finding.output && finding.output.length > 0) || (finding.command && finding.command.length > 0);
+
+  return (
+    <div style={{
+      borderRadius: '8px',
+      border: `1px solid ${severity.border}`,
+      background: severity.bg,
+      overflow: 'hidden',
+    }}>
+      <div
+        onClick={hasDetails ? () => setExpanded(prev => !prev) : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '8px',
+          padding: '8px 10px',
+          cursor: hasDetails ? 'pointer' : 'default',
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ fontSize: '13px', lineHeight: '18px', flexShrink: 0 }}>{stage.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: '10px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.4px',
+              color: severity.accent,
+              background: severity.bg,
+              padding: '1px 6px',
+              borderRadius: '4px',
+              border: `1px solid ${severity.border}`,
+              flexShrink: 0,
+            }}>
+              {stage.label}
+            </span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'var(--prime-text)',
+              lineHeight: 1.4,
+              wordBreak: 'break-word',
+            }}>
+              {headline}
+            </span>
+          </div>
+          {finding.files.length > 0 && (
+            <div style={{ marginTop: '4px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              {finding.files.slice(0, 4).map((filePath) => (
+                <span key={filePath} style={{
+                  fontSize: '10px',
+                  fontFamily: '"JetBrains Mono", monospace',
+                  color: 'var(--prime-text-muted)',
+                  background: 'rgba(148, 163, 184, 0.08)',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(148, 163, 184, 0.12)',
+                  maxWidth: '200px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {filePath.split('/').pop() || filePath}
+                </span>
+              ))}
+              {finding.files.length > 4 && (
+                <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)' }}>
+                  +{finding.files.length - 4} more
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        {hasDetails && (
+          <span style={{
+            fontSize: '10px',
+            color: 'var(--prime-text-muted)',
+            flexShrink: 0,
+            paddingTop: '2px',
+            transition: 'transform 0.15s ease',
+            transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+          }}>
+            ▼
+          </span>
+        )}
+      </div>
+
+      {expanded && hasDetails && (
+        <div style={{
+          borderTop: `1px solid ${severity.border}`,
+          padding: '8px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+        }}>
+          {finding.command && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)', fontWeight: 600, flexShrink: 0 }}>$</span>
+              <code style={{
+                fontSize: '10px',
+                fontFamily: '"JetBrains Mono", monospace',
+                color: 'var(--prime-text-secondary)',
+                background: 'rgba(15, 23, 42, 0.35)',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                border: '1px solid rgba(148, 163, 184, 0.08)',
+                wordBreak: 'break-all',
+              }}>
+                {finding.command}
+              </code>
+            </div>
+          )}
+          {details && (
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--prime-text-secondary)',
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+            }}>
+              {details}
+            </div>
+          )}
+          {finding.output && (
+            <pre style={{
+              margin: 0,
+              fontSize: '10px',
+              fontFamily: '"JetBrains Mono", monospace',
+              color: 'var(--prime-text-secondary)',
+              background: 'rgba(15, 23, 42, 0.45)',
+              padding: '8px',
+              borderRadius: '6px',
+              border: '1px solid rgba(148, 163, 184, 0.08)',
+              maxHeight: '140px',
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              lineHeight: 1.5,
+            }}>
+              {finding.output}
+            </pre>
+          )}
+          {finding.files.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)', fontWeight: 600 }}>Affected files</span>
+              {finding.files.map((filePath) => (
+                <span key={filePath} style={{
+                  fontSize: '10px',
+                  fontFamily: '"JetBrains Mono", monospace',
+                  color: 'var(--prime-text-secondary)',
+                  paddingLeft: '8px',
+                }}>
+                  {filePath}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const VerificationPanel: React.FC<{
+  verification: AgentReviewVerificationState;
+  repairTargets: string[];
+}> = ({ verification, repairTargets }) => {
+  const [showRepairScope, setShowRepairScope] = useState(false);
+
+  const statusConfig = verification.status === 'passed'
+    ? { icon: '✓', label: `${verification.projectTypeLabel || 'Project'} verified`, accent: '#3fb950', bg: 'rgba(63, 185, 80, 0.06)', border: 'rgba(63, 185, 80, 0.2)' }
+    : verification.status === 'failed'
+      ? { icon: '✕', label: `${verification.projectTypeLabel || 'Project'} failed verification`, accent: '#ff7b72', bg: 'rgba(255, 123, 114, 0.06)', border: 'rgba(255, 123, 114, 0.2)' }
+      : { icon: '⟳', label: 'Verifying accepted changes', accent: '#58a6ff', bg: 'rgba(88, 166, 255, 0.06)', border: 'rgba(88, 166, 255, 0.2)' };
+
+  const hasFindings = verification.findings && verification.findings.length > 0;
+  const hasIssues = verification.issues.length > 0;
+  const hasCommands = Boolean(verification.startCommand || verification.buildCommand);
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0',
+      borderRadius: '10px',
+      border: `1px solid ${statusConfig.border}`,
+      background: statusConfig.bg,
+      overflow: 'hidden',
+    }}>
+      {/* Status banner */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        padding: '10px 12px',
+      }}>
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '22px',
+          height: '22px',
+          borderRadius: '50%',
+          fontSize: '12px',
+          fontWeight: 700,
+          color: '#fff',
+          background: statusConfig.accent,
+          flexShrink: 0,
+        }}>
+          {statusConfig.icon}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--prime-text)' }}>
+            {statusConfig.label}
+          </div>
+          {verification.readinessSummary && (
+            <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.45, marginTop: '2px' }}>
+              {verification.readinessSummary}
+            </div>
+          )}
+        </div>
+        {hasFindings && (
+          <span style={{
+            fontSize: '10px',
+            fontWeight: 700,
+            color: statusConfig.accent,
+            background: statusConfig.bg,
+            padding: '2px 8px',
+            borderRadius: '999px',
+            border: `1px solid ${statusConfig.border}`,
+            flexShrink: 0,
+          }}>
+            {verification.findings!.length} issue{verification.findings!.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {/* Commands */}
+      {hasCommands && (
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          padding: '6px 12px 8px',
+          flexWrap: 'wrap',
+        }}>
+          {verification.buildCommand && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)', fontWeight: 600 }}>Build</span>
+              <code style={{
+                fontSize: '10px',
+                fontFamily: '"JetBrains Mono", monospace',
+                color: 'var(--prime-text-secondary)',
+                background: 'rgba(15, 23, 42, 0.3)',
+                padding: '2px 6px',
+                borderRadius: '4px',
+              }}>
+                {verification.buildCommand}
+              </code>
+            </div>
+          )}
+          {verification.startCommand && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)', fontWeight: 600 }}>Run</span>
+              <code style={{
+                fontSize: '10px',
+                fontFamily: '"JetBrains Mono", monospace',
+                color: 'var(--prime-text-secondary)',
+                background: 'rgba(15, 23, 42, 0.3)',
+                padding: '2px 6px',
+                borderRadius: '4px',
+              }}>
+                {verification.startCommand}
+              </code>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Findings */}
+      {hasFindings && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          padding: '4px 10px 10px',
+        }}>
+          {verification.findings!.slice(0, 6).map((finding, index) => (
+            <FindingCard key={`${finding.stage}-${index}`} finding={finding} index={index} />
+          ))}
+          {verification.findings!.length > 6 && (
+            <div style={{
+              fontSize: '10px',
+              color: 'var(--prime-text-muted)',
+              textAlign: 'center',
+              padding: '4px 0',
+            }}>
+              +{verification.findings!.length - 6} more issue{verification.findings!.length - 6 !== 1 ? 's' : ''} not shown
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Legacy issues (plain string list — only if no structured findings) */}
+      {hasIssues && !hasFindings && (
+        <div style={{ padding: '4px 12px 10px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          {verification.issues.slice(0, 5).map((issue, index) => (
+            <div key={`issue-${index}`} style={{
+              fontSize: '11px',
+              color: 'var(--prime-text-secondary)',
+              lineHeight: 1.45,
+              display: 'flex',
+              gap: '6px',
+              alignItems: 'flex-start',
+            }}>
+              <span style={{ color: '#ff7b72', flexShrink: 0, fontSize: '8px', lineHeight: '18px' }}>●</span>
+              <span style={{ wordBreak: 'break-word' }}>{issue}</span>
+            </div>
+          ))}
+          {verification.issues.length > 5 && (
+            <div style={{ fontSize: '10px', color: 'var(--prime-text-muted)', paddingLeft: '14px' }}>
+              +{verification.issues.length - 5} more
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Repair scope */}
+      {verification.status === 'failed' && repairTargets.length > 0 && (
+        <div style={{
+          borderTop: `1px solid ${statusConfig.border}`,
+          padding: '6px 12px 8px',
+        }}>
+          <div
+            onClick={() => setShowRepairScope(prev => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            <span style={{
+              fontSize: '10px',
+              color: 'var(--prime-text-muted)',
+              transition: 'transform 0.15s ease',
+              transform: showRepairScope ? 'rotate(90deg)' : 'rotate(0deg)',
+            }}>
+              ▶
+            </span>
+            <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)', fontWeight: 600 }}>
+              Repair scope
+            </span>
+            <span style={{
+              fontSize: '10px',
+              color: 'var(--prime-text-muted)',
+              background: 'rgba(148, 163, 184, 0.08)',
+              padding: '1px 6px',
+              borderRadius: '4px',
+            }}>
+              {repairTargets.length} file{repairTargets.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          {showRepairScope && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', paddingTop: '4px', paddingLeft: '16px' }}>
+              {repairTargets.map((filePath) => (
+                <span key={filePath} style={{
+                  fontSize: '10px',
+                  fontFamily: '"JetBrains Mono", monospace',
+                  color: 'var(--prime-text-secondary)',
+                  lineHeight: 1.6,
+                }}>
+                  {filePath}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── File Diff ──────────────────────────────────────────────────── */
 
 const FileDiff: React.FC<{ oldContent: string; newContent: string }> = ({ oldContent, newContent }) => {
   const oldLines = oldContent.split('\n');
