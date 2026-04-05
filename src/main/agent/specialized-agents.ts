@@ -434,7 +434,12 @@ If you create styles.css or src/styles.css, you MUST link it.`,
 - Use COMPATIBLE dependency versions (check for known issues)
 - Include ALL required config files (webpack.config.js, etc.)
 - Test scripts that actually run
-- Clear documentation for setup`,
+- Clear documentation for setup
+
+## 🚨 WRITABLE SCOPE (NON-NEGOTIABLE)
+You may ONLY create or edit: package manifests/locks, Vite/TS configs, CI workflows, Docker/Make, and root-level launcher scripts (e.g. *.bat).
+You must NEVER use write_file or patch_file on application source under \`src/\`, \`backend/\`, or tests—those belong to javascript_specialist, python_specialist, or repair_specialist.
+If the task needs fixes in \`src/\`, emit no source writes here; use run_command to verify (npm run build) and describe what another specialist must change.`,
 
     testing_specialist: `
 ## 🎯 MIRROR: HIGH-SIGNAL TEST ENGINEERING
@@ -988,6 +993,14 @@ ${TOOL_CALL_FORMAT}`
 - CI/CD pipelines (GitHub Actions)
 - Docker, containerization
 - Package management (npm, pip, cargo)
+
+## FILES YOU MAY EDIT (write_file / patch_file)
+Only tooling and project metadata, for example: package.json, lockfiles, vite.config.*, tsconfig*.json, pyproject.toml, requirements*.txt, .github/workflows/**, Dockerfile*, Makefile, and root *.bat launchers.
+Do not invent paths outside this role; the executor will reject writes to application source.
+
+## FILES YOU MUST NOT EDIT
+Never write or patch application/runtime code under src/, backend/, or tests/ (including games, React, Three.js, APIs). That work is for javascript_specialist, python_specialist, styling_ux_specialist, testing_specialist, or repair_specialist.
+You may still run_command for npm install, npm run build, npm test, etc., to surface errors for others to fix.
 
 ${TOOL_CALL_FORMAT}`
   },

@@ -405,7 +405,16 @@ export class TaskMaster {
             ? ['package.json', 'README.md', 'index.html', 'src/**']
             : [];
       case 'javascript_specialist':
-        return ['src/**/*.js', 'src/**/*.jsx', 'src/**/*.ts', 'src/**/*.tsx', 'tests/**/*.ts', 'tests/**/*.tsx'];
+        return [
+          'src/**/*.js',
+          'src/**/*.jsx',
+          'src/**/*.ts',
+          'src/**/*.tsx',
+          'src/**/*.css',
+          'tests/**/*.ts',
+          'tests/**/*.tsx',
+          'README.md',
+        ];
       case 'styling_ux_specialist':
         return ['src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'public/**'];
       case 'python_specialist':
@@ -423,6 +432,11 @@ export class TaskMaster {
           'vite.config.*',
           'tsconfig*.json',
           '.github/workflows/**',
+          '*.bat',
+          'Makefile',
+          'Dockerfile',
+          'Dockerfile.*',
+          'README.md',
         ];
       case 'testing_specialist':
         return ['tests/**', 'playwright.config.*', 'package.json', 'scripts/**/*.ts'];

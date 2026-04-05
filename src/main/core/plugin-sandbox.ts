@@ -13,6 +13,7 @@ import type {
 import { EventEmitter } from 'events';
 import * as vm from 'vm';
 import * as crypto from 'crypto';
+import * as util from 'util';
 
 interface PluginRuntime {
   sandbox: vm.Context;
@@ -236,11 +237,23 @@ export class SecurePluginSandbox extends EventEmitter implements PluginSandbox {
           };
         case 'util':
           return {
-            promisify: require('util').promisify,
-            inspect: require('util').inspect,
+            promisify: util.promisify,
+            inspect: util.inspect,
           };
+        case 'events':
+          return require('events');
+        case 'stream':
+          return require('stream');
+        case 'zlib':
+          return require('zlib');
+        case 'querystring':
+          return require('querystring');
+        case 'url':
+          return require('url');
+        case 'path':
+          return require('path');
         default:
-          return require(moduleId);
+          throw new Error(`Plugin sandbox: internal error for module '${moduleId}'`);
       }
     };
   }

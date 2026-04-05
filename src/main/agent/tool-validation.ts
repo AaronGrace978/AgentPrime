@@ -153,18 +153,45 @@ function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
 }
 
+/**
+ * Convert a minimal glob to RegExp. Supports:
+ * - * — any characters within one path segment (no slash)
+ * - ** — with suffix: zero or more directory segments under prefix; trailing only: any path under prefix
+ *
+ * Important: e.g. src + ** + *.tsx must match both root files (App.tsx) and nested paths, so specialist
+ * writable checks are not wrongly rejected for files directly under src/.
+ */
 function globToRegExp(glob: string): RegExp {
   const normalized = normalizeForGlob(glob);
-  const regexBody = normalized
-    .split('**').map((segment) =>
-      segment
-        .split('*')
-        .map((part) => escapeRegex(part))
-        .join('[^/]*')
-    )
-    .join('.*');
+  const idx = normalized.indexOf('**');
+  if (idx === -1) {
+    const regexBody = normalized
+      .split('*')
+      .map((part) => escapeRegex(part))
+      .join('[^/]*');
+    return new RegExp(`^${regexBody}$`, 'i');
+  }
 
-  return new RegExp(`^${regexBody}$`, 'i');
+  const prefix = normalized.slice(0, idx);
+  let suffix = normalized.slice(idx + 2);
+  if (suffix.startsWith('/')) {
+    suffix = suffix.slice(1);
+  }
+
+  const prefixRe = prefix
+    .split('*')
+    .map((part) => escapeRegex(part))
+    .join('[^/]*');
+
+  if (!suffix) {
+    return new RegExp(`^${prefixRe}.*$`, 'i');
+  }
+
+  const suffixRe = suffix
+    .split('*')
+    .map((part) => escapeRegex(part))
+    .join('[^/]*');
+  return new RegExp(`^${prefixRe}(?:[^/]+/)*${suffixRe}$`, 'i');
 }
 
 function matchesAnyGlob(filePath: string, globs: readonly string[]): boolean {

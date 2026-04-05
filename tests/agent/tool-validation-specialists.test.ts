@@ -18,6 +18,30 @@ describe('specialist-aware tool validation', () => {
     expect(result.error).toContain('integration_verifier');
   });
 
+  it('allows javascript specialist to write Vite entry CSS and README when co-wiring the app', () => {
+    const css = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/index.css', content: 'body { margin: 0; }' },
+      },
+      workspacePath,
+      'Wire React entry and styles',
+      { specialist: 'javascript_specialist' }
+    );
+    const readme = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'README.md', content: '# App\n' },
+      },
+      workspacePath,
+      'Document npm run dev',
+      { specialist: 'javascript_specialist' }
+    );
+
+    expect(css.valid).toBe(true);
+    expect(readme.valid).toBe(true);
+  });
+
   it('blocks javascript specialist from writing backend python files', () => {
     const result = validateToolCall(
       {
@@ -59,6 +83,34 @@ describe('specialist-aware tool validation', () => {
     expect(blocked.error).toContain('outside its writable scope');
   });
 
+  it('allows styling specialist to edit src/App.tsx (glob ** matches root of src/)', () => {
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/App.tsx', content: 'export default function App() { return null; }' },
+      },
+      workspacePath,
+      'Polish the app shell',
+      { specialist: 'styling_ux_specialist' }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('allows pipeline specialist to edit README.md', () => {
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'README.md', content: '# Project\n' },
+      },
+      workspacePath,
+      'Document setup',
+      { specialist: 'pipeline_specialist' }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it('allows pipeline specialist to run bounded build commands', () => {
     const result = validateToolCall(
       {
@@ -86,6 +138,22 @@ describe('specialist-aware tool validation', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('allowed command set');
+  });
+
+  it('blocks pipeline specialist from writing application source (e.g. src/game)', () => {
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/game/Game.ts', content: 'export {}' },
+      },
+      workspacePath,
+      'Fix the Vite build',
+      { specialist: 'pipeline_specialist' }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('pipeline_specialist');
+    expect(result.error).toContain('outside its writable scope');
   });
 
   it('allows testing specialist to run bounded playwright commands', () => {

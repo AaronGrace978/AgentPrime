@@ -79,6 +79,14 @@ This is not the finish line yet, but it is a meaningful step past the earlier "a
 
 ## Recent Upgrades
 
+### Agent & validation fixes (April 2026)
+
+- **Glob matching (`tool-validation.ts`):** `**` in patterns like `src/**/*.tsx` / `src/**/*.css` now matches files directly under `src/` (e.g. `src/App.tsx`, `src/index.css`). The previous regex incorrectly required an extra path segment and caused false “outside writable scope” rejections for specialists.
+- **Specialist writable scopes (`specialist-contracts.ts`):** `javascript_specialist` may write `src/**/*.css` and root `README.md` when co-wiring Vite/React entrypoints; `pipeline_specialist` includes `README.md`, `*.bat`, `Makefile`, and `Dockerfile*` alongside existing manifest/config globs. Pipeline and mirror prompts clarify that pipeline must not rewrite application source under `src/`.
+- **Task Master claims (`task-master.ts`):** Per-step `claimedFiles` for `javascript_specialist` and `pipeline_specialist` are aligned with those scopes (including `src/**/*.css` and `README.md`). This fixes tool calls that passed writable globs but failed with **“outside assigned file claims”** during multi-specialist runs.
+- **Plugin sandbox (`plugin-sandbox.ts`):** Replaced dynamic `require(moduleId)` with static requires for allowed Node built-ins so webpack no longer emits “Critical dependency: the request of a dependency is an expression” on the main bundle.
+- **Tests:** Extended `tests/agent/tool-validation-specialists.test.ts` and `tests/agent/task-master-plan.test.ts` for the above behavior.
+
 - Added a typed bounded-specialist contract matrix with discipline metadata and reflection checklists in `src/main/agent/specialist-contracts.ts`.
 - Added blackboard ownership tracking and bounded step planning through `src/main/agent/task-master.ts` and `src/main/agent/specialized-agent-loop.ts`.
 - Hardened `src/main/legacy/template-engine.ts` so failed template generation can roll back cleanly instead of leaving partial projects behind.

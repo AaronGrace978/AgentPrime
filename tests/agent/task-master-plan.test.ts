@@ -22,7 +22,10 @@ describe('TaskMaster buildPlan', () => {
       expect.arrayContaining(['package.json', 'index.html', 'src/game/**'])
     );
     expect(plan.claimedFiles.javascript_specialist).toEqual(
-      expect.arrayContaining(['src/**/*.ts', 'src/**/*.tsx'])
+      expect.arrayContaining(['src/**/*.ts', 'src/**/*.tsx', 'src/**/*.css', 'README.md'])
+    );
+    expect(plan.claimedFiles.pipeline_specialist).toEqual(
+      expect.arrayContaining(['package.json', 'tsconfig*.json', 'vite.config.*', 'README.md'])
     );
     expect(plan.steps.map((step) => step.specialist)).toEqual([
       'template_scaffold_specialist',
