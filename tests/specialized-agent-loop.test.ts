@@ -555,4 +555,63 @@ describe('Framework structural checks', () => {
       expect.stringContaining('React project under src/ has no entrypoint'),
     ]));
   });
+
+  it('flags missing src/app/layout.tsx in a Next.js src/app/ project', async () => {
+    const ws = createTempDir('fw-nextjs-src-app-');
+    writeJson(ws, 'package.json', {
+      name: 'next-src-app',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+    });
+    mkFile(ws, 'src/app/(auth)/login/page.tsx', 'export default function Login() { return <h1>Login</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(false);
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('src/app/layout.tsx'),
+    ]));
+    expect(v.missingFiles).toContain('src/app/layout.tsx');
+  });
+
+  it('passes when src/app/layout.tsx exists in a Next.js src/app/ project', async () => {
+    const ws = createTempDir('fw-nextjs-src-ok-');
+    writeJson(ws, 'package.json', {
+      name: 'next-src-app',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+      devDependencies: { tailwindcss: '^3.0.0' },
+    });
+    mkFile(ws, 'src/app/layout.tsx', 'export default function RootLayout({ children }: any) { return <html><body>{children}</body></html>; }');
+    mkFile(ws, 'src/app/page.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+    mkFile(ws, 'tailwind.config.ts', 'export default {};');
+    mkFile(ws, 'postcss.config.js', 'module.exports = {};');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(true);
+    expect(v.errors).toHaveLength(0);
+  });
+
+  it('does not flag React entrypoint for Next.js src/app/ projects', async () => {
+    const ws = createTempDir('fw-nextjs-no-react-entry-');
+    writeJson(ws, 'package.json', {
+      name: 'next-src-app',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+    });
+    mkFile(ws, 'src/app/layout.tsx', 'export default function RootLayout({ children }: any) { return <html><body>{children}</body></html>; }');
+    mkFile(ws, 'src/app/page.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    const reactEntryErrors = v.errors.filter((e: string) => e.includes('React project under src/'));
+    expect(reactEntryErrors).toHaveLength(0);
+  });
 });

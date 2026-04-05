@@ -953,23 +953,27 @@ export class SpecializedAgentLoop extends EventEmitter {
     };
     const hasDep = (name: string) => name in deps;
 
-    // ── Next.js App Router ─────────────────────────────────────────
-    if (hasDir('app') && hasDep('next')) {
-      if (!hasAny('app/layout.tsx', 'app/layout.jsx', 'app/layout.js')) {
-        errors.push('Next.js App Router requires app/layout.tsx (root layout) but none was created');
-        missingFiles.push('app/layout.tsx');
+    // ── Next.js App Router (supports both app/ and src/app/) ──────
+    const appRouterPrefix = hasDir('src/app') ? 'src/app' : hasDir('app') ? 'app' : null;
+    if (appRouterPrefix && hasDep('next')) {
+      const layoutCandidates = [`${appRouterPrefix}/layout.tsx`, `${appRouterPrefix}/layout.jsx`, `${appRouterPrefix}/layout.js`];
+      if (!hasAny(...layoutCandidates)) {
+        errors.push(`Next.js App Router requires ${appRouterPrefix}/layout.tsx (root layout) but none was created`);
+        missingFiles.push(`${appRouterPrefix}/layout.tsx`);
       }
-      if (!hasAny('app/page.tsx', 'app/page.jsx', 'app/page.js') &&
-          !existingFiles.some((f) => /^app\/.+\/page\.(tsx|jsx|js)$/.test(f))) {
-        errors.push('Next.js App Router has no page entrypoint — at minimum app/page.tsx is expected');
+      const hasAnyPage = hasAny(`${appRouterPrefix}/page.tsx`, `${appRouterPrefix}/page.jsx`, `${appRouterPrefix}/page.js`) ||
+        existingFiles.some((f) => f.startsWith(appRouterPrefix + '/') && /\/page\.(tsx|jsx|js)$/.test(f));
+      if (!hasAnyPage) {
+        errors.push(`Next.js App Router has no page entrypoint — at minimum ${appRouterPrefix}/page.tsx is expected`);
       }
     }
 
-    // ── Next.js Pages Router ───────────────────────────────────────
-    if (hasDir('pages') && hasDep('next') && !hasDir('app')) {
-      if (!hasAny('pages/_app.tsx', 'pages/_app.jsx', 'pages/_app.js')) {
-        errors.push('Next.js Pages Router is missing pages/_app.tsx (custom App component)');
-        missingFiles.push('pages/_app.tsx');
+    // ── Next.js Pages Router (supports both pages/ and src/pages/) ─
+    const pagesPrefix = hasDir('src/pages') ? 'src/pages' : hasDir('pages') ? 'pages' : null;
+    if (pagesPrefix && hasDep('next') && !appRouterPrefix) {
+      if (!hasAny(`${pagesPrefix}/_app.tsx`, `${pagesPrefix}/_app.jsx`, `${pagesPrefix}/_app.js`)) {
+        errors.push(`Next.js Pages Router is missing ${pagesPrefix}/_app.tsx (custom App component)`);
+        missingFiles.push(`${pagesPrefix}/_app.tsx`);
       }
     }
 
@@ -1015,8 +1019,8 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
     }
 
-    // ── React entrypoint ───────────────────────────────────────────
-    if (hasDep('react') && !hasDep('next') && hasDir('src')) {
+    // ── React entrypoint (non-Next.js) ─────────────────────────────
+    if (hasDep('react') && !hasDep('next') && hasDir('src') && !hasDir('src/app')) {
       const hasReactEntry = hasAny(
         'src/main.tsx', 'src/main.jsx', 'src/main.ts', 'src/main.js',
         'src/index.tsx', 'src/index.jsx', 'src/index.ts', 'src/index.js'
