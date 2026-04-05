@@ -372,7 +372,7 @@ ${basePrompt}`;
     }
     
     // 🎯 FINAL OPUS REINFORCEMENT
-    if (opusExamples.length > 0 && role === 'tool_orchestrator') {
+    if (mirror.opusExamples.length > 0 && role === 'tool_orchestrator') {
       enhancedPrompt += '\n\n## 🔥 FINAL REMINDER: YOU ARE IN OPUS MODE\n';
       enhancedPrompt += 'Before you generate ANY code, ask yourself:\n';
       enhancedPrompt += '1. "Would Claude Opus write code this way?"\n';
@@ -382,7 +382,7 @@ ${basePrompt}`;
       enhancedPrompt += '**Your output should be INDISTINGUISHABLE from Claude Opus.**\n';
     }
     
-    console.log(`[MirrorAgents] 🧠 Enhanced ${role} prompt with ${patterns.length} patterns, ${opusExamples.length} Opus examples, ${antiPatterns.length} anti-patterns`);
+    console.log(`[MirrorAgents] 🧠 Enhanced ${role} prompt with ${mirror.patterns.length} patterns, ${mirror.opusExamples.length} Opus examples, ${mirror.antiPatterns.length} anti-patterns`);
   } catch (error) {
     console.warn('[MirrorAgents] Could not enhance prompt with patterns:', error);
   }
