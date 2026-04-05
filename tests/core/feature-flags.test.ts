@@ -19,7 +19,7 @@ describe('Feature Flags', () => {
 
   it('should return defaults when no env vars or overrides set', () => {
     const flags = resolveFeatureFlags();
-    expect(flags.mirror).toBe(false);
+    expect(flags.mirror).toBe(true);
     expect(flags.activatePrime).toBe(true);
     expect(flags.pythonBrain).toBe(true);
     expect(flags.telemetry).toBe(true);
@@ -30,33 +30,33 @@ describe('Feature Flags', () => {
   });
 
   it('should respect environment variable overrides', () => {
-    process.env.AGENTPRIME_ENABLE_MIRROR = 'true';
+    process.env.AGENTPRIME_ENABLE_MIRROR = 'false';
     process.env.AGENTPRIME_ENABLE_TELEMETRY = 'false';
     const flags = resolveFeatureFlags();
-    expect(flags.mirror).toBe(true);
+    expect(flags.mirror).toBe(false);
     expect(flags.telemetry).toBe(false);
   });
 
   it('should respect settings overrides', () => {
-    const flags = resolveFeatureFlags({ mirror: true, consciousness: true });
-    expect(flags.mirror).toBe(true);
+    const flags = resolveFeatureFlags({ mirror: false, consciousness: true });
+    expect(flags.mirror).toBe(false);
     expect(flags.consciousness).toBe(true);
   });
 
   it('should cache flags after first resolution', () => {
     const flags1 = resolveFeatureFlags();
-    process.env.AGENTPRIME_ENABLE_MIRROR = 'true';
+    process.env.AGENTPRIME_ENABLE_MIRROR = 'false';
     const flags2 = resolveFeatureFlags();
     expect(flags1).toBe(flags2);
-    expect(flags2.mirror).toBe(false);
+    expect(flags2.mirror).toBe(true);
   });
 
   it('should reset cache on resetFeatureFlags()', () => {
     resolveFeatureFlags();
     resetFeatureFlags();
-    process.env.AGENTPRIME_ENABLE_MIRROR = 'true';
+    process.env.AGENTPRIME_ENABLE_MIRROR = 'false';
     const flags = resolveFeatureFlags();
-    expect(flags.mirror).toBe(true);
+    expect(flags.mirror).toBe(false);
   });
 
   it('getFeatureFlags should auto-resolve if not yet called', () => {

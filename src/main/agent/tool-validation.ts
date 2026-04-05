@@ -77,7 +77,8 @@ const PROJECT_SIGNATURES: Record<string, string[]> = {
   // NEW: Additional project types for better detection
   threejs: ['three.js', 'threejs', 'scene', 'renderer', 'camera', 'geometry', 'material', 'mesh', 'orbitcontrols', 'webglrenderer'],
   weather: ['weather', 'forecast', 'temperature', 'humidity', 'weatherapi', 'weatherdata'],
-  calculator: ['calculator', 'calculate', 'add', 'subtract', 'multiply', 'divide', 'operator', 'result'],
+  // Keep calculator signatures specific to avoid false positives in game/math code.
+  calculator: ['calculator', 'operand', 'operator', 'expression', 'clearentry', 'clearall', 'equals', 'btn-operator', 'btn-number'],
   chat: ['chat', 'message', 'sendmessage', 'chatroom', 'conversation', 'chatapp'],
   landing: ['landing', 'hero', 'cta', 'signup', 'subscribe', 'features', 'pricing'],
   api: ['api', 'endpoint', 'request', 'response', 'fetch', 'axios', 'restapi'],
@@ -464,17 +465,7 @@ export function detectProjectType(taskContext: string): string | null {
  * Detect project type from file content
  */
 export function detectProjectTypeFromContent(content: string): string | null {
-  const contentLower = content.toLowerCase();
-  
-  // Score each project type
-  const scores: [string, number][] = [];
-  
-  for (const [projectType, keywords] of Object.entries(PROJECT_SIGNATURES)) {
-    const matchCount = keywords.filter(kw => contentLower.includes(kw)).length;
-    if (matchCount > 0) {
-      scores.push([projectType, matchCount]);
-    }
-  }
+  const scores = Object.entries(getProjectTypeScores(content));
   
   // Sort by score descending
   scores.sort((a, b) => b[1] - a[1]);
@@ -485,6 +476,20 @@ export function detectProjectTypeFromContent(content: string): string | null {
   }
   
   return null;
+}
+
+function getProjectTypeScores(content: string): Record<string, number> {
+  const contentLower = content.toLowerCase();
+  const scores: Record<string, number> = {};
+
+  for (const [projectType, keywords] of Object.entries(PROJECT_SIGNATURES)) {
+    const matchCount = keywords.filter((kw) => contentLower.includes(kw)).length;
+    if (matchCount > 0) {
+      scores[projectType] = matchCount;
+    }
+  }
+
+  return scores;
 }
 
 /**
@@ -500,9 +505,18 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
   
   // Detect content type (what AI is generating)
   const contentType = detectProjectTypeFromContent(content);
+  const projectScores = getProjectTypeScores(content);
+  const taskTypeScore = taskType ? (projectScores[taskType] ?? 0) : 0;
+  const contentTypeScore = contentType ? (projectScores[contentType] ?? 0) : 0;
   
   // If we couldn't detect either, allow it (can't determine incompatibility)
   if (!taskType && !contentType) {
+    return { incompatible: false, reason: '' };
+  }
+
+  // If content strongly matches the requested task type, do not block even if another
+  // secondary type also appears in the file (common in physics/game math code).
+  if (taskType && taskTypeScore >= 2 && taskTypeScore >= contentTypeScore) {
     return { incompatible: false, reason: '' };
   }
   
@@ -787,7 +801,6 @@ function validateWriteFile(
   // ENHANCED: Now uses incompatibility matrix for better detection
   // ==========================================
   if (taskContext && content.length > 100) {
-    const taskProjectType = detectProjectType(taskContext);
     const contentProjectType = detectProjectTypeFromContent(content);
     
     // NEW: Use the enhanced incompatibility check
@@ -812,29 +825,8 @@ function validateWriteFile(
       };
     }
     
-    // Original check: Detect project mixing (content from wrong project type)
-    if (taskProjectType && contentProjectType && taskProjectType !== contentProjectType) {
-      // Check if this is an incompatible pair
-      const incompatibleWith = INCOMPATIBLE_TYPES[taskProjectType] || [];
-      if (incompatibleWith.includes(contentProjectType)) {
-        console.error(`[ToolValidation] 🚨 CRITICAL: PROJECT MIXING DETECTED!`);
-        console.error(`[ToolValidation]   Task type: ${taskProjectType}`);
-        console.error(`[ToolValidation]   Content type: ${contentProjectType}`);
-        console.error(`[ToolValidation]   File: ${filePath}`);
-        
-        return {
-          valid: false,
-          error: `🚨 CRITICAL: PROJECT MIXING DETECTED!\n\n` +
-                 `You are creating content for a "${contentProjectType}" project, but the task is about "${taskProjectType}".\n\n` +
-                 `THIS IS A SERIOUS ERROR. The AI is confusing multiple projects.\n\n` +
-                 `⛔ BLOCKED: This file will NOT be written.\n\n` +
-                 `TO FIX:\n` +
-                 `1. Re-read the original task carefully\n` +
-                 `2. Generate content that matches: ${taskContext.substring(0, 150)}...\n` +
-                 `3. DO NOT mix code from other projects`
-        };
-      }
-    }
+    // NOTE: Keep the matrix decision centralized in isContentIncompatibleWithTask().
+    // A duplicate hard-block here caused false positives to bypass confidence checks.
     
     // ==========================================
     // CHECK 2c: Cross-File Consistency (NEW - Prevents mismatched files)
@@ -1478,7 +1470,15 @@ export function validatePackageJson(content: string): ValidationResult {
           pkg.devDependencies?.webpack ||
           pkg.devDependencies?.parcel ||
           pkg.devDependencies?.rollup ||
-          pkg.dependencies?.vite
+          pkg.dependencies?.vite ||
+          pkg.dependencies?.next ||
+          pkg.devDependencies?.next ||
+          pkg.dependencies?.nuxt ||
+          pkg.devDependencies?.nuxt ||
+          pkg.dependencies?.['@remix-run/react'] ||
+          pkg.devDependencies?.['@remix-run/dev'] ||
+          pkg.dependencies?.astro ||
+          pkg.devDependencies?.astro
       );
     if (hasBrowserNpmDep && !hasBundler) {
       errors.push(

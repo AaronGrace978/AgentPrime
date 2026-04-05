@@ -44,6 +44,8 @@ import type {
   AgentReviewVerificationState,
 } from '../../types/agent-review';
 
+import { PromptSanitizer } from '../security/prompt-sanitizer';
+
 const MAX_RETRIES = 2;
 
 interface ProjectVerification {
@@ -159,7 +161,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       console.log('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
     }
 
-    const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|typescript|ts\d{4}/i.test(error));
+    const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|\[install\]|typescript|ts\d{4}|npm error|yarn error|pnpm error/i.test(error));
     if (isBuildHeavyRetry && refined.includes('integration_analyst')) {
       refined = refined.filter((role) => role !== 'integration_analyst');
       console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
@@ -230,7 +232,18 @@ export class SpecializedAgentLoop extends EventEmitter {
   /**
    * Run a task using specialized agents WITH VERIFICATION
    */
-  async run(userMessage: string): Promise<string> {
+  async run(rawUserMessage: string): Promise<string> {
+    const sanitization = PromptSanitizer.sanitize(rawUserMessage);
+    const userMessage = sanitization.sanitizedText;
+
+    if (!sanitization.isSafe) {
+      console.warn(`[Security] Blocked malicious prompt. Flags: ${sanitization.flags.join(', ')}`);
+      this.emit('message', {
+        role: 'assistant',
+        content: `⚠️ **Security Alert:** Your input contained potentially unsafe instructions (${sanitization.flags.join(', ')}). The request has been neutralized to protect the workspace.`
+      });
+    }
+
     console.log('[SpecializedAgent] Starting specialized agent execution...');
     this.stopRequested = false;
     this.pendingReviewSession = null;

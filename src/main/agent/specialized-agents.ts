@@ -1684,6 +1684,7 @@ async function executeTool(
         }
         if (!pkgValidation.valid) {
           console.error(`[ToolExecution] ❌ package.json validation failed: ${pkgValidation.error}`);
+          return { action: 'write_file', path: sanitizedPath, error: pkgValidation.error, success: false };
         }
       }
       
