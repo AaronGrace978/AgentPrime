@@ -23,7 +23,12 @@ export type ThemeId =
   | 'dino-buddy'
   | 'aurora'
   | 'blossom'
-  | 'ember';
+  | 'ember'
+  | 'rose'
+  | 'mint'
+  | 'sand'
+  | 'sky'
+  | 'peach';
 
 export interface Theme {
   id: ThemeId;
@@ -790,6 +795,236 @@ const emberTheme: Theme = {
   }
 };
 
+// Rose — warm blush pinks on cream
+const roseTheme: Theme = {
+  id: 'rose',
+  name: 'Rose',
+  type: 'light',
+  description: 'Warm blush pinks on creamy white',
+  monaco: 'vs',
+  colors: {
+    bgPrimary: '#fff5f5',
+    bgSecondary: '#fff0f0',
+    bgTertiary: '#ffe4e6',
+    bgHover: '#fecdd3',
+    bgActive: '#e11d48',
+    textPrimary: '#4c0519',
+    textSecondary: '#881337',
+    textMuted: '#be123c',
+    borderColor: '#fecdd3',
+    borderHover: '#e11d48',
+    borderSubtle: '#ffe4e6',
+    accentPrimary: '#e11d48',
+    accentSecondary: '#f43f5e',
+    accentLight: '#fff1f2',
+    accentGlow: 'rgba(225, 29, 72, 0.18)',
+    blue: '#3b82f6',
+    green: '#10b981',
+    purple: '#a855f7',
+    amber: '#f59e0b',
+    success: '#10b981',
+    error: '#dc2626',
+    warning: '#f59e0b',
+    info: '#e11d48',
+    sidebarBg: '#fff0f0',
+    panelBg: '#fff5f5',
+    headerBg: '#fff5f5',
+    editorBg: '#fff5f5',
+    editorLineNumber: '#f9a8d4',
+    editorSelection: '#fecdd3',
+    scrollbarThumb: '#fda4af',
+    scrollbarTrack: '#ffe4e6',
+    surface: '#ffffff',
+    surfaceElevated: '#fff5f5',
+    surfaceHover: '#fff0f0',
+    shadowOpacity: 0.07
+  }
+};
+
+// Mint — fresh cool greens on white
+const mintTheme: Theme = {
+  id: 'mint',
+  name: 'Mint',
+  type: 'light',
+  description: 'Fresh cool mint greens on clean white',
+  monaco: 'vs',
+  colors: {
+    bgPrimary: '#f0fdf4',
+    bgSecondary: '#ecfdf5',
+    bgTertiary: '#d1fae5',
+    bgHover: '#a7f3d0',
+    bgActive: '#059669',
+    textPrimary: '#022c22',
+    textSecondary: '#065f46',
+    textMuted: '#047857',
+    borderColor: '#a7f3d0',
+    borderHover: '#059669',
+    borderSubtle: '#d1fae5',
+    accentPrimary: '#059669',
+    accentSecondary: '#10b981',
+    accentLight: '#ecfdf5',
+    accentGlow: 'rgba(5, 150, 105, 0.18)',
+    blue: '#0284c7',
+    green: '#059669',
+    purple: '#7c3aed',
+    amber: '#d97706',
+    success: '#059669',
+    error: '#dc2626',
+    warning: '#d97706',
+    info: '#0284c7',
+    sidebarBg: '#ecfdf5',
+    panelBg: '#f0fdf4',
+    headerBg: '#f0fdf4',
+    editorBg: '#f0fdf4',
+    editorLineNumber: '#6ee7b7',
+    editorSelection: '#a7f3d0',
+    scrollbarThumb: '#6ee7b7',
+    scrollbarTrack: '#d1fae5',
+    surface: '#ffffff',
+    surfaceElevated: '#f0fdf4',
+    surfaceHover: '#ecfdf5',
+    shadowOpacity: 0.06
+  }
+};
+
+// Sand — warm earthy tones on parchment
+const sandTheme: Theme = {
+  id: 'sand',
+  name: 'Sand',
+  type: 'light',
+  description: 'Warm earthy tones on parchment',
+  monaco: 'vs',
+  colors: {
+    bgPrimary: '#fefcf3',
+    bgSecondary: '#fdf8e8',
+    bgTertiary: '#faf0d0',
+    bgHover: '#f5e6b8',
+    bgActive: '#b45309',
+    textPrimary: '#451a03',
+    textSecondary: '#78350f',
+    textMuted: '#92400e',
+    borderColor: '#f5e6b8',
+    borderHover: '#b45309',
+    borderSubtle: '#faf0d0',
+    accentPrimary: '#b45309',
+    accentSecondary: '#d97706',
+    accentLight: '#fefce8',
+    accentGlow: 'rgba(180, 83, 9, 0.16)',
+    blue: '#2563eb',
+    green: '#059669',
+    purple: '#7c3aed',
+    amber: '#b45309',
+    success: '#059669',
+    error: '#dc2626',
+    warning: '#d97706',
+    info: '#2563eb',
+    sidebarBg: '#fdf8e8',
+    panelBg: '#fefcf3',
+    headerBg: '#fefcf3',
+    editorBg: '#fefcf3',
+    editorLineNumber: '#d4a96a',
+    editorSelection: '#fde68a',
+    scrollbarThumb: '#d4a96a',
+    scrollbarTrack: '#faf0d0',
+    surface: '#ffffff',
+    surfaceElevated: '#fefcf3',
+    surfaceHover: '#fdf8e8',
+    shadowOpacity: 0.08
+  }
+};
+
+// Sky — clear blue daylight
+const skyTheme: Theme = {
+  id: 'sky',
+  name: 'Sky',
+  type: 'light',
+  description: 'Clear blue daylight — airy and calm',
+  monaco: 'vs',
+  colors: {
+    bgPrimary: '#f0f9ff',
+    bgSecondary: '#e0f2fe',
+    bgTertiary: '#bae6fd',
+    bgHover: '#7dd3fc',
+    bgActive: '#0284c7',
+    textPrimary: '#0c2d48',
+    textSecondary: '#0e4d6e',
+    textMuted: '#0369a1',
+    borderColor: '#bae6fd',
+    borderHover: '#0284c7',
+    borderSubtle: '#e0f2fe',
+    accentPrimary: '#0284c7',
+    accentSecondary: '#0ea5e9',
+    accentLight: '#e0f2fe',
+    accentGlow: 'rgba(2, 132, 199, 0.18)',
+    blue: '#0284c7',
+    green: '#059669',
+    purple: '#7c3aed',
+    amber: '#d97706',
+    success: '#059669',
+    error: '#dc2626',
+    warning: '#d97706',
+    info: '#0284c7',
+    sidebarBg: '#e0f2fe',
+    panelBg: '#f0f9ff',
+    headerBg: '#f0f9ff',
+    editorBg: '#f0f9ff',
+    editorLineNumber: '#7dd3fc',
+    editorSelection: '#bae6fd',
+    scrollbarThumb: '#7dd3fc',
+    scrollbarTrack: '#e0f2fe',
+    surface: '#ffffff',
+    surfaceElevated: '#f0f9ff',
+    surfaceHover: '#e0f2fe',
+    shadowOpacity: 0.06
+  }
+};
+
+// Peach — soft coral warmth
+const peachTheme: Theme = {
+  id: 'peach',
+  name: 'Peach',
+  type: 'light',
+  description: 'Soft coral warmth on creamy white',
+  monaco: 'vs',
+  colors: {
+    bgPrimary: '#fff7ed',
+    bgSecondary: '#ffedd5',
+    bgTertiary: '#fed7aa',
+    bgHover: '#fdba74',
+    bgActive: '#ea580c',
+    textPrimary: '#431407',
+    textSecondary: '#7c2d12',
+    textMuted: '#9a3412',
+    borderColor: '#fed7aa',
+    borderHover: '#ea580c',
+    borderSubtle: '#ffedd5',
+    accentPrimary: '#ea580c',
+    accentSecondary: '#f97316',
+    accentLight: '#fff7ed',
+    accentGlow: 'rgba(234, 88, 12, 0.18)',
+    blue: '#2563eb',
+    green: '#059669',
+    purple: '#7c3aed',
+    amber: '#d97706',
+    success: '#059669',
+    error: '#dc2626',
+    warning: '#d97706',
+    info: '#2563eb',
+    sidebarBg: '#ffedd5',
+    panelBg: '#fff7ed',
+    headerBg: '#fff7ed',
+    editorBg: '#fff7ed',
+    editorLineNumber: '#fdba74',
+    editorSelection: '#fed7aa',
+    scrollbarThumb: '#fdba74',
+    scrollbarTrack: '#ffedd5',
+    surface: '#ffffff',
+    surfaceElevated: '#fff7ed',
+    surfaceHover: '#ffedd5',
+    shadowOpacity: 0.07
+  }
+};
+
 // All available themes
 export const themes: Theme[] = [
   lightTheme,
@@ -806,7 +1041,12 @@ export const themes: Theme[] = [
   dinoBuddyTheme,
   auroraTheme,
   blossomTheme,
-  emberTheme
+  emberTheme,
+  roseTheme,
+  mintTheme,
+  sandTheme,
+  skyTheme,
+  peachTheme
 ];
 
 // Get theme by ID

@@ -13,6 +13,10 @@ import { EventEmitter } from 'events';
 import { AgentLoop, createAgent } from './agent-loop';
 import type { AgentContext } from './agent-loop';
 import { detectTaskMode, TaskMode } from './agent/task-mode';
+import type {
+  AgentReviewChange,
+  AgentReviewVerificationState,
+} from '../types/agent-review';
 
 // ── Pipeline Stages ──────────────────────────────────────────────────────────
 
@@ -47,6 +51,10 @@ export interface PipelineResult {
   durationMs: number;
   filesModified: string[];
   error?: string;
+  /** Present when the agent loop staged file writes for review/apply instead of committing immediately. */
+  reviewSessionId?: string;
+  reviewChanges?: AgentReviewChange[];
+  reviewVerification?: AgentReviewVerificationState;
 }
 
 export interface PipelineOptions {
@@ -156,6 +164,7 @@ export class AgentPipeline extends EventEmitter {
 
       const responseText = this.normalizeAgentRunResult(result);
       const filesModified = this.filesModifiedFromAgent();
+      const reviewSession = this.agent.consumePendingReviewSession();
 
       // ── Stage 3: Validation ──
       const validateStep = this.beginStep('validating', 'Verifying output quality');
@@ -173,6 +182,9 @@ export class AgentPipeline extends EventEmitter {
         taskMode: taskModeResult.mode,
         durationMs: Date.now() - startTime,
         filesModified,
+        reviewSessionId: reviewSession?.sessionId,
+        reviewChanges: reviewSession?.changes,
+        reviewVerification: reviewSession?.initialVerification,
       };
 
     } catch (err: any) {

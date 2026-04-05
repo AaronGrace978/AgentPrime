@@ -641,6 +641,7 @@ export function register(deps: ChatHandlerDeps): void {
             autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly: Boolean((context as any).deterministic_scaffold_only),
+            monolithicApplyImmediately: agentSettings?.agentMonolithicApplyImmediately === true,
           };
 
           if (!agentPipeline) {
@@ -704,6 +705,9 @@ export function register(deps: ChatHandlerDeps): void {
               requestId,
               agent_mode: true,
               specialized_mode: false,
+              reviewSessionId: pipelineResult.reviewSessionId,
+              reviewChanges: pipelineResult.reviewChanges,
+              reviewVerification: pipelineResult.reviewVerification,
               runtime: responseRuntime,
             };
           } catch (agentErr: unknown) {

@@ -108,7 +108,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           margin: 0 0 var(--spacing-md) 0;
           font-size: 0.9rem;
           font-weight: 600;
-          color: #60a5fa;
+          color: var(--accent-primary, #60a5fa);
         }
         
         .theme-grid {
@@ -123,21 +123,21 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           align-items: center;
           gap: var(--spacing-xs);
           padding: var(--spacing-sm);
-          background: rgba(255, 255, 255, 0.03);
-          border: 2px solid rgba(255, 255, 255, 0.1);
+          background: var(--bg-tertiary);
+          border: 2px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
           border-radius: var(--border-radius);
           cursor: pointer;
           transition: all 0.15s ease;
         }
         
         .theme-card:hover {
-          background: rgba(255, 255, 255, 0.08);
-          border-color: rgba(255, 255, 255, 0.2);
+          background: var(--bg-hover);
+          border-color: var(--border-color);
         }
         
         .theme-card.selected {
-          border-color: #60a5fa;
-          background: rgba(96, 165, 250, 0.1);
+          border-color: var(--accent-primary, #60a5fa);
+          background: var(--prime-accent-light, rgba(96, 165, 250, 0.1));
         }
         
         .theme-preview {
@@ -148,7 +148,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
           border: 2px solid;
           overflow: hidden;
           display: flex;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
         
         .preview-sidebar {
@@ -200,12 +200,12 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
         .theme-name {
           font-size: 0.8rem;
           font-weight: 500;
-          color: #e2e8f0;
+          color: var(--text-primary, #e2e8f0);
           margin-top: 4px;
         }
         
         .theme-card.selected .theme-name {
-          color: #60a5fa;
+          color: var(--accent-primary, #60a5fa);
           font-weight: 600;
         }
       `}</style>

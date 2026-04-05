@@ -241,6 +241,19 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
               }}>
                 {stats.total} file{stats.total !== 1 ? 's' : ''}
               </span>
+              {isStaged && !applied && (
+                <span style={{
+                  fontSize: '11px',
+                  color: '#fbbf24',
+                  background: 'rgba(251, 191, 36, 0.12)',
+                  border: '1px solid rgba(251, 191, 36, 0.35)',
+                  padding: '3px 8px',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                }}>
+                  Checkpoint — not on disk until you apply
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
               {reviewDecisionCopy}

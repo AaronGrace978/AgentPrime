@@ -11,6 +11,8 @@ import { getRelevantPatterns, getAntiPatterns, storeTaskLearning } from './mirro
 import { validateProjectCompleteness, formatValidationFeedback, CompletenessValidation } from './agent/validators/projectCompleteness';
 import { withAITimeoutAndRetry, TimeoutError } from './core/timeout-utils';
 import { transactionManager } from './core/transaction-manager';
+import { reviewSessionManager } from './agent/review-session-manager';
+import type { AgentReviewSessionSnapshot } from '../types/agent-review';
 import { retryWithRecovery } from './core/error-recovery';
 import { stateManager } from './core/state-manager';
 import { sanitizeFileName } from './security/ipcValidation';
@@ -997,6 +999,8 @@ export interface AgentContext {
   runtimeBudget?: 'instant' | 'standard' | 'deep';
   autonomyLevel?: 1 | 2 | 3 | 4 | 5;
   deterministicScaffoldOnly?: boolean;
+  /** When true, skip staged review and commit monolithic agent file writes immediately (settings-driven). */
+  monolithicApplyImmediately?: boolean;
   repairScope?: {
     allowedFiles: string[];
     blockedFiles: string[];
@@ -2787,6 +2791,18 @@ export class AgentLoop extends EventEmitter {
     action: 'created' | 'modified';
   }>();
 
+  /** Staged review snapshot for monolithic agent runs (consumed by chat IPC after run completes). */
+  private pendingReviewSession: AgentReviewSessionSnapshot | null = null;
+
+  /**
+   * Returns staged review session created at the end of the last successful run, if any, then clears it.
+   */
+  consumePendingReviewSession(): AgentReviewSessionSnapshot | null {
+    const snapshot = this.pendingReviewSession;
+    this.pendingReviewSession = null;
+    return snapshot;
+  }
+
   /** Get current session ID */
   getSessionId(): string | null {
     return this.sessionId;
@@ -3347,8 +3363,8 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     console.log(`[Agent] 🛡️ Workspace validated: ${workspaceValidation.reason}`);
     // === END WORKSPACE BOUNDARY PROTECTION ===
 
-    // Start transaction for this agent task
-    const transactionId = transactionManager.startTransaction(`Agent task: ${userMessage.substring(0, 100)}${userMessage.length > 100 ? '...' : ''}`);
+    // Start transaction for this agent task (workspace path is required for correct rollback paths)
+    transactionManager.startTransaction(this.context.workspacePath);
 
     try {
       // Reset for new task
@@ -3386,6 +3402,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     this.stopRequested = false;
     this.stopReason = null;
     this.fileChangesThisTask.clear();
+    this.pendingReviewSession = null;
 
     // Register per-run context hooks for cancellation and file change streaming.
     this.context.isCancellationRequested = () => this.isCancellationRequested();
@@ -5380,10 +5397,48 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
     }
     // === END FIX MODE AUTO-ROLLBACK CHECK ===
 
-    // Commit transaction on successful completion
+    // Stage file operations for review before finalizing writes (monolithic path mirrors specialized flow)
+    if (!this.context.monolithicApplyImmediately) {
+      const activeTx = transactionManager.getActiveTransaction();
+      if (activeTx && activeTx.getOperationCount() > 0) {
+        const ops = activeTx.getOperations().map((op) => ({
+          path: op.path,
+          originalContent: op.originalContent,
+          newContent: op.newContent,
+          existed: op.existed,
+        }));
+        const stagedReview = reviewSessionManager.createSessionFromOperations(
+          this.context.workspacePath,
+          ops,
+          undefined
+        );
+        if (stagedReview) {
+          this.pendingReviewSession = stagedReview;
+          try {
+            await transactionManager.rollbackTransaction();
+            console.log('[Agent] 📝 Staged file changes for review; workspace rolled back until apply');
+          } catch (rollbackError: any) {
+            console.error('[Agent] ❌ Failed to roll back workspace for staged review:', rollbackError.message);
+            this.pendingReviewSession = null;
+            try {
+              transactionManager.commitTransaction();
+              console.log('[Agent] ✅ Transaction committed after staging rollback failure');
+            } catch (commitError: any) {
+              console.error('[Agent] ❌ Transaction commit failed:', commitError.message);
+            }
+            return finalAnswer;
+          }
+          finalAnswer +=
+            '\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.';
+          return finalAnswer;
+        }
+      }
+    }
+
+    // Commit transaction on successful completion (no staged review or no meaningful diffs)
     try {
       transactionManager.commitTransaction();
-      console.log(`[Agent] ✅ Transaction committed: ${transactionId}`);
+      console.log('[Agent] ✅ Transaction committed');
     } catch (txError: any) {
       console.error(`[Agent] ❌ Transaction commit failed:`, txError.message);
       // Continue anyway - don't let transaction failure stop the agent

@@ -22,6 +22,8 @@ export interface Settings {
   dualOllamaEnabled: boolean;
   useSpecializedAgents?: boolean; // Enable specialized agent architecture
   agentAutonomyLevel?: 1 | 2 | 3 | 4 | 5; // How aggressively the agent can act end-to-end
+  /** When true, standard (non-specialized) agent writes go straight to disk; when false/undefined, writes stay staged for review/apply first. */
+  agentMonolithicApplyImmediately?: boolean;
   
   // Telemetry
   telemetryEnabled?: boolean; // Send anonymous usage data to help improve AgentPrime

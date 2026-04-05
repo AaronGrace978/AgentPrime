@@ -189,7 +189,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       telemetryEnabled: false,
       developerMode: false,
       confirmOnClose: true,
-      autoLockMinutes: 0
+      autoLockMinutes: 0,
+      agentMonolithicApplyImmediately: false
     };
     setLocalSettings((prev) => ({ ...prev, ...defaults }));
     setHasChanges(true);
@@ -585,6 +586,22 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       Level {clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)} - {AUTONOMY_LABELS[clampAgentAutonomyLevel(localSettings.agentAutonomyLevel)].label}
                     </span>
                   </div>
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Apply monolithic agent writes immediately</span>
+                    <span className="setting-description">
+                      When Specialized Agents is off, keep this off to stage edits in the review panel until you apply them.
+                      Turn on to write files to the workspace as soon as the agent finishes (no review checkpoint).
+                    </span>
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={localSettings.agentMonolithicApplyImmediately === true}
+                    onChange={(e) => updateSetting('agentMonolithicApplyImmediately', e.target.checked)}
+                    className="setting-checkbox"
+                  />
                 </div>
 
                 <div className="setting-group">

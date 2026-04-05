@@ -300,6 +300,7 @@ let settings: Settings = {
   activeModel: OLLAMA_MODEL,
   dualOllamaEnabled: false,
   agentAutonomyLevel: 3,
+  agentMonolithicApplyImmediately: false,
   plugins: {
     enabled: true,
     autoUpdate: false,
