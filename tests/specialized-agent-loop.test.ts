@@ -375,3 +375,184 @@ describe('Project documentation and runner commands', () => {
     expect(result.output).toContain('boom');
   });
 });
+
+describe('Framework structural checks', () => {
+  const tempRoots: string[] = [];
+
+  afterEach(() => {
+    while (tempRoots.length > 0) {
+      const dir = tempRoots.pop();
+      if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  function createTempDir(prefix: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tempRoots.push(dir);
+    return dir;
+  }
+
+  function writeJson(dir: string, name: string, data: Record<string, unknown>) {
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(data, null, 2));
+  }
+
+  function mkFile(dir: string, relPath: string, content = '') {
+    const fullPath = path.join(dir, relPath);
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content);
+  }
+
+  it('flags missing app/layout.tsx in a Next.js App Router project', async () => {
+    const ws = createTempDir('fw-nextjs-layout-');
+    writeJson(ws, 'package.json', {
+      name: 'next-app',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+    });
+    mkFile(ws, 'app/page.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(false);
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('app/layout.tsx'),
+    ]));
+    expect(v.missingFiles).toContain('app/layout.tsx');
+  });
+
+  it('passes when app/layout.tsx exists in a Next.js project', async () => {
+    const ws = createTempDir('fw-nextjs-ok-');
+    writeJson(ws, 'package.json', {
+      name: 'next-app',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+    });
+    mkFile(ws, 'app/layout.tsx', 'export default function RootLayout({ children }: any) { return <html><body>{children}</body></html>; }');
+    mkFile(ws, 'app/page.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+    mkFile(ws, 'tailwind.config.ts', 'export default {};');
+    mkFile(ws, 'postcss.config.js', 'module.exports = {};');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(true);
+    expect(v.errors).toHaveLength(0);
+  });
+
+  it('flags missing pages/_app.tsx in a Next.js Pages Router project', async () => {
+    const ws = createTempDir('fw-nextjs-pages-');
+    writeJson(ws, 'package.json', {
+      name: 'next-pages',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+    });
+    mkFile(ws, 'pages/index.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(false);
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('pages/_app.tsx'),
+    ]));
+  });
+
+  it('flags missing next.config.js in a Next.js project', async () => {
+    const ws = createTempDir('fw-nextjs-config-');
+    writeJson(ws, 'package.json', {
+      name: 'next-no-config',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+    });
+    mkFile(ws, 'app/layout.tsx', 'export default function Layout({ children }: any) { return <html><body>{children}</body></html>; }');
+    mkFile(ws, 'app/page.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(false);
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('next.config'),
+    ]));
+    expect(v.missingFiles).toContain('next.config.js');
+  });
+
+  it('flags missing index.html in a Vite project', async () => {
+    const ws = createTempDir('fw-vite-html-');
+    writeJson(ws, 'package.json', {
+      name: 'vite-app',
+      devDependencies: { vite: '^5.0.0' },
+    });
+    mkFile(ws, 'src/main.ts', 'console.log("hello");');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(false);
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('Vite project requires index.html'),
+    ]));
+  });
+
+  it('flags missing tsconfig.json when TypeScript files exist', async () => {
+    const ws = createTempDir('fw-ts-noconfig-');
+    writeJson(ws, 'package.json', { name: 'ts-app' });
+    mkFile(ws, 'src/app.ts', 'const x: number = 1;');
+    mkFile(ws, 'index.html', '<script src="src/app.ts"></script>');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('tsconfig.json is missing'),
+    ]));
+  });
+
+  it('flags missing tailwind.config when tailwindcss is a dependency', async () => {
+    const ws = createTempDir('fw-tailwind-');
+    writeJson(ws, 'package.json', {
+      name: 'tw-app',
+      dependencies: { next: '^14.0.0', react: '^18.0.0', 'react-dom': '^18.0.0' },
+      devDependencies: { tailwindcss: '^3.0.0' },
+    });
+    mkFile(ws, 'app/layout.tsx', 'export default function Layout({ children }: any) { return <html><body>{children}</body></html>; }');
+    mkFile(ws, 'app/page.tsx', 'export default function Home() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'next.config.js', 'module.exports = {};');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.isComplete).toBe(false);
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('tailwind.config'),
+    ]));
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('postcss.config'),
+    ]));
+  });
+
+  it('flags missing React entrypoint in a non-Next Vite+React project', async () => {
+    const ws = createTempDir('fw-react-entry-');
+    writeJson(ws, 'package.json', {
+      name: 'react-app',
+      dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0' },
+      devDependencies: { vite: '^5.0.0' },
+    });
+    mkFile(ws, 'index.html', '<div id="root"></div>');
+    mkFile(ws, 'src/App.tsx', 'export default function App() { return <h1>Hi</h1>; }');
+    mkFile(ws, 'tsconfig.json', '{}');
+
+    const loop = new SpecializedAgentLoop({ workspacePath: ws } as any);
+    const v = await (loop as any).verifyProject([]);
+
+    expect(v.errors).toEqual(expect.arrayContaining([
+      expect.stringContaining('React project under src/ has no entrypoint'),
+    ]));
+  });
+});

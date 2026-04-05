@@ -911,6 +911,9 @@ export class SpecializedAgentLoop extends EventEmitter {
       missingFiles.push('index.html');
     }
 
+    // Framework structural checks — catch known-fatal omissions before install/build
+    this.runFrameworkStructuralChecks(existingFiles, workspacePath, errors, missingFiles);
+
     // Dedupe missing files
     const uniqueMissing = [...new Set(missingFiles)];
 
@@ -920,6 +923,108 @@ export class SpecializedAgentLoop extends EventEmitter {
       errors,
       createdFiles
     };
+  }
+
+  /**
+   * Framework-specific structural checks that catch known-fatal omissions
+   * before burning a full install/build cycle.
+   */
+  private runFrameworkStructuralChecks(
+    existingFiles: string[],
+    workspacePath: string,
+    errors: string[],
+    missingFiles: string[]
+  ): void {
+    const hasFile = (name: string) => existingFiles.includes(name);
+    const hasAny = (...names: string[]) => names.some(hasFile);
+    const hasDir = (prefix: string) => existingFiles.some((f) => f.startsWith(prefix + '/'));
+
+    let packageJson: Record<string, unknown> | null = null;
+    try {
+      const raw = fs.readFileSync(path.join(workspacePath, 'package.json'), 'utf-8');
+      packageJson = JSON.parse(raw);
+    } catch {
+      // No package.json or unparseable — skip dep-based checks.
+    }
+
+    const deps = {
+      ...(packageJson?.dependencies as Record<string, string> | undefined),
+      ...(packageJson?.devDependencies as Record<string, string> | undefined),
+    };
+    const hasDep = (name: string) => name in deps;
+
+    // ── Next.js App Router ─────────────────────────────────────────
+    if (hasDir('app') && hasDep('next')) {
+      if (!hasAny('app/layout.tsx', 'app/layout.jsx', 'app/layout.js')) {
+        errors.push('Next.js App Router requires app/layout.tsx (root layout) but none was created');
+        missingFiles.push('app/layout.tsx');
+      }
+      if (!hasAny('app/page.tsx', 'app/page.jsx', 'app/page.js') &&
+          !existingFiles.some((f) => /^app\/.+\/page\.(tsx|jsx|js)$/.test(f))) {
+        errors.push('Next.js App Router has no page entrypoint — at minimum app/page.tsx is expected');
+      }
+    }
+
+    // ── Next.js Pages Router ───────────────────────────────────────
+    if (hasDir('pages') && hasDep('next') && !hasDir('app')) {
+      if (!hasAny('pages/_app.tsx', 'pages/_app.jsx', 'pages/_app.js')) {
+        errors.push('Next.js Pages Router is missing pages/_app.tsx (custom App component)');
+        missingFiles.push('pages/_app.tsx');
+      }
+    }
+
+    // ── Next.js config ─────────────────────────────────────────────
+    if (hasDep('next')) {
+      const hasNextConfig = existingFiles.some((f) => /^next\.config\.(js|mjs|ts)$/.test(f));
+      if (!hasNextConfig) {
+        errors.push('Next.js project is missing next.config.js (or .mjs/.ts)');
+        missingFiles.push('next.config.js');
+      }
+    }
+
+    // ── Vite entrypoint ────────────────────────────────────────────
+    if (hasDep('vite') && !hasDep('next')) {
+      if (!hasFile('index.html')) {
+        errors.push('Vite project requires index.html at the project root');
+        missingFiles.push('index.html');
+      }
+    }
+
+    // ── TypeScript config ──────────────────────────────────────────
+    const hasTypeScript = existingFiles.some((f) => /\.(ts|tsx)$/.test(f));
+    if (hasTypeScript && !existingFiles.some((f) => /^tsconfig.*\.json$/.test(f))) {
+      errors.push('TypeScript files exist but tsconfig.json is missing');
+      missingFiles.push('tsconfig.json');
+    }
+
+    // ── Tailwind config ────────────────────────────────────────────
+    if (hasDep('tailwindcss')) {
+      const hasTailwindConfig = existingFiles.some((f) => /^tailwind\.config\.(js|ts|mjs|cjs)$/.test(f));
+      if (!hasTailwindConfig) {
+        errors.push('tailwindcss is a dependency but tailwind.config.js (or .ts) is missing');
+        missingFiles.push('tailwind.config.ts');
+      }
+    }
+
+    // ── PostCSS config (required when using Tailwind with Next.js / Vite) ──
+    if (hasDep('tailwindcss') && (hasDep('next') || hasDep('vite'))) {
+      const hasPostCSSConfig = existingFiles.some((f) => /^postcss\.config\.(js|mjs|cjs)$/.test(f));
+      if (!hasPostCSSConfig) {
+        errors.push('Tailwind + bundler project is missing postcss.config.js');
+        missingFiles.push('postcss.config.js');
+      }
+    }
+
+    // ── React entrypoint ───────────────────────────────────────────
+    if (hasDep('react') && !hasDep('next') && hasDir('src')) {
+      const hasReactEntry = hasAny(
+        'src/main.tsx', 'src/main.jsx', 'src/main.ts', 'src/main.js',
+        'src/index.tsx', 'src/index.jsx', 'src/index.ts', 'src/index.js'
+      );
+      if (!hasReactEntry) {
+        errors.push('React project under src/ has no entrypoint (expected src/main.tsx or src/index.tsx)');
+      }
+    }
   }
 
   /**
