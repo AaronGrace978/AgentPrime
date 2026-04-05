@@ -11,6 +11,7 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as ts from 'typescript';
 import {
   LEGACY_SPECIALIST_ROLE_MAP,
   SPECIALIST_MATRIX,
@@ -31,6 +32,10 @@ export interface SpecialistValidationContext {
   specialist?: LegacySpecialistRole | SpecialistId | 'repair_specialist';
   claimedFiles?: string[];
   blackboard?: SpecialistBlackboard;
+}
+
+interface JavaScriptValidationOptions {
+  workspacePath?: string;
 }
 
 /**
@@ -151,6 +156,38 @@ function normalizeForGlob(filePath: string): string {
 
 function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+}
+
+function hasBundlerRuntime(workspacePath?: string): boolean {
+  if (!workspacePath) {
+    return false;
+  }
+
+  try {
+    const pkgPath = path.join(workspacePath, 'package.json');
+    if (!fs.existsSync(pkgPath)) {
+      return false;
+    }
+
+    const pkgRaw = fs.readFileSync(pkgPath, 'utf-8');
+    const pkg = JSON.parse(pkgRaw);
+    const scripts = pkg?.scripts || {};
+    const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+    const scriptValues = Object.values(scripts).map((value) => String(value).toLowerCase());
+
+    const hasBundlerInDeps = ['vite', 'webpack', 'rollup', 'parcel', 'esbuild'].some((name) => Boolean(deps[name]));
+    const hasBundlerInScripts = scriptValues.some((script) =>
+      script.includes('vite') ||
+      script.includes('webpack') ||
+      script.includes('rollup') ||
+      script.includes('parcel') ||
+      script.includes('esbuild')
+    );
+
+    return hasBundlerInDeps || hasBundlerInScripts;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -687,6 +724,25 @@ function validateWriteFile(
                `The file at "${existingPath}" is the correct one. Do NOT create another.`
       };
     }
+
+    // Block duplicate domain modules with the same basename inside src/game trees.
+    // Example: src/game/world/World.ts + src/game/World.ts causes import/API drift in retries.
+    const normalizedNewDirLower = normalizedFileDir.toLowerCase();
+    const normalizedExistingDirLower = normalizedExistingDir.toLowerCase();
+    const bothInGameTree =
+      normalizedNewDirLower.startsWith('src/game') &&
+      normalizedExistingDirLower.startsWith('src/game');
+    const differentSubdirs = normalizedNewDirLower !== normalizedExistingDirLower;
+    if (bothInGameTree && differentSubdirs) {
+      return {
+        valid: false,
+        error:
+          `🚨 DUPLICATE GAME MODULE DETECTED!\n\n` +
+          `"${fileName}" already exists at "${existingPath}".\n` +
+          `Attempted duplicate path: "${filePath}".\n\n` +
+          `Use ONE canonical game module location to avoid broken imports and API drift.`,
+      };
+    }
   }
   
   // Track this file BEFORE we continue (so future writes detect duplicates)
@@ -934,6 +990,18 @@ function validateWriteFile(
   // ==========================================
   if (args.content === undefined) {
     return { valid: false, error: 'write_file: missing content argument' };
+  }
+
+  // ==========================================
+  // CHECK 7: TypeScript Config Sanity
+  // ==========================================
+  const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
+  const looksLikeTsConfig = normalizedPath.endsWith('.json') && path.basename(normalizedPath).startsWith('tsconfig');
+  if (looksLikeTsConfig) {
+    const tsConfigValidation = validateTypeScriptConfig(String(content), filePath);
+    if (!tsConfigValidation.valid) {
+      return tsConfigValidation;
+    }
   }
 
   return { valid: true };
@@ -1211,12 +1279,17 @@ export function autoFixIndexHtml(
  * Validate JavaScript files for bundler-only syntax
  * Catches issues like "import './styles.css'" which only work with Vite/Webpack
  */
-export function validateJavaScriptFile(content: string, filePath: string): ValidationResult {
+export function validateJavaScriptFile(
+  content: string,
+  filePath: string,
+  options: JavaScriptValidationOptions = {}
+): ValidationResult {
   const warnings: string[] = [];
+  const bundlerProject = hasBundlerRuntime(options.workspacePath);
   
   // Check for CSS imports (Vite-specific, won't work in browser)
   const cssImportMatch = content.match(/import\s+['"][^'"]+\.css['"]/g);
-  if (cssImportMatch) {
+  if (cssImportMatch && !bundlerProject) {
     warnings.push(
       `CRITICAL: File "${filePath}" uses Vite-style CSS import: "${cssImportMatch[0]}"\n` +
       `This ONLY works when running through a bundler (npm run dev).\n` +
@@ -1243,6 +1316,55 @@ export function validateJavaScriptFile(content: string, filePath: string): Valid
     };
   }
   
+  return { valid: true };
+}
+
+/**
+ * Validate tsconfig JSON and compilerOptions.
+ * Blocks malformed/unknown compiler options early so retries don't burn cycles on bad config writes.
+ */
+export function validateTypeScriptConfig(content: string, filePath: string): ValidationResult {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return { valid: false, error: `${filePath}: invalid JSON` };
+  }
+
+  const compilerOptions = parsed?.compilerOptions;
+  if (compilerOptions && typeof compilerOptions === 'object') {
+    const nonAsciiKeys = Object.keys(compilerOptions).filter((key) => /[^\x00-\x7F]/.test(key));
+    if (nonAsciiKeys.length > 0) {
+      return {
+        valid: false,
+        error:
+          `${filePath}: invalid compiler option key(s): ${nonAsciiKeys.join(', ')}.\n` +
+          `Use official ASCII TypeScript compiler option names only.`,
+      };
+    }
+  }
+
+  try {
+    const conversion = ts.convertCompilerOptionsFromJson(
+      compilerOptions || {},
+      path.dirname(filePath) || '.',
+      filePath
+    );
+    if (conversion.errors && conversion.errors.length > 0) {
+      const messages = conversion.errors
+        .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
+        .filter(Boolean);
+      if (messages.length > 0) {
+        return {
+          valid: false,
+          error: `${filePath}: invalid compiler options:\n- ${messages.slice(0, 6).join('\n- ')}`,
+        };
+      }
+    }
+  } catch (err) {
+    return { valid: false, error: `${filePath}: failed to validate compiler options (${String(err)})` };
+  }
+
   return { valid: true };
 }
 

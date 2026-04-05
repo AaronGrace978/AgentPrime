@@ -407,7 +407,8 @@ If you create styles.css or src/styles.css, you MUST link it.`,
 - Mirror strong visual hierarchy, spacing, and interaction clarity
 - Prefer focused CSS/layout changes over wholesale rewrites
 - Make loading, hover, focus, and empty states feel intentional
-- Preserve accessibility and readability while improving polish`,
+- Preserve accessibility and readability while improving polish
+- NEVER modify gameplay/runtime logic files under src/game/** (.ts/.tsx)`,
 
     python_specialist: `
 ## 🎯 MIRROR: PYTHONIC EXCELLENCE
@@ -854,6 +855,8 @@ ${TOOL_CALL_FORMAT}`
 - Prefer CSS, markup, and small UI wiring edits over broad rewrites
 - Keep the UI accessible and readable
 - Do not change backend, packaging, or unrelated pipeline files
+- Do NOT edit gameplay/runtime logic in src/game/** (.ts/.tsx). If gameplay logic needs changes, leave it for javascript_specialist or repair_specialist.
+- Do NOT edit README.md from this role.
 
 ${TOOL_CALL_FORMAT}`
   },
@@ -1664,7 +1667,7 @@ async function executeTool(
       
       // 🛡️ CHECK JS FILES for bundler-only syntax (CSS imports)
       if (sanitizedPath.endsWith('.js') || sanitizedPath.endsWith('.ts') || sanitizedPath.endsWith('.jsx') || sanitizedPath.endsWith('.tsx')) {
-        const jsValidation = validateJavaScriptFile(args.content || '', sanitizedPath);
+        const jsValidation = validateJavaScriptFile(args.content || '', sanitizedPath, { workspacePath });
         if (jsValidation.warning) {
           console.warn(`[ToolExecution] ⚠️ JavaScript validation warning:\n${jsValidation.warning}`);
         }

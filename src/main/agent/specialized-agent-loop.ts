@@ -264,12 +264,27 @@ export class SpecializedAgentLoop extends EventEmitter {
         language: this.detectLanguage(),
         projectType: this.detectProjectType()
       });
-      const roles = [...routedRoles];
+      let roles = [...routedRoles];
       if (retryCount > 0 && !roles.includes('repair_specialist')) {
         roles.push('repair_specialist');
       }
       if (repairScope && !roles.includes('repair_specialist')) {
         roles.push('repair_specialist');
+      }
+      if (retryCount > 0 && lastVerification) {
+        const hasStylingSpecificFailures = lastVerification.errors.some((error) =>
+          /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
+        );
+        if (!hasStylingSpecificFailures && roles.includes('styling_ux_specialist')) {
+          roles = roles.filter((role) => role !== 'styling_ux_specialist');
+          console.log('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
+        }
+
+        const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|typescript|ts\d{4}/i.test(error));
+        if (isBuildHeavyRetry && roles.includes('integration_analyst')) {
+          roles = roles.filter((role) => role !== 'integration_analyst');
+          console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
+        }
       }
 
       const mode = this.resolveMode(isUpdate, retryCount);
@@ -425,7 +440,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
 
       if (lastVerification.isComplete) {
-        console.log('[SpecializedAgent] ✅ Project verification PASSED');
+        console.log('[SpecializedAgent] ✅ Structural verification passed (pre-install/build/runtime checks)');
 
         if (this.context.deterministicScaffoldOnly) {
           console.log('[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply');
@@ -1389,7 +1404,10 @@ export class SpecializedAgentLoop extends EventEmitter {
       return normalized;
     }
 
-    return `...${normalized.slice(-maxChars)}`;
+    const half = Math.max(200, Math.floor(maxChars / 2));
+    const head = normalized.slice(0, half);
+    const tail = normalized.slice(-half);
+    return `${head} ... ${tail}`;
   }
 
   /**

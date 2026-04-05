@@ -392,9 +392,10 @@ export class TaskMaster {
     retryFiles: string[]
   ): string[] {
     if (specialist === 'repair_specialist') {
+      const baseline = ['src/**', 'backend/**', 'tests/**', 'package.json', 'vite.config.*', 'tsconfig*.json', 'README.md'];
       return retryFiles.length > 0
-        ? retryFiles
-        : ['src/**', 'backend/**', 'package.json', 'vite.config.*', 'tsconfig*.json'];
+        ? [...new Set([...retryFiles, ...baseline])]
+        : baseline;
     }
 
     switch (specialist) {
