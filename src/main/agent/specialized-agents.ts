@@ -90,6 +90,11 @@ export async function bootstrapDeterministicScaffold(
     return [];
   }
 
+  if (scaffolded.createdFiles.length > 0) {
+    populateFileTracker(scaffolded.createdFiles);
+    console.log(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffolded file(s)`);
+  }
+
   return scaffolded.createdFiles.map((filePath) => ({
     toolCall: {
       name: 'write_file',
@@ -1230,6 +1235,23 @@ export function routeToSpecialists(
     taskLower.includes('theme') ||
     taskLower.includes('accessibility');
 
+  const isGameHeavyTask =
+    taskLower.includes('three.js') ||
+    taskLower.includes('threejs') ||
+    taskLower.includes('webgl') ||
+    (taskLower.includes('game') &&
+      (taskLower.includes('combat') ||
+        taskLower.includes('enemy') ||
+        taskLower.includes('player') ||
+        taskLower.includes('boss') ||
+        taskLower.includes('fantasy') ||
+        taskLower.includes('action')));
+  const explicitStylingOnlyRequest =
+    taskLower.includes('styling only') ||
+    taskLower.includes('css only') ||
+    taskLower.includes('visual polish only') ||
+    taskLower.includes('ui polish only');
+
   const needsTesting =
     taskLower.includes('test') ||
     taskLower.includes('playwright') ||
@@ -1243,8 +1265,10 @@ export function routeToSpecialists(
   if (isJavaScript) {
     roles.push('javascript_specialist');
   }
-  if (needsStylingUx) {
+  if (needsStylingUx && (!isGameHeavyTask || explicitStylingOnlyRequest)) {
     roles.push('styling_ux_specialist');
+  } else if (needsStylingUx && isGameHeavyTask) {
+    console.log('[RouteToSpecialists] Deferring styling_ux_specialist for game-heavy implementation task');
   }
   if (isPython) {
     roles.push('python_specialist');
@@ -1595,6 +1619,11 @@ async function executeScaffoldProjectTool(
     mode: 'tool_call',
     fileCount: scaffolded.createdFiles.length,
   });
+
+  if (scaffolded.createdFiles.length > 0) {
+    populateFileTracker(scaffolded.createdFiles);
+    console.log(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffold tool file(s)`);
+  }
 
   return {
     action: 'scaffold_project',

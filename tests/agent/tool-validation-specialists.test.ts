@@ -1,7 +1,11 @@
-import { validateToolCall } from '../../src/main/agent/tool-validation';
+import { validateToolCall, resetFileTracker, populateFileTracker } from '../../src/main/agent/tool-validation';
 
 describe('specialist-aware tool validation', () => {
   const workspacePath = 'G:/AgentPrime';
+
+  beforeEach(() => {
+    resetFileTracker('create');
+  });
 
   it('blocks integration verifier file writes', () => {
     const result = validateToolCall(
@@ -198,5 +202,23 @@ describe('specialist-aware tool validation', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('outside assigned file claims');
+  });
+
+  it('blocks duplicate game modules when scaffold already has canonical nested path', () => {
+    resetFileTracker('create');
+    populateFileTracker(['src/game/world/World.ts']);
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/game/World.ts', content: 'export class World {}' },
+      },
+      workspacePath,
+      'Build a three.js action fantasy game',
+      { specialist: 'javascript_specialist' }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('DUPLICATE GAME MODULE DETECTED');
   });
 });
