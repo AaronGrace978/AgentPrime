@@ -145,6 +145,33 @@ export class SpecializedAgentLoop extends EventEmitter {
     return looksRisky ? 'deep' : 'standard';
   }
 
+  private refineRolesForRetry(roles: AgentRole[], lastVerification: ProjectVerification | null): AgentRole[] {
+    if (!lastVerification) {
+      return roles;
+    }
+
+    let refined = [...roles];
+    const hasStylingSpecificFailures = lastVerification.errors.some((error) =>
+      /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
+    );
+    if (!hasStylingSpecificFailures && refined.includes('styling_ux_specialist')) {
+      refined = refined.filter((role) => role !== 'styling_ux_specialist');
+      console.log('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
+    }
+
+    const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|typescript|ts\d{4}/i.test(error));
+    if (isBuildHeavyRetry && refined.includes('integration_analyst')) {
+      refined = refined.filter((role) => role !== 'integration_analyst');
+      console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
+    }
+    if (isBuildHeavyRetry && refined.includes('tool_orchestrator')) {
+      refined = refined.filter((role) => role !== 'tool_orchestrator');
+      console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping tool_orchestrator');
+    }
+
+    return refined;
+  }
+
   private mapLegacyRoleToSpecialist(role: AgentRole): SpecialistId {
     if (role === 'repair_specialist') {
       return 'repair_specialist';
@@ -279,19 +306,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         roles.push('repair_specialist');
       }
       if (retryCount > 0 && lastVerification) {
-        const hasStylingSpecificFailures = lastVerification.errors.some((error) =>
-          /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
-        );
-        if (!hasStylingSpecificFailures && roles.includes('styling_ux_specialist')) {
-          roles = roles.filter((role) => role !== 'styling_ux_specialist');
-          console.log('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
-        }
-
-        const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|typescript|ts\d{4}/i.test(error));
-        if (isBuildHeavyRetry && roles.includes('integration_analyst')) {
-          roles = roles.filter((role) => role !== 'integration_analyst');
-          console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
-        }
+        roles = this.refineRolesForRetry(roles, lastVerification);
       }
 
       const mode = this.resolveMode(isUpdate, retryCount);

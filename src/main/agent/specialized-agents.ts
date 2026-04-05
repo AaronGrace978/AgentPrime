@@ -250,7 +250,9 @@ function appendScaffoldCustomizationInstructions(
     `- Do **not** call \`scaffold_project\` again or regenerate the whole repository from scratch.\n` +
     `- The template may include **generic demo gameplay** (block worlds, chunk loaders, placeholder mechanics). Replace it with what the user asked for.\n` +
     `- The user's **task text** defines theme, mechanics, camera, controls, and art direction.\n` +
-    `- Prefer \`write_file\` JSON tool lines targeting \`src/game/Game.ts\`, \`src/App.tsx\`, and \`src/game/**\` so \`npm run build\` still passes.\n`
+    `- Prefer \`write_file\` JSON tool lines targeting the files that already exist on disk so \`npm run build\` still passes.\n` +
+    `- Reuse the scaffold's exact folder structure. If the workspace has \`src/game/world/World.ts\`, do **not** invent \`src/game/World.ts\`.\n` +
+    `- Keep cross-file contracts compatible: preserve inherited method signatures and existing call-site APIs unless you update every affected file in the same pass.\n`
   );
 }
 
@@ -1888,13 +1890,20 @@ function buildProjectContext(context: any): string {
     const keyFiles = context.files.filter((f: string) =>
       f.includes('package.json') ||
       f.includes('index.html') ||
+      f.includes('src/main.tsx') ||
+      f.includes('src/App.tsx') ||
       f.includes('Game.ts') ||
-      f.includes('World.ts')
+      f.includes('World.ts') ||
+      f.includes('Controls.ts') ||
+      f.includes('InputManager.ts') ||
+      f.includes('Entity.ts') ||
+      f.includes('Player.ts') ||
+      f.includes('Enemy.ts')
     );
 
     if (keyFiles.length > 0) {
       contextStr += `**KEY FILE CONTENTS (READ THESE!):**\n\n`;
-      for (const file of keyFiles.slice(0, 5)) {
+      for (const file of keyFiles.slice(0, 8)) {
         try {
           const fullPath = path.join(context.workspacePath, file);
           if (fs.existsSync(fullPath)) {
@@ -1913,6 +1922,50 @@ function buildProjectContext(context: any): string {
   contextStr += `- If you see existing files like "src/game/Game.ts" or "src/game/world/World.ts", DO NOT create duplicate files.\n`;
   contextStr += `- Instead, enhance or use the existing structure.\n`;
   contextStr += `- Build on top of what's already there, don't replace it.\n\n`;
+
+  return contextStr;
+}
+
+function buildScaffoldContractContext(context: any): string {
+  const files: string[] = Array.isArray(context.files) ? context.files : [];
+  if (files.length === 0) {
+    return '';
+  }
+
+  const canonicalGameplayFiles = [
+    'src/game/Game.ts',
+    'src/game/world/World.ts',
+    'src/game/entities/Entity.ts',
+    'src/game/entities/Player.ts',
+    'src/game/entities/Enemy.ts',
+    'src/game/utils/Controls.ts',
+    'src/game/InputManager.ts',
+    'src/App.tsx',
+  ].filter((filePath) => files.includes(filePath));
+
+  const hasNestedWorld = files.includes('src/game/world/World.ts');
+  const hasFlatWorld = files.includes('src/game/World.ts');
+  const hasControls = files.includes('src/game/utils/Controls.ts');
+  const hasInputManager = files.includes('src/game/InputManager.ts');
+
+  let contextStr = '\n## SCAFFOLD CONTRACTS\n';
+  if (canonicalGameplayFiles.length > 0) {
+    contextStr += 'Use these existing files and paths as the canonical architecture:\n';
+    for (const filePath of canonicalGameplayFiles) {
+      contextStr += `- ${filePath}\n`;
+    }
+  }
+  if (hasNestedWorld && !hasFlatWorld) {
+    contextStr += '- World implementation already lives at `src/game/world/World.ts`; do not create `src/game/World.ts`.\n';
+  }
+  if (hasControls) {
+    contextStr += '- `src/game/utils/Controls.ts` is an existing call site. Preserve the Player API it uses, or update both files together in one pass.\n';
+  }
+  if (hasInputManager && !hasControls) {
+    contextStr += '- `src/game/InputManager.ts` already exists; keep its imports and Player method calls consistent with Player.ts.\n';
+  }
+  contextStr += '- If a subclass overrides a base-class method, keep a TypeScript-compatible signature.\n';
+  contextStr += '- Do not change one file’s API without updating every importing/calling file in the same edit set.\n\n';
 
   return contextStr;
 }
@@ -2312,7 +2365,7 @@ Output as a structured list. Be specific and comprehensive.` }
   );
 
   const orchestratorUserContent = scaffoldApplied
-    ? `${task}\n\nThe workspace already has a working scaffold. Output JSON tool calls (e.g. write_file) to implement the request above: replace generic template gameplay and align visuals/mechanics with the user's words. Do not re-scaffold the project.`
+    ? `${task}\n\nThe workspace already has a working scaffold. Output JSON tool calls (e.g. write_file) to implement the request above: replace generic template gameplay and align visuals/mechanics with the user's words. Do not re-scaffold the project.\n${buildProjectContext(context)}${buildScaffoldContractContext(context)}`
     : `${task}\n\nCreate ALL necessary files for this project. Output each file as a JSON tool call on its own line.`;
 
   // Use SMART FALLBACK - tries fast models first, falls back gracefully
@@ -2552,6 +2605,7 @@ Output as a structured list. Be specific and comprehensive.` }
               content: `Task: ${task}
 
 ${buildProjectContext(context)}
+${buildScaffoldContractContext(context)}
 ${buildSharedContext(sharedContext)}`
             }
           ], {

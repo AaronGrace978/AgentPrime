@@ -136,6 +136,27 @@ describe('SpecializedAgentLoop verification', () => {
     expect(createdFiles).toEqual(expect.arrayContaining(['src/main.tsx', 'src/App.tsx', 'package.json', 'index.html']));
   });
 
+  it('drops orchestrator and analyst on build-heavy retries', () => {
+    const workspacePath = createTempDir('agentprime-specialized-build-retry-');
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+
+    const refined = (loop as any).refineRolesForRetry(
+      ['tool_orchestrator', 'javascript_specialist', 'pipeline_specialist', 'integration_analyst', 'repair_specialist'],
+      {
+        isComplete: false,
+        missingFiles: [],
+        createdFiles: [],
+        errors: ['[Build] src/game/entities/Player.ts: error TS2416: Property update is not assignable'],
+      }
+    );
+
+    expect(refined).toEqual([
+      'javascript_specialist',
+      'pipeline_specialist',
+      'repair_specialist',
+    ]);
+  });
+
   it('surfaces rollback messaging when verification fails and changes were reverted', () => {
     const workspacePath = createTempDir('agentprime-specialized-rollback-msg-');
     const loop = new SpecializedAgentLoop({ workspacePath } as any);
