@@ -5,6 +5,9 @@
 import chalk from 'chalk';
 import * as http from 'http';
 import * as os from 'os';
+import { createLogger } from '../../main/core/logger';
+
+const log = createLogger('CLIStatus');
 
 interface ServiceStatus {
   name: string;
@@ -50,7 +53,7 @@ async function checkWebSocket(port: number): Promise<boolean> {
 }
 
 export async function checkStatus() {
-  console.log(chalk.bold('\n🔮 AgentPrime Status\n'));
+  log.info(chalk.bold('\n🔮 AgentPrime Status\n'));
   
   const services: ServiceStatus[] = [];
   
@@ -95,39 +98,39 @@ export async function checkStatus() {
   });
   
   // Print status table
-  console.log(chalk.cyan('Services:'));
-  console.log('─'.repeat(50));
+  log.info(chalk.cyan('Services:'));
+  log.info('─'.repeat(50));
   
   for (const service of services) {
     const status = service.running 
       ? chalk.green('● RUNNING') 
       : chalk.gray('○ STOPPED');
     const port = service.port ? chalk.gray(`:${service.port}`) : '';
-    console.log(`  ${status} ${chalk.bold(service.name)}${port}`);
+    log.info(`  ${status} ${chalk.bold(service.name)}${port}`);
     if (service.details) {
-      console.log(`           ${chalk.gray(service.details)}`);
+      log.info(`           ${chalk.gray(service.details)}`);
     }
   }
   
-  console.log('─'.repeat(50));
+  log.info('─'.repeat(50));
   
   // System resources
-  console.log('');
-  console.log(chalk.cyan('System:'));
+  log.info('');
+  log.info(chalk.cyan('System:'));
   const memUsed = process.memoryUsage().heapUsed / 1024 / 1024;
   const memTotal = os.totalmem() / 1024 / 1024 / 1024;
   const memFree = os.freemem() / 1024 / 1024 / 1024;
   const cpuLoad = os.loadavg()[0];
   
-  console.log(`  Memory: ${memFree.toFixed(1)}GB free / ${memTotal.toFixed(1)}GB total`);
-  console.log(`  CPU Load: ${cpuLoad.toFixed(2)}`);
-  console.log(`  Uptime: ${(os.uptime() / 3600).toFixed(1)} hours`);
+  log.info(`  Memory: ${memFree.toFixed(1)}GB free / ${memTotal.toFixed(1)}GB total`);
+  log.info(`  CPU Load: ${cpuLoad.toFixed(2)}`);
+  log.info(`  Uptime: ${(os.uptime() / 3600).toFixed(1)} hours`);
   
   // Quick actions
-  console.log('');
-  console.log(chalk.cyan('Quick Actions:'));
-  console.log(`  ${chalk.gray('agentprime gateway')}     Start the gateway`);
-  console.log(`  ${chalk.gray('agentprime doctor')}      Run diagnostics`);
-  console.log(`  ${chalk.gray('agentprime agent -m')}    Send a message`);
-  console.log('');
+  log.info('');
+  log.info(chalk.cyan('Quick Actions:'));
+  log.info(`  ${chalk.gray('agentprime gateway')}     Start the gateway`);
+  log.info(`  ${chalk.gray('agentprime doctor')}      Run diagnostics`);
+  log.info(`  ${chalk.gray('agentprime agent -m')}    Send a message`);
+  log.info('');
 }

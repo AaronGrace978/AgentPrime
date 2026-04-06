@@ -7,6 +7,9 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync, spawn } from 'child_process';
+import { createLogger } from '../../main/core/logger';
+
+const log = createLogger('CLIDoctor');
 
 interface DiagnosticResult {
   name: string;
@@ -49,23 +52,23 @@ function getVersion(cmd: string, args: string[] = ['--version']): string | null 
 }
 
 export async function runDoctor() {
-  console.log(chalk.bold('System Diagnostics\n'));
+  log.info(chalk.bold('System Diagnostics\n'));
   
   // ═══════════════════════════════════════════════════════════
   // SYSTEM INFO
   // ═══════════════════════════════════════════════════════════
-  console.log(chalk.cyan('📊 System Info'));
-  console.log(`   OS: ${os.type()} ${os.release()} (${os.arch()})`);
-  console.log(`   Node: ${process.version}`);
-  console.log(`   Platform: ${os.platform()}`);
-  console.log(`   Memory: ${Math.round(os.totalmem() / 1024 / 1024 / 1024)}GB`);
-  console.log(`   CPUs: ${os.cpus().length}`);
-  console.log('');
+  log.info(chalk.cyan('📊 System Info'));
+  log.info(`   OS: ${os.type()} ${os.release()} (${os.arch()})`);
+  log.info(`   Node: ${process.version}`);
+  log.info(`   Platform: ${os.platform()}`);
+  log.info(`   Memory: ${Math.round(os.totalmem() / 1024 / 1024 / 1024)}GB`);
+  log.info(`   CPUs: ${os.cpus().length}`);
+  log.info('');
   
   // ═══════════════════════════════════════════════════════════
   // RUNTIME CHECKS
   // ═══════════════════════════════════════════════════════════
-  console.log(chalk.cyan('🔧 Runtime'));
+  log.info(chalk.cyan('🔧 Runtime'));
   
   // Node version
   check('Node.js', () => {
@@ -110,8 +113,8 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // AI PROVIDERS
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.cyan('🤖 AI Providers'));
+  log.info('');
+  log.info(chalk.cyan('🤖 AI Providers'));
   
   // API keys from environment
   const configuredAnthropicKey = process.env.ANTHROPIC_API_KEY || '';
@@ -150,8 +153,8 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // PYTHON BACKEND ("THE BRAIN")
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.cyan('🧠 Python Backend'));
+  log.info('');
+  log.info(chalk.cyan('🧠 Python Backend'));
   
   check('Python', () => {
     const version = getVersion('python', ['--version']) || getVersion('python3', ['--version']);
@@ -215,8 +218,8 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // MESSAGING CHANNELS
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.cyan('💬 Messaging Channels'));
+  log.info('');
+  log.info(chalk.cyan('💬 Messaging Channels'));
   
   // Telegram
   check('Telegram', () => {
@@ -253,8 +256,8 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // BROWSER AUTOMATION
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.cyan('🌐 Browser Automation'));
+  log.info('');
+  log.info(chalk.cyan('🌐 Browser Automation'));
   
   // Playwright
   check('Playwright', () => {
@@ -287,8 +290,8 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // VOICE
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.cyan('🎤 Voice'));
+  log.info('');
+  log.info(chalk.cyan('🎤 Voice'));
   
   // ElevenLabs
   check('ElevenLabs TTS', () => {
@@ -309,8 +312,8 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // CONFIG FILES
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.cyan('📁 Configuration'));
+  log.info('');
+  log.info(chalk.cyan('📁 Configuration'));
   
   const configDir = path.join(os.homedir(), '.agentprime');
   check('Config directory', () => {
@@ -331,9 +334,9 @@ export async function runDoctor() {
   // ═══════════════════════════════════════════════════════════
   // PRINT RESULTS
   // ═══════════════════════════════════════════════════════════
-  console.log('');
-  console.log(chalk.bold('═'.repeat(60)));
-  console.log('');
+  log.info('');
+  log.info(chalk.bold('═'.repeat(60)));
+  log.info('');
   
   let passCount = 0;
   let warnCount = 0;
@@ -361,28 +364,28 @@ export async function runDoctor() {
         break;
     }
     
-    console.log(`${icon} ${chalk.bold(result.name)}: ${color(result.message)}`);
+    log.info(`${icon} ${chalk.bold(result.name)}: ${color(result.message)}`);
     if (result.details) {
-      console.log(`   ${chalk.gray(result.details)}`);
+      log.info(`   ${chalk.gray(result.details)}`);
     }
   }
   
-  console.log('');
-  console.log(chalk.bold('═'.repeat(60)));
-  console.log('');
-  console.log(chalk.bold('Summary:'));
-  console.log(`   ${chalk.green(`✅ ${passCount} passed`)}`);
-  console.log(`   ${chalk.yellow(`⚠️  ${warnCount} warnings`)}`);
-  console.log(`   ${chalk.red(`❌ ${failCount} failed`)}`);
-  console.log('');
+  log.info('');
+  log.info(chalk.bold('═'.repeat(60)));
+  log.info('');
+  log.info(chalk.bold('Summary:'));
+  log.info(`   ${chalk.green(`✅ ${passCount} passed`)}`);
+  log.info(`   ${chalk.yellow(`⚠️  ${warnCount} warnings`)}`);
+  log.info(`   ${chalk.red(`❌ ${failCount} failed`)}`);
+  log.info('');
   
   if (failCount > 0) {
-    console.log(chalk.red('❌ Some checks failed. Please fix the issues above.'));
+    log.info(chalk.red('❌ Some checks failed. Please fix the issues above.'));
     process.exit(1);
   } else if (warnCount > 0) {
-    console.log(chalk.yellow('⚠️  System is functional but some features may be limited.'));
-    console.log(chalk.gray('   Run `agentprime onboard` to configure missing features.'));
+    log.info(chalk.yellow('⚠️  System is functional but some features may be limited.'));
+    log.info(chalk.gray('   Run `agentprime onboard` to configure missing features.'));
   } else {
-    console.log(chalk.green('✅ All checks passed! AgentPrime is ready.'));
+    log.info(chalk.green('✅ All checks passed! AgentPrime is ready.'));
   }
 }

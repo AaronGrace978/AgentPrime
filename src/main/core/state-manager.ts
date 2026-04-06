@@ -49,6 +49,7 @@ export class StateManager extends EventEmitter {
   private stateFile: string;
   private maxSessions = 100;
   private maxMessagesPerSession = 200; // Long PrimeSpace/Messenger threads (e.g. agent-to-agent) need more history
+  private autoSaveInterval: NodeJS.Timeout | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private isDirty = false;
 
@@ -57,17 +58,19 @@ export class StateManager extends EventEmitter {
     this.stateFile = stateFilePath;
     this.state = this.createInitialState();
 
-    // Auto-save every 30 seconds if state is dirty
-    setInterval(() => {
+    // Background timers should not keep tests or short-lived CLI flows alive.
+    this.autoSaveInterval = setInterval(() => {
       if (this.isDirty) {
         this.saveState();
       }
     }, 30000);
+    this.autoSaveInterval.unref?.();
 
     // Auto-cleanup every hour
     this.cleanupInterval = setInterval(() => {
       this.performCleanup();
     }, 60 * 60 * 1000); // 1 hour
+    this.cleanupInterval.unref?.();
   }
 
   private createInitialState(): GlobalState {
@@ -339,6 +342,10 @@ export class StateManager extends EventEmitter {
    * Cleanup resources
    */
   cleanup(): void {
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+      this.autoSaveInterval = null;
+    }
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;

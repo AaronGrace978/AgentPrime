@@ -10,6 +10,9 @@ import * as path from 'path';
 import { execSync, spawn, exec } from 'child_process';
 import * as os from 'os';
 import https from 'https';
+import { createLogger } from '../../main/core/logger';
+
+const log = createLogger('CLIAgent');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
@@ -1014,14 +1017,14 @@ async function runAgentLoop(
     for (const tc of toolCalls) {
       const inputStr = JSON.stringify(tc.input);
       const shortInput = inputStr.length > 60 ? inputStr.slice(0, 60) + '...' : inputStr;
-      console.log(chalk.yellow(`⚡ ${tc.name}`) + chalk.gray(` ${shortInput}`));
+      log.info(chalk.yellow(`⚡ ${tc.name}`) + chalk.gray(` ${shortInput}`));
       
       const result = await executeTool(tc.name, tc.input);
       
       if (verbose || result.length < 200) {
-        console.log(chalk.gray(result.slice(0, 500) + (result.length > 500 ? '...' : '')));
+        log.info(chalk.gray(result.slice(0, 500) + (result.length > 500 ? '...' : '')));
       } else {
-        console.log(chalk.gray(`(${result.length} chars)`));
+        log.info(chalk.gray(`(${result.length} chars)`));
       }
       
       toolResults.push({
@@ -1032,11 +1035,11 @@ async function runAgentLoop(
     }
     
     messages.push({ role: 'user', content: toolResults });
-    console.log('');
+    log.info('');
   }
   
   if (iterations >= maxIterations) {
-    console.log(chalk.yellow('\n⚠️ Max iterations reached'));
+    log.info(chalk.yellow('\n⚠️ Max iterations reached'));
   }
   
   return messages;
@@ -1047,11 +1050,11 @@ async function runAgentLoop(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function runAgent(options: AgentOptions) {
-  console.log(chalk.cyan('\n🤖 AgentPrime\n'));
+  log.info(chalk.cyan('\n🤖 AgentPrime\n'));
   
   try {
-    console.log(chalk.green('You: ') + options.message);
-    console.log('');
+    log.info(chalk.green('You: ') + options.message);
+    log.info('');
     
     // Load existing session for context
     let messages = loadSession();
@@ -1062,9 +1065,9 @@ export async function runAgent(options: AgentOptions) {
     saveSession(messages);
     
   } catch (error: any) {
-    console.error(chalk.red(`\nError: ${error.message}`));
+    log.error(chalk.red(`\nError: ${error.message}`));
     if (options.verbose) {
-      console.error(chalk.gray(error.stack));
+      log.error(chalk.gray(error.stack));
     }
     process.exit(1);
   }
@@ -1075,13 +1078,13 @@ export async function runAgent(options: AgentOptions) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function runInteractiveAgent(options: Partial<AgentOptions> = {}) {
-  console.log(chalk.cyan(`
+  log.info(chalk.cyan(`
 ╔═══════════════════════════════════════════════════════════╗
 ║  🤖 AgentPrime - Your Personal AI Assistant               ║
 ╚═══════════════════════════════════════════════════════════╝
 `));
-  console.log(chalk.gray(`Workspace: ${WORKSPACE}`));
-  console.log(chalk.gray(`Commands: /new (reset) | /status | /exit\n`));
+  log.info(chalk.gray(`Workspace: ${WORKSPACE}`));
+  log.info(chalk.gray(`Commands: /new (reset) | /status | /exit\n`));
   
   const rl = readline.createInterface({
     input: process.stdin,
@@ -1091,7 +1094,7 @@ export async function runInteractiveAgent(options: Partial<AgentOptions> = {}) {
   // Load existing session
   let messages = loadSession();
   if (messages.length > 0) {
-    console.log(chalk.gray(`📝 Loaded ${messages.length} messages from previous session\n`));
+    log.info(chalk.gray(`📝 Loaded ${messages.length} messages from previous session\n`));
   }
   
   const prompt = () => {
@@ -1101,7 +1104,7 @@ export async function runInteractiveAgent(options: Partial<AgentOptions> = {}) {
       // Commands
       if (message.toLowerCase() === '/exit' || message.toLowerCase() === 'exit') {
         saveSession(messages);
-        console.log(chalk.cyan('\n👋 Session saved. Goodbye!\n'));
+        log.info(chalk.cyan('\n👋 Session saved. Goodbye!\n'));
         rl.close();
         process.exit(0);
       }
@@ -1109,13 +1112,13 @@ export async function runInteractiveAgent(options: Partial<AgentOptions> = {}) {
       if (message.toLowerCase() === '/new' || message.toLowerCase() === '/reset') {
         messages = [];
         clearSession();
-        console.log(chalk.cyan('🔄 Session cleared\n'));
+        log.info(chalk.cyan('🔄 Session cleared\n'));
         prompt();
         return;
       }
       
       if (message.toLowerCase() === '/status') {
-        console.log(chalk.cyan(`
+        log.info(chalk.cyan(`
 📊 Status:
    Messages: ${messages.length}
    Workspace: ${WORKSPACE}
@@ -1134,10 +1137,10 @@ export async function runInteractiveAgent(options: Partial<AgentOptions> = {}) {
         messages = await runAgentLoop(message, messages, options.verbose || false);
         saveSession(messages);
       } catch (error: any) {
-        console.log(chalk.red('\nError: ') + error.message);
+        log.info(chalk.red('\nError: ') + error.message);
       }
       
-      console.log('');
+      log.info('');
       prompt();
     });
   };

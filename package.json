@@ -24,10 +24,13 @@
     "test:e2e": "playwright test",
     "test:templates": "npx tsx scripts/template-smoke-test.ts",
     "test:performance": "jest --testPathPatterns=tests/core/performance --passWithNoTests",
-    "test:all": "npm run test:unit && npm run test:integration && npm run test:e2e && npm run test:templates",
+    "test:all": "npm run verify && npm run test:e2e",
     "lint": "eslint src --ext .ts,.tsx,.js,.jsx",
     "typecheck": "tsc --noEmit",
     "preflight:dist": "node scripts/preflight-dist.js",
+    "preflight:dist:ci": "node scripts/preflight-dist.js --ci-smoke",
+    "verify:ci": "npm run lint && npm run typecheck && npm run build && npm run test:coverage && npm run preflight:dist:ci",
+    "verify": "npm run verify:ci && npm run test:templates",
     "dist": "npm run build && npm run preflight:dist -- --build-backend && electron-builder",
     "dist:win": "npm run build && npm run preflight:dist -- --build-backend && electron-builder --win",
     "dist:mac": "npm run build && npm run preflight:dist -- --build-backend && electron-builder --mac",
@@ -138,6 +141,13 @@
         "to": "templates/",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "docs/",
+        "to": "docs",
+        "filter": [
+          "user-guide.html"
         ]
       }
     ],

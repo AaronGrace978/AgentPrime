@@ -135,11 +135,7 @@ export class ProjectBrowserTester {
       await this.startServer();
       
       if (this.serverPort === 0) {
-        result.issues.push({
-          severity: 'warning',
-          category: 'load',
-          description: 'Could not start local server - falling back to static analysis'
-        });
+        this.handleServerStartupFailure(result);
         return this.staticHtmlAnalysis(result, htmlFiles);
       }
       
@@ -280,18 +276,22 @@ export class ProjectBrowserTester {
       // Find an available port
       const port = 8765 + Math.floor(Math.random() * 1000);
       this.serverOutput = '';
+      const isViteProject = this.isViteProject();
+      const command = process.platform === 'win32'
+        ? (isViteProject ? 'npm.cmd' : 'npx.cmd')
+        : (isViteProject ? 'npm' : 'npx');
       
       try {
-        if (this.isViteProject()) {
-          const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-          this.serverProcess = spawn(npmCommand, ['run', 'dev', '--', '--host', '127.0.0.1', '--port', port.toString()], {
+        if (isViteProject) {
+          this.serverProcess = spawn(command, ['run', 'dev', '--', '--host', '127.0.0.1', '--port', port.toString()], {
             cwd: this.workspacePath,
-            shell: true,
+            shell: false,
             detached: false
           });
         } else {
-          this.serverProcess = spawn('npx', ['http-server', this.workspacePath, '-p', port.toString(), '--silent'], {
-            shell: true,
+          this.serverProcess = spawn(command, ['http-server', this.workspacePath, '-p', port.toString(), '--silent'], {
+            cwd: this.workspacePath,
+            shell: false,
             detached: false
           });
         }
@@ -309,12 +309,13 @@ export class ProjectBrowserTester {
         });
         
         // Wait for server to start and fail fast if the dev server is already reporting import/runtime errors.
-        setTimeout(() => {
+        const startupTimer = setTimeout(() => {
           const startupFailed =
             /failed to resolve import|internal server error|pre-transform error|error when starting dev server/i.test(this.serverOutput);
           this.serverPort = startupFailed ? 0 : port;
           resolve();
-        }, this.isViteProject() ? 3500 : 2000);
+        }, isViteProject ? 3500 : 2000);
+        startupTimer.unref?.();
         
       } catch (e) {
         this.serverPort = 0;
@@ -328,9 +329,14 @@ export class ProjectBrowserTester {
    */
   private async stopServer(): Promise<void> {
     if (this.serverProcess) {
+      this.serverProcess.stdout?.removeAllListeners();
+      this.serverProcess.stderr?.removeAllListeners();
       this.serverProcess.kill();
+      this.serverProcess.stdout?.destroy();
+      this.serverProcess.stderr?.destroy();
       this.serverProcess = null;
     }
+    this.serverPort = 0;
   }
 
   private readPackageJson(): any | null {
@@ -380,6 +386,34 @@ export class ProjectBrowserTester {
         description: `Dev server reported runtime error: ${line.substring(0, 200)}`
       });
       result.score -= 15;
+    }
+  }
+
+  private handleServerStartupFailure(result: BrowserTestResult): void {
+    this.reportServerRuntimeIssues(result);
+
+    const startupSummary = this.serverOutput
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean);
+
+    result.issues.push({
+      severity: 'warning',
+      category: 'load',
+      description: 'Could not start local server - falling back to static analysis',
+      suggestedFix: this.isBundlerManagedProject()
+        ? 'Fix the dev server boot errors before trusting static HTML analysis.'
+        : undefined,
+    });
+
+    if (startupSummary) {
+      result.suggestions.push(`Server startup output: ${startupSummary.substring(0, 160)}`);
+    }
+
+    if (this.isBundlerManagedProject()) {
+      result.suggestions.push(
+        'Bundler-managed projects need a clean dev server boot before browser verification is trustworthy.'
+      );
     }
   }
   

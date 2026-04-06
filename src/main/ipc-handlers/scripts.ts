@@ -7,9 +7,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { IpcMain, BrowserWindow } from 'electron';
+import { createLogger } from '../core/logger';
+import { resolveValidatedPath } from '../security/ipcValidation';
 
 // Store running processes
 const runningProcesses = new Map<number, { process: any; filePath: string }>();
+const log = createLogger('ScriptIPC');
 
 /**
  * Get interpreter for file extension
@@ -47,7 +50,15 @@ export function register(deps: ScriptHandlersDeps): void {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) return { success: false, error: 'No workspace' };
 
-    const fullPath = path.join(workspacePath, filePath);
+    const pathValidation = resolveValidatedPath(filePath, workspacePath, {
+      allowAbsolute: true,
+      sanitizeFilename: false,
+    });
+    if (!pathValidation.valid || !pathValidation.resolvedPath) {
+      return { success: false, error: `Invalid script path: ${pathValidation.errors.join('; ')}` };
+    }
+
+    const fullPath = pathValidation.resolvedPath;
     const window = mainWindow();
     const interpreter = getInterpreter(fullPath);
 
@@ -66,11 +77,12 @@ export function register(deps: ScriptHandlersDeps): void {
       const workDir = path.dirname(fullPath);
       const child = spawn(interpreter.cmd, [...interpreter.args, fullPath], {
         cwd: workDir,
-        shell: true,
+        shell: false,
       });
 
       const pid = child.pid!;
       runningProcesses.set(pid, { process: child, filePath });
+      log.info(`Started script ${filePath} (pid ${pid})`);
 
       window.webContents.send('script:output', {
         pid,
@@ -97,11 +109,13 @@ export function register(deps: ScriptHandlersDeps): void {
       child.on('close', (code: number | null) => {
         window.webContents.send('script:exit', { pid, code });
         runningProcesses.delete(pid);
+        log.info(`Script ${filePath} exited`, { pid, code });
       });
 
       child.on('error', (err: Error) => {
         window.webContents.send('script:error', { pid, error: err.message });
         runningProcesses.delete(pid);
+        log.error(`Script ${filePath} failed`, err);
       });
 
       return { success: true, pid, fileName: path.basename(fullPath) };
@@ -126,7 +140,15 @@ export function register(deps: ScriptHandlersDeps): void {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) return { runnable: false };
 
-    const fullPath = path.join(workspacePath, filePath);
+    const pathValidation = resolveValidatedPath(filePath, workspacePath, {
+      allowAbsolute: true,
+      sanitizeFilename: false,
+    });
+    if (!pathValidation.valid || !pathValidation.resolvedPath) {
+      return { runnable: false };
+    }
+
+    const fullPath = pathValidation.resolvedPath;
     return { runnable: getInterpreter(fullPath) !== null };
   });
 }

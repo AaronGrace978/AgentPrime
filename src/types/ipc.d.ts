@@ -224,6 +224,7 @@ export interface AgentAPI {
 
   // Misc
   openExternal: (url: string) => Promise<any>;
+  openUserGuide: () => Promise<{ success: boolean; path?: string; error?: string }>;
 
   // Python brain integration (optional at runtime)
   brainAvailable: () => Promise<boolean>;

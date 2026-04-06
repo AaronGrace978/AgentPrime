@@ -25,6 +25,15 @@ const DANGEROUS_PATTERNS = {
   controlChars: /[\x00-\x08\x0B\x0C\x0E-\x1F]/g,
   pathTraversal: /\.\.[\/\\]/g,
 };
+const SHELL_CONTROL_PATTERN = /(?:&&|\|\||[;&`]|[<>]|\$\()/;
+const DEFAULT_ALLOWED_SHELLS = [
+  'powershell.exe',
+  'pwsh.exe',
+  'cmd.exe',
+  'bash',
+  'sh',
+  'zsh',
+];
 
 /**
  * Validation result
@@ -220,7 +229,10 @@ export function validateFilePath(
 /**
  * Validate a command string
  */
-export function validateCommand(command: string): ValidationResult {
+export function validateCommand(
+  command: string,
+  options: { allowShellOperators?: boolean; requireNonEmpty?: boolean } = {}
+): ValidationResult {
   const errors: string[] = [];
   
   if (typeof command !== 'string') {
@@ -240,12 +252,86 @@ export function validateCommand(command: string): ValidationResult {
   // Sanitize
   const sanitized = command
     .replace(DANGEROUS_PATTERNS.nullBytes, '')
-    .replace(DANGEROUS_PATTERNS.controlChars, '');
+    .replace(DANGEROUS_PATTERNS.controlChars, '')
+    .trim();
+
+  if (options.requireNonEmpty !== false && sanitized.length === 0) {
+    errors.push('Command must not be empty');
+  }
+
+  if (/[\r\n]/.test(command)) {
+    errors.push('Command must be a single line');
+  }
+
+  if (options.allowShellOperators === false && SHELL_CONTROL_PATTERN.test(sanitized)) {
+    errors.push('Command contains disallowed shell control operators');
+  }
   
   return {
     valid: errors.length === 0,
     errors,
     sanitized
+  };
+}
+
+export function resolveValidatedPath(
+  targetPath: string,
+  workspacePath: string,
+  options: { allowAbsolute?: boolean; sanitizeFilename?: boolean } = {}
+): ValidationResult & { resolvedPath?: string } {
+  const validation = validateFilePath(targetPath, workspacePath, options);
+  if (!validation.valid) {
+    return validation;
+  }
+
+  const sanitizedPath = validation.sanitized || targetPath;
+  const resolvedPath = path.isAbsolute(sanitizedPath)
+    ? path.normalize(sanitizedPath)
+    : path.resolve(workspacePath, sanitizedPath);
+  const normalizedWorkspace = path.normalize(workspacePath);
+
+  if (!resolvedPath.startsWith(normalizedWorkspace)) {
+    return {
+      valid: false,
+      errors: ['Path resolves outside of workspace'],
+      sanitized: sanitizedPath,
+    };
+  }
+
+  return {
+    ...validation,
+    sanitized: sanitizedPath,
+    resolvedPath,
+  };
+}
+
+export function validateShellExecutable(
+  shell: string,
+  allowedShells: string[] = DEFAULT_ALLOWED_SHELLS
+): ValidationResult {
+  const errors: string[] = [];
+
+  if (typeof shell !== 'string') {
+    return { valid: false, errors: ['Shell must be a string'] };
+  }
+
+  const sanitized = shell.replace(DANGEROUS_PATTERNS.nullBytes, '').trim();
+  if (!sanitized) {
+    return { valid: false, errors: ['Shell must not be empty'] };
+  }
+
+  if (path.basename(sanitized) !== sanitized) {
+    errors.push('Shell must not include path segments');
+  }
+
+  if (!allowedShells.includes(sanitized.toLowerCase())) {
+    errors.push(`Shell must be one of: ${allowedShells.join(', ')}`);
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    sanitized,
   };
 }
 
@@ -471,7 +557,9 @@ export default {
   sanitizeFolderName,
   sanitizeFileName,
   validateFilePath,
+  resolveValidatedPath,
   validateCommand,
+  validateShellExecutable,
   validateFileContent,
   validateChatMessage,
   validateSettings,

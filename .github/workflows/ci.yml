@@ -14,9 +14,9 @@ on:
 
 jobs:
   checks:
-    name: Lint, typecheck, build, test
+    name: Lint, typecheck, build, coverage, preflight
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -40,8 +40,19 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Unit and integration tests
-        run: npm test
+      - name: Coverage gate
+        run: npm run test:coverage
+
+      - name: Dist preflight smoke
+        run: npm run preflight:dist:ci
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: ignore
 
   template-smoke:
     name: Template Smoke
@@ -93,6 +104,7 @@ jobs:
 
   e2e:
     name: Electron E2E
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_e2e == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: checks
@@ -118,3 +130,13 @@ jobs:
 
       - name: Run Electron E2E tests
         run: xvfb-run -a npm run test:e2e
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore

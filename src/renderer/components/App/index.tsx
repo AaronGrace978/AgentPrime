@@ -21,13 +21,13 @@ import SettingsPanel from '../SettingsPanel';
 import StatusBar from '../StatusBar';
 import CommandPalette from '../CommandPalette';
 import FileTree from '../FileTree';
+import { PanelSkeleton, PageSkeleton } from '../Skeleton';
 import { ToastContainer, useToast } from '../Toast';
 import { getLanguage } from '../../utils';
 import {
   IconBot,
   IconChevronLeft,
   IconChevronRight,
-  IconSpinner,
   IconFolder,
   IconFile,
   IconSave,
@@ -72,6 +72,92 @@ import {
 } from './components';
 
 import '../../vibe-styles.css';
+
+interface BackendStatusState {
+  connected: boolean;
+  checking: boolean;
+  dismissed: boolean;
+  lastCheckedAt: Date | null;
+  error: string | null;
+}
+
+const LazyPanelFallback: React.FC<{ lines?: number; padded?: boolean }> = ({
+  lines = 6,
+  padded = true,
+}) => (
+  <div style={{ padding: padded ? 'var(--spacing-md)' : 0, height: '100%', overflow: 'hidden' }}>
+    <PanelSkeleton lines={lines} padding={padded} />
+  </div>
+);
+
+const BackendOfflineOverlay: React.FC<{
+  status: BackendStatusState;
+  onRetry: () => void;
+  onDismiss: () => void;
+}> = ({ status, onRetry, onDismiss }) => (
+  <div
+    style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 10010,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'rgba(10, 13, 22, 0.66)',
+      backdropFilter: 'blur(8px)',
+      padding: '24px',
+    }}
+  >
+    <div
+      style={{
+        width: 'min(560px, 92vw)',
+        padding: '24px',
+        borderRadius: '16px',
+        background: 'var(--prime-surface)',
+        border: '1px solid var(--prime-border)',
+        boxShadow: 'var(--prime-shadow-xl)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '12px',
+      }}
+    >
+      <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--prime-text)' }}>
+        Python backend offline
+      </div>
+      <div style={{ color: 'var(--prime-text-secondary)', lineHeight: 1.6 }}>
+        AI routing, memory, verification, and repair flows are currently unavailable because the local backend is not responding.
+      </div>
+      {status.error && (
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '10px',
+            background: 'var(--prime-accent-light)',
+            color: 'var(--prime-text-secondary)',
+            fontFamily: '"JetBrains Mono", monospace',
+            fontSize: '12px',
+            wordBreak: 'break-word',
+          }}
+        >
+          {status.error}
+        </div>
+      )}
+      <div style={{ color: 'var(--prime-text-muted)', fontSize: '12px' }}>
+        {status.lastCheckedAt
+          ? `Last checked ${status.lastCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+          : 'Checking backend availability...'}
+      </div>
+      <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+        <button onClick={onRetry} className="icon-btn" disabled={status.checking}>
+          {status.checking ? 'Retrying...' : 'Retry backend'}
+        </button>
+        <button onClick={onDismiss} className="icon-btn">
+          Continue offline
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 function App() {
   const toast = useToast();
@@ -153,11 +239,19 @@ function App() {
     inlineCompletions: true,
     providers: {}
   });
+  const [backendStatus, setBackendStatus] = useState<BackendStatusState>({
+    connected: true,
+    checking: true,
+    dismissed: false,
+    lastCheckedAt: null,
+    error: null,
+  });
 
   const selectedFile = activeFile?.file || null;
   const fileContent = activeFile?.content || '';
   const hasChanges = activeFile?.isDirty || false;
   const workspaceName = currentPath ? currentPath.split(/[/\\]/).pop() || 'Workspace' : 'AgentPrime';
+  const showBackendOverlay = Boolean(currentPath) && !backendStatus.connected && !backendStatus.dismissed;
 
   // Keep backend in sync with the active file for completion context
   useEffect(() => {
@@ -167,6 +261,49 @@ function App() {
   useEffect(() => {
     if (composerOpen) setComposerMounted(true);
   }, [composerOpen]);
+
+  const checkBackendAvailability = useCallback(async () => {
+    const api = window.agentAPI as any;
+    if (typeof api?.brainAvailable !== 'function') {
+      setBackendStatus({
+        connected: true,
+        checking: false,
+        dismissed: false,
+        lastCheckedAt: new Date(),
+        error: null,
+      });
+      return;
+    }
+
+    setBackendStatus((prev) => ({ ...prev, checking: true }));
+    try {
+      const connected = await api.brainAvailable();
+      setBackendStatus((prev) => ({
+        connected,
+        checking: false,
+        dismissed: connected ? false : (prev.connected ? false : prev.dismissed),
+        lastCheckedAt: new Date(),
+        error: connected ? null : 'The backend health check did not receive a response.',
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBackendStatus((prev) => ({
+        connected: false,
+        checking: false,
+        dismissed: prev.connected ? false : prev.dismissed,
+        lastCheckedAt: new Date(),
+        error: message || 'The backend health check failed.',
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkBackendAvailability();
+    const interval = setInterval(() => {
+      void checkBackendAvailability();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [checkBackendAvailability]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -215,15 +352,18 @@ function App() {
   }, [selectedFile, executeScript]);
 
   const openUserGuide = useCallback(async () => {
-    const userGuideUrl = 'https://github.com/AaronGrace978/AgentPrime/blob/main/docs/USER_GUIDE.md';
     try {
-      const result = await window.agentAPI.openExternal(userGuideUrl);
+      const result = await window.agentAPI.openUserGuide();
       if (!result?.success) {
         throw new Error(result?.error || 'Failed to open user guide');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to open user guide:', error);
-      toast.error('Unable to Open User Guide', `Open ${userGuideUrl} in your browser.`);
+      const fallback = 'https://github.com/AaronGrace978/AgentPrime/blob/main/docs/user-guide.html';
+      toast.error(
+        'Unable to Open User Guide',
+        error?.message || `Try opening ${fallback} in your browser.`
+      );
     }
   }, [toast]);
 
@@ -984,7 +1124,7 @@ function App() {
             {gitPanelOpen && (
               <div className={`app-sidebar ${gitPanelOpen ? 'open' : ''}`}>
                 <ErrorBoundary>
-                  <Suspense fallback={<div className="loading-placeholder"><IconSpinner size="md" /> Loading Git Panel...</div>}>
+                  <Suspense fallback={<LazyPanelFallback lines={8} />}>
                     <GitPanel
                       onFileSelect={openFile}
                       onCommitClick={() => setCommitDialogOpen(true)}
@@ -1057,7 +1197,7 @@ function App() {
                   {terminalVisible && (
                     <div style={{ height: '280px', flexShrink: 0 }}>
                       <ErrorBoundary>
-                        <Suspense fallback={<div className="loading-placeholder">Loading Terminal...</div>}>
+                        <Suspense fallback={<LazyPanelFallback lines={6} />}>
                           <Terminal
                             onClose={() => setTerminalVisible(false)}
                             onFixError={(error) => {
@@ -1094,7 +1234,7 @@ function App() {
               {livePreviewOpen && (
                 <div style={{ width: '50%', minWidth: '300px', flexShrink: 0 }}>
                   <ErrorBoundary>
-                    <Suspense fallback={<div className="loading-placeholder">Loading Preview...</div>}>
+                    <Suspense fallback={<LazyPanelFallback lines={5} />}>
                       <LivePreview
                         url={livePreviewUrl}
                         onClose={() => setLivePreviewOpen(false)}
@@ -1121,7 +1261,7 @@ function App() {
           </div>
           {composerMounted && (
             <ErrorBoundary>
-              <Suspense fallback={<div className="loading-spinner"><IconSpinner size="lg" /> Loading AI Composer...</div>}>
+              <Suspense fallback={<LazyPanelFallback lines={10} />}>
                 <AIChat
                   isVisible={composerOpen}
                   onClose={() => setComposerOpen(false)}
@@ -1243,7 +1383,7 @@ function App() {
             zIndex: 1001,
           }}>
             <ErrorBoundary>
-              <Suspense fallback={<div className="loading-placeholder">Loading Change Review...</div>}>
+              <Suspense fallback={<PageSkeleton />}>
                 <MultiFileDiffReview
                   changes={agentReviewChanges}
                   onAcceptFile={(filePath) => { void handleAcceptReviewFile(filePath); }}
@@ -1299,6 +1439,14 @@ function App() {
               </Suspense>
             </div>
           </div>
+        )}
+
+        {showBackendOverlay && (
+          <BackendOfflineOverlay
+            status={backendStatus}
+            onRetry={() => { void checkBackendAvailability(); }}
+            onDismiss={() => setBackendStatus((prev) => ({ ...prev, dismissed: true }))}
+          />
         )}
 
         <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />

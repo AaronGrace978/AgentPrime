@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { memo, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useFileGitStatus } from './GitStatus';
 import {
@@ -48,7 +48,7 @@ function flattenVisible(
   return out;
 }
 
-const FileTreeRow: React.FC<{
+interface FileTreeRowProps {
   item: FileTreeItem;
   level: number;
   selectedPath?: string;
@@ -56,17 +56,27 @@ const FileTreeRow: React.FC<{
   onFileSelect: (file: FileTreeItem) => void;
   onFolderSelect?: (folder: FileTreeItem) => void;
   onToggleDir: (path: string) => void;
-}> = ({ item, level, selectedPath, expanded, onFileSelect, onFolderSelect, onToggleDir }) => {
+}
+
+const FileTreeRow = memo(({
+  item,
+  level,
+  selectedPath,
+  expanded,
+  onFileSelect,
+  onFolderSelect,
+  onToggleDir
+}: FileTreeRowProps) => {
   const gitStatus = useFileGitStatus(item.path);
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (item.is_dir) {
       onToggleDir(item.path);
       onFolderSelect?.(item);
     } else {
       onFileSelect(item);
     }
-  };
+  }, [item, onFileSelect, onFolderSelect, onToggleDir]);
 
   const getItemIcon = (name: string, isDir: boolean, isOpen: boolean) => {
     if (isDir) {
@@ -112,9 +122,9 @@ const FileTreeRow: React.FC<{
       </span>
     </div>
   );
-};
+});
 
-const FileTree: React.FC<FileTreeProps> = ({
+const FileTreeComponent: React.FC<FileTreeProps> = ({
   onFileSelect,
   onFolderSelect,
   onOpenFolder,
@@ -272,5 +282,7 @@ const FileTree: React.FC<FileTreeProps> = ({
     </div>
   );
 };
+
+const FileTree = memo(FileTreeComponent);
 
 export default FileTree;

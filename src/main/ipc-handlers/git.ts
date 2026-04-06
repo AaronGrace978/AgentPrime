@@ -1,13 +1,16 @@
 /**
  * AgentPrime - Git IPC Handlers
- * Handles Git operations via IPC
+ * Handles Git operations via IPC with validated argv-based execution.
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import { IpcMain } from 'electron';
+import * as path from 'path';
+import { createLogger } from '../core/logger';
+import { resolveValidatedPath, validateCommand } from '../security/ipcValidation';
 
-const execAsync = promisify(exec);
+const log = createLogger('GitIPC');
+const SAFE_GIT_REF_PATTERN = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/\-]+$/;
 
 interface GitStatusResult {
   success: boolean;
@@ -19,90 +22,141 @@ interface GitStatusResult {
   error?: string;
 }
 
-/**
- * Ensure Git is configured with user identity
- */
-async function ensureGitConfig(workspacePath: string): Promise<void> {
-  try {
-    // Check if user.name is set
-    const nameCheck = await execAsync('git config user.name', {
-      cwd: workspacePath,
-      shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'
-    }).catch(() => ({ stdout: '' }));
-    
-    if (!nameCheck.stdout || !nameCheck.stdout.trim()) {
-      // Set default Git config if not configured
-      await execAsync('git config user.name "AgentPrime User"', {
-        cwd: workspacePath,
-        shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'
-      }).catch(() => {}); // Ignore errors if config fails
-    }
-
-    // Check if user.email is set
-    const emailCheck = await execAsync('git config user.email', {
-      cwd: workspacePath,
-      shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'
-    }).catch(() => ({ stdout: '' }));
-    
-    if (!emailCheck.stdout || !emailCheck.stdout.trim()) {
-      // Set default Git config if not configured
-      await execAsync('git config user.email "agentprime@local.dev"', {
-        cwd: workspacePath,
-        shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'
-      }).catch(() => {}); // Ignore errors if config fails
-    }
-  } catch (error) {
-    // Silently fail - Git might not be initialized or config might be locked
-  }
+interface GitExecResult {
+  success: boolean;
+  output?: string;
+  stderr?: string;
+  error?: string;
 }
 
-/**
- * Execute git command in workspace
- */
-async function execGit(workspacePath: string, command: string): Promise<{ success: boolean; output?: string; stderr?: string; error?: string }> {
-  if (!workspacePath) {
-    return { success: false, error: 'No workspace' };
+interface GitHandlersDeps {
+  ipcMain: IpcMain;
+  getWorkspacePath: () => string | null;
+}
+
+function tokenizeGitCommand(command: string): string[] {
+  return (command.match(/"[^"]*"|\S+/g) || []).map((token) =>
+    token.startsWith('"') && token.endsWith('"') ? token.slice(1, -1) : token
+  );
+}
+
+function parseSafeGitCommand(command: string): { args?: string[]; error?: string } {
+  const validation = validateCommand(command, { allowShellOperators: false });
+  if (!validation.valid) {
+    return { error: `Invalid git command: ${validation.errors.join('; ')}` };
   }
 
-  // Ensure Git is configured before running commands
-  await ensureGitConfig(workspacePath);
+  const tokens = tokenizeGitCommand(validation.sanitized || command);
+  if (tokens[0] === 'git') {
+    tokens.shift();
+  }
+  if (tokens.length === 0) {
+    return { error: 'Git command is required' };
+  }
 
-  try {
-    const { stdout, stderr } = await execAsync(`git ${command}`, {
-      cwd: workspacePath,
-      shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
-      maxBuffer: 10 * 1024 * 1024
-    });
-    return { success: true, output: stdout, stderr };
-  } catch (error: any) {
-    // If error is about missing Git config, try to set it and retry once
-    if (error.message && error.message.includes('Author identity unknown')) {
-      await ensureGitConfig(workspacePath);
-      try {
-        const { stdout, stderr } = await execAsync(`git ${command}`, {
-          cwd: workspacePath,
-          shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/bash',
-          maxBuffer: 10 * 1024 * 1024
-        });
-        return { success: true, output: stdout, stderr };
-      } catch (retryError: any) {
-        return { success: false, error: retryError.message, stderr: retryError.stderr };
+  const [subcommand, ...rest] = tokens;
+  switch (subcommand) {
+    case 'status':
+      if (rest.length === 0 || (rest.length === 1 && rest[0] === '--porcelain')) {
+        return { args: [subcommand, ...rest] };
       }
-    }
-    return { success: false, error: error.message, stderr: error.stderr };
+      break;
+    case 'diff':
+      if (rest.length <= 2) {
+        return { args: [subcommand, ...rest] };
+      }
+      break;
+    case 'branch':
+      if (rest.length === 1 && rest[0] === '-a') {
+        return { args: [subcommand, ...rest] };
+      }
+      break;
+    case 'log':
+      if (rest.length <= 3) {
+        return { args: [subcommand, ...rest] };
+      }
+      break;
+    case 'rev-parse':
+      if (rest.length === 1 && rest[0] === '--abbrev-ref') {
+        return { args: [subcommand, ...rest, 'HEAD'] };
+      }
+      if (rest.length === 2 && rest[0] === '--abbrev-ref' && rest[1] === 'HEAD') {
+        return { args: [subcommand, ...rest] };
+      }
+      break;
+    default:
+      break;
   }
+
+  return { error: `Unsupported git-command subcommand: ${subcommand}` };
 }
 
-/**
- * Parse git status output
- */
+function validateGitRef(value: string, label: string): string | null {
+  if (!value || !SAFE_GIT_REF_PATTERN.test(value)) {
+    return `${label} contains unsupported characters`;
+  }
+  return null;
+}
+
+function resolveGitPath(filePath: string, workspacePath: string): { relativePath?: string; error?: string } {
+  const validation = resolveValidatedPath(filePath, workspacePath, {
+    allowAbsolute: true,
+    sanitizeFilename: false,
+  });
+  if (!validation.valid || !validation.resolvedPath) {
+    return { error: `Invalid file path: ${validation.errors.join('; ')}` };
+  }
+
+  const relativePath = path.relative(workspacePath, validation.resolvedPath).replace(/\\/g, '/');
+  if (!relativePath || relativePath.startsWith('..')) {
+    return { error: 'File path must stay within the workspace' };
+  }
+
+  return { relativePath };
+}
+
+async function runGit(workspacePath: string, args: string[]): Promise<GitExecResult> {
+  return new Promise((resolve) => {
+    log.info(`Running git ${args.join(' ')}`);
+
+    const child = spawn('git', args, {
+      cwd: workspacePath,
+      shell: false,
+      windowsHide: true,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ success: true, output: stdout, stderr });
+        return;
+      }
+      const error = stderr.trim() || stdout.trim() || `git exited with code ${code}`;
+      resolve({ success: false, output: stdout, stderr, error });
+    });
+
+    child.on('error', (error) => {
+      resolve({ success: false, stderr, error: error.message });
+    });
+  });
+}
+
 function parseGitStatus(output: string): { staged: string[]; modified: string[]; untracked: string[]; deleted: string[] } {
-  const lines = output.split('\n').filter(l => l.trim());
+  const lines = output.split('\n').filter((line) => line.trim());
   const result = {
     staged: [] as string[],
     modified: [] as string[],
     untracked: [] as string[],
-    deleted: [] as string[]
+    deleted: [] as string[],
   };
 
   for (const line of lines) {
@@ -128,101 +182,110 @@ function parseGitStatus(output: string): { staged: string[]; modified: string[];
   return result;
 }
 
-interface GitHandlersDeps {
-  ipcMain: IpcMain;
-  getWorkspacePath: () => string | null;
-}
-
-/**
- * Register git-related IPC handlers
- */
 export function register(deps: GitHandlersDeps): void {
   const { ipcMain, getWorkspacePath } = deps;
 
-  // Get git status
   ipcMain.handle('git-status', async (): Promise<GitStatusResult> => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
-    
-    // Get branch name
-    const branchResult = await execGit(workspacePath, 'rev-parse --abbrev-ref HEAD');
+
+    const branchResult = await runGit(workspacePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
     const branch = branchResult.success ? (branchResult.output || '').trim() : 'unknown';
 
-    // Get status
-    const statusResult = await execGit(workspacePath, 'status --porcelain');
+    const statusResult = await runGit(workspacePath, ['status', '--porcelain']);
     if (!statusResult.success) {
       return { success: false, error: statusResult.error };
     }
 
-    const parsed = parseGitStatus(statusResult.output || '');
-
     return {
       success: true,
       branch,
-      ...parsed
+      ...parseGitStatus(statusResult.output || ''),
     };
   });
 
-  // Git commit
-  ipcMain.handle('git-commit', async (event, message: string) => {
+  ipcMain.handle('git-commit', async (_event, message: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
-    
-    if (!message || !message.trim()) {
+
+    const validation = validateCommand(message, { allowShellOperators: true });
+    if (!validation.valid || !(validation.sanitized || '').trim()) {
       return { success: false, error: 'Commit message required' };
     }
 
-    const result = await execGit(workspacePath, `add . && git commit -m "${message.replace(/"/g, '\\"')}"`);
-    return result;
+    const addResult = await runGit(workspacePath, ['add', '--all']);
+    if (!addResult.success) {
+      return addResult;
+    }
+
+    return runGit(workspacePath, ['commit', '-m', (validation.sanitized || message).trim()]);
   });
 
-  // Git command (generic)
-  ipcMain.handle('git-command', async (event, command: string) => {
+  ipcMain.handle('git-command', async (_event, command: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    return execGit(workspacePath, command);
+    const parsed = parseSafeGitCommand(command);
+    if (!parsed.args) {
+      return { success: false, error: parsed.error || 'Unsupported git command' };
+    }
+
+    return runGit(workspacePath, parsed.args);
   });
 
-  // Git diff
-  ipcMain.handle('git-diff', async (event, filePath?: string) => {
+  ipcMain.handle('git-diff', async (_event, filePath?: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    const cmd = filePath ? `diff "${filePath}"` : 'diff';
-    return execGit(workspacePath, cmd);
+    if (!filePath) {
+      return runGit(workspacePath, ['diff']);
+    }
+
+    const resolved = resolveGitPath(filePath, workspacePath);
+    if (!resolved.relativePath) {
+      return { success: false, error: resolved.error };
+    }
+
+    return runGit(workspacePath, ['diff', '--', resolved.relativePath]);
   });
 
-  // Git stage file
-  ipcMain.handle('git-stage', async (event, filePath: string) => {
+  ipcMain.handle('git-stage', async (_event, filePath: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    return execGit(workspacePath, `add "${filePath}"`);
+    const resolved = resolveGitPath(filePath, workspacePath);
+    if (!resolved.relativePath) {
+      return { success: false, error: resolved.error };
+    }
+
+    return runGit(workspacePath, ['add', '--', resolved.relativePath]);
   });
 
-  // Git unstage file
-  ipcMain.handle('git-unstage', async (event, filePath: string) => {
+  ipcMain.handle('git-unstage', async (_event, filePath: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    return execGit(workspacePath, `reset HEAD "${filePath}"`);
+    const resolved = resolveGitPath(filePath, workspacePath);
+    if (!resolved.relativePath) {
+      return { success: false, error: resolved.error };
+    }
+
+    return runGit(workspacePath, ['reset', 'HEAD', '--', resolved.relativePath]);
   });
 
-  // Git push
-  ipcMain.handle('git-push', async (event, remote?: string, branch?: string) => {
+  ipcMain.handle('git-push', async (_event, remote?: string, branch?: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
@@ -230,11 +293,16 @@ export function register(deps: GitHandlersDeps): void {
 
     const remoteName = remote || 'origin';
     const branchName = branch || 'HEAD';
-    return execGit(workspacePath, `push ${remoteName} ${branchName}`);
+    const remoteError = validateGitRef(remoteName, 'Remote');
+    const branchError = branchName === 'HEAD' ? null : validateGitRef(branchName, 'Branch');
+    if (remoteError || branchError) {
+      return { success: false, error: remoteError || branchError || 'Invalid git ref' };
+    }
+
+    return runGit(workspacePath, ['push', remoteName, branchName]);
   });
 
-  // Git pull
-  ipcMain.handle('git-pull', async (event, remote?: string, branch?: string) => {
+  ipcMain.handle('git-pull', async (_event, remote?: string, branch?: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
@@ -242,55 +310,68 @@ export function register(deps: GitHandlersDeps): void {
 
     const remoteName = remote || 'origin';
     const branchName = branch || 'HEAD';
-    return execGit(workspacePath, `pull ${remoteName} ${branchName}`);
+    const remoteError = validateGitRef(remoteName, 'Remote');
+    const branchError = branchName === 'HEAD' ? null : validateGitRef(branchName, 'Branch');
+    if (remoteError || branchError) {
+      return { success: false, error: remoteError || branchError || 'Invalid git ref' };
+    }
+
+    return runGit(workspacePath, ['pull', remoteName, branchName]);
   });
 
-  // Git branches
   ipcMain.handle('git-branches', async () => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    const result = await execGit(workspacePath, 'branch -a');
+    const result = await runGit(workspacePath, ['branch', '-a']);
     if (!result.success) {
       return result;
     }
 
     const branches = (result.output || '')
       .split('\n')
-      .filter(line => line.trim())
-      .map(line => {
+      .filter((line) => line.trim())
+      .map((line) => {
         const trimmed = line.trim();
         const isCurrent = trimmed.startsWith('*');
         const name = trimmed.replace(/^\*\s*/, '').replace(/^remotes\/[^/]+\//, '');
         return {
           name,
           current: isCurrent,
-          remote: trimmed.includes('remotes/')
+          remote: trimmed.includes('remotes/'),
         };
       });
 
     return { success: true, branches };
   });
 
-  // Git checkout branch
-  ipcMain.handle('git-checkout', async (event, branch: string) => {
+  ipcMain.handle('git-checkout', async (_event, branch: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    return execGit(workspacePath, `checkout "${branch}"`);
+    const branchError = validateGitRef(branch, 'Branch');
+    if (branchError) {
+      return { success: false, error: branchError };
+    }
+
+    return runGit(workspacePath, ['checkout', branch]);
   });
 
-  // Git create branch
-  ipcMain.handle('git-create-branch', async (event, branch: string) => {
+  ipcMain.handle('git-create-branch', async (_event, branch: string) => {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) {
       return { success: false, error: 'No workspace' };
     }
 
-    return execGit(workspacePath, `checkout -b "${branch}"`);
+    const branchError = validateGitRef(branch, 'Branch');
+    if (branchError) {
+      return { success: false, error: branchError };
+    }
+
+    return runGit(workspacePath, ['checkout', '-b', branch]);
   });
 }

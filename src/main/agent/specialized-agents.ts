@@ -21,11 +21,11 @@ import { getRelevantPatterns, getAntiPatterns, storeTaskLearning } from '../mirr
 import { loadOpusExamples } from '../mirror/opus-example-loader';
 import * as fs from 'fs';
 import * as path from 'path';
-import { withAITimeoutAndRetry, withSmartFallback, TimeoutError, FALLBACK_MODEL_CHAIN, detectModelSize, type RuntimeBudgetMode } from '../core/timeout-utils';
-import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
+import { withAITimeoutAndRetry, withSmartFallback, FALLBACK_MODEL_CHAIN, detectModelSize, type RuntimeBudgetMode } from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
 import { getBudgetAdjustedMaxTokens, getRecommendedMaxTokens } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
+import { createLogger } from '../core/logger';
 import { validateToolCall, fixToolCall, resetFileTracker, populateFileTracker, validatePackageJson, validateIndexHtml, validateJavaScriptFile, detectOrphanedFiles, getFileTrackerState, FileTrackerMode } from './tool-validation';
 import { sanitizeFileName } from '../security/ipcValidation';
 import { spawn } from 'child_process';
@@ -48,6 +48,8 @@ import {
   type SpecialistId,
 } from './specialist-contracts';
 import { resolveAgentAutonomyPolicy } from './autonomy-policy';
+
+const log = createLogger('MirrorAgents');
 
 interface AgentPendingFileChange {
   filePath: string;
@@ -86,13 +88,13 @@ export async function bootstrapDeterministicScaffold(
     runPostCreate: false,
   });
   if (!scaffolded.success) {
-    console.warn(`[MirrorAgents] Deterministic bootstrap skipped: ${scaffolded.error}`);
+    log.warn(`[MirrorAgents] Deterministic bootstrap skipped: ${scaffolded.error}`);
     return [];
   }
 
   if (scaffolded.createdFiles.length > 0) {
     populateFileTracker(scaffolded.createdFiles);
-    console.log(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffolded file(s)`);
+    log.info(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffolded file(s)`);
   }
 
   return scaffolded.createdFiles.map((filePath) => ({
@@ -184,7 +186,7 @@ async function getBestAvailableModel(preferredModels: Array<{provider: string, m
   // First, check for cloud providers - they don't need local checks!
   for (const pref of preferredModels) {
     if (isCloudProvider(pref.provider, pref.model)) {
-      console.log(`[ModelSelector] ☁️ Using CLOUD provider: ${pref.provider}/${pref.model}`);
+      log.info(`[ModelSelector] ☁️ Using CLOUD provider: ${pref.provider}/${pref.model}`);
       return pref;
     }
   }
@@ -193,11 +195,11 @@ async function getBestAvailableModel(preferredModels: Array<{provider: string, m
   const health = await checkOllamaHealth();
   
   if (!health.healthy) {
-    console.warn(`[ModelSelector] Local Ollama not available: ${health.error}`);
+    log.warn(`[ModelSelector] Local Ollama not available: ${health.error}`);
     // If local Ollama isn't running but we have cloud providers, use first one
     const cloudModel = preferredModels.find(p => isCloudProvider(p.provider, p.model));
     if (cloudModel) {
-      console.log(`[ModelSelector] ☁️ Falling back to cloud provider: ${cloudModel.provider}/${cloudModel.model}`);
+      log.info(`[ModelSelector] ☁️ Falling back to cloud provider: ${cloudModel.provider}/${cloudModel.model}`);
       return cloudModel;
     }
     return null;
@@ -215,7 +217,7 @@ async function getBestAvailableModel(preferredModels: Array<{provider: string, m
       );
       
       if (isInstalled) {
-        console.log(`[ModelSelector] Using available local model: ${pref.model}`);
+        log.info(`[ModelSelector] Using available local model: ${pref.model}`);
         return pref;
       }
     }
@@ -223,7 +225,7 @@ async function getBestAvailableModel(preferredModels: Array<{provider: string, m
   
   // Return first available model as last resort
   if (health.models.length > 0) {
-    console.log(`[ModelSelector] Using first available model: ${health.models[0]}`);
+    log.info(`[ModelSelector] Using first available model: ${health.models[0]}`);
     return { provider: 'ollama', model: health.models[0] };
   }
   
@@ -382,9 +384,9 @@ ${basePrompt}`;
       enhancedPrompt += '**Your output should be INDISTINGUISHABLE from Claude Opus.**\n';
     }
     
-    console.log(`[MirrorAgents] 🧠 Enhanced ${role} prompt with ${mirror.patterns.length} patterns, ${mirror.opusExamples.length} Opus examples, ${mirror.antiPatterns.length} anti-patterns`);
+    log.info(`[MirrorAgents] 🧠 Enhanced ${role} prompt with ${mirror.patterns.length} patterns, ${mirror.opusExamples.length} Opus examples, ${mirror.antiPatterns.length} anti-patterns`);
   } catch (error) {
-    console.warn('[MirrorAgents] Could not enhance prompt with patterns:', error);
+    log.warn('[MirrorAgents] Could not enhance prompt with patterns:', error);
   }
   
   return enhancedPrompt;
@@ -1278,7 +1280,7 @@ export function routeToSpecialists(
   if (needsStylingUx && (!isGameHeavyTask || explicitStylingOnlyRequest)) {
     roles.push('styling_ux_specialist');
   } else if (needsStylingUx && isGameHeavyTask) {
-    console.log('[RouteToSpecialists] Deferring styling_ux_specialist for game-heavy implementation task');
+    log.info('[RouteToSpecialists] Deferring styling_ux_specialist for game-heavy implementation task');
   }
   if (isPython) {
     roles.push('python_specialist');
@@ -1308,7 +1310,7 @@ export function routeToSpecialists(
     taskLower.includes('new');
 
   if (roles.length === 1 && roles[0] === 'tool_orchestrator' && isCreationTask) {
-    console.log('[RouteToSpecialists] No specialist detected for creation task, defaulting to javascript_specialist');
+    log.info('[RouteToSpecialists] No specialist detected for creation task, defaulting to javascript_specialist');
     roles.push('javascript_specialist');
   }
 
@@ -1513,7 +1515,7 @@ function parseToolCalls(content: string): any[] {
     }
   }
 
-  console.log(`[parseToolCalls] Extracted ${toolCalls.length} tool calls from response (${parseFailures} JSON candidate parse failures)`);
+  log.info(`[parseToolCalls] Extracted ${toolCalls.length} tool calls from response (${parseFailures} JSON candidate parse failures)`);
   return toolCalls;
 }
 
@@ -1632,7 +1634,7 @@ async function executeScaffoldProjectTool(
 
   if (scaffolded.createdFiles.length > 0) {
     populateFileTracker(scaffolded.createdFiles);
-    console.log(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffold tool file(s)`);
+    log.info(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffold tool file(s)`);
   }
 
   return {
@@ -1672,7 +1674,7 @@ async function executeTool(
         const originalFileName = pathParts[pathParts.length - 1];
         const sanitizedFileName = sanitizeFileName(originalFileName);
         if (sanitizedFileName !== originalFileName) {
-          console.log(`[ToolExecution] Sanitized filename: "${originalFileName}" -> "${sanitizedFileName}"`);
+          log.info(`[ToolExecution] Sanitized filename: "${originalFileName}" -> "${sanitizedFileName}"`);
           pathParts[pathParts.length - 1] = sanitizedFileName;
           sanitizedPath = pathParts.join('/');
         }
@@ -1688,10 +1690,10 @@ async function executeTool(
       if (sanitizedPath.endsWith('package.json')) {
         const pkgValidation = validatePackageJson(args.content || '');
         if (pkgValidation.warning) {
-          console.warn(`[ToolExecution] ⚠️ ${pkgValidation.warning}`);
+          log.warn(`[ToolExecution] ⚠️ ${pkgValidation.warning}`);
         }
         if (!pkgValidation.valid) {
-          console.error(`[ToolExecution] ❌ package.json validation failed: ${pkgValidation.error}`);
+          log.error(`[ToolExecution] ❌ package.json validation failed: ${pkgValidation.error}`);
           return { action: 'write_file', path: sanitizedPath, error: pkgValidation.error, success: false };
         }
       }
@@ -1701,7 +1703,7 @@ async function executeTool(
         // Quick check if there's a stylesheet link at all
         const hasStylesheetLink = (args.content || '').toLowerCase().includes('rel="stylesheet"');
         if (!hasStylesheetLink) {
-          console.warn(`[ToolExecution] ⚠️ index.html has no <link rel="stylesheet"> tag - page may be unstyled!`);
+          log.warn(`[ToolExecution] ⚠️ index.html has no <link rel="stylesheet"> tag - page may be unstyled!`);
         }
       }
       
@@ -1709,7 +1711,7 @@ async function executeTool(
       if (sanitizedPath.endsWith('.js') || sanitizedPath.endsWith('.ts') || sanitizedPath.endsWith('.jsx') || sanitizedPath.endsWith('.tsx')) {
         const jsValidation = validateJavaScriptFile(args.content || '', sanitizedPath, { workspacePath });
         if (jsValidation.warning) {
-          console.warn(`[ToolExecution] ⚠️ JavaScript validation warning:\n${jsValidation.warning}`);
+          log.warn(`[ToolExecution] ⚠️ JavaScript validation warning:\n${jsValidation.warning}`);
         }
       }
       
@@ -2151,7 +2153,7 @@ export async function executeWithSpecialists(
   // - CREATE: Full reset for new projects
   // - FIX/REVIEW/ENHANCE: Preserve existing files to prevent accidental overwrites
   resetFileTracker(taskMode);
-  console.log(`[MirrorAgents] 🛡️ File tracker mode: ${taskMode.toUpperCase()}`);
+  log.info(`[MirrorAgents] 🛡️ File tracker mode: ${taskMode.toUpperCase()}`);
   
   // In FIX/ENHANCE mode, populate tracker with existing project files
   if ((taskMode === 'fix' || taskMode === 'enhance') && context.workspacePath) {
@@ -2159,18 +2161,18 @@ export async function executeWithSpecialists(
       const existingFiles = getAllProjectFiles(context.workspacePath);
       populateFileTracker(existingFiles);
     } catch (e) {
-      console.warn('[MirrorAgents] Could not populate file tracker with existing files:', e);
+      log.warn('[MirrorAgents] Could not populate file tracker with existing files:', e);
     }
   }
 
-  console.log('[MirrorAgents] 🧠 Starting mirror-enhanced specialized agent execution');
+  log.info('[MirrorAgents] 🧠 Starting mirror-enhanced specialized agent execution');
 
   // Soft health check — warn but don't block if cloud providers are available
   const health = await checkOllamaHealth();
   if (health.healthy) {
-    console.log(`[MirrorAgents] ✅ Ollama healthy with ${health.models.length} models available`);
+    log.info(`[MirrorAgents] ✅ Ollama healthy with ${health.models.length} models available`);
   } else {
-    console.warn(`[MirrorAgents] ⚠️ Ollama not reachable (${health.error}). Will use cloud providers if available.`);
+    log.warn(`[MirrorAgents] ⚠️ Ollama not reachable (${health.error}). Will use cloud providers if available.`);
   }
 
   // Shared context for agent coordination
@@ -2234,7 +2236,7 @@ export async function executeWithSpecialists(
     beginPhase('planning', { skipped: true, deterministicScaffoldOnly: true });
     endPhase('planning', 'success', { skipped: true, deterministicScaffoldOnly: true });
   } else {
-    console.log(`[MirrorAgents] 📋 Step 0: Planning with ${planningModel.model}`);
+    log.info(`[MirrorAgents] 📋 Step 0: Planning with ${planningModel.model}`);
     markBlackboardOwner(blackboard, 'tool_orchestrator', 'planning');
     beginPhase('planning', { requestedProvider: planningModel.provider, requestedModel: planningModel.model });
     aiRouter.setActiveProvider(planningModel.provider, planningModel.model);
@@ -2273,7 +2275,7 @@ Output as a structured list. Be specific and comprehensive.` }
         runtimeBudget
       );
     } catch (error) {
-      console.warn('[MirrorAgents] ⚠️ Planning phase failed, continuing without structured plan');
+      log.warn('[MirrorAgents] ⚠️ Planning phase failed, continuing without structured plan');
       planningResponse = { success: false };
     }
 
@@ -2287,7 +2289,7 @@ Output as a structured list. Be specific and comprehensive.` }
         summary: `Planning extracted ${requirements.length} requirement(s).`,
         payload: { requirements, planContent },
       });
-      console.log(`[MirrorAgents] 📋 Planning complete: ${requirements.length} requirements identified`);
+      log.info(`[MirrorAgents] 📋 Planning complete: ${requirements.length} requirements identified`);
       endPhase('planning', 'success', {
         requestedProvider: planningModel.provider,
         requestedModel: planningModel.model,
@@ -2306,7 +2308,7 @@ Output as a structured list. Be specific and comprehensive.` }
   // Create checkpoint after planning
   const planningCheckpoint = transactionManager.createCheckpoint('planning_complete');
   if (planningCheckpoint) {
-    console.log(`[MirrorAgents] ✅ Checkpoint created: ${planningCheckpoint}`);
+    log.info(`[MirrorAgents] ✅ Checkpoint created: ${planningCheckpoint}`);
   }
 
   beginPhase('deterministic_scaffold');
@@ -2324,7 +2326,7 @@ Output as a structured list. Be specific and comprehensive.` }
       summary: `Deterministic scaffold applied with ${bootstrappedTools.length} file(s).`,
       payload: { templateId: scaffoldTemplateId, files: bootstrappedTools.map((tool) => tool.result?.path).filter(Boolean) },
     });
-    console.log(`[MirrorAgents] 🧱 Bootstrapped ${bootstrappedTools.length} template file(s) before specialist generation`);
+    log.info(`[MirrorAgents] 🧱 Bootstrapped ${bootstrappedTools.length} template file(s) before specialist generation`);
     executedTools.push(...bootstrappedTools);
     for (const bootstrapped of bootstrappedTools) {
       if (bootstrapped.result.action === 'write_file' && bootstrapped.result.path) {
@@ -2346,7 +2348,7 @@ Output as a structured list. Be specific and comprehensive.` }
   }
 
   if (scaffoldApplied && deterministicScaffoldOnly) {
-    console.log('[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists');
+    log.info('[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists');
     return {
       results,
       finalAnalysis,
@@ -2378,7 +2380,7 @@ Output as a structured list. Be specific and comprehensive.` }
     : `${task}\n\nCreate ALL necessary files for this project. Output each file as a JSON tool call on its own line.`;
 
   // Use SMART FALLBACK - tries fast models first, falls back gracefully
-  console.log('[MirrorAgents] 🚀 Starting orchestrator with smart fallback...');
+  log.info('[MirrorAgents] 🚀 Starting orchestrator with smart fallback...');
   markBlackboardOwner(blackboard, 'tool_orchestrator', 'executing');
   beginPhase('orchestrator', {
     requestedProvider: orchestratorProvider,
@@ -2422,7 +2424,7 @@ Output as a structured list. Be specific and comprehensive.` }
     orchestratorResponse = result.result;
     usedProvider = result.finalProvider || usedProvider;
     if (result.usedFallback) {
-      console.log(`[MirrorAgents] ⚡ Used fallback model: ${result.finalProvider}/${result.finalModel} (${result.attempts} attempts)`);
+      log.info(`[MirrorAgents] ⚡ Used fallback model: ${result.finalProvider}/${result.finalModel} (${result.attempts} attempts)`);
       usedModel = result.finalModel || usedModel;
     }
     endPhase('orchestrator', 'success', {
@@ -2461,7 +2463,7 @@ Output as a structured list. Be specific and comprehensive.` }
     throw new Error(`Orchestrator failed: ${orchestratorResponse.error}`);
   }
   
-  console.log(`[MirrorAgents] ✅ Orchestrator completed with ${usedModel}`);
+  log.info(`[MirrorAgents] ✅ Orchestrator completed with ${usedModel}`);
 
   results.set('tool_orchestrator', orchestratorResponse.content || '');
 
@@ -2483,7 +2485,7 @@ Output as a structured list. Be specific and comprehensive.` }
         blackboard,
       });
       if (!validation.valid) {
-        console.error(`[ToolValidation] Orchestrator tool validation failed: ${validation.error}`);
+        log.error(`[ToolValidation] Orchestrator tool validation failed: ${validation.error}`);
         mistakes.push(`Tool validation failed: ${validation.error}`);
         continue;
       }
@@ -2551,7 +2553,7 @@ Output as a structured list. Be specific and comprehensive.` }
         });
       }
     } catch (error) {
-      console.warn(`Orchestrator tool execution failed:`, error);
+      log.warn(`Orchestrator tool execution failed:`, error);
       mistakes.push(`Orchestrator tool execution: ${error}`);
       const normalized = normalizeToolCallShape(toolCall) || { name: 'unknown_tool', arguments: {} };
       const toolName = normalized.name || 'unknown_tool';
@@ -2570,12 +2572,12 @@ Output as a structured list. Be specific and comprehensive.` }
   // Create checkpoint after orchestrator
   const orchestratorCheckpoint = transactionManager.createCheckpoint('orchestrator_complete');
   if (orchestratorCheckpoint) {
-    console.log(`[MirrorAgents] ✅ Checkpoint created: ${orchestratorCheckpoint}`);
+    log.info(`[MirrorAgents] ✅ Checkpoint created: ${orchestratorCheckpoint}`);
   }
 
   // Step 2: Execute specialists - they generate code that gets written to files
   // ENHANCED: Use smart fallback for each specialist
-  console.log('[MirrorAgents] 🔧 Running specialists with smart fallback...');
+  log.info('[MirrorAgents] 🔧 Running specialists with smart fallback...');
 
   for (const role of roles) {
     assertNotCancelled();
@@ -2642,7 +2644,7 @@ ${buildSharedContext(sharedContext)}`
       const response = specialistResult.result;
       
       if (specialistResult.usedFallback) {
-        console.log(`[MirrorAgents] ⚡ ${role} used fallback: ${specialistResult.finalProvider}/${specialistResult.finalModel}`);
+        log.info(`[MirrorAgents] ⚡ ${role} used fallback: ${specialistResult.finalProvider}/${specialistResult.finalModel}`);
       }
 
       if (response.success) {
@@ -2658,7 +2660,7 @@ ${buildSharedContext(sharedContext)}`
         
         // 🔧 CRITICAL FIX: Parse and execute tool calls from specialists too!
         const specialistTools = parseToolCalls(response.content || '');
-        console.log(`[MirrorAgents] Specialist ${role} returned ${specialistTools.length} tool calls`);
+        log.info(`[MirrorAgents] Specialist ${role} returned ${specialistTools.length} tool calls`);
         
         for (const toolCall of specialistTools) {
           assertNotCancelled();
@@ -2676,7 +2678,7 @@ ${buildSharedContext(sharedContext)}`
               blackboard,
             });
             if (!validation.valid) {
-              console.error(`[ToolValidation] ${role} tool validation failed: ${validation.error}`);
+              log.error(`[ToolValidation] ${role} tool validation failed: ${validation.error}`);
               mistakes.push(`${role} tool validation failed: ${validation.error}`);
               continue;
             }
@@ -2719,7 +2721,7 @@ ${buildSharedContext(sharedContext)}`
             // Track created files in shared context
             if (result.action === 'write_file' && result.path) {
               sharedContext.filesCreated.set(result.path, role);
-              console.log(`[MirrorAgents] ✅ ${role} created file: ${result.path}`);
+              log.info(`[MirrorAgents] ✅ ${role} created file: ${result.path}`);
               addBlackboardArtifact(blackboard, {
                 type: 'file_patch_set',
                 author: resolveBlackboardSpecialistId(role),
@@ -2729,7 +2731,7 @@ ${buildSharedContext(sharedContext)}`
             } else if (result.action === 'scaffold_project' && Array.isArray(result.files)) {
               for (const file of result.files) {
                 sharedContext.filesCreated.set(file, role);
-                console.log(`[MirrorAgents] ✅ ${role} scaffolded file: ${file}`);
+                log.info(`[MirrorAgents] ✅ ${role} scaffolded file: ${file}`);
               }
               addBlackboardArtifact(blackboard, {
                 type: 'scaffold_result',
@@ -2746,7 +2748,7 @@ ${buildSharedContext(sharedContext)}`
               });
             }
           } catch (error) {
-            console.warn(`[MirrorAgents] ${role} tool execution failed:`, error);
+            log.warn(`[MirrorAgents] ${role} tool execution failed:`, error);
             mistakes.push(`${role} tool execution: ${error}`);
             const normalized = normalizeToolCallShape(toolCall) || { name: 'unknown_tool', arguments: {} };
             const toolName = normalized.name || 'unknown_tool';
@@ -2770,7 +2772,7 @@ ${buildSharedContext(sharedContext)}`
         });
         completeBlackboardStep(blackboard, role, true);
       } else {
-        console.warn(`[MirrorAgents] Agent ${role} failed: ${response.error}`);
+        log.warn(`[MirrorAgents] Agent ${role} failed: ${response.error}`);
         mistakes.push(`Agent ${role} failed: ${response.error}`);
         results.set(role, `Failed: ${response.error}`);
         endPhase(phaseName, 'failure', {
@@ -2782,7 +2784,7 @@ ${buildSharedContext(sharedContext)}`
         completeBlackboardStep(blackboard, role, false);
       }
     } catch (error: any) {
-      console.warn(`[MirrorAgents] Agent ${role} failed completely: ${error.message}`);
+      log.warn(`[MirrorAgents] Agent ${role} failed completely: ${error.message}`);
       mistakes.push(`Agent ${role} failed: ${error.message}`);
       results.set(role, `Failed: ${error.message}`);
       endPhase(phaseName, 'failure', {
@@ -2844,7 +2846,7 @@ ${buildSharedContext(sharedContext)}`
       
       analysis = analysisResult.result;
       if (analysisResult.usedFallback) {
-        console.log(`[MirrorAgents] ⚡ Analyst used fallback: ${analysisResult.finalProvider}/${analysisResult.finalModel}`);
+        log.info(`[MirrorAgents] ⚡ Analyst used fallback: ${analysisResult.finalProvider}/${analysisResult.finalModel}`);
       }
       endPhase('integration_analysis', 'success', {
         requestedProvider: analyst.provider,
@@ -2855,7 +2857,7 @@ ${buildSharedContext(sharedContext)}`
         usedFallback: analysisResult.usedFallback,
       });
     } catch (error: any) {
-      console.warn(`[MirrorAgents] Integration analyst failed: ${error.message}`);
+      log.warn(`[MirrorAgents] Integration analyst failed: ${error.message}`);
       analysis = { success: false, error: error.message };
       endPhase('integration_analysis', 'failure', {
         requestedProvider: analyst.provider,
@@ -2865,7 +2867,7 @@ ${buildSharedContext(sharedContext)}`
     }
 
     if (analysis.success) {
-      console.log('[MirrorAgents] ✅ Integration analysis complete');
+      log.info('[MirrorAgents] ✅ Integration analysis complete');
       finalAnalysis = analysis.content || undefined;
 
       // Execute any tools the analyst wants to run
@@ -2886,7 +2888,7 @@ ${buildSharedContext(sharedContext)}`
             blackboard,
           });
           if (!validation.valid) {
-            console.error(`[ToolValidation] Analyst tool validation failed: ${validation.error}`);
+            log.error(`[ToolValidation] Analyst tool validation failed: ${validation.error}`);
             mistakes.push(`Analyst tool validation failed: ${validation.error}`);
             continue;
           }
@@ -2940,7 +2942,7 @@ ${buildSharedContext(sharedContext)}`
             });
           }
         } catch (error) {
-          console.warn(`Analyst tool execution failed:`, error);
+          log.warn(`Analyst tool execution failed:`, error);
           mistakes.push(`Analyst tool execution: ${error}`);
           const normalized = normalizeToolCallShape(toolCall) || { name: 'unknown_tool', arguments: {} };
           const toolName = normalized.name || 'unknown_tool';
@@ -2970,10 +2972,10 @@ ${buildSharedContext(sharedContext)}`
           category: 'problemSolving',
           confidence: 0.85
         });
-        console.log('[MirrorAgents] ✅ Project appears successful - storing patterns');
+        log.info('[MirrorAgents] ✅ Project appears successful - storing patterns');
       } else {
         mistakes.push('Project may have issues based on integration analysis');
-        console.log('[MirrorAgents] ⚠️ Project may have issues - storing for learning');
+        log.info('[MirrorAgents] ⚠️ Project may have issues - storing for learning');
       }
     }
   }
@@ -2994,17 +2996,17 @@ ${buildSharedContext(sharedContext)}`
         const htmlValidation = validateIndexHtml(htmlContent, createdFiles);
         
         if (!htmlValidation.valid) {
-          console.error(`[MirrorAgents] ❌ POST-VALIDATION FAILED: ${htmlValidation.error}`);
+          log.error(`[MirrorAgents] ❌ POST-VALIDATION FAILED: ${htmlValidation.error}`);
           mistakes.push(`Missing CSS/JS links in index.html: ${htmlValidation.error}`);
           
           // Log which CSS files exist but aren't linked
           const cssFiles = trackedPaths.filter((filePath) => filePath.endsWith('.css'));
           if (cssFiles.length > 0) {
-            console.error(`[MirrorAgents] 🔴 CSS files created but NOT linked: ${cssFiles.join(', ')}`);
-            console.error(`[MirrorAgents] 🔴 Add to index.html: <link rel="stylesheet" href="/${cssFiles[0]}" />`);
+            log.error(`[MirrorAgents] 🔴 CSS files created but NOT linked: ${cssFiles.join(', ')}`);
+            log.error(`[MirrorAgents] 🔴 Add to index.html: <link rel="stylesheet" href="/${cssFiles[0]}" />`);
           }
         } else {
-          console.log(`[MirrorAgents] ✅ index.html validation passed - CSS/JS properly linked`);
+          log.info(`[MirrorAgents] ✅ index.html validation passed - CSS/JS properly linked`);
         }
       }
     } catch (e) {
@@ -3023,7 +3025,7 @@ ${buildSharedContext(sharedContext)}`
   await storeTaskLearning(task, overallSuccess, successfulPatterns, mistakes);
   blackboard && (blackboard.status = overallSuccess ? 'completed' : blackboard.status);
 
-  console.log(`[MirrorAgents] 🧠 Task completed. Tools executed: ${executedTools.length}, Mistakes: ${mistakes.length}`);
+  log.info(`[MirrorAgents] 🧠 Task completed. Tools executed: ${executedTools.length}, Mistakes: ${mistakes.length}`);
 
   return {
     results,

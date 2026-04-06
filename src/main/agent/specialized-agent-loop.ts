@@ -18,9 +18,9 @@ import { testProjectInBrowser, formatBrowserTestResults } from './tools/projectT
 import * as fs from 'fs';
 import * as path from 'path';
 import { EventEmitter } from 'events';
-import { withAITimeoutAndRetry, TimeoutError } from '../core/timeout-utils';
+import { TimeoutError } from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
-import { retryWithRecovery, getUserFriendlyErrorMessage } from '../core/error-recovery';
+import { retryWithRecovery } from '../core/error-recovery';
 import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
 import { getTelemetryService } from '../core/telemetry-service';
 import { getTaskMaster, type TaskMasterRetryContext } from './task-master';
@@ -45,7 +45,7 @@ import type {
 } from '../../types/agent-review';
 
 import { PromptSanitizer } from '../security/prompt-sanitizer';
-import { createLogger } from '../core/logger';
+import { createLogger, createOperationId } from '../core/logger';
 
 const log = createLogger('SpecializedAgent');
 const MAX_RETRIES = 2;
@@ -160,17 +160,17 @@ export class SpecializedAgentLoop extends EventEmitter {
     );
     if (!hasStylingSpecificFailures && refined.includes('styling_ux_specialist')) {
       refined = refined.filter((role) => role !== 'styling_ux_specialist');
-      console.log('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
+      log.info('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
     }
 
     const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|\[install\]|typescript|ts\d{4}|npm error|yarn error|pnpm error/i.test(error));
     if (isBuildHeavyRetry && refined.includes('integration_analyst')) {
       refined = refined.filter((role) => role !== 'integration_analyst');
-      console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
+      log.info('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
     }
     if (isBuildHeavyRetry && refined.includes('tool_orchestrator')) {
       refined = refined.filter((role) => role !== 'tool_orchestrator');
-      console.log('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping tool_orchestrator');
+      log.info('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping tool_orchestrator');
     }
 
     return refined;
@@ -235,18 +235,26 @@ export class SpecializedAgentLoop extends EventEmitter {
    * Run a task using specialized agents WITH VERIFICATION
    */
   async run(rawUserMessage: string): Promise<string> {
+    const runId = createOperationId('specialrun');
     const sanitization = PromptSanitizer.sanitize(rawUserMessage);
     const userMessage = sanitization.sanitizedText;
 
     if (!sanitization.isSafe) {
-      console.warn(`[Security] Blocked malicious prompt. Flags: ${sanitization.flags.join(', ')}`);
+      log.warn(`[Security] Blocked malicious prompt. Flags: ${sanitization.flags.join(', ')}`);
       this.emit('message', {
         role: 'assistant',
         content: `⚠️ **Security Alert:** Your input contained potentially unsafe instructions (${sanitization.flags.join(', ')}). The request has been neutralized to protect the workspace.`
       });
     }
 
-    console.log('[SpecializedAgent] Starting specialized agent execution...');
+    log.info(`[${runId}] Starting specialized agent execution`, {
+      workspacePath: this.context.workspacePath,
+    });
+    if (this.stopRequested) {
+      log.info(`[${runId}] Stop requested before run start; aborting specialized execution`);
+      this.pendingReviewSession = null;
+      return '⏹️ **Agent stopped by user**\n\nCreated so far: 0 file(s).';
+    }
     this.stopRequested = false;
     this.pendingReviewSession = null;
     this.emit('task-start', { task: userMessage });
@@ -285,11 +293,11 @@ export class SpecializedAgentLoop extends EventEmitter {
     const isUpdate = existingProject !== undefined && workspaceFileCount > 0;
 
     if (existingProject && workspaceFileCount === 0) {
-      console.log(
+      log.info(
         `[SpecializedAgent] ℹ️ Registry entry "${existingProject.name}" found, but workspace is empty; switching to create mode`
       );
     } else if (isUpdate) {
-      console.log(`[SpecializedAgent] 🔄 Updating existing project: ${existingProject.name}`);
+      log.info(`[SpecializedAgent] 🔄 Updating existing project: ${existingProject.name}`);
     }
     const repairScope = this.context.repairScope;
     
@@ -337,7 +345,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       blackboard = this.buildBlackboard(userMessage, mode, roles, retryContext);
       this.emit('blackboard-update', blackboard);
 
-      console.log(`[SpecializedAgent] Attempt ${retryCount + 1}/${MAX_RETRIES + 1} - Routing to: ${roles.join(', ')} (budget: ${runtimeBudget})`);
+      log.info(`[SpecializedAgent] Attempt ${retryCount + 1}/${MAX_RETRIES + 1} - Routing to: ${roles.join(', ')} (budget: ${runtimeBudget})`);
 
       // Step 2: Build the task message (include missing files if retrying)
       let taskMessage = userMessage;
@@ -356,7 +364,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             `${issueSection}` +
             `Original task: ${userMessage}\n\n` +
             `Fix the concrete issues above with targeted edits only. Keep the existing scaffold and working files intact.`;
-          console.log(`[SpecializedAgent] Retry with targeted verification feedback`);
+          log.info(`[SpecializedAgent] Retry with targeted verification feedback`);
         }
       } else if (repairScope) {
         const findingLines = repairScope.findings.map((finding) => `- [${finding.stage}] ${finding.summary}`).join('\n');
@@ -406,20 +414,31 @@ export class SpecializedAgentLoop extends EventEmitter {
 
       let specialistRun: Awaited<ReturnType<typeof executeWithSpecialists>>;
       try {
-        specialistRun = await executeWithSpecialists(
-          taskMessage,
-          roles,
+        const specialistRetryLimit = retryCount > 0 ? 0 : 1;
+        specialistRun = await retryWithRecovery(
+          () => executeWithSpecialists(
+            taskMessage,
+            roles,
+            {
+              workspacePath: this.context.workspacePath,
+              files: this.getProjectFiles(),
+              model: this.context.model,
+              runtimeBudget,
+              autonomyLevel,
+              deterministicScaffoldOnly: this.context.deterministicScaffoldOnly,
+              blackboard,
+            },
+            trackerMode,
+            specialistCallbacks
+          ),
           {
-            workspacePath: this.context.workspacePath,
-            files: this.getProjectFiles(),
+            operation: 'specialized_orchestration',
             model: this.context.model,
-            runtimeBudget,
-            autonomyLevel,
-            deterministicScaffoldOnly: this.context.deterministicScaffoldOnly,
-            blackboard,
+            maxRetries: specialistRetryLimit,
+            userMessage: taskMessage,
+            timestamp: Date.now(),
           },
-          trackerMode,
-          specialistCallbacks
+          specialistRetryLimit
         );
       } catch (error) {
         if (this.stopRequested) {
@@ -447,12 +466,12 @@ export class SpecializedAgentLoop extends EventEmitter {
         }
       }
 
-      console.log(`[SpecializedAgent] Created ${newFiles.length} new files: ${newFiles.join(', ')}`);
+      log.info(`[SpecializedAgent] Created ${newFiles.length} new files: ${newFiles.join(', ')}`);
       if (scaffoldApplied) {
-        console.log(`[SpecializedAgent] 🧱 Scaffold-first path applied (${scaffoldTemplateId || 'template'})`);
+        log.info(`[SpecializedAgent] 🧱 Scaffold-first path applied (${scaffoldTemplateId || 'template'})`);
       }
       if (skippedGenerativePass) {
-        console.log('[SpecializedAgent] 🧪 Skipped long generative pass; proceeding directly to runnable verification');
+        log.info('[SpecializedAgent] 🧪 Skipped long generative pass; proceeding directly to runnable verification');
       }
 
       // Step 5: VERIFY the project is complete
@@ -477,10 +496,10 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
 
       if (lastVerification.isComplete) {
-        console.log('[SpecializedAgent] ✅ Structural verification passed (pre-install/build/runtime checks)');
+        log.info('[SpecializedAgent] ✅ Structural verification passed (pre-install/build/runtime checks)');
 
         if (this.context.deterministicScaffoldOnly) {
-          console.log('[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply');
+          log.info('[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply');
           verificationSucceeded = true;
           if (blackboard) {
             blackboard.status = 'completed';
@@ -511,14 +530,14 @@ export class SpecializedAgentLoop extends EventEmitter {
         // Step 6: BROWSER TESTING - Test the project in a real browser
         if (lastVerification.isComplete) {
           try {
-            console.log('[SpecializedAgent] 🌐 Running browser tests...');
+            log.info('[SpecializedAgent] 🌐 Running browser tests...');
             const browserTestResult = await testProjectInBrowser(this.context.workspacePath);
             
             if (browserTestResult.passed) {
-              console.log(`[SpecializedAgent] ✅ Browser tests passed (score: ${browserTestResult.score}/100)`);
+              log.info(`[SpecializedAgent] ✅ Browser tests passed (score: ${browserTestResult.score}/100)`);
             } else {
-              console.log(`[SpecializedAgent] ⚠️ Browser tests found issues (score: ${browserTestResult.score}/100)`);
-              console.log(formatBrowserTestResults(browserTestResult));
+              log.info(`[SpecializedAgent] ⚠️ Browser tests found issues (score: ${browserTestResult.score}/100)`);
+              log.info(formatBrowserTestResults(browserTestResult));
               
               // Add browser test issues to verification errors
               for (const issue of browserTestResult.issues.filter(i => i.severity === 'critical')) {
@@ -528,7 +547,7 @@ export class SpecializedAgentLoop extends EventEmitter {
               const criticalIssues = browserTestResult.issues.filter(i => i.severity === 'critical');
 
               if (criticalIssues.length > 0 && retryCount < MAX_RETRIES) {
-                console.log(`[SpecializedAgent] 🔧 Found ${criticalIssues.length} critical browser/runtime issues - will retry`);
+                log.info(`[SpecializedAgent] 🔧 Found ${criticalIssues.length} critical browser/runtime issues - will retry`);
                 lastVerification.isComplete = false;
                 lastVerification.errors.push(
                   ...criticalIssues.map(i => `BROWSER FIX NEEDED: ${i.description}. ${i.suggestedFix || ''}`.trim())
@@ -536,7 +555,7 @@ export class SpecializedAgentLoop extends EventEmitter {
               }
             }
           } catch (browserTestError: any) {
-            console.warn('[SpecializedAgent] Browser testing skipped:', browserTestError.message);
+            log.warn('[SpecializedAgent] Browser testing skipped:', browserTestError.message);
           }
         }
         
@@ -552,7 +571,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             }
           } catch (learningErr: unknown) {
             const msg = learningErr instanceof Error ? learningErr.message : String(learningErr);
-            console.warn('[SpecializedAgent] Mirror learning plugin failed:', msg);
+            log.warn('[SpecializedAgent] Mirror learning plugin failed:', msg);
           }
           verificationSucceeded = true;
           if (blackboard) {
@@ -565,9 +584,9 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
       
       // Project verification or browser tests failed
-      console.log(`[SpecializedAgent] ⚠️ Project verification FAILED - Missing: ${lastVerification.missingFiles.join(', ')}`);
+      log.info(`[SpecializedAgent] ⚠️ Project verification FAILED - Missing: ${lastVerification.missingFiles.join(', ')}`);
       if (lastVerification.errors.length > 0) {
-        console.log(`[SpecializedAgent] ⚠️ Errors: ${lastVerification.errors.slice(0, 3).join('; ')}`);
+        log.info(`[SpecializedAgent] ⚠️ Errors: ${lastVerification.errors.slice(0, 3).join('; ')}`);
       }
       if (blackboard) {
         blackboard.status = 'repairing';
@@ -576,7 +595,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       retryCount++;
       
       if (retryCount > MAX_RETRIES) {
-        console.log('[SpecializedAgent] Max retries reached, returning partial result');
+        log.info('[SpecializedAgent] Max retries reached, returning partial result');
       }
     }
 
@@ -616,16 +635,16 @@ export class SpecializedAgentLoop extends EventEmitter {
         autonomyLevel,
         autonomyLabel: autonomyPolicy.label,
       });
-      console.log(`[SpecializedAgent] 📝 Staged ${operationCount} file operation(s) for review`);
+      log.info(`[${runId}] Staged ${operationCount} file operation(s) for review`);
       return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
     }
 
     if (operationCount > 0) {
       transactionManager.commitTransaction();
-      console.log(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
+      log.info(`[SpecializedAgent] ✅ Transaction committed with ${operationCount} file operation(s)`);
     } else {
       await transactionManager.rollbackTransaction();
-      console.log('[SpecializedAgent] 🔄 Cleared empty transaction');
+      log.info('[SpecializedAgent] 🔄 Cleared empty transaction');
     }
 
     telemetry.track('agent_task_complete', {
@@ -641,6 +660,11 @@ export class SpecializedAgentLoop extends EventEmitter {
       autonomyLabel: autonomyPolicy.label,
     });
 
+    log.info(`[${runId}] Specialized agent run completed`, {
+      stagedReview: false,
+      success: verificationSucceeded,
+      fileCount: allCreatedFiles.length,
+    });
     return response;
     } catch (error) {
       // On timeout, try to rollback to last checkpoint instead of full rollback
@@ -648,24 +672,24 @@ export class SpecializedAgentLoop extends EventEmitter {
         try {
           const lastCheckpoint = transactionManager.getLastCheckpoint();
           if (lastCheckpoint) {
-            console.log(`[SpecializedAgent] ⏱️ Timeout detected - rolling back to checkpoint: ${lastCheckpoint}`);
+            log.info(`[SpecializedAgent] ⏱️ Timeout detected - rolling back to checkpoint: ${lastCheckpoint}`);
             await transactionManager.rollbackToCheckpoint(lastCheckpoint);
-            console.log(`[SpecializedAgent] 🔄 Rolled back to checkpoint, preserving work up to that point`);
+            log.info(`[SpecializedAgent] 🔄 Rolled back to checkpoint, preserving work up to that point`);
           } else {
             // No checkpoint, do full rollback
             await transactionManager.rollbackTransaction();
-            console.log(`[SpecializedAgent] 🔄 Transaction rolled back (no checkpoint available)`);
+            log.info(`[SpecializedAgent] 🔄 Transaction rolled back (no checkpoint available)`);
           }
         } catch (rollbackError) {
-          console.error(`[SpecializedAgent] ❌ Transaction rollback failed:`, rollbackError);
+          log.error(`[${runId}] Transaction rollback failed`, rollbackError);
         }
       } else {
         // For non-timeout errors, do full rollback
         try {
           await transactionManager.rollbackTransaction();
-          console.log('[SpecializedAgent] 🔄 Transaction rolled back');
+          log.info('[SpecializedAgent] 🔄 Transaction rolled back');
         } catch (rollbackError) {
-          console.error(`[SpecializedAgent] ❌ Transaction rollback failed:`, rollbackError);
+          log.error(`[${runId}] Transaction rollback failed`, rollbackError);
         }
       }
       telemetry.track('agent_task_complete', {
@@ -677,6 +701,9 @@ export class SpecializedAgentLoop extends EventEmitter {
         runtimeBudget: requestedRuntimeBudget,
         autonomyLevel,
         autonomyLabel: autonomyPolicy.label,
+      });
+      log.error(`[${runId}] Specialized agent run failed`, {
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error; // Re-throw the original error
     }
@@ -713,14 +740,14 @@ export class SpecializedAgentLoop extends EventEmitter {
       action: isUpdate ? 'update' : 'create'
     });
     
-    console.log(`[SpecializedAgent] 📝 Project registered: ${project.name} (${project.type})`);
+    log.info(`[SpecializedAgent] 📝 Project registered: ${project.name} (${project.type})`);
     
     // Update .bat files to include Node.js detection (for existing projects)
     try {
       const { updateProjectBatFiles } = require('../core/update-bat-files');
       const result = updateProjectBatFiles(workspacePath);
       if (result.updated > 0) {
-        console.log(`[SpecializedAgent] 🔧 Updated ${result.updated} .bat file(s) with Node.js detection`);
+        log.info(`[SpecializedAgent] 🔧 Updated ${result.updated} .bat file(s) with Node.js detection`);
       }
     } catch (error) {
       // Non-critical, continue
@@ -737,7 +764,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         if (projectInfo.type === 'node' && projectInfo.startCommand) {
           const batResult = ProjectRunner.createNodeBatchFile(workspacePath, projectInfo);
           if (batResult.success) {
-            console.log(`[SpecializedAgent] 🔧 Created run.bat for easy project launching`);
+            log.info(`[SpecializedAgent] 🔧 Created run.bat for easy project launching`);
           }
         }
       }
@@ -758,9 +785,9 @@ export class SpecializedAgentLoop extends EventEmitter {
         isUpdate
       });
       
-      console.log(`[SpecializedAgent] 📄 Generated documentation: ${path.basename(logPath)}`);
+      log.info(`[SpecializedAgent] 📄 Generated documentation: ${path.basename(logPath)}`);
     } catch (error) {
-      console.warn('[SpecializedAgent] Could not generate project log:', error);
+      log.warn('[SpecializedAgent] Could not generate project log:', error);
     }
   }
 
@@ -1446,7 +1473,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     // If project is Minecraft/voxel/block related, reject Tetris files
     if (projectContext.includes('minecraft') || projectContext.includes('voxel') || projectContext.includes('block')) {
       if (fileNameLower.includes('tetris') || fileNameLower.includes('snake')) {
-        console.warn(`[Verification] Rejecting invalid file reference: ${fileName} (doesn't match Minecraft/voxel project)`);
+        log.warn(`[Verification] Rejecting invalid file reference: ${fileName} (doesn't match Minecraft/voxel project)`);
         return false;
       }
     }
@@ -1454,7 +1481,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     // If project is Tetris related, reject Minecraft files
     if (projectContext.includes('tetris')) {
       if (fileNameLower.includes('minecraft') || fileNameLower.includes('voxel') || fileNameLower.includes('chunk')) {
-        console.warn(`[Verification] Rejecting invalid file reference: ${fileName} (doesn't match Tetris project)`);
+        log.warn(`[Verification] Rejecting invalid file reference: ${fileName} (doesn't match Tetris project)`);
         return false;
       }
     }

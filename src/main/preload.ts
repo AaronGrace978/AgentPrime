@@ -229,6 +229,7 @@ const agentAPI: AgentAPI = {
 
   // Misc
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  openUserGuide: () => ipcRenderer.invoke('open-user-guide'),
 
   // Python brain integration (optional at runtime)
   brainAvailable: () => ipcRenderer.invoke('brain:available'),

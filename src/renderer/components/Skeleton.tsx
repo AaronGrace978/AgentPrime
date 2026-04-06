@@ -9,22 +9,28 @@ import React from 'react';
 interface SkeletonProps {
   width?: string | number;
   height?: string | number;
+  borderRadius?: string | number;
   className?: string;
   variant?: 'text' | 'title' | 'circle' | 'rect';
   count?: number;
+  style?: React.CSSProperties;
 }
 
 export const Skeleton: React.FC<SkeletonProps> = ({
   width,
   height,
+  borderRadius,
   className = '',
   variant = 'text',
-  count = 1
+  count = 1,
+  style: customStyle = {}
 }) => {
   const variantClass = `skeleton-${variant}`;
-  const style: React.CSSProperties = {
+  const skeletonStyle: React.CSSProperties = {
     width: width,
-    height: height
+    height: height,
+    borderRadius,
+    ...customStyle
   };
 
   if (count > 1) {
@@ -34,7 +40,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
           <div
             key={i}
             className={`skeleton ${variantClass} ${className}`}
-            style={style}
+            style={skeletonStyle}
           />
         ))}
       </>
@@ -44,7 +50,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   return (
     <div
       className={`skeleton ${variantClass} ${className}`}
-      style={style}
+      style={skeletonStyle}
     />
   );
 };
@@ -132,6 +138,116 @@ export const CardSkeleton: React.FC = () => {
       <div className="skeleton skeleton-text" style={{ width: '90%' }} />
       <div className="skeleton skeleton-text" style={{ width: '75%' }} />
       <div className="skeleton skeleton-text" style={{ width: '60%' }} />
+    </div>
+  );
+};
+
+export const SkeletonText: React.FC<{ lines?: number; className?: string }> = ({
+  lines = 3,
+  className = ''
+}) => (
+  <div className={className}>
+    {Array.from({ length: lines }).map((_, i) => (
+      <Skeleton
+        key={i}
+        width={i === lines - 1 ? '60%' : '100%'}
+        height="14px"
+        className="skeleton-shimmer"
+        style={{ marginBottom: i < lines - 1 ? '8px' : 0 }}
+      />
+    ))}
+  </div>
+);
+
+export const SkeletonCard: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <div className={className}>
+    <CardSkeleton />
+  </div>
+);
+
+export const SkeletonList: React.FC<{ items?: number; className?: string }> = ({
+  items = 5,
+  className = ''
+}) => (
+  <div className={`skeleton-list ${className}`}>
+    {Array.from({ length: items }).map((_, i) => (
+      <div key={i} className="skeleton-list-item" style={{ animationDelay: `${i * 50}ms` }}>
+        <Skeleton width="32px" height="32px" borderRadius="6px" className="skeleton-shimmer" />
+        <div style={{ flex: 1 }}>
+          <Skeleton width="40%" height="14px" className="skeleton-shimmer" style={{ marginBottom: '6px' }} />
+          <Skeleton width="80%" height="12px" className="skeleton-shimmer" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+export const SkeletonAvatar: React.FC<{ size?: number; className?: string }> = ({
+  size = 40,
+  className = ''
+}) => (
+  <Skeleton
+    width={size}
+    height={size}
+    borderRadius="50%"
+    className={`skeleton-shimmer ${className}`}
+  />
+);
+
+export const SkeletonButton: React.FC<{ width?: string | number; className?: string }> = ({
+  width = '100px',
+  className = ''
+}) => (
+  <Skeleton
+    width={width}
+    height="36px"
+    borderRadius="6px"
+    className={`skeleton-shimmer ${className}`}
+  />
+);
+
+export const LoadingOverlay: React.FC<{ message?: string }> = ({
+  message = 'Loading...'
+}) => (
+  <div className="loading-overlay">
+    <div className="loading-spinner">
+      <svg viewBox="0 0 50 50" width="40" height="40">
+        <circle
+          cx="25"
+          cy="25"
+          r="20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray="100"
+          strokeDashoffset="20"
+        />
+      </svg>
+    </div>
+    <span className="loading-message">{message}</span>
+  </div>
+);
+
+export const PulseLoader: React.FC<{ size?: 'small' | 'medium' | 'large' }> = ({
+  size = 'medium'
+}) => {
+  const sizeMap = { small: 6, medium: 10, large: 14 };
+  const dotSize = sizeMap[size];
+
+  return (
+    <div className="pulse-loader" style={{ gap: dotSize / 2 }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="pulse-dot"
+          style={{
+            width: dotSize,
+            height: dotSize,
+            animationDelay: `${i * 150}ms`
+          }}
+        />
+      ))}
     </div>
   );
 };

@@ -13,6 +13,7 @@ import {
   validateFilePath, 
   validateFileContent, 
   ipcRateLimiter,
+  resolveValidatedPath,
   sanitizeFolderName
 } from '../security/ipcValidation';
 import { completionOptimizer } from '../core/completion-optimizer';
@@ -284,14 +285,22 @@ export function register(deps: FileHandlersDeps): void {
   // Read directory tree
   ipcMain.handle('file:read-tree', async (event, dirPath?: string) => {
     const workspacePath = getWorkspacePath();
-    const targetPath = dirPath || workspacePath;
-    if (!targetPath) return { tree: [], root: null };
+    if (!workspacePath) return { tree: [], root: null, error: 'No workspace' };
+    const targetPath = dirPath || '.';
     
     try {
-      const tree = await buildTree(workspacePath || targetPath, targetPath);
-      return { tree, root: targetPath };
+      const pathValidation = resolveValidatedPath(targetPath, workspacePath, {
+        allowAbsolute: true,
+        sanitizeFilename: false,
+      });
+      if (!pathValidation.valid || !pathValidation.resolvedPath) {
+        return { tree: [], root: dirPath || workspacePath, error: `Invalid path: ${pathValidation.errors.join('; ')}` };
+      }
+
+      const tree = await buildTree(workspacePath, pathValidation.resolvedPath);
+      return { tree, root: pathValidation.resolvedPath };
     } catch (e: any) {
-      return { tree: [], root: targetPath, error: e.message };
+      return { tree: [], root: dirPath || workspacePath, error: e.message };
     }
   });
 
@@ -543,7 +552,15 @@ export function register(deps: FileHandlersDeps): void {
     const workspacePath = getWorkspacePath();
     if (!workspacePath) return { error: 'No workspace' };
     
-    const fullPath = path.join(workspacePath, folderPath);
+    const pathValidation = resolveValidatedPath(folderPath, workspacePath, {
+      allowAbsolute: true,
+      sanitizeFilename: false,
+    });
+    if (!pathValidation.valid || !pathValidation.resolvedPath) {
+      return { error: `Invalid folder path: ${pathValidation.errors.join('; ')}` };
+    }
+
+    const fullPath = pathValidation.resolvedPath;
     
     try {
       const stats = fs.statSync(fullPath);

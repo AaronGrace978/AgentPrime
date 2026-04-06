@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { memo, useCallback, useState } from 'react';
 import TabContextMenu from './TabContextMenu';
 import { getFileIcon, IconClose } from './Icons';
 
@@ -26,7 +26,72 @@ interface TabBarProps {
   onTabReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
-const TabBar: React.FC<TabBarProps> = ({
+interface TabItemProps {
+  openFile: OpenFile;
+  index: number;
+  isActive: boolean;
+  isDragged: boolean;
+  isDragOver: boolean;
+  onTabClick: (index: number, event: React.MouseEvent) => void;
+  onTabClose: (index: number, event: React.MouseEvent) => void;
+  onTabMiddleClick: (index: number, event: React.MouseEvent) => void;
+  onTabContextMenu: (index: number, event: React.MouseEvent) => void;
+  onDragStart: (event: React.DragEvent, index: number) => void;
+  onDragEnd: (event: React.DragEvent) => void;
+  onDragOver: (event: React.DragEvent, index: number) => void;
+  onDragLeave: (event: React.DragEvent) => void;
+  onDrop: (event: React.DragEvent, dropIndex: number) => void;
+}
+
+const TabItem = memo(({
+  openFile,
+  index,
+  isActive,
+  isDragged,
+  isDragOver,
+  onTabClick,
+  onTabClose,
+  onTabMiddleClick,
+  onTabContextMenu,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop
+}: TabItemProps) => (
+  <div
+    className={`tab ${isActive ? 'active' : ''} ${isDragged ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
+    onClick={(e) => onTabClick(index, e)}
+    onMouseDown={(e) => onTabMiddleClick(index, e)}
+    onContextMenu={(e) => onTabContextMenu(index, e)}
+    onDragStart={(e) => onDragStart(e, index)}
+    onDragEnd={onDragEnd}
+    onDragOver={(e) => onDragOver(e, index)}
+    onDragLeave={onDragLeave}
+    onDrop={(e) => onDrop(e, index)}
+    draggable={true}
+    title={openFile.file.path}
+  >
+    <span className="tab-icon">
+      {getFileIcon(openFile.file.name, false)}
+    </span>
+    <span className="tab-name">
+      {openFile.file.name}
+    </span>
+    {openFile.isDirty && (
+      <span className="unsaved-indicator">●</span>
+    )}
+    <button
+      className="tab-close"
+      onClick={(e) => onTabClose(index, e)}
+      title="Close tab"
+    >
+      <IconClose size="xs" />
+    </button>
+  </div>
+));
+
+const TabBarComponent: React.FC<TabBarProps> = ({
   openFiles,
   activeFileIndex,
   onTabClick,
@@ -47,45 +112,45 @@ const TabBar: React.FC<TabBarProps> = ({
   });
   // Using getFileIcon from Icons.tsx
 
-  const handleTabClick = (index: number, event: React.MouseEvent) => {
+  const handleTabClick = useCallback((index: number, event: React.MouseEvent) => {
     if (event.button === 0) { // Left click
       onTabClick(index);
     }
-  };
+  }, [onTabClick]);
 
-  const handleTabClose = (index: number, event: React.MouseEvent) => {
+  const handleTabClose = useCallback((index: number, event: React.MouseEvent) => {
     event.stopPropagation();
     onTabClose(index);
-  };
+  }, [onTabClose]);
 
-  const handleTabMiddleClick = (index: number, event: React.MouseEvent) => {
+  const handleTabMiddleClick = useCallback((index: number, event: React.MouseEvent) => {
     if (event.button === 1 && onTabMiddleClick) { // Middle click
       event.preventDefault();
       onTabMiddleClick(index);
     }
-  };
+  }, [onTabMiddleClick]);
 
-  const handleTabContextMenu = (index: number, event: React.MouseEvent) => {
+  const handleTabContextMenu = useCallback((index: number, event: React.MouseEvent) => {
     event.preventDefault();
     setContextMenu({
       isOpen: true,
       position: { x: event.clientX, y: event.clientY },
       tabIndex: index
     });
-  };
+  }, []);
 
-  const closeContextMenu = () => {
+  const closeContextMenu = useCallback(() => {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
-  };
+  }, []);
 
-  const handleCloseTab = () => {
+  const handleCloseTab = useCallback(() => {
     if (contextMenu.tabIndex >= 0) {
       onTabClose(contextMenu.tabIndex);
     }
     closeContextMenu();
-  };
+  }, [closeContextMenu, contextMenu.tabIndex, onTabClose]);
 
-  const handleCloseOthers = () => {
+  const handleCloseOthers = useCallback(() => {
     // Close all tabs except the current one
     for (let i = openFiles.length - 1; i >= 0; i--) {
       if (i !== contextMenu.tabIndex) {
@@ -93,47 +158,47 @@ const TabBar: React.FC<TabBarProps> = ({
       }
     }
     closeContextMenu();
-  };
+  }, [closeContextMenu, contextMenu.tabIndex, onTabClose, openFiles.length]);
 
-  const handleCloseAll = () => {
+  const handleCloseAll = useCallback(() => {
     // Close all tabs
     for (let i = openFiles.length - 1; i >= 0; i--) {
       onTabClose(i);
     }
     closeContextMenu();
-  };
+  }, [closeContextMenu, onTabClose, openFiles.length]);
 
-  const handleDragStart = (e: React.DragEvent, index: number) => {
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', index.toString());
 
     // Add visual feedback
     e.currentTarget.classList.add('dragging');
-  };
+  }, []);
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
     setDraggedIndex(null);
     setDragOverIndex(null);
 
     // Remove visual feedback
     e.currentTarget.classList.remove('dragging');
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setDragOverIndex(index);
-  };
+  }, []);
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
     // Only clear if we're actually leaving the tab area
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
       setDragOverIndex(null);
     }
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = useCallback((e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
 
@@ -143,7 +208,7 @@ const TabBar: React.FC<TabBarProps> = ({
 
     setDraggedIndex(null);
     setDragOverIndex(null);
-  };
+  }, [onTabReorder]);
 
   if (openFiles.length === 0) {
     return null;
@@ -153,37 +218,23 @@ const TabBar: React.FC<TabBarProps> = ({
     <div className="tab-bar">
       <div className="tabs-container">
         {openFiles.map((openFile, index) => (
-          <div
+          <TabItem
             key={`${openFile.file.path}-${index}`}
-            className={`tab ${index === activeFileIndex ? 'active' : ''} ${draggedIndex === index ? 'dragging' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
-            onClick={(e) => handleTabClick(index, e)}
-            onMouseDown={(e) => handleTabMiddleClick(index, e)}
-            onContextMenu={(e) => handleTabContextMenu(index, e)}
-            onDragStart={(e) => handleDragStart(e, index)}
+            openFile={openFile}
+            index={index}
+            isActive={index === activeFileIndex}
+            isDragged={draggedIndex === index}
+            isDragOver={dragOverIndex === index}
+            onTabClick={handleTabClick}
+            onTabClose={handleTabClose}
+            onTabMiddleClick={handleTabMiddleClick}
+            onTabContextMenu={handleTabContextMenu}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
-            onDragOver={(e) => handleDragOver(e, index)}
+            onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, index)}
-            draggable={true}
-            title={openFile.file.path}
-          >
-            <span className="tab-icon">
-              {getFileIcon(openFile.file.name, false)}
-            </span>
-            <span className="tab-name">
-              {openFile.file.name}
-            </span>
-            {openFile.isDirty && (
-              <span className="unsaved-indicator">●</span>
-            )}
-            <button
-              className="tab-close"
-              onClick={(e) => handleTabClose(index, e)}
-              title="Close tab"
-            >
-              <IconClose size="xs" />
-            </button>
-          </div>
+            onDrop={handleDrop}
+          />
         ))}
       </div>
 
@@ -198,5 +249,7 @@ const TabBar: React.FC<TabBarProps> = ({
     </div>
   );
 };
+
+const TabBar = memo(TabBarComponent);
 
 export default TabBar;

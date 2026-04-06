@@ -1,5 +1,7 @@
 # AgentPrime User Guide
 
+The same content is available as a styled page at [`user-guide.html`](user-guide.html) (opened from the app via **Open User Guide** on the welcome screen).
+
 ## Getting Started
 
 ### First Launch

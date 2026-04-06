@@ -12,6 +12,8 @@ const { spawnSync } = require('child_process');
 const root = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(root, 'package.json');
 const skipPreflight = /^(1|true|yes|on)$/i.test(process.env.AGENTPRIME_SKIP_DIST_PREFLIGHT || '');
+const ciSmokeMode = process.argv.includes('--ci-smoke') ||
+  /^(1|true|yes|on)$/i.test(process.env.AGENTPRIME_DIST_CI_SMOKE || '');
 const autoBuildBackendDist = process.argv.includes('--build-backend') ||
   /^(1|true|yes|on)$/i.test(process.env.AGENTPRIME_BUILD_BACKEND_DIST || '');
 
@@ -141,6 +143,21 @@ function tryBuildBackendDist() {
   };
 }
 
+function canSkipBackendDistInCiSmoke(fromPath) {
+  if (!ciSmokeMode || !isBackendDistResource(fromPath)) {
+    return false;
+  }
+
+  const backendDir = path.join(root, 'backend');
+  const backendSpec = path.join(backendDir, 'agentprime-backend.spec');
+  if (fs.existsSync(backendDir) && fs.existsSync(backendSpec)) {
+    console.log('[dist-preflight] CI smoke mode: backend/dist is missing, but backend sources/spec exist. Skipping packaged backend artifact validation.');
+    return true;
+  }
+
+  return false;
+}
+
 const failures = [];
 let backendBuildAttempted = false;
 let backendBuildResult = null;
@@ -166,6 +183,9 @@ for (const resource of extraResources) {
   }
 
   if (!fs.existsSync(absoluteFrom)) {
+    if (canSkipBackendDistInCiSmoke(from)) {
+      continue;
+    }
     failures.push({
       label,
       reason: `Path does not exist: ${from}`
@@ -174,6 +194,9 @@ for (const resource of extraResources) {
   }
 
   if (!hasAnyFile(absoluteFrom)) {
+    if (canSkipBackendDistInCiSmoke(from)) {
+      continue;
+    }
     failures.push({
       label,
       reason: `Path is empty (no files found): ${from}`

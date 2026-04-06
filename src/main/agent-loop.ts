@@ -14,6 +14,7 @@ import { transactionManager } from './core/transaction-manager';
 import { reviewSessionManager } from './agent/review-session-manager';
 import type { AgentReviewSessionSnapshot } from '../types/agent-review';
 import { retryWithRecovery } from './core/error-recovery';
+import { createLogger, createOperationId } from './core/logger';
 import { stateManager } from './core/state-manager';
 import { sanitizeFileName } from './security/ipcValidation';
 import { validateToolCall } from './agent/tool-validation';
@@ -21,14 +22,14 @@ import { TaskMaster } from './agent/task-master';
 import { getBudgetManager } from './core/budget-manager';
 import { getOpusReasoningEngine } from './mirror/opus-reasoning-engine';
 import { scaffoldProjectFromTemplate } from './agent/scaffold-resolver';
-import { 
-  validateWorkspaceNotSelf, 
-  validateFileExists, 
-  detectHallucinations, 
+import {
+  validateWorkspaceNotSelf,
+  validateFileExists,
+  detectHallucinations,
   createContentSnapshot,
   calculateContentHash,
   verifyContentMatchesTask,
-  type HallucinationReport 
+  type HallucinationReport
 } from './security/workspaceProtection';
 
 // 🦖 DINO BUDDY IMPROVEMENTS - Making AgentPrime smarter!
@@ -41,6 +42,10 @@ import { EventEmitter } from 'events';
 import { searchWithRipgrep } from './core/ripgrep-runner';
 import { getRecommendedMaxTokens, isOllamaCloudModel } from './core/model-output-limits';
 import { TaskMode, detectTaskMode } from './agent/task-mode';
+import { parseToolCallsContent } from './agent/tool-call-parser';
+import { finalizeAgentTransactionForReview } from './agent/transaction-finalization';
+
+const log = createLogger('AgentLoop');
 
 // Re-export for callers that import task mode from the agent loop module
 export { TaskMode, detectTaskMode };
@@ -153,7 +158,7 @@ function cleanupReactAppFile(content: string, filePath: string): string {
   // Final cleanup: remove any trailing whitespace on lines
   cleaned = cleaned.split('\n').map(line => line.trimEnd()).join('\n');
   
-  console.log(`[Agent] Cleaned up React App file: ${filePath}`);
+  log.info(`[Agent] Cleaned up React App file: ${filePath}`);
   return cleaned;
 }
 
@@ -394,7 +399,7 @@ You MUST use incremental development for this game project:
     // Set incremental mode flag for games
     if (isGameOrComplex) {
       (this as any).forceIncrementalMode = true;
-      console.log('[Agent] 🎮 Game detected - forcing INCREMENTAL development mode');
+      log.info('[Agent] 🎮 Game detected - forcing INCREMENTAL development mode');
     }
 
     return `
@@ -795,7 +800,7 @@ class CommandAuditLogger {
       }
       this.logPath = path.join(agentPrimeDir, 'command-audit.log');
     } catch (e) {
-      console.warn('[Security] Could not create audit log directory, logging disabled');
+      log.warn('[Security] Could not create audit log directory, logging disabled');
       this.logPath = '';
       this.enabled = false;
     }
@@ -825,7 +830,7 @@ class CommandAuditLogger {
       const line = JSON.stringify(logEntry) + '\n';
       fs.appendFileSync(this.logPath, line, 'utf-8');
     } catch (e) {
-      console.warn('[Security] Could not write to audit log');
+      log.warn('[Security] Could not write to audit log');
     }
   }
   
@@ -1138,7 +1143,7 @@ const tools: Record<string, Tool> = {
         const originalFileName = pathParts[pathParts.length - 1];
         const sanitizedFileName = sanitizeFileName(originalFileName);
         if (sanitizedFileName !== originalFileName) {
-          console.log(`[Agent] Sanitized filename: "${originalFileName}" -> "${sanitizedFileName}"`);
+          log.info(`[Agent] Sanitized filename: "${originalFileName}" -> "${sanitizedFileName}"`);
           pathParts[pathParts.length - 1] = sanitizedFileName;
           filePath = pathParts.join('/');
         }
@@ -1177,7 +1182,7 @@ const tools: Record<string, Tool> = {
         await transactionManager.recordWrite(filePath, contentString);
       } catch (recordError: any) {
         // Non-critical - log but continue
-        console.warn('[Agent] Failed to record file write in transaction:', recordError.message);
+        log.warn('[Agent] Failed to record file write in transaction:', recordError.message);
       }
 
       // === REACT FILE CLEANUP ===
@@ -1338,14 +1343,14 @@ Use read_file first to see the exact content you want to replace.`,
       
       // Warn if change is large
       if (changePercentage > 0.3) {
-        console.log(`[Agent] ⚠️ patch_file: Large change (${Math.round(changePercentage * 100)}%) to ${filePath}`);
+        log.info(`[Agent] ⚠️ patch_file: Large change (${Math.round(changePercentage * 100)}%) to ${filePath}`);
       }
       
       // Record in transaction before writing
       try {
         await transactionManager.recordWrite(filePath, newContent);
       } catch (recordError: any) {
-        console.warn('[Agent] Failed to record patch in transaction:', recordError.message);
+        log.warn('[Agent] Failed to record patch in transaction:', recordError.message);
       }
       
       // Write the patched content
@@ -1427,7 +1432,7 @@ Use read_file first to see the exact content you want to replace.`,
       
       // Log warnings for medium severity issues
       if (validation.issues.length > 0 && !validation.blocked) {
-        console.warn(`[Security] ⚠️ Command has potential issues: ${validation.issues.map(i => i.description).join(', ')}`);
+        log.warn(`[Security] ⚠️ Command has potential issues: ${validation.issues.map(i => i.description).join(', ')}`);
       }
       
       // === SECURITY CHECK 3: Workspace Boundary ===
@@ -1539,10 +1544,10 @@ Use read_file first to see the exact content you want to replace.`,
           const combinedOutput = stdout + stderr;
           if (code !== 0 && isMissingToolError(combinedOutput)) {
             const help = getToolErrorHelp(command, combinedOutput);
-            console.warn(`[AgentLoop] ${help}`);
+            log.warn(`[AgentLoop] ${help}`);
             // Try again with resolved command if different
             if (resolvedCommand !== command) {
-              console.log(`[AgentLoop] Retrying with resolved path: ${resolvedCommand}`);
+              log.info(`[AgentLoop] Retrying with resolved path: ${resolvedCommand}`);
               // Note: This is a retry attempt, but we're already in the close handler
               // The resolved command should have been used from the start
             }
@@ -1785,7 +1790,7 @@ Use read_file first to see the exact content you want to replace.`,
           usedBundledRg: rg.usedBundledRg
         };
       } catch (e) {
-        console.warn('search_codebase failed:', e);
+        log.warn('search_codebase failed:', e);
         return { query, matches: [], total: 0, error: String(e) };
       }
     }
@@ -3176,7 +3181,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       this.modelChain.push({ name: 'Fallback', provider: fallbackProvider, model: fallbackModel, tier: 'fallback' });
     }
     
-    console.log('[Agent] 🔄 Model escalation chain configured:', this.modelChain.map(m => `${m.provider}/${m.model}`).join(' → '));
+    log.info('[Agent] 🔄 Model escalation chain configured:', this.modelChain.map(m => `${m.provider}/${m.model}`).join(' → '));
   }
 
   /**
@@ -3208,7 +3213,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         // Retry with Sonnet + incremental approach instead of looping on Opus
         { name: 'Claude Sonnet (Incremental)', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'fallback' }
       ];
-      console.log('[Agent] 📋 Configured Anthropic model escalation chain (with incremental fallback)');
+      log.info('[Agent] 📋 Configured Anthropic model escalation chain (with incremental fallback)');
     } else if (isOpenAIModel) {
       // OpenAI escalation chain (GPT-5.2 → GPT-4o → fallback)
       this.modelChain = [
@@ -3218,7 +3223,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         { name: 'GPT-5.2 (Latest)', provider: 'openai', model: 'gpt-5.2-2025-12-11', tier: 'premium' },
         { name: 'Ollama Fallback', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'fallback' }
       ];
-      console.log('[Agent] 📋 Configured OpenAI model escalation chain');
+      log.info('[Agent] 📋 Configured OpenAI model escalation chain');
     } else {
       // Default to Ollama chain
       this.modelChain = [
@@ -3226,7 +3231,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         { name: 'Deep', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
         { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
       ];
-      console.log('[Agent] 📋 Configured Ollama model escalation chain');
+      log.info('[Agent] 📋 Configured Ollama model escalation chain');
     }
     
     // Find the starting model's position in the chain
@@ -3247,7 +3252,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       this.currentModelIndex = 0;
     }
     
-    console.log('[Agent] 🔄 Model escalation chain:', this.modelChain.map(m => `${m.provider}/${m.model}`).join(' → '));
+    log.info('[Agent] 🔄 Model escalation chain:', this.modelChain.map(m => `${m.provider}/${m.model}`).join(' → '));
   }
 
   /**
@@ -3257,8 +3262,8 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
   private escalateModel(reason: string): boolean {
     // === ESCALATION CAP - Prevent infinite escalation loops ===
     if (this.escalationCount >= this.MAX_ESCALATIONS) {
-      console.log(`[Agent] 🛑 Max escalations reached (${this.MAX_ESCALATIONS}). Stopping escalation.`);
-      console.log(`[Agent] 💡 The task may be too complex. Consider breaking it down.`);
+      log.info(`[Agent] 🛑 Max escalations reached (${this.MAX_ESCALATIONS}). Stopping escalation.`);
+      log.info(`[Agent] 💡 The task may be too complex. Consider breaking it down.`);
       return false;
     }
     
@@ -3267,7 +3272,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     const nextIndex = currentIndex + 1;
     
     if (nextIndex >= this.modelChain.length) {
-      console.log(`[Agent] 🛑 No more models to escalate to. Current: ${this.currentActiveModel}`);
+      log.info(`[Agent] 🛑 No more models to escalate to. Current: ${this.currentActiveModel}`);
       return false;
     }
     
@@ -3279,10 +3284,10 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     this.escalationCount++;
     this.consecutiveModelFailures = 0; // Reset failures for new model
     
-    console.log(`[Agent] 🚀 MODEL ESCALATION #${this.escalationCount}/${this.MAX_ESCALATIONS}`);
-    console.log(`[Agent]    Reason: ${reason}`);
-    console.log(`[Agent]    ${previousModel} → ${nextModel.model} (${nextModel.tier})`);
-    console.log(`[Agent]    Provider: ${nextModel.provider}`);
+    log.info(`[Agent] 🚀 MODEL ESCALATION #${this.escalationCount}/${this.MAX_ESCALATIONS}`);
+    log.info(`[Agent]    Reason: ${reason}`);
+    log.info(`[Agent]    ${previousModel} → ${nextModel.model} (${nextModel.tier})`);
+    log.info(`[Agent]    Provider: ${nextModel.provider}`);
     
     // IMPORTANT: Switch the AI provider when escalating to a different provider's model
     aiRouter.setActiveProvider(nextModel.provider, nextModel.model);
@@ -3309,7 +3314,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
    */
   private recordModelFailure(failureType: string): boolean {
     this.consecutiveModelFailures++;
-    console.log(`[Agent] ⚠️ Model failure: ${failureType} (${this.consecutiveModelFailures}/${this.ESCALATION_THRESHOLD})`);
+    log.info(`[Agent] ⚠️ Model failure: ${failureType} (${this.consecutiveModelFailures}/${this.ESCALATION_THRESHOLD})`);
     
     if (this.shouldEscalate()) {
       return this.escalateModel(failureType);
@@ -3322,7 +3327,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
    */
   private recordModelSuccess(): void {
     if (this.consecutiveModelFailures > 0) {
-      console.log(`[Agent] ✅ Model producing valid output again`);
+      log.info(`[Agent] ✅ Model producing valid output again`);
     }
     this.consecutiveModelFailures = 0;
   }
@@ -3340,11 +3345,16 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
   }
 
   async run(rawUserMessage: string): Promise<string> {
+    const runId = createOperationId('agentrun');
     const sanitization = PromptSanitizer.sanitize(rawUserMessage);
     const userMessage = sanitization.sanitizedText;
+    log.info(`[${runId}] Starting agent loop run`, {
+      sessionId: this.sessionId,
+      workspacePath: this.context.workspacePath,
+    });
     
     if (!sanitization.isSafe) {
-      console.warn(`[Security] Blocked malicious prompt. Flags: ${sanitization.flags.join(', ')}`);
+      log.warn(`[Security] Blocked malicious prompt. Flags: ${sanitization.flags.join(', ')}`);
       this.emit('message', {
         role: 'assistant',
         content: `⚠️ **Security Alert:** Your input contained potentially unsafe instructions (${sanitization.flags.join(', ')}). The request has been neutralized to protect the workspace.`
@@ -3361,7 +3371,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     // Prevent AgentPrime from operating on its own codebase
     const workspaceValidation = validateWorkspaceNotSelf(this.context.workspacePath);
     if (!workspaceValidation.valid) {
-      console.error(`[Agent] 🛡️ WORKSPACE PROTECTION: ${workspaceValidation.reason}`);
+      log.error(`[Agent] 🛡️ WORKSPACE PROTECTION: ${workspaceValidation.reason}`);
       return `🛡️ **Workspace Protection Active**\n\n` +
         `Cannot operate on this workspace: ${workspaceValidation.reason}\n\n` +
         `**Details:**\n` +
@@ -3374,7 +3384,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         `2. Create a new project folder for your work\n` +
         `3. Navigate to your actual project directory`;
     }
-    console.log(`[Agent] 🛡️ Workspace validated: ${workspaceValidation.reason}`);
+    log.info(`[Agent] 🛡️ Workspace validated: ${workspaceValidation.reason}`);
     // === END WORKSPACE BOUNDARY PROTECTION ===
 
     // Start transaction for this agent task (workspace path is required for correct rollback paths)
@@ -3451,7 +3461,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     const budgetWarning = budgetManager.getBudgetWarning();
     
     if (budgetWarning) {
-      console.log(`[Agent] ${budgetWarning}`);
+      log.info(`[Agent] ${budgetWarning}`);
       // Show warning to user via event
       this.emit('budget-warning', { message: budgetWarning, mode: budgetMode });
     }
@@ -3460,12 +3470,12 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     if (budgetMode !== 'normal') {
       const recommended = budgetManager.getRecommendedModel('code');
       if (budgetManager.isModelAllowed(recommended.provider, recommended.model)) {
-        console.log(`[Agent] 💰 Budget mode: ${budgetMode}, using ${recommended.model} (${recommended.reason})`);
+        log.info(`[Agent] 💰 Budget mode: ${budgetMode}, using ${recommended.model} (${recommended.reason})`);
         aiRouter.setActiveProvider(recommended.provider, recommended.model);
         this.currentActiveModel = recommended.model;
       }
     } else {
-      console.log(`[Agent] Starting task with model: ${this.currentActiveModel}`);
+      log.info(`[Agent] Starting task with model: ${this.currentActiveModel}`);
     }
     
     // Configure model chain based on starting provider
@@ -3478,7 +3488,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       this.modelChain = this.modelChain.filter(model => 
         budgetManager.isModelAllowed(model.provider, model.model)
       );
-      console.log(`[Agent] 💰 Filtered model chain for budget mode: ${this.modelChain.length} models available`);
+      log.info(`[Agent] 💰 Filtered model chain for budget mode: ${this.modelChain.length} models available`);
     }
     
     // === 🧠 CONSCIOUSNESS SYSTEM (ActivatePrime Deep Understanding) ===
@@ -3502,7 +3512,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       consciousnessState = consciousnessResult.state;
       consciousnessInjection = consciousnessResult.injection;
       
-      console.log(`[Agent] 🧠 Consciousness: intent=${consciousnessState.primaryIntent}, coherence=${consciousnessState.coherence.toFixed(2)}, unspoken=${consciousnessState.unspokenRequirements.length}`);
+      log.info(`[Agent] 🧠 Consciousness: intent=${consciousnessState.primaryIntent}, coherence=${consciousnessState.coherence.toFixed(2)}, unspoken=${consciousnessState.unspokenRequirements.length}`);
       
       // Inject consciousness context into system prompt
       if (consciousnessInjection && consciousnessInjection.contextString) {
@@ -3533,7 +3543,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         }
       }
     } catch (error) {
-      console.log('[Agent] 🧠 Consciousness processing failed (non-critical):', error);
+      log.info('[Agent] 🧠 Consciousness processing failed (non-critical):', error);
     }
     // === END CONSCIOUSNESS SYSTEM ===
     
@@ -3541,7 +3551,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     // Extract and apply Opus 4.5's reasoning patterns system-wide
     const opusEngine = getOpusReasoningEngine();
     const opusPatterns = await opusEngine.extractReasoningPatterns(userMessage);
-    console.log(`[Agent] 🧠 Opus Reasoning: Extracted ${opusPatterns.length} reasoning patterns`);
+    log.info(`[Agent] 🧠 Opus Reasoning: Extracted ${opusPatterns.length} reasoning patterns`);
     
     // Apply Opus reasoning to agent loop
     // Convert ExistingFileInfo map to string map for opus reasoning engine
@@ -3556,7 +3566,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     });
     
     if (opusReasoning.recommendations.length > 0) {
-      console.log(`[Agent] 🧠 Opus Recommendations: ${opusReasoning.recommendations.join('; ')}`);
+      log.info(`[Agent] 🧠 Opus Recommendations: ${opusReasoning.recommendations.join('; ')}`);
     }
     
     // === MIRROR LEARNING INTEGRATION ===
@@ -3571,7 +3581,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
           const confidence = pattern.confidence ? ` (${(pattern.confidence * 100).toFixed(0)}% confident)` : '';
           patternGuidance += `• ${pattern.type || 'pattern'}: ${pattern.description || 'N/A'}${confidence}\n`;
         }
-        console.log(`[Agent] 🧠 Loaded ${patterns.length} learned patterns for task`);
+        log.info(`[Agent] 🧠 Loaded ${patterns.length} learned patterns for task`);
       }
       
       // Add Opus reasoning patterns
@@ -3595,10 +3605,10 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
             antiPatternWarnings += `  → FIX: ${anti.metadata.preventionTips[0]}\n`;
           }
         }
-        console.log(`[Agent] ⚠️ Loaded ${antiPatterns.length} anti-patterns to avoid`);
+        log.info(`[Agent] ⚠️ Loaded ${antiPatterns.length} anti-patterns to avoid`);
       }
     } catch (error) {
-      console.log('[Agent] Mirror patterns not available (non-critical)');
+      log.info('[Agent] Mirror patterns not available (non-critical)');
     }
     
     // Update system prompt with learned patterns
@@ -3622,7 +3632,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       
       if (detectedType) {
         projectPatternGuidance = ProjectPatternMatcher.generateGuidance(detectedType);
-        console.log(`[Agent] 🎯 Detected project type: ${detectedType}`);
+        log.info(`[Agent] 🎯 Detected project type: ${detectedType}`);
         
         // Store detected type for later validation
         (this as any).detectedProjectType = detectedType;
@@ -3630,14 +3640,14 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         // Log pattern details for debugging
         const pattern = ProjectPatternMatcher.getPattern(detectedType);
         if (pattern) {
-          console.log(`[Agent] 📋 Required files: ${pattern.structure.requiredFiles.join(', ')}`);
+          log.info(`[Agent] 📋 Required files: ${pattern.structure.requiredFiles.join(', ')}`);
           if (Object.keys(pattern.structure.dependencies || {}).length > 0) {
-            console.log(`[Agent] 📦 Dependencies: ${Object.keys(pattern.structure.dependencies).join(', ')}`);
+            log.info(`[Agent] 📦 Dependencies: ${Object.keys(pattern.structure.dependencies).join(', ')}`);
           }
         }
       }
     } catch (error) {
-      console.warn('[Agent] Project pattern detection failed (non-critical):', error);
+      log.warn('[Agent] Project pattern detection failed (non-critical):', error);
     }
     
     // Inject project pattern guidance into system prompt
@@ -3652,9 +3662,9 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     // === OPUS THINKING ENGINE - PRE-TASK ANALYSIS ===
     // This is what makes Opus different - deep thinking BEFORE action
     const opusAnalysis = OpusThinkingEngine.analyzeIntent(userMessage);
-    console.log(`[Agent] 🧠 OPUS ANALYSIS: ${opusAnalysis.projectType} project, ${opusAnalysis.complexity} complexity`);
-    console.log(`[Agent] 🎯 Delight factors: ${opusAnalysis.delightFactors.length}`);
-    console.log(`[Agent] ⚠️ Pitfalls to avoid: ${opusAnalysis.potentialPitfalls.length}`);
+    log.info(`[Agent] 🧠 OPUS ANALYSIS: ${opusAnalysis.projectType} project, ${opusAnalysis.complexity} complexity`);
+    log.info(`[Agent] 🎯 Delight factors: ${opusAnalysis.delightFactors.length}`);
+    log.info(`[Agent] ⚠️ Pitfalls to avoid: ${opusAnalysis.potentialPitfalls.length}`);
     
     // Store analysis for quality validation later
     (this as any).opusAnalysis = opusAnalysis;
@@ -3678,17 +3688,17 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     this.existingFilesSnapshot.clear();
     this.filesModifiedThisTask.clear();
     
-    console.log(`[Agent] 🛡️ TASK MODE: ${this.taskMode.toUpperCase()} (confidence: ${(this.taskModeConfidence * 100).toFixed(0)}%)`);
-    console.log(`[Agent] 🛡️ Reason: ${taskModeResult.reason}`);
+    log.info(`[Agent] 🛡️ TASK MODE: ${this.taskMode.toUpperCase()} (confidence: ${(this.taskModeConfidence * 100).toFixed(0)}%)`);
+    log.info(`[Agent] 🛡️ Reason: ${taskModeResult.reason}`);
     
     // 👔 INITIALIZE TASK MASTER - The Boss Review System
     this.taskMaster = new TaskMaster(this.context.workspacePath, userMessage);
-    console.log(`[Agent] 👔 Task Master initialized - Boss will review all work before writing`);
+    log.info(`[Agent] 👔 Task Master initialized - Boss will review all work before writing`);
     
     // Create checkpoint for FIX/ENHANCE modes to enable rollback
     if (this.taskMode === TaskMode.FIX || this.taskMode === TaskMode.ENHANCE) {
       this.taskModeCheckpointId = transactionManager.createCheckpoint(`taskmode_${this.taskMode}_${Date.now()}`);
-      console.log(`[Agent] 🛡️ Created rollback checkpoint: ${this.taskModeCheckpointId}`);
+      log.info(`[Agent] 🛡️ Created rollback checkpoint: ${this.taskModeCheckpointId}`);
       
       // 🛡️ Create backup before destructive operations
       try {
@@ -3700,12 +3710,12 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         );
         
         if (backupResult.success) {
-          console.log(`[Agent] 💾 Backup created: ${backupResult.filesBackedUp} files backed up`);
+          log.info(`[Agent] 💾 Backup created: ${backupResult.filesBackedUp} files backed up`);
         } else {
-          console.warn(`[Agent] ⚠️ Backup failed (continuing anyway): ${backupResult.error}`);
+          log.warn(`[Agent] ⚠️ Backup failed (continuing anyway): ${backupResult.error}`);
         }
       } catch (backupError: any) {
-        console.warn(`[Agent] ⚠️ Backup error (non-critical): ${backupError.message}`);
+        log.warn(`[Agent] ⚠️ Backup error (non-critical): ${backupError.message}`);
       }
     }
     // === END TASK MODE DETECTION ===
@@ -3715,7 +3725,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     // ENHANCED: In FIX mode, read ALL source files to understand the project
     let explorationContext = '';
     try {
-      console.log('[Agent] 🔍 Starting exploration phase...');
+      log.info('[Agent] 🔍 Starting exploration phase...');
       const explorationResults: string[] = [];
       
       // Detect task type (kept for backwards compatibility)
@@ -3731,7 +3741,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         if (rootResult && Array.isArray(rootResult)) {
           const fileList = rootResult.map((f: any) => `${f.type === 'directory' ? '📁' : '📄'} ${f.name}`).join(', ');
           explorationResults.push(`Project structure: ${fileList}`);
-          console.log(`[Agent] 🔍 Found ${rootResult.length} items in project root`);
+          log.info(`[Agent] 🔍 Found ${rootResult.length} items in project root`);
           
           // Collect file names for snapshot
           projectFiles = rootResult
@@ -3739,7 +3749,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
             .map((f: any) => f.name);
         }
       } catch (e) {
-        console.warn('[Agent] Could not list root directory');
+        log.warn('[Agent] Could not list root directory');
       }
       
       // 2. 🛡️ ALWAYS READ EXISTING FILES - Even in CREATE mode if files exist!
@@ -3776,7 +3786,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       }
       
       if (filesRead > 0) {
-        console.log(`[Agent] 🔍 Read ${filesRead} existing files to understand project context`);
+        log.info(`[Agent] 🔍 Read ${filesRead} existing files to understand project context`);
         
         // 👔 LOAD EXISTING FILES INTO TASK MASTER
         if (this.taskMaster) {
@@ -3785,7 +3795,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
             existingFilesMap.set(filePath, { content: fileInfo.content });
           }
           this.taskMaster.loadExistingFiles(existingFilesMap);
-          console.log(`[Agent] 👔 Task Master loaded ${existingFilesMap.size} existing files for review`);
+          log.info(`[Agent] 👔 Task Master loaded ${existingFilesMap.size} existing files for review`);
         }
         
         // 🛡️ CRITICAL: If files exist, add warning to system message
@@ -3827,7 +3837,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       
       // FIX/ENHANCE MODE specific protection
       if ((isFixing || isModifying || isReviewing) && !isCreatingNew) {
-        console.log(`[Agent] 🛡️ ${this.taskMode.toUpperCase()} MODE: Protection active`);
+        log.info(`[Agent] 🛡️ ${this.taskMode.toUpperCase()} MODE: Protection active`);
         
         // Add protection notice to system message
         const protectionNotice = `\n\n## 🛡️ TASK MODE: ${this.taskMode.toUpperCase()}
@@ -3888,7 +3898,7 @@ ${this.taskMode === TaskMode.ENHANCE ? `
       
       if (explorationResults.length > 0) {
         explorationContext = `\n\n## 🔍 CODEBASE EXPLORATION RESULTS\n${explorationResults.join('\n')}\n`;
-        console.log(`[Agent] 🔍 Exploration complete: ${explorationResults.length} findings`);
+        log.info(`[Agent] 🔍 Exploration complete: ${explorationResults.length} findings`);
         
         // Add exploration results to system message for context
         const sysMsg = this.messages.find(m => m.role === 'system');
@@ -3897,7 +3907,7 @@ ${this.taskMode === TaskMode.ENHANCE ? `
         }
       }
     } catch (error) {
-      console.warn('[Agent] Exploration phase error (non-critical):', error);
+      log.warn('[Agent] Exploration phase error (non-critical):', error);
     }
     // === END EXPLORATION PHASE ===
     
@@ -3918,11 +3928,11 @@ ${this.taskMode === TaskMode.ENHANCE ? `
     const taskStartTime = Date.now();
     const isComplexTask = /game|full.*stack|complete|enterprise|dashboard|e-commerce/i.test(userMessage);
     const MAX_TASK_DURATION_MS = isComplexTask ? 20 * 60 * 1000 : 10 * 60 * 1000; // 20 or 10 minutes
-    console.log(`[Agent] ⏱️ Task timeout: ${MAX_TASK_DURATION_MS / 60000} minutes (complex: ${isComplexTask})`);
+    log.info(`[Agent] ⏱️ Task timeout: ${MAX_TASK_DURATION_MS / 60000} minutes (complex: ${isComplexTask})`);
 
     while (iteration < this.maxIterations) {
       if (this.isCancellationRequested()) {
-        console.log('[Agent] Stop requested, ending task loop');
+        log.info('[Agent] Stop requested, ending task loop');
         finalAnswer = this.buildStopMessage();
         break;
       }
@@ -3933,7 +3943,7 @@ ${this.taskMode === TaskMode.ENHANCE ? `
       const elapsedMs = Date.now() - taskStartTime;
       if (elapsedMs > MAX_TASK_DURATION_MS) {
         const elapsedMinutes = Math.round(elapsedMs / 60000);
-        console.error(`[Agent] ⏱️ TASK TIMEOUT: ${elapsedMinutes} minutes elapsed, aborting`);
+        log.error(`[Agent] ⏱️ TASK TIMEOUT: ${elapsedMinutes} minutes elapsed, aborting`);
         
         // Build a helpful timeout message
         finalAnswer = this.buildFinalAnswer(
@@ -3991,7 +4001,7 @@ ${this.taskMode === TaskMode.ENHANCE ? `
         // Use current active model (may have been escalated)
         const modelToUse = this.currentActiveModel || this.context.model || 'qwen3-coder-next:cloud';
         const escalationInfo = this.escalationCount > 0 ? ` [escalated ${this.escalationCount}x]` : '';
-        console.log(`[Agent] Iteration ${iteration}/${this.maxIterations}, model: ${modelToUse}${escalationInfo}, steps: ${this.completedSteps.length}`);
+        log.info(`[Agent] Iteration ${iteration}/${this.maxIterations}, model: ${modelToUse}${escalationInfo}, steps: ${this.completedSteps.length}`);
         
         const maxTokens = getRecommendedMaxTokens(
           modelToUse,
@@ -3999,7 +4009,7 @@ ${this.taskMode === TaskMode.ENHANCE ? `
         );
         
         if (maxTokens > 4096) {
-          console.log(
+          log.info(
             `[Agent] 🚀 Using ${maxTokens} token limit for ${modelToUse} - full power mode! (ollamaCloud=${isOllamaCloudModel(modelToUse)})`
           );
         }
@@ -4022,16 +4032,16 @@ ${this.taskMode === TaskMode.ENHANCE ? `
 
         // Check for API errors first
         if (!response.success) {
-          console.error(`[Agent] API returned error: ${response.error}`);
+          log.error(`[Agent] API returned error: ${response.error}`);
           throw new Error(`API Error: ${response.error || 'Unknown error'}`);
         }
 
         if (!response || !response.content) {
-          console.warn('[Agent] Empty response content received');
+          log.warn('[Agent] Empty response content received');
           throw new Error('Empty response from AI');
         }
 
-        console.log(`[Agent] Response preview: ${response.content.substring(0, 300)}...`);
+        log.info(`[Agent] Response preview: ${response.content.substring(0, 300)}...`);
 
         // === DETECT JSON TRUNCATION (all models can hit output limits on large files) ===
         const responseLength = response.content.length;
@@ -4039,8 +4049,8 @@ ${this.taskMode === TaskMode.ENHANCE ? `
         const hasUnclosedBrace = (response.content.match(/\{/g) || []).length > (response.content.match(/\}/g) || []).length;
         
         if ((hasUnclosedString || hasUnclosedBrace) && responseLength > 8000) {
-          console.log(`[Agent] 🚨 TRUNCATED OUTPUT DETECTED (${responseLength} chars, unclosed: ${hasUnclosedString ? 'string' : 'brace'})`);
-          console.log(`[Agent] 🔄 File is too large - forcing incremental approach`);
+          log.info(`[Agent] 🚨 TRUNCATED OUTPUT DETECTED (${responseLength} chars, unclosed: ${hasUnclosedString ? 'string' : 'brace'})`);
+          log.info(`[Agent] 🔄 File is too large - forcing incremental approach`);
           
           // Don't try to parse this - it's broken. Force a different approach.
           const truncatedContent = response.content.substring(0, 200) + '...[TRUNCATED]';
@@ -4085,10 +4095,10 @@ We'll add more features after this core version works.`;
           const hallucinationReport = detectHallucinations(response.content, this.context.workspacePath);
           
           if (hallucinationReport.hasHallucinations) {
-            console.warn(`[Agent] 🔍 HALLUCINATION DETECTED: ${hallucinationReport.hallucinations.length} false claims`);
+            log.warn(`[Agent] 🔍 HALLUCINATION DETECTED: ${hallucinationReport.hallucinations.length} false claims`);
             
             for (const h of hallucinationReport.hallucinations) {
-              console.warn(`[Agent] 🔍 - ${h.type}: ${h.claimedPath}${h.lineNumber ? ` (line ${h.lineNumber})` : ''}`);
+              log.warn(`[Agent] 🔍 - ${h.type}: ${h.claimedPath}${h.lineNumber ? ` (line ${h.lineNumber})` : ''}`);
             }
             
             // If hallucination rate is high (>50%), add correction to messages
@@ -4107,13 +4117,13 @@ We'll add more features after this core version works.`;
               };
               (this as any).lastHallucinationReport = hallucinationData;
               
-              console.log(`[Agent] 🔍 High hallucination rate (${(hallucinationReport.hallucinationRate * 100).toFixed(0)}%) - adding correction`);
+              log.info(`[Agent] 🔍 High hallucination rate (${(hallucinationReport.hallucinationRate * 100).toFixed(0)}%) - adding correction`);
             }
           } else if (hallucinationReport.verified.length > 0) {
-            console.log(`[Agent] ✅ File references verified: ${hallucinationReport.verified.map(v => v.path).join(', ')}`);
+            log.info(`[Agent] ✅ File references verified: ${hallucinationReport.verified.map(v => v.path).join(', ')}`);
           }
         } catch (hallucinationError) {
-          console.warn('[Agent] Hallucination detection failed (non-critical):', hallucinationError);
+          log.warn('[Agent] Hallucination detection failed (non-critical):', hallucinationError);
         }
         // === END HALLUCINATION DETECTION ===
 
@@ -4127,10 +4137,10 @@ We'll add more features after this core version works.`;
             const planJson = JSON.parse(`[${planMatch[1]}]`);
             if (Array.isArray(planJson) && planJson.length > 0) {
               this.currentPlan = planJson;
-              console.log('[Agent] Plan created:', this.currentPlan);
+              log.info('[Agent] Plan created:', this.currentPlan);
             }
           } catch (e) {
-            console.log('[Agent] Could not parse plan');
+            log.info('[Agent] Could not parse plan');
           }
         }
 
@@ -4170,14 +4180,14 @@ We'll add more features after this core version works.`;
           let validatedToolCalls = toolCalls;
           if (validationResult.autoFixed && validationResult.fixedToolCalls) {
             validatedToolCalls = validationResult.fixedToolCalls;
-            console.log(`[Agent] ✅ Auto-fixed ${validationResult.fixesApplied} validation issues`);
+            log.info(`[Agent] ✅ Auto-fixed ${validationResult.fixesApplied} validation issues`);
           }
 
           // If confidence is too low, consider escalating
           if (this.outputConfidence < 0.5) {
             const escalated = this.recordModelFailure('low_confidence_output');
             if (escalated) {
-              console.log(`[Agent] 🔄 Escalating due to low confidence (${this.outputConfidence.toFixed(2)})`);
+              log.info(`[Agent] 🔄 Escalating due to low confidence (${this.outputConfidence.toFixed(2)})`);
               continue; // Try again with new model
             }
           }
@@ -4227,18 +4237,18 @@ We'll add more features after this core version works.`;
                     cmd.includes('go mod download')) {
                   // Package managers and build tools often take 2-5 minutes
                   args.timeout = args.timeout || 300; // 5 minutes default for package installs
-                  console.log(`[Agent] 📦 Detected package manager command, increased timeout to ${args.timeout}s`);
+                  log.info(`[Agent] 📦 Detected package manager command, increased timeout to ${args.timeout}s`);
                 } else if (cmd.includes('npm run build') || cmd.includes('yarn build') ||
                           cmd.includes('webpack') || cmd.includes('tsc') ||
                           cmd.includes('python setup.py') || cmd.includes('make')) {
                   // Build processes can take time too
                   args.timeout = args.timeout || 120; // 2 minutes for builds
-                  console.log(`[Agent] 🔨 Detected build command, increased timeout to ${args.timeout}s`);
+                  log.info(`[Agent] 🔨 Detected build command, increased timeout to ${args.timeout}s`);
                 }
               }
               // === END SMART TIMEOUT DETECTION ===
 
-              console.log(`[Agent] Executing: ${toolCall.function.name}`, args?.path || args?.command || '');
+              log.info(`[Agent] Executing: ${toolCall.function.name}`, args?.path || args?.command || '');
               
               // === REPETITIVE FILE READ DETECTION ===
               // Prevents infinite loops where agent reads same file over and over without progress
@@ -4247,7 +4257,7 @@ We'll add more features after this core version works.`;
                 
                 if (filePath === this.lastReadFile) {
                   this.consecutiveSameFileReads++;
-                  console.log(`[Agent] ⚠️ Reading same file again: "${filePath}" (count: ${this.consecutiveSameFileReads}/${this.MAX_SAME_FILE_READS})`);
+                  log.info(`[Agent] ⚠️ Reading same file again: "${filePath}" (count: ${this.consecutiveSameFileReads}/${this.MAX_SAME_FILE_READS})`);
                   
                   if (this.consecutiveSameFileReads >= this.MAX_SAME_FILE_READS) {
                     // Model is stuck - provide strong guidance
@@ -4257,7 +4267,7 @@ We'll add more features after this core version works.`;
                       `2. Move on to the next step in your plan\n` +
                       `3. Mark as done if the task is complete`;
                     
-                    console.log(`[Agent] 🔄 Breaking read loop on "${filePath}"`);
+                    log.info(`[Agent] 🔄 Breaking read loop on "${filePath}"`);
                     
                     toolResults.push(`⚠️ read_file(${filePath}): SKIPPED - Already read ${this.consecutiveSameFileReads} times. Move on.`);
                     this.messages.push({
@@ -4294,7 +4304,7 @@ We'll add more features after this core version works.`;
                   
                   if (this.taskMode === TaskMode.REVIEW) {
                     // REVIEW mode: Block ALL writes
-                    console.log(`[Agent] 🛡️ REVIEW MODE: Blocking write to "${filePath}" - no modifications allowed`);
+                    log.info(`[Agent] 🛡️ REVIEW MODE: Blocking write to "${filePath}" - no modifications allowed`);
                     toolResults.push(`❌ write_file(${filePath}): BLOCKED - You are in REVIEW mode. Cannot modify files.`);
                     this.messages.push({
                       role: 'tool',
@@ -4311,11 +4321,11 @@ We'll add more features after this core version works.`;
                     const changePercentage = 1 - this.contentSimilarity(fileContent, existingFile.content);
                     const changePercent = Math.round(changePercentage * 100);
                     
-                    console.log(`[Agent] 🛡️ FIX MODE: Checking write to existing file "${filePath}" (${changePercent}% change)`);
+                    log.info(`[Agent] 🛡️ FIX MODE: Checking write to existing file "${filePath}" (${changePercent}% change)`);
                     
                     // Block if change is too large (>50% is basically a rewrite)
                     if (changePercentage > 0.5) {
-                      console.log(`[Agent] 🛡️ FIX MODE: BLOCKING write to "${filePath}" - ${changePercent}% change is too destructive`);
+                      log.info(`[Agent] 🛡️ FIX MODE: BLOCKING write to "${filePath}" - ${changePercent}% change is too destructive`);
                       toolResults.push(`❌ write_file(${filePath}): BLOCKED - ${changePercent}% change is too large for FIX mode`);
                       this.messages.push({
                         role: 'tool',
@@ -4334,7 +4344,7 @@ We'll add more features after this core version works.`;
                     
                     // Warn if change is significant (>30%)
                     if (changePercentage > 0.3) {
-                      console.log(`[Agent] 🛡️ FIX MODE: WARNING - ${changePercent}% change to "${filePath}" is significant`);
+                      log.info(`[Agent] 🛡️ FIX MODE: WARNING - ${changePercent}% change to "${filePath}" is significant`);
                       // Allow but log warning - the change will be tracked for potential rollback
                     }
                     
@@ -4352,7 +4362,7 @@ We'll add more features after this core version works.`;
                     });
                     
                     if (isLikelyDuplicate) {
-                      console.log(`[Agent] 🛡️ FIX MODE: BLOCKING duplicate file creation "${filePath}"`);
+                      log.info(`[Agent] 🛡️ FIX MODE: BLOCKING duplicate file creation "${filePath}"`);
                       toolResults.push(`❌ write_file(${filePath}): BLOCKED - This appears to duplicate an existing file`);
                       this.messages.push({
                         role: 'tool',
@@ -4366,7 +4376,7 @@ We'll add more features after this core version works.`;
                     
                     // Allow new files but track them
                     this.filesModifiedThisTask.add(filePath);
-                    console.log(`[Agent] 🛡️ FIX MODE: Allowing new file "${filePath}" (will be tracked for rollback)`);
+                    log.info(`[Agent] 🛡️ FIX MODE: Allowing new file "${filePath}" (will be tracked for rollback)`);
                   }
                 }
                 // === END FIX MODE PROTECTION ===
@@ -4378,7 +4388,7 @@ We'll add more features after this core version works.`;
                 const contentLines = fileContent.split('\n').length;
                 
                 if (isGameProject && isFirstWrite && filePath.endsWith('.js') && contentLines > 200) {
-                  console.log(`[Agent] 🎮 GAME FILE TOO LARGE: ${filePath} has ${contentLines} lines (max 200 for initial version)`);
+                  log.info(`[Agent] 🎮 GAME FILE TOO LARGE: ${filePath} has ${contentLines} lines (max 200 for initial version)`);
                   
                   toolResults.push(`⚠️ write_file(${filePath}): REJECTED - File is too large for initial version (${contentLines} lines)`);
                   this.messages.push({
@@ -4406,7 +4416,7 @@ Please rewrite ${filePath} with ONLY the core mechanics, under 200 lines.`
                 const truncationIssue = this.detectTruncatedCode(fileContent, filePath);
                 if (truncationIssue) {
                   this.consecutiveTruncationRejections++;
-                  console.log(`[Agent] ⚠️ Truncated code detected in "${filePath}": ${truncationIssue} (count: ${this.consecutiveTruncationRejections}/${this.MAX_TRUNCATION_REJECTIONS})`);
+                  log.info(`[Agent] ⚠️ Truncated code detected in "${filePath}": ${truncationIssue} (count: ${this.consecutiveTruncationRejections}/${this.MAX_TRUNCATION_REJECTIONS})`);
                   
                   // Track per-file failures
                   const shouldSkipFile = this.recordFileFailure(filePath, `truncated: ${truncationIssue}`);
@@ -4414,7 +4424,7 @@ Please rewrite ${filePath} with ONLY the core mechanics, under 200 lines.`
                     // This file has failed too many times - skip it and suggest alternatives
                     const skipMsg = `🛑 Skipping "${filePath}" - too many failures (${this.MAX_FAILURES_PER_FILE}). ` +
                       `Try a different approach: break the file into smaller modules, or use a simpler implementation.`;
-                    console.log(`[Agent] ${skipMsg}`);
+                    log.info(`[Agent] ${skipMsg}`);
                     toolResults.push(`❌ write_file(${filePath}): BLOCKED - ${skipMsg}`);
                     this.messages.push({
                       role: 'tool',
@@ -4444,7 +4454,7 @@ Please rewrite ${filePath} with ONLY the core mechanics, under 200 lines.`
                     const errorMsg = `🛑 Model keeps producing truncated/incomplete code (${this.consecutiveTruncationRejections} times). ` +
                       `All available models have been tried. The task may be too complex. ` +
                       `Try breaking it into smaller pieces.`;
-                    console.error(`[Agent] ${errorMsg}`);
+                    log.error(`[Agent] ${errorMsg}`);
                     return this.buildFinalAnswer(errorMsg);
                   }
                   
@@ -4478,7 +4488,7 @@ Please rewrite ${filePath} with ONLY the core mechanics, under 200 lines.`
                 // === MICRO-CHANGE LOOP DETECTION ===
                 // If file has been written 5+ times AND new write is only a micro-change, require TESTING first
                 if (isSameFile && isMicroChange && currentTotalWrites >= 5) {
-                  console.log(`[Agent] 🔄 MICRO-CHANGE LOOP DETECTED: "${filePath}" has ${currentTotalWrites} writes, new change is only ${Math.round((1 - similarity) * 100)}% different`);
+                  log.info(`[Agent] 🔄 MICRO-CHANGE LOOP DETECTED: "${filePath}" has ${currentTotalWrites} writes, new change is only ${Math.round((1 - similarity) * 100)}% different`);
                   
                   // REQUIRE TESTING before accepting - don't just accept "good enough"
                   toolResults.push(`⚠️ write_file(${filePath}): MICRO-CHANGE DETECTED - You've refined this file ${currentTotalWrites} times with only ${Math.round((1 - similarity) * 100)}% change.`);
@@ -4505,12 +4515,12 @@ The file is written, but QUALITY is not yet verified. Test first!`
                 if (isSameFile && isSameContent) {
                   // Same file AND same content - SKIP the write entirely
                   this.consecutiveSameFileWrites++;
-                  console.log(`[Agent] ⚠️ Skipping duplicate write to "${filePath}" (${Math.round(similarity * 100)}% similar, count: ${this.consecutiveSameFileWrites})`);
+                  log.info(`[Agent] ⚠️ Skipping duplicate write to "${filePath}" (${Math.round(similarity * 100)}% similar, count: ${this.consecutiveSameFileWrites})`);
                   
                   if (this.consecutiveSameFileWrites >= this.MAX_SAME_FILE_WRITES) {
                     const errorMsg = `🛑 Repetitive file write detected: "${filePath}" has been written ${this.consecutiveSameFileWrites} times with similar content. ` +
                       `The model may be stuck. Try a different approach or simpler task.`;
-                    console.error(`[Agent] ${errorMsg}`);
+                    log.error(`[Agent] ${errorMsg}`);
                     return this.buildFinalAnswer(errorMsg);
                   }
                   
@@ -4525,11 +4535,11 @@ The file is written, but QUALITY is not yet verified. Test first!`
                 } else if (isSameFile && !isSameContent) {
                   // Same file but different content - track as refinement
                   this.consecutiveSameFileWrites = 1;
-                  console.log(`[Agent] 📝 Updating file "${filePath}" with new content (${Math.round((1 - similarity) * 100)}% different)`);
+                  log.info(`[Agent] 📝 Updating file "${filePath}" with new content (${Math.round((1 - similarity) * 100)}% different)`);
                 } else {
                   // Different file - reset counter
                   this.consecutiveSameFileWrites = 1;
-                  console.log(`[Agent] 📝 Writing to new file: "${filePath}"`);
+                  log.info(`[Agent] 📝 Writing to new file: "${filePath}"`);
                 }
                 
                 // Track this as the last written file and content
@@ -4542,10 +4552,10 @@ The file is written, but QUALITY is not yet verified. Test first!`
                 
                 // Try model escalation if we're getting stuck on the same file
                 if (totalWrites >= this.ESCALATE_ON_WRITE_LOOP && totalWrites < this.MAX_TOTAL_WRITES_PER_FILE) {
-                  console.warn(`[Agent] ⚠️ File "${filePath}" written ${totalWrites} times - attempting OPUS-style model escalation`);
+                  log.warn(`[Agent] ⚠️ File "${filePath}" written ${totalWrites} times - attempting OPUS-style model escalation`);
                   const escalated = this.escalateModel(`File write loop detected: "${filePath}" written ${totalWrites} times - task may be too complex for current model`);
                   if (escalated) {
-                    console.log(`[Agent] ✅ Escalated to ${this.currentActiveModel} - applying OPUS THINKING`);
+                    log.info(`[Agent] ✅ Escalated to ${this.currentActiveModel} - applying OPUS THINKING`);
                     // Reset the write count for this file to give the new model a chance
                     this.totalWritesPerFile.set(filePath, Math.floor(totalWrites / 2));
                     
@@ -4579,13 +4589,13 @@ NOW EXECUTE with excellence.`
                 // === FORCE COMPLETION AT THRESHOLD ===
                 // After FORCE_COMPLETION_AT writes, REQUIRE TESTING before accepting
                 if (totalWrites === this.FORCE_COMPLETION_AT) {
-                  console.log(`[Agent] 🏁 FORCE COMPLETION CHECKPOINT: File "${filePath}" written ${totalWrites} times - REQUIRING VALIDATION`);
+                  log.info(`[Agent] 🏁 FORCE COMPLETION CHECKPOINT: File "${filePath}" written ${totalWrites} times - REQUIRING VALIDATION`);
                   
                   // Run validation BEFORE forcing completion
                   const validationResult = await this.validateProjectCompletion();
                   
                   if (!validationResult.valid) {
-                    console.log(`[Agent] ❌ Validation failed at force completion checkpoint - rejecting premature completion`);
+                    log.info(`[Agent] ❌ Validation failed at force completion checkpoint - rejecting premature completion`);
                     this.messages.push({
                       role: 'user', 
                       content: `🚨 QUALITY GATE: You've written "${filePath}" ${totalWrites} times, but VALIDATION FAILED:
@@ -4601,7 +4611,7 @@ ${validationResult.fixInstruction}
                   }
                   
                   // Validation passed - allow completion but still require final test
-                  console.log(`[Agent] ✅ Validation passed at checkpoint - allowing completion after final test`);
+                  log.info(`[Agent] ✅ Validation passed at checkpoint - allowing completion after final test`);
                   this.messages.push({
                     role: 'user', 
                     content: `⚠️ [QUALITY CHECKPOINT] You have written "${filePath}" ${totalWrites} times. 
@@ -4627,7 +4637,7 @@ The file structure is complete, but RUNTIME VERIFICATION is required.`
                   if (totalWrites <= this.MAX_TOTAL_WRITES_PER_FILE + 2) {
                     // Inject OPUS REFLECTION PROMPT to force quality thinking
                     const opusReflection = OpusThinkingEngine.generateReflectionPrompt();
-                    console.warn(`[Agent] ⚠️ File "${filePath}" written ${totalWrites} times - injecting OPUS REFLECTION`);
+                    log.warn(`[Agent] ⚠️ File "${filePath}" written ${totalWrites} times - injecting OPUS REFLECTION`);
                     this.messages.push({
                       role: 'user',
                       content: `${opusReflection}
@@ -4654,7 +4664,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   
                   const errorMsg = `🛑 FILE WRITE LOOP DETECTED: "${filePath}" has been written ${totalWrites} times in this session. ` +
                     `The model is stuck rewriting the same file. Stopping to prevent infinite loop.`;
-                  console.error(`[Agent] ${errorMsg}`);
+                  log.error(`[Agent] ${errorMsg}`);
                   
                   // Give specific guidance on what went wrong
                   const guidance = `\n\n**What went wrong:** The agent kept regenerating ${filePath} without completing the task. ` +
@@ -4680,7 +4690,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 });
                 
                 if (!bossReview.approved) {
-                  console.error(`[Agent] 👔 BOSS SAYS NO: ${bossReview.reason}`);
+                  log.error(`[Agent] 👔 BOSS SAYS NO: ${bossReview.reason}`);
                   toolResults.push(`❌ write_file(${args.path}): BLOCKED BY BOSS - ${bossReview.reason}`);
                   
                   // Build the boss's feedback message
@@ -4714,7 +4724,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   
                   continue; // Skip this tool call - boss said NO
                 } else {
-                  console.log(`[Agent] 👔 BOSS APPROVAL: "${args.path}" approved`);
+                  log.info(`[Agent] 👔 BOSS APPROVAL: "${args.path}" approved`);
                 }
               }
               
@@ -4724,7 +4734,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 const validation = validateToolCall(normalizedForValidation, this.context.workspacePath, this.currentTask);
                 
                 if (!validation.valid) {
-                  console.error(`[Agent] 🚨 PRE-WRITE VALIDATION FAILED: ${validation.error}`);
+                  log.error(`[Agent] 🚨 PRE-WRITE VALIDATION FAILED: ${validation.error}`);
                   toolResults.push(`❌ write_file(${args.path}): BLOCKED - ${validation.error}`);
                   this.messages.push({
                     role: 'tool',
@@ -4740,7 +4750,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 }
                 
                 if (validation.warning) {
-                  console.warn(`[Agent] ⚠️ Validation warning: ${validation.warning}`);
+                  log.warn(`[Agent] ⚠️ Validation warning: ${validation.warning}`);
                   toolResults.push(`⚠️ write_file(${args.path}): ${validation.warning}`);
                 }
               }
@@ -4761,9 +4771,9 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                       const htmlProjectType = detectProjectTypeFromContent(existingInfo.content);
                       
                       if (htmlProjectType && writtenContentType && htmlProjectType !== writtenContentType) {
-                        console.error(`[Agent] 🚨 POST-WRITE VALIDATION FAILED: File mismatch detected!`);
-                        console.error(`[Agent]   HTML (${existingPath}) expects: ${htmlProjectType}`);
-                        console.error(`[Agent]   JS (${args.path}) contains: ${writtenContentType}`);
+                        log.error(`[Agent] 🚨 POST-WRITE VALIDATION FAILED: File mismatch detected!`);
+                        log.error(`[Agent]   HTML (${existingPath}) expects: ${htmlProjectType}`);
+                        log.error(`[Agent]   JS (${args.path}) contains: ${writtenContentType}`);
                         
                         // Add error message to force agent to fix it
                         this.messages.push({
@@ -4808,7 +4818,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   );
                   
                   if (!verification.verified) {
-                    console.warn(`[Agent] 🔍 Tool verification found issues:`, verification.issues.map(i => i.description));
+                    log.warn(`[Agent] 🔍 Tool verification found issues:`, verification.issues.map(i => i.description));
                     // Add issues to feedback if critical
                     const criticalIssues = verification.issues.filter(i => i.severity === 'critical');
                     if (criticalIssues.length > 0) {
@@ -4819,7 +4829,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                     }
                   }
                 } catch (verifyErr) {
-                  console.warn('[Agent] Tool verification failed (non-critical):', verifyErr);
+                  log.warn('[Agent] Tool verification failed (non-critical):', verifyErr);
                 }
               }
               
@@ -4844,13 +4854,13 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   // Also track in unified file failure history
                   const shouldSkipFile = this.recordFileFailure(errorFile, `syntax: ${syntaxError.message}`);
                   
-                  console.error(`[Agent] 🔴 Syntax error in ${errorFile}:${syntaxError.line}: ${syntaxError.message}`);
+                  log.error(`[Agent] 🔴 Syntax error in ${errorFile}:${syntaxError.line}: ${syntaxError.message}`);
                   
                   // Try model escalation on repeated syntax errors
                   if (newCount >= 2) {
                     const escalated = this.recordModelFailure('syntax_error');
                     if (escalated) {
-                      console.log(`[Agent] 🔄 Escalated model due to repeated syntax errors on ${errorFile}`);
+                      log.info(`[Agent] 🔄 Escalated model due to repeated syntax errors on ${errorFile}`);
                     }
                   }
                   
@@ -4860,7 +4870,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                       `The model keeps generating broken code for this file. ` +
                       `Line ${syntaxError.line}: ${syntaxError.message}\n\n` +
                       `Please read the file, understand the syntax error, and fix it completely before trying to run again.`;
-                    console.error(`[Agent] ${errorMsg}`);
+                    log.error(`[Agent] ${errorMsg}`);
                     
                     // Add explicit instruction to read and fix
                     this.messages.push({
@@ -4949,7 +4959,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
 
             } catch (error: any) {
               const errorMsg = error.message || String(error);
-              console.error(`[Agent] Tool error:`, errorMsg);
+              log.error(`[Agent] Tool error:`, errorMsg);
               
               // === ERROR KNOWLEDGE & PACING ===
               const { ErrorKnowledge } = await import('./agent/tools/errorKnowledge');
@@ -4987,7 +4997,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
               const pacing = ErrorKnowledge.isGoodAttempt(errorMsg, this.consecutiveSameError);
               
               if (!pacing.shouldContinue) {
-                console.warn(`[Agent] ⚠️ Not a good attempt after ${this.consecutiveSameError} tries: ${pacing.reason}`);
+                log.warn(`[Agent] ⚠️ Not a good attempt after ${this.consecutiveSameError} tries: ${pacing.reason}`);
                 // Add explicit feedback
                 this.messages.push({
                   role: 'user',
@@ -5000,8 +5010,8 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   file: args?.path
                 });
                 
-                console.log(`[Agent] 🔧 Error analysis: ${analysis.category} - ${analysis.solution}`);
-                console.log(`[Agent] 📊 Pacing: ${pacing.reason} (attempt ${this.consecutiveSameError})`);
+                log.info(`[Agent] 🔧 Error analysis: ${analysis.category} - ${analysis.solution}`);
+                log.info(`[Agent] 📊 Pacing: ${pacing.reason} (attempt ${this.consecutiveSameError})`);
                 
                 // Add error with solution to context
                 const stepDesc = `${toolCall.function.name}(error)`;
@@ -5016,7 +5026,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 
                 // Auto-fix if possible
                 if (analysis.autoFixable) {
-                  console.log(`[Agent] 🔧 Attempting auto-fix for: ${analysis.category} error`);
+                  log.info(`[Agent] 🔧 Attempting auto-fix for: ${analysis.category} error`);
                   // Auto-fix logic can be added here based on error type
                   // For now, we'll let the model fix it with the instruction
                 }
@@ -5052,8 +5062,8 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             const validationResult = await this.validateProjectCompletion();
             
             if (!validationResult.valid) {
-              console.warn(`[Agent] ⚠️ Project validation failed: ${validationResult.reason}`);
-              console.warn(`[Agent] 🔧 Rejecting "done" - project has issues that must be fixed`);
+              log.warn(`[Agent] ⚠️ Project validation failed: ${validationResult.reason}`);
+              log.warn(`[Agent] 🔧 Rejecting "done" - project has issues that must be fixed`);
               
               // Reject the "done" and tell model to fix issues
               this.messages.push({
@@ -5069,7 +5079,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             }
             
             // Validation passed - project actually works!
-            console.log(`[Agent] ✅ Project validation passed - marking as complete`);
+            log.info(`[Agent] ✅ Project validation passed - marking as complete`);
             finalAnswer = this.buildFinalAnswer(validationResult.message || 'Task completed!');
             break;
           }
@@ -5113,7 +5123,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             `FINAL: {"done": true, "message": "..."} if complete, or {"name": "tool", "arguments": {...}} to continue.`
           ];
           
-          console.log(`[Agent] No tools found (streak: ${this.noToolCallStreak}), adding correction`);
+          log.info(`[Agent] No tools found (streak: ${this.noToolCallStreak}), adding correction`);
           this.messages.push({ role: 'assistant', content: response.content });
           this.syncMessageToState('assistant', response.content);
           
@@ -5126,7 +5136,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
         }
 
       } catch (error: any) {
-        console.error('[Agent] Loop error:', error);
+        log.error('[Agent] Loop error:', error);
 
         if (this.isCancellationRequested()) {
           finalAnswer = this.buildStopMessage();
@@ -5136,7 +5146,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
         // Check for credit/billing errors that require immediate stop
         if (error.message.includes('credit') || error.message.includes('billing') ||
             error.message.includes('insufficient') || error.message.includes('quota')) {
-          console.error(`[Agent] 🛑 CREDIT ERROR - Stopping: ${error.message}`);
+          log.error(`[Agent] 🛑 CREDIT ERROR - Stopping: ${error.message}`);
           finalAnswer = this.buildFinalAnswer(
             `🛑 **API Credit Error**\n\n` +
             `Your API credits are exhausted. Please:\n` +
@@ -5150,11 +5160,11 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
 
         // Handle model not found - try fallback
         if (error.message.includes('not found')) {
-          console.log('[Agent] ⚠️ Model not found - attempting fallback to local Ollama');
+          log.info('[Agent] ⚠️ Model not found - attempting fallback to local Ollama');
 
           const ollamaFallback = this.modelChain.find(m => m.provider === 'ollama');
           if (ollamaFallback && this.currentActiveModel !== ollamaFallback.model) {
-            console.log(`[Agent] 🔄 Switching to Ollama: ${ollamaFallback.model}`);
+            log.info(`[Agent] 🔄 Switching to Ollama: ${ollamaFallback.model}`);
             this.currentActiveModel = ollamaFallback.model;
             aiRouter.setActiveProvider('ollama', ollamaFallback.model);
             continue;
@@ -5163,13 +5173,13 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
 
         // Handle empty responses by escalating to a different model
         if (error.message === 'Empty response from AI') {
-          console.log('[Agent] Empty response detected - attempting model escalation');
+          log.info('[Agent] Empty response detected - attempting model escalation');
           const escalated = this.recordModelFailure('empty_response');
           if (escalated) {
-            console.log('[Agent] Successfully escalated model due to empty response');
+            log.info('[Agent] Successfully escalated model due to empty response');
             continue;
           } else {
-            console.log('[Agent] Could not escalate model - no more models available');
+            log.info('[Agent] Could not escalate model - no more models available');
           }
         }
 
@@ -5197,7 +5207,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
     const wasSuccessful = this.completedSteps.length > 0 && !finalAnswer.includes('Error') && !finalAnswer.includes('🛑');
     if (wasSuccessful && this.filesGeneratedThisSession.length > 0) {
       try {
-        console.log(`[Agent] 🔍 Running self-critique on ${this.filesGeneratedThisSession.length} generated files...`);
+        log.info(`[Agent] 🔍 Running self-critique on ${this.filesGeneratedThisSession.length} generated files...`);
         const critiqueResult = await critqueGeneratedFiles(
           this.filesGeneratedThisSession,
           this.currentTask,
@@ -5208,7 +5218,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           const criticalIssues = critiqueResult.issues.filter(i => i.severity === 'critical');
           const warnings = critiqueResult.issues.filter(i => i.severity === 'warning');
           
-          console.log(`[Agent] 🔍 Self-critique found ${criticalIssues.length} critical, ${warnings.length} warnings`);
+          log.info(`[Agent] 🔍 Self-critique found ${criticalIssues.length} critical, ${warnings.length} warnings`);
           
           if (criticalIssues.length > 0) {
             finalAnswer += `\n\n⚠️ **Self-Review Notes:**\n`;
@@ -5221,12 +5231,12 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             finalAnswer += `\n💡 ${critiqueResult.suggestions[0]}\n`;
           }
         } else {
-          console.log(`[Agent] ✅ Self-critique passed (confidence: ${Math.round(critiqueResult.confidence * 100)}%)`);
+          log.info(`[Agent] ✅ Self-critique passed (confidence: ${Math.round(critiqueResult.confidence * 100)}%)`);
         }
         
         this.emit('critique-complete', critiqueResult);
       } catch (critiqueError) {
-        console.warn('[Agent] Self-critique failed (non-critical):', critiqueError);
+        log.warn('[Agent] Self-critique failed (non-critical):', critiqueError);
       }
     }
 
@@ -5234,7 +5244,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
     if (wasSuccessful && this.context.workspacePath) {
       try {
         const { ProjectRunner } = await import('./agent/tools/projectRunner');
-        console.log('[Agent] 🚀 Auto-running completed project...');
+        log.info('[Agent] 🚀 Auto-running completed project...');
         const runResult = await ProjectRunner.autoRun(this.context.workspacePath);
         
         if (runResult.success && runResult.runResult?.success) {
@@ -5249,7 +5259,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           finalAnswer += `\n\n📁 **Project files created** - Manual setup may be required\n`;
         }
       } catch (error: any) {
-        console.warn('[Agent] Auto-run failed (non-critical):', error.message);
+        log.warn('[Agent] Auto-run failed (non-critical):', error.message);
         // Don't fail the whole task if auto-run fails
       }
     }
@@ -5310,23 +5320,23 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                     patternName: pattern.name
                   }
                 }, 'architectural');
-                console.log(`[Agent] 🎯 Stored successful ${pattern.name} project pattern`);
+                log.info(`[Agent] 🎯 Stored successful ${pattern.name} project pattern`);
               }
             }
           }
         } catch (patternError) {
-          console.warn('[Agent] Pattern learning failed (non-critical):', patternError);
+          log.warn('[Agent] Pattern learning failed (non-critical):', patternError);
         }
       }
       // === END PROJECT PATTERN LEARNING ===
       
       if (wasSuccessful) {
-        console.log(`[Agent] 🎓 Learned from successful task (${this.completedSteps.length} steps)`);
+        log.info(`[Agent] 🎓 Learned from successful task (${this.completedSteps.length} steps)`);
       } else if (mistakes.length > 0) {
-        console.log(`[Agent] 📚 Stored ${mistakes.length} anti-patterns from failed task`);
+        log.info(`[Agent] 📚 Stored ${mistakes.length} anti-patterns from failed task`);
       }
     } catch (error) {
-      console.log('[Agent] Learning storage failed (non-critical)');
+      log.info('[Agent] Learning storage failed (non-critical)');
     }
     // === END LEARNING ===
 
@@ -5377,11 +5387,11 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       }
       
       if (shouldRollback && this.taskModeCheckpointId) {
-        console.log(`[Agent] 🛡️ FIX MODE: Auto-rollback triggered - ${rollbackReason}`);
+        log.info(`[Agent] 🛡️ FIX MODE: Auto-rollback triggered - ${rollbackReason}`);
         
         try {
           await transactionManager.rollbackToCheckpoint(this.taskModeCheckpointId);
-          console.log(`[Agent] 🛡️ Rolled back to checkpoint: ${this.taskModeCheckpointId}`);
+          log.info(`[Agent] 🛡️ Rolled back to checkpoint: ${this.taskModeCheckpointId}`);
           
           // Update final answer to inform user
           finalAnswer = `🛡️ **FIX MODE PROTECTION ACTIVATED**\n\n` +
@@ -5395,70 +5405,33 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           
           // Clear the transaction so we don't try to commit rolled-back changes
           transactionManager.commitTransaction();
-          console.log(`[Agent] ✅ Post-rollback transaction state cleared`);
+          log.info(`[Agent] ✅ Post-rollback transaction state cleared`);
           
           return finalAnswer;
         } catch (rollbackError: any) {
-          console.error(`[Agent] ❌ Auto-rollback failed:`, rollbackError.message);
+          log.error(`[Agent] ❌ Auto-rollback failed:`, rollbackError.message);
           // Continue with commit if rollback fails
         }
       }
       
       // Log change summary even if we're not rolling back
       if (filesExceedingThreshold.length > 0) {
-        console.log(`[Agent] 🛡️ FIX MODE: ${filesExceedingThreshold.length} files had significant changes (>30%)`);
+        log.info(`[Agent] 🛡️ FIX MODE: ${filesExceedingThreshold.length} files had significant changes (>30%)`);
       }
     }
     // === END FIX MODE AUTO-ROLLBACK CHECK ===
 
-    // Stage file operations for review before finalizing writes (monolithic path mirrors specialized flow)
-    if (!this.context.monolithicApplyImmediately) {
-      const activeTx = transactionManager.getActiveTransaction();
-      if (activeTx && activeTx.getOperationCount() > 0) {
-        const ops = activeTx.getOperations().map((op) => ({
-          path: op.path,
-          originalContent: op.originalContent,
-          newContent: op.newContent,
-          existed: op.existed,
-        }));
-        const stagedReview = reviewSessionManager.createSessionFromOperations(
-          this.context.workspacePath,
-          ops,
-          undefined
-        );
-        if (stagedReview) {
-          this.pendingReviewSession = stagedReview;
-          try {
-            await transactionManager.rollbackTransaction();
-            console.log('[Agent] 📝 Staged file changes for review; workspace rolled back until apply');
-          } catch (rollbackError: any) {
-            console.error('[Agent] ❌ Failed to roll back workspace for staged review:', rollbackError.message);
-            this.pendingReviewSession = null;
-            try {
-              transactionManager.commitTransaction();
-              console.log('[Agent] ✅ Transaction committed after staging rollback failure');
-            } catch (commitError: any) {
-              console.error('[Agent] ❌ Transaction commit failed:', commitError.message);
-            }
-            return finalAnswer;
-          }
-          finalAnswer +=
-            '\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.';
-          return finalAnswer;
-        }
-      }
-    }
-
-    // Commit transaction on successful completion (no staged review or no meaningful diffs)
-    try {
-      transactionManager.commitTransaction();
-      console.log('[Agent] ✅ Transaction committed');
-    } catch (txError: any) {
-      console.error(`[Agent] ❌ Transaction commit failed:`, txError.message);
-      // Continue anyway - don't let transaction failure stop the agent
-    }
-
-    return finalAnswer;
+    const finalized = await finalizeAgentTransactionForReview(transactionManager, reviewSessionManager, {
+      workspacePath: this.context.workspacePath,
+      finalAnswer,
+      monolithicApplyImmediately: this.context.monolithicApplyImmediately,
+    });
+    this.pendingReviewSession = finalized.pendingReviewSession;
+    log.info(`[${runId}] Agent loop run completed`, {
+      sessionId: this.sessionId,
+      stagedReview: finalized.stagedReview,
+    });
+    return finalized.finalAnswer;
     } catch (error: any) {
       // Rollback transaction on failure
       try {
@@ -5468,32 +5441,39 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           
           // 🛡️ Enhanced rollback handling for FIX mode
           if (this.taskMode === TaskMode.FIX || this.taskMode === TaskMode.ENHANCE) {
-            console.log(`[Agent] 🛡️ ${this.taskMode.toUpperCase()} MODE: Error occurred, rolling back to protect project`);
+            log.info(`[Agent] 🛡️ ${this.taskMode.toUpperCase()} MODE: Error occurred, rolling back to protect project`);
             
             // Try to rollback to the task mode checkpoint first
             if (this.taskModeCheckpointId) {
               try {
                 await transactionManager.rollbackToCheckpoint(this.taskModeCheckpointId);
-                console.log(`[Agent] 🛡️ Rolled back to task checkpoint: ${this.taskModeCheckpointId}`);
+                log.info(`[Agent] 🛡️ Rolled back to task checkpoint: ${this.taskModeCheckpointId}`);
               } catch (checkpointError: any) {
-                console.warn(`[Agent] Could not rollback to checkpoint, doing full rollback:`, checkpointError.message);
+                log.warn(`[Agent] Could not rollback to checkpoint, doing full rollback:`, checkpointError.message);
                 await transactionManager.rollbackTransaction();
               }
             } else {
               await transactionManager.rollbackTransaction();
             }
             
-            console.log(`[Agent] 🛡️ Project protected: ${opCount} operations rolled back`);
-            console.log(`[Agent] 🛡️ Original error: ${error.message}`);
+            log.info(`[Agent] 🛡️ Project protected: ${opCount} operations rolled back`);
+            log.info(`[Agent] 🛡️ Original error: ${error.message}`);
           } else {
             // Standard rollback for CREATE mode
             await transactionManager.rollbackTransaction();
-            console.log(`[Agent] 🔄 Transaction rolled back (${opCount} operations)`);
+            log.info(`[Agent] 🔄 Transaction rolled back (${opCount} operations)`);
           }
         }
       } catch (rollbackError: any) {
-        console.error(`[Agent] ❌ Transaction rollback failed:`, rollbackError.message);
+        log.error(`[${runId}] Transaction rollback failed`, {
+          sessionId: this.sessionId,
+          error: rollbackError.message,
+        });
       }
+      log.error(`[${runId}] Agent loop run failed`, {
+        sessionId: this.sessionId,
+        error: error.message,
+      });
       throw error; // Re-throw the original error
     }
   }
@@ -5538,7 +5518,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       
       return files.slice(0, 100); // Limit to 100 files
     } catch (error) {
-      console.log('[Agent] Could not list project files:', error);
+      log.info('[Agent] Could not list project files:', error);
       return [];
     }
   }
@@ -5599,7 +5579,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             }
           }, 'antiPatterns');
 
-          console.log(`[Agent] 📚 Learned anti-pattern: ${category} validation failures`);
+          log.info(`[Agent] 📚 Learned anti-pattern: ${category} validation failures`);
         }
 
         // Store specific Express.js API patterns to prevent future mistakes
@@ -5608,7 +5588,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
         }
       }
     } catch (error) {
-      console.log('[Agent] Validation learning failed (non-critical):', error);
+      log.info('[Agent] Validation learning failed (non-critical):', error);
     }
   }
 
@@ -5686,10 +5666,10 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           }
         }, 'architectural');
 
-        console.log('[Agent] 📚 Stored Express.js API patterns for future use');
+        log.info('[Agent] 📚 Stored Express.js API patterns for future use');
       }
     } catch (error) {
-      console.log('[Agent] Pattern storage failed (non-critical):', error);
+      log.info('[Agent] Pattern storage failed (non-critical):', error);
     }
   }
 
@@ -5755,7 +5735,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             
             // Log warnings but don't block
             if (jsWarnings.length > 0) {
-              console.log(`[Agent] ℹ️  Suggestions for ${filePath}: ${jsWarnings.slice(0, 2).join(', ')}`);
+              log.info(`[Agent] ℹ️  Suggestions for ${filePath}: ${jsWarnings.slice(0, 2).join(', ')}`);
             }
 
             suggestions.push(...this.generateJavaScriptSuggestions(critical, filePath));
@@ -5803,7 +5783,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       const attempts = this.selfHealingAttempts.get(attemptKey) || 0;
 
       if (attempts >= this.MAX_HEALING_ATTEMPTS) {
-        console.log(`[Agent] Max healing attempts reached for: ${attemptKey}`);
+        log.info(`[Agent] Max healing attempts reached for: ${attemptKey}`);
         success = false;
         continue;
       }
@@ -6090,7 +6070,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
 
         // Try auto-fix if validation failed and step supports it
         if (!result.valid && step.canAutoFix && step.autoFix && result.confidence < step.requiredConfidence) {
-          console.log(`[Agent] 🔧 Attempting auto-fix for ${step.name} (${result.issues.length} issues)`);
+          log.info(`[Agent] 🔧 Attempting auto-fix for ${step.name} (${result.issues.length} issues)`);
 
           const fixResult = await step.autoFix(data.context, currentData, result.issues);
 
@@ -6100,13 +6080,13 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             fixesApplied++;
             overallConfidence = Math.max(overallConfidence, fixResult.confidence);
 
-            console.log(`[Agent] ✅ Auto-fix successful: ${fixResult.explanation}`);
+            log.info(`[Agent] ✅ Auto-fix successful: ${fixResult.explanation}`);
           } else {
-            console.log(`[Agent] ❌ Auto-fix failed for ${step.name}`);
+            log.info(`[Agent] ❌ Auto-fix failed for ${step.name}`);
           }
         }
       } catch (error) {
-        console.warn(`[Agent] Validation step ${step.name} failed:`, error);
+        log.warn(`[Agent] Validation step ${step.name} failed:`, error);
         // Continue with other validation steps
       }
     }
@@ -6131,7 +6111,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
     fixInstruction?: string;
     message?: string;
   }> {
-    console.log('[Agent] 🔍 Running COMPREHENSIVE project validation...');
+    log.info('[Agent] 🔍 Running COMPREHENSIVE project validation...');
     
     // Check 1: No syntax errors in recent history
     if (this.syntaxErrorHistory.size > 0) {
@@ -6140,7 +6120,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
         .map(([file, count]) => `${file} (${count} errors)`);
       
       if (filesWithErrors.length > 0) {
-        console.log('[Agent] ❌ Validation failed: Syntax errors exist');
+        log.info('[Agent] ❌ Validation failed: Syntax errors exist');
         return {
           valid: false,
           reason: `Syntax errors detected in: ${filesWithErrors.join(', ')}`,
@@ -6154,18 +6134,18 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       const { ProjectRunner } = await import('./agent/tools/projectRunner');
       const projectInfo = await ProjectRunner.detectProject(this.context.workspacePath);
       
-      console.log(`[Agent] Detected project type: ${projectInfo.type}`);
+      log.info(`[Agent] Detected project type: ${projectInfo.type}`);
       
       if (projectInfo.type === 'unknown') {
         // Can't validate unknown projects - allow it
-        console.log('[Agent] ⚠️  Unknown project type - skipping structure validation');
+        log.info('[Agent] ⚠️  Unknown project type - skipping structure validation');
         return { valid: true, message: 'Project structure detected' };
       }
       
       // Check 3: Validate project structure
       const validation = await ProjectRunner.validateProject(this.context.workspacePath, projectInfo);
       if (!validation.valid && validation.issues.length > 0) {
-        console.log(`[Agent] ❌ Validation failed: ${validation.issues.join(', ')}`);
+        log.info(`[Agent] ❌ Validation failed: ${validation.issues.join(', ')}`);
         return {
           valid: false,
           reason: `Project validation failed: ${validation.issues.join(', ')}`,
@@ -6180,7 +6160,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           const { promisify } = require('util');
           const execAsync = promisify(exec);
           
-          console.log('[Agent] Running syntax check...');
+          log.info('[Agent] Running syntax check...');
           
           // Quick syntax check - just parse, don't actually start server
           if (projectInfo.type === 'node' && projectInfo.mainFile) {
@@ -6189,20 +6169,20 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
               cwd: this.context.workspacePath,
               timeout: 5000
             });
-            console.log('[Agent] ✅ Node.js syntax check passed');
+            log.info('[Agent] ✅ Node.js syntax check passed');
           } else if (projectInfo.type === 'python' && projectInfo.mainFile) {
             // Use python -m py_compile for syntax validation
             await execAsync(`python -m py_compile ${projectInfo.mainFile}`, {
               cwd: this.context.workspacePath,
               timeout: 5000
             });
-            console.log('[Agent] ✅ Python syntax check passed');
+            log.info('[Agent] ✅ Python syntax check passed');
           }
         } catch (syntaxCheckError: any) {
           // Syntax check failed - project has errors
           const errorOutput = syntaxCheckError.stderr || syntaxCheckError.message || '';
           
-          console.log(`[Agent] ❌ Syntax check failed: ${errorOutput.substring(0, 200)}`);
+          log.info(`[Agent] ❌ Syntax check failed: ${errorOutput.substring(0, 200)}`);
           
           // Try to extract file and line from error
           const fileMatch = errorOutput.match(/(.+?):(\d+):/);
@@ -6223,7 +6203,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       }
       
       // Check 5: Run Opus Quality Validation (cross-file coherence)
-      console.log('[Agent] 🔍 Running cross-file coherence validation...');
+      log.info('[Agent] 🔍 Running cross-file coherence validation...');
       try {
         const fileContents = new Map<string, string>();
         const projectFiles = fs.readdirSync(this.context.workspacePath);
@@ -6257,7 +6237,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             );
             
             if (criticalIssues.length > 0) {
-              console.log(`[Agent] ❌ Cross-file coherence issues: ${criticalIssues.join('; ')}`);
+              log.info(`[Agent] ❌ Cross-file coherence issues: ${criticalIssues.join('; ')}`);
               return {
                 valid: false,
                 reason: `Cross-file coherence issues: ${criticalIssues.slice(0, 3).join('; ')}`,
@@ -6267,16 +6247,16 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             
             // Log suggestions but don't block
             if (opusValidation.suggestions.length > 0) {
-              console.log(`[Agent] 💡 Quality suggestions: ${opusValidation.suggestions.slice(0, 3).join('; ')}`);
+              log.info(`[Agent] 💡 Quality suggestions: ${opusValidation.suggestions.slice(0, 3).join('; ')}`);
             }
           }
-          console.log('[Agent] ✅ Cross-file coherence check passed');
+          log.info('[Agent] ✅ Cross-file coherence check passed');
         }
       } catch (opusError: any) {
-        console.warn('[Agent] ⚠️  Opus validation error (non-blocking):', opusError.message);
+        log.warn('[Agent] ⚠️  Opus validation error (non-blocking):', opusError.message);
       }
       
-      console.log('[Agent] ✅ ALL validation checks passed - project is complete!');
+      log.info('[Agent] ✅ ALL validation checks passed - project is complete!');
       
       // All checks passed!
       return {
@@ -6285,7 +6265,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       };
       
     } catch (error: any) {
-      console.warn('[Agent] Validation error (allowing completion):', error.message);
+      log.warn('[Agent] Validation error (allowing completion):', error.message);
       // If validation system fails, don't block - assume valid
       return { valid: true, message: 'Project structure detected (validation skipped)' };
     }
@@ -6988,11 +6968,11 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       this.fileFailureHistory.set(filePath, existing);
       
       if (existing.count >= this.MAX_FAILURES_PER_FILE) {
-        console.log(`[Agent] 🛑 File "${filePath}" has failed ${existing.count} times - skipping`);
+        log.info(`[Agent] 🛑 File "${filePath}" has failed ${existing.count} times - skipping`);
         return true; // Should skip this file
       }
       
-      console.log(`[Agent] ⚠️ File "${filePath}" failure count: ${existing.count}/${this.MAX_FAILURES_PER_FILE}`);
+      log.info(`[Agent] ⚠️ File "${filePath}" failure count: ${existing.count}/${this.MAX_FAILURES_PER_FILE}`);
     } else {
       this.fileFailureHistory.set(filePath, {
         count: 1,
@@ -7041,193 +7021,8 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
     return answer;
   }
 
-  private repairJson(json: string): string {
-    // Fix common JSON issues from LLM outputs
-    let repaired = json
-      // Fix empty parameter objects: "parameters": } -> "parameters": {} }
-      .replace(/:\s*\}/g, ': {} }')
-      .replace(/:\s*\]/g, ': [] ]')
-      // Fix trailing commas: ,} -> }
-      .replace(/,\s*\}/g, ' }')
-      .replace(/,\s*\]/g, ' ]')
-      // Fix unquoted keys (simple cases)
-      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3')
-      // Fix single quotes to double quotes
-      .replace(/'/g, '"');
-    
-    return repaired;
-  }
-
   private parseToolCalls(content: string): ToolCall[] {
-    // Strategy 1: Try direct JSON.parse first (don't repair, it might break valid JSON)
-    let jsonContent = content.trim();
-    
-    // Extract JSON from markdown code blocks if present
-    const codeBlockMatch = jsonContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-    if (codeBlockMatch) {
-      jsonContent = codeBlockMatch[1].trim();
-    }
-    
-    // Try to find JSON object in the response (greedy match to get the whole object)
-    const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      jsonContent = jsonMatch[0];
-    }
-    
-    // Helper to extract tool calls from parsed JSON
-    const extractToolCalls = (parsed: any): ToolCall[] | null => {
-      // Check if it's the tool_calls array format
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        const calls: ToolCall[] = [];
-        for (const call of parsed.tool_calls) {
-          if (call.name && tools[call.name]) {
-            calls.push({
-              id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-              type: 'function',
-              function: {
-                name: call.name,
-                arguments: JSON.stringify(call.parameters || call.arguments || {})
-              }
-            });
-          }
-        }
-        if (calls.length > 0) return calls;
-      }
-
-      // Check if it's a single tool call (with plan support)
-      if (parsed.name && tools[parsed.name]) {
-        return [{
-          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-          type: 'function',
-          function: {
-            name: parsed.name,
-            arguments: JSON.stringify(parsed.arguments || parsed.parameters || {})
-          }
-        }];
-      }
-
-      // Check if it's a done response
-      if (parsed.done) {
-        return []; // Empty array signals done
-      }
-      
-      return null; // Couldn't extract
-    };
-    
-    // Attempt 1: Direct JSON.parse (no repair)
-    try {
-      const parsed = JSON.parse(jsonContent);
-      const calls = extractToolCalls(parsed);
-      if (calls !== null) {
-        console.log('Parsed tool calls (direct):', calls.length);
-        return calls;
-      }
-    } catch (e1) {
-      console.log('Direct JSON parse failed:', (e1 as Error).message.substring(0, 100));
-    }
-    
-    // Attempt 2: Try with light repair (fix trailing commas and empty arguments)
-    try {
-      const lightRepaired = jsonContent
-        .replace(/:\s*\}/g, ': {}}')   // Fix empty arguments: "arguments": } -> "arguments": {}}
-        .replace(/,\s*\}/g, '}')       // Remove trailing commas before }
-        .replace(/,\s*\]/g, ']');      // Remove trailing commas before ]
-      
-      const parsed = JSON.parse(lightRepaired);
-      const calls = extractToolCalls(parsed);
-      if (calls !== null) {
-        // Check if tool call has empty/missing required arguments
-        if (calls.length > 0) {
-          const call = calls[0];
-          const args = JSON.parse(call.function.arguments);
-          if (call.function.name === 'write_file' && (!args.path || !args.content)) {
-            console.log('Tool call has missing required arguments (path/content)');
-            return []; // Signal malformed - will trigger correction
-          }
-        }
-        console.log('Parsed tool calls (light repair):', calls.length);
-        return calls;
-      }
-    } catch (e2) {
-      console.log('Light repair parse failed');
-    }
-    
-    // Attempt 3: Try original content (maybe markdown was wrong)
-    try {
-      const parsed = JSON.parse(content.trim());
-      const calls = extractToolCalls(parsed);
-      if (calls !== null) {
-        console.log('Parsed tool calls (original):', calls.length);
-        return calls;
-      }
-    } catch (e3) {
-      // Continue to fallback
-    }
-    
-    // Attempt 4: Smart extraction for write_file commands with complex content
-    // This handles cases where JSON.parse fails due to special characters in file content
-    const writeFileMatch = content.match(/"name"\s*:\s*"write_file"[\s\S]*?"path"\s*:\s*"([^"]+)"[\s\S]*?"content"\s*:\s*"([\s\S]*?)(?:"\s*\}|\"\s*,\s*")/);
-    if (writeFileMatch) {
-      try {
-        const path = writeFileMatch[1];
-        // Unescape the content - handle \\n -> \n, \\" -> ", etc.
-        let fileContent = writeFileMatch[2]
-          .replace(/\\n/g, '\n')
-          .replace(/\\t/g, '\t')
-          .replace(/\\"/g, '"')
-          .replace(/\\\\/g, '\\');
-        
-        console.log('Extracted write_file via smart parsing:', path);
-        return [{
-          id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-          type: 'function',
-          function: {
-            name: 'write_file',
-            arguments: JSON.stringify({ path, content: fileContent })
-          }
-        }];
-      } catch (e4) {
-        console.log('Smart write_file extraction failed:', e4);
-      }
-    }
-    
-    // Attempt 5: Smart extraction for run_command
-    const runCommandMatch = content.match(/"name"\s*:\s*"run_command"[\s\S]*?"command"\s*:\s*"([^"]+)"/);
-    if (runCommandMatch) {
-      console.log('Extracted run_command via smart parsing:', runCommandMatch[1]);
-      return [{
-        id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-        type: 'function',
-        function: {
-          name: 'run_command',
-          arguments: JSON.stringify({ command: runCommandMatch[1] })
-        }
-      }];
-    }
-    
-    // Attempt 6: Smart extraction for read_file/list_dir
-    const simplePathMatch = content.match(/"name"\s*:\s*"(read_file|list_dir)"[\s\S]*?"path"\s*:\s*"([^"]+)"/);
-    if (simplePathMatch) {
-      console.log(`Extracted ${simplePathMatch[1]} via smart parsing:`, simplePathMatch[2]);
-      return [{
-        id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
-        type: 'function',
-        function: {
-          name: simplePathMatch[1],
-          arguments: JSON.stringify({ path: simplePathMatch[2] })
-        }
-      }];
-    }
-    
-    // Attempt 7: Check for done response even if JSON is malformed
-    if (content.toLowerCase().includes('"done"') && 
-        (content.toLowerCase().includes('true') || content.toLowerCase().includes('complete'))) {
-      console.log('Detected done response via pattern match');
-      return [];
-    }
-
-    console.log('All parsing attempts failed. Raw response sample:', content.substring(0, 500));
-    return [];
+    return parseToolCallsContent(content, Object.keys(tools));
   }
 
   // Update context (called by Electron frontend)

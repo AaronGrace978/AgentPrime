@@ -7,6 +7,9 @@ import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { createLogger } from '../../main/core/logger';
+
+const log = createLogger('CLIOnboard');
 
 interface OnboardOptions {
   installDaemon: boolean;
@@ -59,7 +62,7 @@ export async function runOnboard(options: OnboardOptions) {
     output: process.stdout
   });
   
-  console.log(chalk.cyan('This wizard will help you set up AgentPrime.\n'));
+  log.info(chalk.cyan('This wizard will help you set up AgentPrime.\n'));
   
   const config = loadConfig();
   
@@ -67,13 +70,13 @@ export async function runOnboard(options: OnboardOptions) {
     // ═══════════════════════════════════════════════════════════
     // STEP 1: AI Provider
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('Step 1: AI Provider'));
-    console.log(chalk.gray('Configure your AI model provider.\n'));
+    log.info(chalk.bold('Step 1: AI Provider'));
+    log.info(chalk.gray('Configure your AI model provider.\n'));
     
-    console.log('  1. Anthropic (Claude) - Recommended');
-    console.log('  2. OpenAI (GPT)');
-    console.log('  3. Ollama (Local)');
-    console.log('  4. Skip');
+    log.info('  1. Anthropic (Claude) - Recommended');
+    log.info('  2. OpenAI (GPT)');
+    log.info('  3. Ollama (Local)');
+    log.info('  4. Skip');
     
     const providerChoice = await prompt(rl, 'Select provider', '1');
     
@@ -85,7 +88,7 @@ export async function runOnboard(options: OnboardOptions) {
           config.ai.provider = 'anthropic';
           config.ai.apiKey = anthropicKey;
           config.ai.model = 'claude-sonnet-4-20250514';
-          console.log(chalk.green('✓ Anthropic configured\n'));
+          log.info(chalk.green('✓ Anthropic configured\n'));
         }
         break;
       case '2':
@@ -95,7 +98,7 @@ export async function runOnboard(options: OnboardOptions) {
           config.ai.provider = 'openai';
           config.ai.apiKey = openaiKey;
           config.ai.model = 'gpt-4o';
-          console.log(chalk.green('✓ OpenAI configured\n'));
+          log.info(chalk.green('✓ OpenAI configured\n'));
         }
         break;
       case '3':
@@ -105,22 +108,22 @@ export async function runOnboard(options: OnboardOptions) {
         config.ai.provider = 'ollama';
         config.ai.baseUrl = ollamaUrl;
         config.ai.model = ollamaModel;
-        console.log(chalk.green('✓ Ollama configured\n'));
+        log.info(chalk.green('✓ Ollama configured\n'));
         break;
     }
     
     // ═══════════════════════════════════════════════════════════
     // STEP 2: Messaging Channels
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('\nStep 2: Messaging Channels'));
-    console.log(chalk.gray('Set up messaging channels (optional).\n'));
+    log.info(chalk.bold('\nStep 2: Messaging Channels'));
+    log.info(chalk.gray('Set up messaging channels (optional).\n'));
     
     if (await confirm(rl, 'Configure Telegram?', false)) {
       const token = await prompt(rl, 'Telegram Bot Token');
       if (token) {
         config.channels = config.channels || {};
         config.channels.telegram = { botToken: token, enabled: true };
-        console.log(chalk.green('✓ Telegram configured\n'));
+        log.info(chalk.green('✓ Telegram configured\n'));
       }
     }
     
@@ -129,7 +132,7 @@ export async function runOnboard(options: OnboardOptions) {
       if (token) {
         config.channels = config.channels || {};
         config.channels.discord = { token, enabled: true };
-        console.log(chalk.green('✓ Discord configured\n'));
+        log.info(chalk.green('✓ Discord configured\n'));
       }
     }
     
@@ -139,22 +142,22 @@ export async function runOnboard(options: OnboardOptions) {
       if (botToken && appToken) {
         config.channels = config.channels || {};
         config.channels.slack = { botToken, appToken, enabled: true };
-        console.log(chalk.green('✓ Slack configured\n'));
+        log.info(chalk.green('✓ Slack configured\n'));
       }
     }
     
     // ═══════════════════════════════════════════════════════════
     // STEP 3: Voice
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('\nStep 3: Voice (Optional)'));
-    console.log(chalk.gray('Set up voice features.\n'));
+    log.info(chalk.bold('\nStep 3: Voice (Optional)'));
+    log.info(chalk.gray('Set up voice features.\n'));
     
     if (await confirm(rl, 'Configure ElevenLabs TTS?', false)) {
       const key = await prompt(rl, 'ElevenLabs API Key');
       if (key) {
         config.voice = config.voice || {};
         config.voice.tts = { provider: 'elevenlabs', apiKey: key };
-        console.log(chalk.green('✓ ElevenLabs configured\n'));
+        log.info(chalk.green('✓ ElevenLabs configured\n'));
       }
     }
     
@@ -163,15 +166,15 @@ export async function runOnboard(options: OnboardOptions) {
       if (key) {
         config.voice = config.voice || {};
         config.voice.wakeWord = { provider: 'porcupine', accessKey: key };
-        console.log(chalk.green('✓ Porcupine configured\n'));
+        log.info(chalk.green('✓ Porcupine configured\n'));
       }
     }
     
     // ═══════════════════════════════════════════════════════════
     // STEP 4: Gateway Settings
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('\nStep 4: Gateway'));
-    console.log(chalk.gray('Configure the gateway server.\n'));
+    log.info(chalk.bold('\nStep 4: Gateway'));
+    log.info(chalk.gray('Configure the gateway server.\n'));
     
     const port = await prompt(rl, 'Gateway port', '18789');
     config.gateway = config.gateway || {};
@@ -180,12 +183,12 @@ export async function runOnboard(options: OnboardOptions) {
     // ═══════════════════════════════════════════════════════════
     // STEP 5: Security
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('\nStep 5: Security'));
-    console.log(chalk.gray('Configure security settings.\n'));
+    log.info(chalk.bold('\nStep 5: Security'));
+    log.info(chalk.gray('Configure security settings.\n'));
     
-    console.log('DM Policy:');
-    console.log('  1. pairing - Require pairing code for new users (recommended)');
-    console.log('  2. open - Allow all DMs (less secure)');
+    log.info('DM Policy:');
+    log.info('  1. pairing - Require pairing code for new users (recommended)');
+    log.info('  2. open - Allow all DMs (less secure)');
     
     const dmPolicy = await prompt(rl, 'Select DM policy', '1');
     config.security = config.security || {};
@@ -194,16 +197,16 @@ export async function runOnboard(options: OnboardOptions) {
     // ═══════════════════════════════════════════════════════════
     // SAVE CONFIG
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('\n📝 Saving configuration...\n'));
+    log.info(chalk.bold('\n📝 Saving configuration...\n'));
     
     saveConfig(config);
-    console.log(chalk.green(`✓ Config saved to ${CONFIG_FILE}\n`));
+    log.info(chalk.green(`✓ Config saved to ${CONFIG_FILE}\n`));
     
     // ═══════════════════════════════════════════════════════════
     // INSTALL DAEMON (optional)
     // ═══════════════════════════════════════════════════════════
     if (options.installDaemon) {
-      console.log(chalk.bold('Installing as background service...\n'));
+      log.info(chalk.bold('Installing as background service...\n'));
       
       const platform = os.platform();
       
@@ -229,8 +232,8 @@ export async function runOnboard(options: OnboardOptions) {
 </dict>
 </plist>`;
         fs.writeFileSync(plistPath, plist);
-        console.log(chalk.green(`✓ Created ${plistPath}`));
-        console.log(chalk.gray('  Run: launchctl load ~/Library/LaunchAgents/com.agentprime.gateway.plist'));
+        log.info(chalk.green(`✓ Created ${plistPath}`));
+        log.info(chalk.gray('  Run: launchctl load ~/Library/LaunchAgents/com.agentprime.gateway.plist'));
         
       } else if (platform === 'linux') {
         // Linux - systemd
@@ -250,29 +253,29 @@ Restart=always
 [Install]
 WantedBy=default.target`;
         fs.writeFileSync(servicePath, service);
-        console.log(chalk.green(`✓ Created ${servicePath}`));
-        console.log(chalk.gray('  Run: systemctl --user enable agentprime && systemctl --user start agentprime'));
+        log.info(chalk.green(`✓ Created ${servicePath}`));
+        log.info(chalk.gray('  Run: systemctl --user enable agentprime && systemctl --user start agentprime'));
         
       } else if (platform === 'win32') {
         // Windows - suggest using Task Scheduler
-        console.log(chalk.yellow('⚠ Windows: Use Task Scheduler to run at startup:'));
-        console.log(chalk.gray('  Program: npx'));
-        console.log(chalk.gray('  Arguments: agentprime gateway'));
+        log.info(chalk.yellow('⚠ Windows: Use Task Scheduler to run at startup:'));
+        log.info(chalk.gray('  Program: npx'));
+        log.info(chalk.gray('  Arguments: agentprime gateway'));
       }
     }
     
     // ═══════════════════════════════════════════════════════════
     // DONE
     // ═══════════════════════════════════════════════════════════
-    console.log(chalk.bold('\n✅ Setup complete!\n'));
-    console.log(chalk.cyan('Next steps:'));
-    console.log(`  ${chalk.white('agentprime gateway')}     Start the gateway`);
-    console.log(`  ${chalk.white('agentprime doctor')}      Verify setup`);
-    console.log(`  ${chalk.white('agentprime agent -m')}    Test the AI`);
-    console.log('');
+    log.info(chalk.bold('\n✅ Setup complete!\n'));
+    log.info(chalk.cyan('Next steps:'));
+    log.info(`  ${chalk.white('agentprime gateway')}     Start the gateway`);
+    log.info(`  ${chalk.white('agentprime doctor')}      Verify setup`);
+    log.info(`  ${chalk.white('agentprime agent -m')}    Test the AI`);
+    log.info('');
     
   } catch (error: any) {
-    console.error(chalk.red(`\nError: ${error.message}`));
+    log.error(chalk.red(`\nError: ${error.message}`));
   } finally {
     rl.close();
   }

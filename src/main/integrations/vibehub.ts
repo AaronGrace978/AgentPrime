@@ -23,8 +23,10 @@ import * as fs from 'fs';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { promisify } from 'util';
 import { ProjectRunner, ProjectInfo } from '../agent/tools/projectRunner';
+import { createLogger } from '../core/logger';
 import { EventEmitter } from 'events';
 
+const log = createLogger('VibeHub');
 const execAsync = promisify(exec);
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -258,7 +260,7 @@ export class VibeHubIntegration extends EventEmitter {
 
     for (const gitPath of paths) {
       if (fs.existsSync(gitPath)) {
-        console.log(`[VibeHub] Found Git at: ${gitPath}`);
+        log.info(`[VibeHub] Found Git at: ${gitPath}`);
         return gitPath;
       }
     }
@@ -278,7 +280,7 @@ export class VibeHubIntegration extends EventEmitter {
       await execAsync('git --version');
       this.gitAvailable = true;
       this.gitPath = 'git';
-      console.log('[VibeHub] Git is available in PATH');
+      log.info('[VibeHub] Git is available in PATH');
       return true;
     } catch (error) {
       // Git not in PATH, try common locations
@@ -291,7 +293,7 @@ export class VibeHubIntegration extends EventEmitter {
         await execAsync(`"${foundGit}" --version`);
         this.gitAvailable = true;
         this.gitPath = foundGit;
-        console.log(`[VibeHub] Git found at: ${foundGit}`);
+        log.info(`[VibeHub] Git found at: ${foundGit}`);
         return true;
       } catch (error) {
         // Found but couldn't execute
@@ -299,7 +301,7 @@ export class VibeHubIntegration extends EventEmitter {
     }
 
     this.gitAvailable = false;
-    console.warn('[VibeHub] Git is not available. Version control features will be disabled.');
+    log.warn('[VibeHub] Git is not available. Version control features will be disabled.');
     return false;
   }
 
@@ -320,7 +322,7 @@ export class VibeHubIntegration extends EventEmitter {
       // Handle Git's safe.directory security check (CVE-2022-24765)
       // This occurs on Windows when directory ownership doesn't match current user
       if (error?.stderr?.includes('dubious ownership') || error?.message?.includes('dubious ownership')) {
-        console.log(`[VibeHub] Adding ${targetCwd} to Git safe.directory list`);
+        log.info(`[VibeHub] Adding ${targetCwd} to Git safe.directory list`);
         try {
           // Add this specific directory to the safe list (forward slashes for Git)
           const safePath = targetCwd.replace(/\\/g, '/');
@@ -331,7 +333,7 @@ export class VibeHubIntegration extends EventEmitter {
             maxBuffer: options?.maxBuffer || 10 * 1024 * 1024
           });
         } catch (retryError) {
-          console.error('[VibeHub] Failed to add safe.directory:', retryError);
+          log.error('[VibeHub] Failed to add safe.directory:', retryError);
           throw error; // Throw original error if retry fails
         }
       }
@@ -491,7 +493,7 @@ export class VibeHubIntegration extends EventEmitter {
         syncStatus
       };
     } catch (error) {
-      console.error('[VibeHub] Error getting project status:', error);
+      log.error('[VibeHub] Error getting project status:', error);
       return {
         path: this.workspacePath,
         name: path.basename(this.workspacePath),
@@ -547,7 +549,7 @@ export class VibeHubIntegration extends EventEmitter {
 
       return checkpoints;
     } catch (error) {
-      console.error('[VibeHub] Error getting checkpoints:', error);
+      log.error('[VibeHub] Error getting checkpoints:', error);
       return [];
     }
   }
@@ -650,7 +652,7 @@ export class VibeHubIntegration extends EventEmitter {
 
       return versions;
     } catch (error) {
-      console.error('[VibeHub] Error getting versions:', error);
+      log.error('[VibeHub] Error getting versions:', error);
       return [];
     }
   }
@@ -683,7 +685,7 @@ export class VibeHubIntegration extends EventEmitter {
         return { file, status, staged };
       });
     } catch (error) {
-      console.error('[VibeHub] Error getting changes:', error);
+      log.error('[VibeHub] Error getting changes:', error);
       return [];
     }
   }
@@ -734,7 +736,7 @@ export class VibeHubIntegration extends EventEmitter {
         diff: diffOutput
       };
     } catch (error) {
-      console.error(`[VibeHub] Error getting diff for ${filePath}:`, error);
+      log.error(`[VibeHub] Error getting diff for ${filePath}:`, error);
       return null;
     }
   }
@@ -775,7 +777,7 @@ export class VibeHubIntegration extends EventEmitter {
       );
       return stdout;
     } catch (error) {
-      console.error('[VibeHub] Error getting checkpoint diff:', error);
+      log.error('[VibeHub] Error getting checkpoint diff:', error);
       return '';
     }
   }
@@ -807,7 +809,7 @@ export class VibeHubIntegration extends EventEmitter {
       try {
         return await this.generateAIMessage(changedFiles);
       } catch (error) {
-        console.error('[VibeHub] AI message generation failed, using heuristics:', error);
+        log.error('[VibeHub] AI message generation failed, using heuristics:', error);
       }
     }
 
@@ -900,7 +902,7 @@ Respond with ONLY the commit message, nothing else.`;
         return message;
       }
     } catch (error) {
-      console.error('[VibeHub] AI message generation error:', error);
+      log.error('[VibeHub] AI message generation error:', error);
     }
 
     // Fallback
@@ -983,7 +985,7 @@ Respond with ONLY the commit message, nothing else.`;
         try {
           await this.push();
         } catch (pushError) {
-          console.warn('[VibeHub] Auto-push failed:', pushError);
+          log.warn('[VibeHub] Auto-push failed:', pushError);
         }
       }
 
@@ -1484,10 +1486,10 @@ Thumbs.db
           stdio: 'ignore'
         });
         child.unref();
-        console.log(`[VibeHub] Launched from: ${vibeHubExe}`);
+        log.info(`[VibeHub] Launched from: ${vibeHubExe}`);
         return { success: true, method: 'executable' };
       } catch (error: any) {
-        console.error('[VibeHub] Failed to launch executable:', error);
+        log.error('[VibeHub] Failed to launch executable:', error);
       }
     }
 
@@ -1496,7 +1498,7 @@ Thumbs.db
       await shell.openExternal(`vibehub://open?path=${encodeURIComponent(this.workspacePath)}`);
       return { success: true, method: 'protocol' };
     } catch (error: any) {
-      console.error('[VibeHub] Protocol handler failed:', error);
+      log.error('[VibeHub] Protocol handler failed:', error);
     }
 
     return { 
@@ -1544,12 +1546,12 @@ Thumbs.db
       });
 
       this.fileWatcher.on('error', (error) => {
-        console.error('[VibeHub] File watcher error:', error);
+        log.error('[VibeHub] File watcher error:', error);
       });
 
-      console.log('[VibeHub] File watcher started (chokidar)');
+      log.info('[VibeHub] File watcher started (chokidar)');
     } catch (error) {
-      console.error('[VibeHub] Failed to start file watcher:', error);
+      log.error('[VibeHub] Failed to start file watcher:', error);
     }
   }
 
@@ -1560,7 +1562,7 @@ Thumbs.db
     if (this.fileWatcher) {
       void this.fileWatcher.close().catch(() => {});
       this.fileWatcher = null;
-      console.log('[VibeHub] File watcher stopped');
+      log.info('[VibeHub] File watcher stopped');
     }
   }
 
@@ -1628,7 +1630,7 @@ Thumbs.db
     }
 
     try {
-      console.log(`[VibeHub] Detecting and running project in ${this.workspacePath}...`);
+      log.info(`[VibeHub] Detecting and running project in ${this.workspacePath}...`);
       
       const projectInfo = await ProjectRunner.detectProject(this.workspacePath);
       
@@ -1647,15 +1649,15 @@ Thumbs.db
         };
       }
 
-      console.log(`[VibeHub] Detected: ${projectInfo.type} project`);
-      console.log(`[VibeHub] Start command: ${projectInfo.startCommand}`);
+      log.info(`[VibeHub] Detected: ${projectInfo.type} project`);
+      log.info(`[VibeHub] Start command: ${projectInfo.startCommand}`);
 
       // Install dependencies if needed
       if (this.config.projectRunConfig.autoInstallDeps) {
         if (projectInfo.type === 'node' && projectInfo.hasPackageJson) {
           const nodeModulesPath = path.join(this.workspacePath, 'node_modules');
           if (!fs.existsSync(nodeModulesPath)) {
-            console.log('[VibeHub] Installing dependencies...');
+            log.info('[VibeHub] Installing dependencies...');
             this.addLog('📦 Installing dependencies...');
             const installResult = await ProjectRunner.installDependencies(this.workspacePath, projectInfo);
             if (!installResult.success) {
@@ -1670,7 +1672,7 @@ Thumbs.db
         }
 
         if (projectInfo.type === 'python' && !projectInfo.hasVirtualEnv && this.config.projectRunConfig.createVenvForPython) {
-          console.log('[VibeHub] Creating Python virtual environment...');
+          log.info('[VibeHub] Creating Python virtual environment...');
           this.addLog('🐍 Creating Python virtual environment...');
           const venvResult = await ProjectRunner.createVirtualEnv(this.workspacePath, projectInfo.pythonPath);
           if (venvResult.success && venvResult.path) {
@@ -1719,7 +1721,7 @@ Thumbs.db
       }
 
       // Start the project
-      console.log(`[VibeHub] Starting: ${projectInfo.startCommand}`);
+      log.info(`[VibeHub] Starting: ${projectInfo.startCommand}`);
       this.addLog(`🚀 Starting: ${projectInfo.startCommand}`);
       
       // Get proper environment
@@ -1737,10 +1739,10 @@ Thumbs.db
         const { getInferenceEnvVars } = require('../inference-server');
         const inferenceEnv = getInferenceEnvVars();
         env = { ...env, ...inferenceEnv };
-        console.log(`[VibeHub] 🧠 Injected AI inference env vars (port ${inferenceEnv.AGENTPRIME_INFERENCE_PORT})`);
+        log.info(`[VibeHub] 🧠 Injected AI inference env vars (port ${inferenceEnv.AGENTPRIME_INFERENCE_PORT})`);
         this.addLog(`🧠 AI inference available at ${inferenceEnv.AGENTPRIME_INFERENCE_URL}`);
       } catch (e) {
-        console.log('[VibeHub] Inference server not available, skipping env injection');
+        log.info('[VibeHub] Inference server not available, skipping env injection');
       }
 
       const child = exec(projectInfo.startCommand, {
@@ -1763,7 +1765,7 @@ Thumbs.db
       child.stdout?.on('data', (data) => {
         const text = data.toString();
         this.addLog(text.trim());
-        console.log(`[VibeHub:Project] ${text.trim()}`);
+        log.info(`[VibeHub:Project] ${text.trim()}`);
         
         // Detect port from output
         if (!port) {
@@ -1784,7 +1786,7 @@ Thumbs.db
       child.stderr?.on('data', (data) => {
         const text = data.toString();
         this.addLog(`[ERR] ${text.trim()}`);
-        console.error(`[VibeHub:Project] ${text.trim()}`);
+        log.error(`[VibeHub:Project] ${text.trim()}`);
         
         if (text.includes('EADDRINUSE') || text.includes('address already in use')) {
           hasError = true;
@@ -1794,7 +1796,7 @@ Thumbs.db
       });
 
       child.on('exit', (code) => {
-        console.log(`[VibeHub] Project exited with code ${code}`);
+        log.info(`[VibeHub] Project exited with code ${code}`);
         this.addLog(`\n🛑 Process exited with code ${code}`);
         this.runningProcess = null;
         this.runningProjectInfo = null;
@@ -1836,7 +1838,7 @@ Thumbs.db
       };
 
     } catch (error: any) {
-      console.error('[VibeHub] Run project error:', error);
+      log.error('[VibeHub] Run project error:', error);
       this.addLog(`❌ Error: ${error.message}`);
       return {
         success: false,
@@ -1872,7 +1874,7 @@ Thumbs.db
       if (process.platform === 'win32' && pid) {
         exec(`taskkill /pid ${pid} /T /F`, (error) => {
           if (error) {
-            console.warn('[VibeHub] taskkill warning:', error.message);
+            log.warn('[VibeHub] taskkill warning:', error.message);
           }
         });
       } else {
@@ -1888,7 +1890,7 @@ Thumbs.db
       this.runningProcess = null;
       this.runningProjectInfo = null;
 
-      console.log(`[VibeHub] Stopped ${projectType} project`);
+      log.info(`[VibeHub] Stopped ${projectType} project`);
       this.addLog(`\n✅ Project stopped`);
       
       return {
@@ -1896,7 +1898,7 @@ Thumbs.db
         message: `Stopped ${projectType} project.`
       };
     } catch (error: any) {
-      console.error('[VibeHub] Stop project error:', error);
+      log.error('[VibeHub] Stop project error:', error);
       return {
         success: false,
         message: `Failed to stop project: ${error.message}`

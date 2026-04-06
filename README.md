@@ -262,6 +262,10 @@ npm run build
 npm start
 ```
 
+### User guide
+
+- From the welcome screen, use **Open User Guide** to open the styled HTML guide in your system default handler (usually your browser). The file lives at [`docs/user-guide.html`](docs/user-guide.html); plain Markdown is still available as [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md).
+
 ### Development Watch Mode
 
 ```bash
@@ -287,6 +291,8 @@ npm run build:renderer
 # Quality
 npm run lint
 npm run typecheck
+npm run verify:ci
+npm run verify
 
 # Tests
 npm test

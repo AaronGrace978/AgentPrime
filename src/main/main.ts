@@ -11,51 +11,43 @@ import * as fs from 'fs';
 import axios from 'axios';
 import type { Settings } from '../types';
 import { getTheme, getTitleBarOverlay, type ThemeId } from '../renderer/themes';
+import { createLogger } from './core/logger';
 import { initAppLogging, initOptionalSentry, logCrash } from './core/app-logger';
+import {
+  allowMultipleInstances,
+  configureWindowsSessionDataPath,
+  setupSingleInstanceGuard,
+} from './core/electron-runtime-guard';
 import {
   DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS,
   normalizeOllamaCloudOutputLimits,
   setOllamaCloudOutputLimits
 } from './core/model-output-limits';
 
+const log = createLogger('Main');
+
 // ============================================================================
 // GLOBAL ERROR HANDLERS — structured logs + crashes.jsonl (+ optional Sentry)
 // ============================================================================
 process.on('uncaughtException', (error: Error, origin: string) => {
-  console.error('================== UNCAUGHT EXCEPTION ==================');
-  console.error(`Origin: ${origin}`);
-  console.error(`Error: ${error.name}: ${error.message}`);
-  console.error(`Stack: ${error.stack}`);
-  console.error('=========================================================');
+  log.error('================== UNCAUGHT EXCEPTION ==================');
+  log.error(`Origin: ${origin}`);
+  log.error(`Error: ${error.name}: ${error.message}`);
+  log.error(`Stack: ${error.stack}`);
+  log.error('=========================================================');
   logCrash('uncaughtException', error, origin);
 });
 
 process.on('unhandledRejection', (reason: unknown) => {
-  console.error('================== UNHANDLED REJECTION ==================');
-  console.error('Reason:', reason);
-  console.error('=========================================================');
+  log.error('================== UNHANDLED REJECTION ==================');
+  log.error('Reason:', reason);
+  log.error('=========================================================');
   logCrash('unhandledRejection', reason);
 });
 
-// Configure cache directories to prevent Windows permission errors
-// These errors are non-critical and don't affect app functionality
-if (process.platform === 'win32') {
-  // Suppress Electron cache warnings (they're harmless)
-  const originalConsoleError = console.error;
-  console.error = (...args: any[]) => {
-    const message = args.join(' ');
-    // Filter out cache-related errors that are non-critical
-    if (message.includes('cache_util_win.cc') ||
-        message.includes('Unable to move the cache') ||
-        message.includes('Unable to create cache') ||
-        message.includes('Gpu Cache Creation failed') ||
-        message.includes('disk_cache.cc')) {
-      // Silently ignore - these are Windows permission warnings, not actual errors
-      return;
-    }
-    // Log other errors normally
-    originalConsoleError.apply(console, args);
-  };
+const configuredSessionDataPath = configureWindowsSessionDataPath(app);
+if (configuredSessionDataPath) {
+  log.info(`[Main] Using Windows sessionData path: ${configuredSessionDataPath}`);
 }
 
 // Import AI router (TypeScript)
@@ -130,8 +122,8 @@ function loadModules() {
     try {
       if (app && app.isReady()) {
         const appPath = app.getAppPath();
-        console.log(`[Main] app.getAppPath(): ${appPath}`);
-        console.log(`[Main] app.isPackaged: ${app.isPackaged}`);
+        log.info(`[Main] app.getAppPath(): ${appPath}`);
+        log.info(`[Main] app.isPackaged: ${app.isPackaged}`);
         if (app.isPackaged) {
           rootPath = path.dirname(process.execPath);
         } else {
@@ -152,37 +144,37 @@ function loadModules() {
 
     // Normalize the path to handle any path issues
     rootPath = path.normalize(rootPath);
-    console.log(`[Main] Loading modules from root: ${rootPath}`);
-    console.log(`[Main] __dirname: ${__dirname}`);
-    console.log(`[Main] process.cwd(): ${process.cwd()}`);
+    log.info(`[Main] Loading modules from root: ${rootPath}`);
+    log.info(`[Main] __dirname: ${__dirname}`);
+    log.info(`[Main] process.cwd(): ${process.cwd()}`);
 
     try {
       // Import the TypeScript TemplateEngine
       const TemplateEngineModule = require('./legacy/template-engine');
       TemplateEngine = TemplateEngineModule.default || TemplateEngineModule;
-      console.log(`[Main] ✅ TemplateEngine module loaded from TypeScript`);
+      log.info(`[Main] ✅ TemplateEngine module loaded from TypeScript`);
     } catch (e: any) {
-      console.error(`[Main] ❌ Failed to load TemplateEngine: ${e.message}`);
-      console.error(`[Main] Error stack: ${e.stack}`);
-      console.error(`[Main] Template engine not available: ${e.message}`);
-      console.error(`   This will prevent project creation from templates.`);
+      log.error(`[Main] ❌ Failed to load TemplateEngine: ${e.message}`);
+      log.error(`[Main] Error stack: ${e.stack}`);
+      log.error(`[Main] Template engine not available: ${e.message}`);
+      log.error(`   This will prevent project creation from templates.`);
       // Don't throw error - continue without template engine
     }
     
     // Initialize CodebaseIndexer (TypeScript)
     try {
       // CodebaseIndexer will be initialized when workspace is set
-      console.log(`[Main] ✅ CodebaseIndexer class available`);
+      log.info(`[Main] ✅ CodebaseIndexer class available`);
     } catch (e: any) {
-      console.warn(`[Main] ⚠️  CodebaseIndexer not available: ${e.message}`);
+      log.warn(`[Main] ⚠️  CodebaseIndexer not available: ${e.message}`);
     }
 
     // Load ActionExecutor (optional)
     try {
       ActionExecutor = require('./legacy/action-executor.js');
-      console.log(`[Main] ✅ ActionExecutor module loaded from relative path`);
+      log.info(`[Main] ✅ ActionExecutor module loaded from relative path`);
     } catch (e: any) {
-      console.warn(`[Main] ⚠️  ActionExecutor not available: ${e.message}`);
+      log.warn(`[Main] ⚠️  ActionExecutor not available: ${e.message}`);
     }
 
     // Load mirror system modules from TypeScript sources
@@ -198,14 +190,14 @@ function loadModules() {
       MirrorPatternExtractor = MirrorPatternExtractorModule.default || MirrorPatternExtractorModule.MirrorPatternExtractor || MirrorPatternExtractorModule;
       IntelligenceExpansion = IntelligenceExpansionModule.default || IntelligenceExpansionModule.IntelligenceExpansion || IntelligenceExpansionModule;
       
-      console.log(`[Main] ✅ Mirror system modules loaded from TypeScript sources`);
-      console.log(`[Main]    MirrorMemory: ${typeof MirrorMemory}`);
-      console.log(`[Main]    MirrorPatternExtractor: ${typeof MirrorPatternExtractor}`);
-      console.log(`[Main]    IntelligenceExpansion: ${typeof IntelligenceExpansion}`);
+      log.info(`[Main] ✅ Mirror system modules loaded from TypeScript sources`);
+      log.info(`[Main]    MirrorMemory: ${typeof MirrorMemory}`);
+      log.info(`[Main]    MirrorPatternExtractor: ${typeof MirrorPatternExtractor}`);
+      log.info(`[Main]    IntelligenceExpansion: ${typeof IntelligenceExpansion}`);
     } catch (error: any) {
-      console.error(`[Main] ❌ Mirror system modules failed to load: ${error.message}`);
-      console.error(`[Main]    Error stack: ${error.stack}`);
-      console.error(`[Main]    This will prevent code ingestion from working.`);
+      log.error(`[Main] ❌ Mirror system modules failed to load: ${error.message}`);
+      log.error(`[Main]    Error stack: ${error.stack}`);
+      log.error(`[Main]    This will prevent code ingestion from working.`);
     }
   }
   return { TemplateEngine, CodebaseIndexer, ActionExecutor, MirrorMemory, MirrorPatternExtractor, IntelligenceExpansion };
@@ -279,6 +271,24 @@ let workspacePath: string | null = null;
 let focusedFolderPath: string | null = null;
 let activeFilePath: string | null = null; // Track currently active file for completion context
 let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+const multiInstanceAllowed = allowMultipleInstances(process.env);
+const hasSingleInstanceLock = setupSingleInstanceGuard(
+  app,
+  () => {
+    if (!mainWindow) {
+      return;
+    }
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.focus();
+  },
+  !multiInstanceAllowed
+);
+
+if (!hasSingleInstanceLock) {
+  log.warn('[Main] Another AgentPrime instance is already running. Exiting duplicate instance.');
+}
 
 // Template Engine
 let templateEngine: any = null;
@@ -445,39 +455,39 @@ function initializeAIProviders(): void {
       (ollamaProvider as any).isHealthy().then((healthy: boolean) => {
         if (healthy) {
           aiRouter.setFallbackProvider('ollama');
-          console.log('[AI] ✅ Ollama available - set as fallback for rate limits');
+          log.info('[AI] ✅ Ollama available - set as fallback for rate limits');
         } else {
           // Still set Ollama as fallback - it will check health when needed
           aiRouter.setFallbackProvider('ollama');
-          console.log('[AI] ⚠️ Ollama not running now - set as fallback (will check on use)');
+          log.info('[AI] ⚠️ Ollama not running now - set as fallback (will check on use)');
         }
       }).catch(() => {
         // Still set Ollama as fallback - it will check health when needed
         aiRouter.setFallbackProvider('ollama');
-        console.log('[AI] ⚠️ Ollama check failed - set as fallback (will check on use)');
+        log.info('[AI] ⚠️ Ollama check failed - set as fallback (will check on use)');
       });
     } else {
       // Set Ollama as fallback anyway - router will check health when needed
       aiRouter.setFallbackProvider('ollama');
-      console.log('[AI] 🔄 Ollama set as fallback for rate limits');
+      log.info('[AI] 🔄 Ollama set as fallback for rate limits');
     }
   }
   
   // Configure Dual Model System if enabled
   if (settings.dualModelEnabled && settings.dualModelConfig) {
     aiRouter.configureDualModel(settings.dualModelConfig);
-    console.log(`🚀 Dual Model System enabled:`);
-    console.log(`   ⚡ Fast: ${settings.dualModelConfig.fastModel.provider}/${settings.dualModelConfig.fastModel.model}`);
-    console.log(`   🧠 Deep: ${settings.dualModelConfig.deepModel.provider}/${settings.dualModelConfig.deepModel.model}`);
-    console.log(`   🔀 Auto-route: ${settings.dualModelConfig.autoRoute ? 'ON' : 'OFF'} (threshold: ${settings.dualModelConfig.complexityThreshold})`);
+    log.info(`🚀 Dual Model System enabled:`);
+    log.info(`   ⚡ Fast: ${settings.dualModelConfig.fastModel.provider}/${settings.dualModelConfig.fastModel.model}`);
+    log.info(`   🧠 Deep: ${settings.dualModelConfig.deepModel.provider}/${settings.dualModelConfig.deepModel.model}`);
+    log.info(`   🔀 Auto-route: ${settings.dualModelConfig.autoRoute ? 'ON' : 'OFF'} (threshold: ${settings.dualModelConfig.complexityThreshold})`);
   }
 
   if (activeSelectionChanged) {
-    console.log(`[Settings] Normalized active AI provider to ${settings.activeProvider}/${settings.activeModel}`);
+    log.info(`[Settings] Normalized active AI provider to ${settings.activeProvider}/${settings.activeModel}`);
     saveSettings();
   }
   
-  console.log(`✅ AI Provider initialized: ${settings.activeProvider} (${settings.activeModel})`);
+  log.info(`✅ AI Provider initialized: ${settings.activeProvider} (${settings.activeModel})`);
 }
 
 // Settings cache to avoid repeated file reads
@@ -512,24 +522,24 @@ function loadSettings(): void {
 
     if (settings.providers?.ollama?.baseUrl?.includes('localhost')) {
       settings.providers.ollama.baseUrl = fixLocalhost(settings.providers.ollama.baseUrl);
-      console.log('[Settings] 🔧 Fixed Ollama URL: localhost → 127.0.0.1 (IPv6 fix)');
+      log.info('[Settings] 🔧 Fixed Ollama URL: localhost → 127.0.0.1 (IPv6 fix)');
     }
     if (settings.providers?.ollama?.endpoint?.includes('localhost')) {
       settings.providers.ollama.endpoint = fixLocalhost(settings.providers.ollama.endpoint);
-      console.log('[Settings] 🔧 Fixed Ollama endpoint: localhost → 127.0.0.1 (IPv6 fix)');
+      log.info('[Settings] 🔧 Fixed Ollama endpoint: localhost → 127.0.0.1 (IPv6 fix)');
     }
     if (settings.providers?.ollamaSecondary?.baseUrl?.includes('localhost')) {
       settings.providers.ollamaSecondary.baseUrl = fixLocalhost(settings.providers.ollamaSecondary.baseUrl);
-      console.log('[Settings] 🔧 Fixed Ollama Secondary URL: localhost → 127.0.0.1 (IPv6 fix)');
+      log.info('[Settings] 🔧 Fixed Ollama Secondary URL: localhost → 127.0.0.1 (IPv6 fix)');
     }
     if (settings.providers?.ollamaSecondary?.endpoint?.includes('localhost')) {
       settings.providers.ollamaSecondary.endpoint = fixLocalhost(settings.providers.ollamaSecondary.endpoint);
-      console.log('[Settings] 🔧 Fixed Ollama Secondary endpoint: localhost → 127.0.0.1 (IPv6 fix)');
+      log.info('[Settings] 🔧 Fixed Ollama Secondary endpoint: localhost → 127.0.0.1 (IPv6 fix)');
     }
 
     settings.agentAutonomyLevel = clampAgentAutonomyLevel(settings.agentAutonomyLevel);
   } catch (e) {
-    console.log('Error loading settings:', e);
+    log.info('Error loading settings:', e);
   }
 }
 
@@ -545,7 +555,7 @@ function normalizeOpenAIBaseUrl(rawUrl?: string): string | undefined {
 async function loadSecureApiKeys(): Promise<void> {
   try {
     const secureStorage = getSecureKeyStorage();
-    console.log(`[Security] 🔐 Loading API keys from ${secureStorage.getBackendType()}`);
+    log.info(`[Security] 🔐 Loading API keys from ${secureStorage.getBackendType()}`);
     
     // Providers primarily configured from environment variables for startup convenience
     const envConfiguredProviders = ['ollama', 'ollamaSecondary', 'anthropic', 'openai'];
@@ -575,7 +585,7 @@ async function loadSecureApiKeys(): Promise<void> {
           } else if (provider === 'openai') {
             providers[provider].apiKey = OPENAI_API_KEY;
           }
-          console.log(`[Security] ✅ Using environment-configured API key for ${provider}`);
+          log.info(`[Security] ✅ Using environment-configured API key for ${provider}`);
           continue;
         }
         
@@ -588,15 +598,15 @@ async function loadSecureApiKeys(): Promise<void> {
         if (envKey && envKey.length > 10 && envKey !== storedKey) {
           await secureStorage.setApiKey(provider, envKey);
           providers[provider].apiKey = envKey;
-          console.log(`[Security] ✅ Updated API key for ${provider} from .env`);
+          log.info(`[Security] ✅ Updated API key for ${provider} from .env`);
         } else if (storedKey) {
           providers[provider].apiKey = storedKey;
-          console.log(`[Security] ✅ Loaded API key for ${provider}`);
+          log.info(`[Security] ✅ Loaded API key for ${provider}`);
         } else if (envKey && envKey.length > 10) {
           // No stored key, but .env has one - store it
           await secureStorage.setApiKey(provider, envKey);
           providers[provider].apiKey = envKey;
-          console.log(`[Security] ✅ Stored API key for ${provider} from .env`);
+          log.info(`[Security] ✅ Stored API key for ${provider} from .env`);
         }
       } catch (e) {
         // Key not found in secure storage, that's okay
@@ -616,22 +626,22 @@ async function loadSecureApiKeys(): Promise<void> {
               needsMigration = true;
               // Migrate to secure storage
               await secureStorage.setApiKey(provider, config.apiKey);
-              console.log(`[Security] 🔄 Migrated API key for ${provider} to secure storage`);
+              log.info(`[Security] 🔄 Migrated API key for ${provider} to secure storage`);
             }
           }
         }
         
         // If we migrated, rewrite settings.json without API keys
         if (needsMigration) {
-          console.log('[Security] 📝 Removing plain-text API keys from settings.json');
+          log.info('[Security] 📝 Removing plain-text API keys from settings.json');
           saveSettings(); // This will save without API keys
         }
       } catch (e) {
-        console.warn('[Security] Could not check for key migration:', e);
+        log.warn('[Security] Could not check for key migration:', e);
       }
     }
   } catch (e) {
-    console.warn('[Security] Error loading secure API keys:', e);
+    log.warn('[Security] Error loading secure API keys:', e);
   }
 }
 
@@ -651,7 +661,7 @@ function saveSettings(): void {
           const apiKey = settingsToSave.providers[provider].apiKey;
           if (apiKey && apiKey.length > 0) {
             getSecureKeyStorage().setApiKey(provider, apiKey).catch(e => {
-              console.warn(`[Security] Failed to save API key for ${provider}:`, e);
+              log.warn(`[Security] Failed to save API key for ${provider}:`, e);
             });
           }
           // Remove from settings file (will be a placeholder)
@@ -666,7 +676,7 @@ function saveSettings(): void {
     settingsCache = null;
     settingsCacheTime = 0;
   } catch (e) {
-    console.log('Error saving settings:', e);
+    log.info('Error saving settings:', e);
   }
 }
 
@@ -687,7 +697,7 @@ function syncMainWindowTitleBar(): void {
     mainWindow.setTitleBarOverlay(overlay);
     mainWindow.setBackgroundColor(overlay.color);
   } catch (e) {
-    console.warn('[Main] Title bar sync failed:', e);
+    log.warn('[Main] Title bar sync failed:', e);
   }
 }
 
@@ -770,6 +780,7 @@ function createWindow(): void {
   }
 }
 
+if (hasSingleInstanceLock) {
 app.whenReady().then(async () => {
   initAppLogging();
   initOptionalSentry();
@@ -800,7 +811,7 @@ app.whenReady().then(async () => {
   if (featureFlags.pythonBrain) {
     await initializeBackendManager();
   } else {
-    console.log('[Main] Python Brain disabled (set AGENTPRIME_ENABLE_BRAIN=true to enable)');
+    log.info('[Main] Python Brain disabled (set AGENTPRIME_ENABLE_BRAIN=true to enable)');
   }
   
   // Initialize template engine
@@ -821,34 +832,34 @@ app.whenReady().then(async () => {
         templatesPath = path.join(__dirname, '../..', 'templates');
       }
 
-      console.log(`[Main] Initializing template engine with path: ${templatesPath}`);
-      console.log(`[Main] app.isPackaged: ${app.isPackaged}`);
-      console.log(`[Main] __dirname: ${__dirname}`);
-      console.log(`[Main] templates directory exists: ${fs.existsSync(templatesPath)}`);
-      console.log(`[Main] registry file exists: ${fs.existsSync(path.join(templatesPath, 'registry.json'))}`);
+      log.info(`[Main] Initializing template engine with path: ${templatesPath}`);
+      log.info(`[Main] app.isPackaged: ${app.isPackaged}`);
+      log.info(`[Main] __dirname: ${__dirname}`);
+      log.info(`[Main] templates directory exists: ${fs.existsSync(templatesPath)}`);
+      log.info(`[Main] registry file exists: ${fs.existsSync(path.join(templatesPath, 'registry.json'))}`);
       templateEngine = new TE(templatesPath);
     
     // Verify template engine is working
     try {
       const templates = templateEngine.getTemplates();
       const categories = templateEngine.getCategories();
-      console.log(`✅ Template Engine initialized: ${templates.length} templates, ${categories.length} categories`);
+      log.info(`✅ Template Engine initialized: ${templates.length} templates, ${categories.length} categories`);
       
       // Log template names for debugging
       if (templates.length > 0) {
         const templateNames = templates.map((t: any) => t.name || t.id).join(', ');
-        console.log(`   Available templates: ${templateNames}`);
+        log.info(`   Available templates: ${templateNames}`);
       }
     } catch (verifyError: any) {
-      console.warn(`⚠️  Template engine initialized but verification failed: ${verifyError.message}`);
+      log.warn(`⚠️  Template engine initialized but verification failed: ${verifyError.message}`);
     }
     } else {
-      console.error(`❌ Template engine not available: TemplateEngine module not loaded`);
-      console.error(`   This will prevent project creation from templates.`);
+      log.error(`❌ Template engine not available: TemplateEngine module not loaded`);
+      log.error(`   This will prevent project creation from templates.`);
     }
   } catch (e: any) {
-    console.error(`❌ Template engine not available: ${e.message || e}`);
-    console.error(`   This will prevent project creation from templates.`);
+    log.error(`❌ Template engine not available: ${e.message || e}`);
+    log.error(`   This will prevent project creation from templates.`);
   }
 
   // Initialize mirror system (lazy loaded - only when needed)
@@ -861,7 +872,7 @@ app.whenReady().then(async () => {
   const loadMirrorSystem = async () => {
     try {
       const { MirrorMemory: MM, MirrorPatternExtractor: MPE, IntelligenceExpansion: IE } = loadModules();
-      console.log(`[Main] Mirror modules loaded: MM=${!!MM}, MPE=${!!MPE}, IE=${!!IE}`);
+      log.info(`[Main] Mirror modules loaded: MM=${!!MM}, MPE=${!!MPE}, IE=${!!IE}`);
       
       if (MM && MPE && IE) {
         const dataPath = app.isPackaged
@@ -869,7 +880,7 @@ app.whenReady().then(async () => {
           : path.join(getAppRoot(), 'data');
         const opusExamplesPath = path.join(dataPath, 'opus-examples');
 
-        console.log(`[Main] Initializing MirrorMemory with path: ${path.join(dataPath, 'mirror-memory.json')}`);
+        log.info(`[Main] Initializing MirrorMemory with path: ${path.join(dataPath, 'mirror-memory.json')}`);
         mirrorMemory = new MM(path.join(dataPath, 'mirror-memory.json'));
 
         // Set up event listeners for pattern learning notifications
@@ -887,7 +898,7 @@ app.whenReady().then(async () => {
         const loadResult = await mirrorMemory.load();
         if (loadResult.success) {
           const stats = mirrorMemory.getStats ? mirrorMemory.getStats() : { totalPatterns: 0 };
-          console.log(`[MirrorMemory] Loaded ${stats.totalPatterns} patterns from disk`);
+          log.info(`[MirrorMemory] Loaded ${stats.totalPatterns} patterns from disk`);
           
           // Clean up duplicate patterns on startup (if method exists)
           if (typeof mirrorMemory.deduplicatePatterns === 'function') {
@@ -895,41 +906,41 @@ app.whenReady().then(async () => {
               const dedupeResult = await mirrorMemory.deduplicatePatterns();
               if (dedupeResult && dedupeResult.removed > 0) {
                 const newStats = mirrorMemory.getStats ? mirrorMemory.getStats() : { totalPatterns: 0 };
-                console.log(`[MirrorMemory] After dedup: ${newStats.totalPatterns} patterns`);
+                log.info(`[MirrorMemory] After dedup: ${newStats.totalPatterns} patterns`);
               }
             } catch (dedupeError) {
-              console.warn('[MirrorMemory] Deduplication not available (non-critical):', dedupeError);
+              log.warn('[MirrorMemory] Deduplication not available (non-critical):', dedupeError);
             }
           }
         } else {
-          console.warn('[MirrorMemory] Failed to load patterns:', loadResult.error);
+          log.warn('[MirrorMemory] Failed to load patterns:', loadResult.error);
         }
         
-        console.log(`[Main] Initializing PatternExtractor with opusExamplesPath: ${opusExamplesPath}`);
+        log.info(`[Main] Initializing PatternExtractor with opusExamplesPath: ${opusExamplesPath}`);
         patternExtractor = new MPE(opusExamplesPath);
         
-        console.log(`[Main] Initializing IntelligenceExpansion`);
+        log.info(`[Main] Initializing IntelligenceExpansion`);
         intelligenceExpansion = new IE(mirrorMemory);
         
         // Initialize knowledge ingester for pattern learning from external sources
-        console.log(`[Main] Initializing MirrorKnowledgeIngester`);
+        log.info(`[Main] Initializing MirrorKnowledgeIngester`);
         knowledgeIngester = new MirrorKnowledgeIngester(opusExamplesPath, mirrorMemory, patternExtractor);
 
         // Register with singleton for global access (used by agent loop)
         setMirrorMemory(mirrorMemory);
 
-        console.log('✅ Mirror Intelligence System initialized');
-        console.log(`[Main] Mirror getters: memory=${!!mirrorMemory}, extractor=${!!patternExtractor}, ingester=${!!knowledgeIngester}`);
+        log.info('✅ Mirror Intelligence System initialized');
+        log.info(`[Main] Mirror getters: memory=${!!mirrorMemory}, extractor=${!!patternExtractor}, ingester=${!!knowledgeIngester}`);
       } else {
-        console.error(`[Main] ❌ Mirror system modules failed to load!`);
-        console.error(`[Main]   MirrorMemory: ${MM ? '✅' : '❌'}`);
-        console.error(`[Main]   MirrorPatternExtractor: ${MPE ? '✅' : '❌'}`);
-        console.error(`[Main]   IntelligenceExpansion: ${IE ? '✅' : '❌'}`);
-        console.error(`[Main]   Check that scripts/mirror/ directory exists and contains the required .js files`);
+        log.error(`[Main] ❌ Mirror system modules failed to load!`);
+        log.error(`[Main]   MirrorMemory: ${MM ? '✅' : '❌'}`);
+        log.error(`[Main]   MirrorPatternExtractor: ${MPE ? '✅' : '❌'}`);
+        log.error(`[Main]   IntelligenceExpansion: ${IE ? '✅' : '❌'}`);
+        log.error(`[Main]   Check that scripts/mirror/ directory exists and contains the required .js files`);
       }
     } catch (e: any) {
-      console.error('❌ Mirror system initialization failed:', e.message || e);
-      console.error('Stack:', e.stack);
+      log.error('❌ Mirror system initialization failed:', e.message || e);
+      log.error('Stack:', e.stack);
     }
   };
   
@@ -957,17 +968,17 @@ app.whenReady().then(async () => {
 
   const initializePluginSystem = async () => {
     if (settings.plugins?.enabled === false) {
-      console.log('[Plugins] Plugin system disabled in settings');
+      log.info('[Plugins] Plugin system disabled in settings');
       return;
     }
 
     try {
       const sandbox = new SecurePluginSandbox();
       sandbox.on('plugin_log', ({ level, message }) => {
-        console.log(`[Plugin:${level}] ${message}`);
+        log.info(`[Plugin:${level}] ${message}`);
       });
       sandbox.on('plugin_error', ({ error }) => {
-        console.warn(`[Plugin] Sandbox error: ${error}`);
+        log.warn(`[Plugin] Sandbox error: ${error}`);
       });
 
       pluginManager = new PluginManager(sandbox, {
@@ -981,9 +992,9 @@ app.whenReady().then(async () => {
         : path.join(getAppRoot(), 'plugins');
 
       const loadedPlugins = await pluginManager.loadPluginsFromDirectory(pluginsRoot);
-      console.log(`[Plugins] Loaded ${loadedPlugins.length} plugin(s) from ${pluginsRoot}`);
+      log.info(`[Plugins] Loaded ${loadedPlugins.length} plugin(s) from ${pluginsRoot}`);
     } catch (error: any) {
-      console.error(`[Plugins] Failed to initialize plugin system: ${error.message}`);
+      log.error(`[Plugins] Failed to initialize plugin system: ${error.message}`);
     }
   };
 
@@ -993,7 +1004,7 @@ app.whenReady().then(async () => {
       loadMirrorSystem();
     }, 1000);
   } else {
-    console.log('[Main] Mirror system disabled (set AGENTPRIME_ENABLE_MIRROR=true to enable)');
+    log.info('[Main] Mirror system disabled (set AGENTPRIME_ENABLE_MIRROR=true to enable)');
   }
 
   await initializePluginSystem();
@@ -1015,7 +1026,7 @@ app.whenReady().then(async () => {
           workspaceSymbolIndex.whenReady().catch(() => {});
 
           codebaseIndexer = new CodebaseIndexer(workspacePath);
-          console.log(`[Main] ✅ CodebaseIndexer initialized for workspace: ${workspacePath}`);
+          log.info(`[Main] ✅ CodebaseIndexer initialized for workspace: ${workspacePath}`);
           
           // Initialize ActivatePrime for Cursor-like AI assistance
           activatePrime = new ActivatePrimeIntegration(workspacePath);
@@ -1023,25 +1034,25 @@ app.whenReady().then(async () => {
           activatePrime.initializeContextCompressionEngine();
           activatePrime.initializeContextAwarenessEngine();
           activatePrime.initializeEnhancedModelRouter();
-          console.log(`[Main] ✅ ActivatePrime initialized for workspace: ${workspacePath}`);
+          log.info(`[Main] ✅ ActivatePrime initialized for workspace: ${workspacePath}`);
           
           // Start background indexing after a short delay to not block startup
           setTimeout(() => {
             if (codebaseIndexer && workspacePath) {
-              console.log(`[Main] 🚀 Starting background codebase indexing...`);
+              log.info(`[Main] 🚀 Starting background codebase indexing...`);
               codebaseIndexer.indexCodebase().then(() => {
-                console.log(`[Main] ✅ Background indexing completed`);
+                log.info(`[Main] ✅ Background indexing completed`);
                 // Notify renderer that indexing is complete
                 if (mainWindow && !mainWindow.isDestroyed()) {
                   mainWindow.webContents.send('codebase:indexing-complete');
                 }
               }).catch((error: any) => {
-                console.error(`[Main] ❌ Background indexing failed: ${error.message}`);
+                log.error(`[Main] ❌ Background indexing failed: ${error.message}`);
               });
             }
           }, 2000); // Wait 2 seconds after startup before indexing
         } catch (error: any) {
-          console.error(`[Main] ❌ Failed to initialize CodebaseIndexer: ${error.message}`);
+          log.error(`[Main] ❌ Failed to initialize CodebaseIndexer: ${error.message}`);
         }
       } else {
         workspaceSymbolIndex = null;
@@ -1095,6 +1106,7 @@ app.whenReady().then(async () => {
   
   // Lean profile: non-core background services remain opt-in and are not auto-started.
 });
+}
 
 app.on('before-quit', async () => {
   // Shutdown telemetry (flushes pending events)
@@ -1102,7 +1114,7 @@ app.on('before-quit', async () => {
     const telemetryService = getTelemetryService();
     await telemetryService.shutdown();
   } catch (e) {
-    console.warn('[Main] Error shutting down telemetry:', e);
+    log.warn('[Main] Error shutting down telemetry:', e);
   }
   
   // Save state before quitting
@@ -1147,7 +1159,7 @@ ipcMain.handle(
       mainWindow.setTitleBarOverlay(overlay);
       mainWindow.setBackgroundColor(overlay.color);
     } catch (e) {
-      console.warn('[Main] set-title-bar-overlay failed:', e);
+      log.warn('[Main] set-title-bar-overlay failed:', e);
     }
   }
 );
@@ -1199,7 +1211,7 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
   if (newSettings.activeProvider || newSettings.activeModel || newSettings.providers ||
       newSettings.dualModelEnabled !== undefined || newSettings.dualModelConfig || newSettings.ollamaCloudOutputLimits) {
     initializeAIProviders();
-    console.log('[Settings] AI providers reinitialized due to settings change');
+    log.info('[Settings] AI providers reinitialized due to settings change');
   }
 
   // Keep startup diagnostics in sync with current settings.
@@ -1219,7 +1231,7 @@ ipcMain.handle('get-providers', async () => {
       isActive: p.id === settings.activeProvider
     }));
   } catch (error: any) {
-    console.error('[IPC] get-providers error:', error);
+    log.error('[IPC] get-providers error:', error);
     return [];
   }
 });
@@ -1229,7 +1241,7 @@ ipcMain.handle('get-provider-models', async (event, providerName: string) => {
     const models = await aiRouter.getProviderModels(providerName);
     return models;
   } catch (error: any) {
-    console.error('[IPC] get-provider-models error:', error);
+    log.error('[IPC] get-provider-models error:', error);
     return [];
   }
 });
@@ -1239,7 +1251,7 @@ ipcMain.handle('test-provider', async (event, providerName: string) => {
     const result = await aiRouter.testProvider(providerName);
     return result;
   } catch (error: any) {
-    console.error('[IPC] test-provider error:', error);
+    log.error('[IPC] test-provider error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1253,7 +1265,7 @@ ipcMain.handle('set-active-provider', async (event, providerName: string, model:
     refreshStartupPreflightReport(false);
     return { success: true };
   } catch (error: any) {
-    console.error('[IPC] set-active-provider error:', error);
+    log.error('[IPC] set-active-provider error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1273,7 +1285,7 @@ ipcMain.handle('configure-provider', async (event, providerName: string, config:
     refreshStartupPreflightReport(false);
     return { success: true };
   } catch (error: any) {
-    console.error('[IPC] configure-provider error:', error);
+    log.error('[IPC] configure-provider error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1305,7 +1317,46 @@ ipcMain.handle('open-external', async (event, url: string) => {
     await shell.openExternal(url);
     return { success: true };
   } catch (error: any) {
-    console.error('[IPC] open-external error:', error);
+    log.error('[IPC] open-external error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/** Resolve bundled HTML user guide (dev + packaged). */
+function getUserGuideHtmlPath(): string | null {
+  const fileName = 'user-guide.html';
+  const candidates: string[] = [];
+  if (app.isPackaged) {
+    candidates.push(path.join(process.resourcesPath, 'docs', fileName));
+    candidates.push(path.join(process.resourcesPath, fileName));
+  }
+  candidates.push(path.join(process.cwd(), 'docs', fileName));
+  candidates.push(path.join(__dirname, '../../docs', fileName));
+  for (const p of candidates) {
+    const n = path.normalize(p);
+    if (fs.existsSync(n)) {
+      return n;
+    }
+  }
+  return null;
+}
+
+ipcMain.handle('open-user-guide', async () => {
+  try {
+    const { shell } = require('electron');
+    const guidePath = getUserGuideHtmlPath();
+    if (!guidePath) {
+      log.warn('[IPC] open-user-guide: user-guide.html not found');
+      return { success: false, error: 'User guide file not found' };
+    }
+    const err = await shell.openPath(guidePath);
+    if (err) {
+      log.error('[IPC] open-user-guide shell.openPath:', err);
+      return { success: false, error: err };
+    }
+    return { success: true, path: guidePath };
+  } catch (error: any) {
+    log.error('[IPC] open-user-guide error:', error);
     return { success: false, error: error.message };
   }
 });
@@ -1426,4 +1477,4 @@ ipcMain.handle('create-workspace', async (_event, projectName: string, baseDir: 
   }
 });
 
-console.log('🚀 AgentPrime Electron app starting...');
+log.info('🚀 AgentPrime Electron app starting...');

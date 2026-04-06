@@ -3,6 +3,8 @@ import { spawn } from 'child_process';
 import * as path from 'path';
 import { searchWithRipgrep } from '../core/ripgrep-runner';
 import type { IpcMainInvokeEvent } from 'electron';
+import { createLogger, createOperationId } from '../core/logger';
+import { ipcRateLimiter, validateCommand, validateFilePath } from '../security/ipcValidation';
 
 interface HandlerDeps {
   ipcMain: any;
@@ -10,6 +12,25 @@ interface HandlerDeps {
 }
 
 let fileTools: FileTools | null = null;
+const log = createLogger('AgentIPC');
+const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60;
+const MAX_COMMAND_TIMEOUT_SECONDS = 300;
+
+function resolveWorkspaceCommandDir(workspacePath: string, cwd?: string): string {
+  const requestedCwd = typeof cwd === 'string' && cwd.trim().length > 0 ? cwd : '.';
+  const validation = validateFilePath(requestedCwd, workspacePath, { sanitizeFilename: false });
+  if (!validation.valid) {
+    throw new Error(`Invalid working directory: ${validation.errors.join(', ')}`);
+  }
+
+  const workDir = path.resolve(workspacePath, validation.sanitized || requestedCwd);
+  const relative = path.relative(path.resolve(workspacePath), workDir);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Working directory resolves outside of workspace');
+  }
+
+  return workDir;
+}
 
 function getFileTools(workspacePath: string | null): FileTools | null {
   if (!workspacePath) return null;
@@ -19,6 +40,94 @@ function getFileTools(workspacePath: string | null): FileTools | null {
   }
 
   return fileTools;
+}
+
+function clampTimeoutSeconds(timeout?: number): number {
+  if (!Number.isFinite(timeout)) {
+    return DEFAULT_COMMAND_TIMEOUT_SECONDS;
+  }
+  return Math.max(1, Math.min(MAX_COMMAND_TIMEOUT_SECONDS, Math.floor(timeout as number)));
+}
+
+function buildCommandError(
+  requestId: string,
+  command: string,
+  error: string,
+  extras: Record<string, unknown> = {}
+) {
+  return {
+    success: false,
+    requestId,
+    command,
+    error,
+    ...extras,
+  };
+}
+
+async function runShellCommand(
+  requestId: string,
+  command: string,
+  cwd: string,
+  timeoutSeconds: number,
+  reportedCwd: string
+): Promise<Record<string, unknown>> {
+  const timeoutMs = timeoutSeconds * 1000;
+
+  return new Promise((resolve) => {
+    const isWindows = process.platform === 'win32';
+    const shell = isWindows ? 'cmd.exe' : '/bin/bash';
+    const shellArgs = isWindows ? ['/c', command] : ['-c', command];
+
+    log.info(`[${requestId}] Running command`, { cwd: reportedCwd, timeoutSeconds });
+
+    const child = spawn(shell, shellArgs, {
+      cwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    const timer = setTimeout(() => {
+      child.kill();
+      log.warn(`[${requestId}] Command timed out`, { cwd: reportedCwd, timeoutSeconds });
+      resolve(
+        buildCommandError(requestId, command, `Command timed out after ${timeoutSeconds}s`, {
+          cwd: reportedCwd,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+        })
+      );
+    }, timeoutMs);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      log.info(`[${requestId}] Command completed`, { cwd: reportedCwd, exitCode: code });
+      resolve({
+        success: code === 0,
+        requestId,
+        command,
+        cwd: reportedCwd,
+        exit_code: code,
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+      });
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      log.error(`[${requestId}] Command failed to spawn`, err);
+      resolve(buildCommandError(requestId, command, err.message, { cwd: reportedCwd }));
+    });
+  });
 }
 
 export function register(deps: HandlerDeps): void {
@@ -98,139 +207,84 @@ export function register(deps: HandlerDeps): void {
 
   // Run command - Execute terminal commands
   ipcMain.handle('agent:run-command', async (_event: IpcMainInvokeEvent, command: string, cwd?: string, timeout?: number) => {
+    const requestId = createOperationId('agentcmd');
     try {
-      const workspacePath = getWorkspacePath();
-      if (!workspacePath) {
-        return { success: false, error: 'No workspace loaded' };
+      const rateCheck = ipcRateLimiter.check('agent:run-command', 30);
+      if (!rateCheck.allowed) {
+        return buildCommandError(requestId, String(command || ''), 'Rate limit exceeded for agent commands.');
       }
 
-      const workDir = path.resolve(workspacePath, cwd || '.');
-      const timeoutMs = (timeout || 60) * 1000;
+      const commandValidation = validateCommand(command, { allowShellOperators: true });
+      if (!commandValidation.valid) {
+        return buildCommandError(
+          requestId,
+          String(command || ''),
+          `Invalid command: ${commandValidation.errors.join('; ')}`
+        );
+      }
 
-      return new Promise((resolve) => {
-        const isWindows = process.platform === 'win32';
-        const shell = isWindows ? 'cmd.exe' : '/bin/bash';
-        const shellArgs = isWindows ? ['/c', command] : ['-c', command];
+      const workspacePath = getWorkspacePath();
+      if (!workspacePath) {
+        return buildCommandError(requestId, commandValidation.sanitized || command, 'No workspace loaded');
+      }
 
-        const child = spawn(shell, shellArgs, {
-          cwd: workDir,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env }
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout.on('data', (data) => { stdout += data.toString(); });
-        child.stderr.on('data', (data) => { stderr += data.toString(); });
-
-        const timer = setTimeout(() => {
-          child.kill();
-          resolve({
-            success: false,
-            command,
-            cwd: cwd || '.',
-            stdout,
-            stderr,
-            error: `Command timed out after ${timeout || 60}s`
-          });
-        }, timeoutMs);
-
-        child.on('close', (code) => {
-          clearTimeout(timer);
-          resolve({
-            success: code === 0,
-            command,
-            cwd: cwd || '.',
-            exit_code: code,
-            stdout: stdout.trim(),
-            stderr: stderr.trim()
-          });
-        });
-
-        child.on('error', (err) => {
-          clearTimeout(timer);
-          resolve({
-            success: false,
-            command,
-            error: err.message
-          });
-        });
-      });
+      const workDir = resolveWorkspaceCommandDir(workspacePath, cwd);
+      const timeoutSeconds = clampTimeoutSeconds(timeout);
+      return runShellCommand(
+        requestId,
+        commandValidation.sanitized || command,
+        workDir,
+        timeoutSeconds,
+        cwd || '.'
+      );
     } catch (error) {
-      console.error('Agent run-command failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to run command'
-      };
+      log.error(`[${requestId}] agent:run-command failed`, error);
+      return buildCommandError(
+        requestId,
+        String(command || ''),
+        error instanceof Error ? error.message : 'Failed to run command'
+      );
     }
   });
 
   // Run command (legacy/simple version) - Used by Words to Code and other UI features
   // This is a simpler version that just takes a command string
   ipcMain.handle('run-command', async (_event: IpcMainInvokeEvent, command: string) => {
+    const requestId = createOperationId('uicmd');
     try {
-      const workspacePath = getWorkspacePath();
-      if (!workspacePath) {
-        return { success: false, error: 'No workspace loaded' };
+      const rateCheck = ipcRateLimiter.check('run-command', 15);
+      if (!rateCheck.allowed) {
+        return buildCommandError(requestId, String(command || ''), 'Rate limit exceeded for run-command.');
       }
 
-      const timeoutMs = 60 * 1000; // 60 second default timeout
+      const commandValidation = validateCommand(command, { allowShellOperators: false });
+      if (!commandValidation.valid) {
+        return buildCommandError(
+          requestId,
+          String(command || ''),
+          `Invalid command: ${commandValidation.errors.join('; ')}`
+        );
+      }
 
-      return new Promise((resolve) => {
-        const isWindows = process.platform === 'win32';
-        const shell = isWindows ? 'cmd.exe' : '/bin/bash';
-        const shellArgs = isWindows ? ['/c', command] : ['-c', command];
+      const workspacePath = getWorkspacePath();
+      if (!workspacePath) {
+        return buildCommandError(requestId, commandValidation.sanitized || command, 'No workspace loaded');
+      }
 
-        const child = spawn(shell, shellArgs, {
-          cwd: workspacePath,
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: { ...process.env }
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        child.stdout.on('data', (data) => { stdout += data.toString(); });
-        child.stderr.on('data', (data) => { stderr += data.toString(); });
-
-        const timer = setTimeout(() => {
-          child.kill();
-          resolve({
-            success: false,
-            command,
-            stdout,
-            stderr,
-            error: 'Command timed out after 60s'
-          });
-        }, timeoutMs);
-
-        child.on('close', (code) => {
-          clearTimeout(timer);
-          resolve({
-            success: code === 0,
-            command,
-            exit_code: code,
-            stdout: stdout.trim(),
-            stderr: stderr.trim()
-          });
-        });
-
-        child.on('error', (err) => {
-          clearTimeout(timer);
-          resolve({
-            success: false,
-            command,
-            error: err.message
-          });
-        });
-      });
+      return runShellCommand(
+        requestId,
+        commandValidation.sanitized || command,
+        workspacePath,
+        DEFAULT_COMMAND_TIMEOUT_SECONDS,
+        '.'
+      );
     } catch (error) {
-      console.error('run-command failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to run command'
-      };
+      log.error(`[${requestId}] run-command failed`, error);
+      return buildCommandError(
+        requestId,
+        String(command || ''),
+        error instanceof Error ? error.message : 'Failed to run command'
+      );
     }
   });
 

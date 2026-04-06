@@ -7,7 +7,7 @@
  * - Inline diff preview support
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { memo, useState, useCallback } from 'react';
 import { Virtuoso } from 'react-virtuoso';
 import { Message } from '../types';
 
@@ -58,10 +58,12 @@ function extractCodeBlocks(content: string): { blocks: CodeBlock[]; text: string
 }
 
 // Code block component with Apply/Copy buttons
-const CodeBlockRenderer: React.FC<{
+interface CodeBlockRendererProps {
   block: CodeBlock;
   onApply?: (code: string, filePath?: string) => void;
-}> = ({ block, onApply }) => {
+}
+
+const CodeBlockRenderer = memo(({ block, onApply }: CodeBlockRendererProps) => {
   const [copied, setCopied] = useState(false);
   const [applied, setApplied] = useState(false);
 
@@ -172,7 +174,7 @@ const CodeBlockRenderer: React.FC<{
       </pre>
     </div>
   );
-};
+});
 
 // Simple markdown renderer for links and basic formatting
 const renderMarkdown = (text: string): React.ReactNode => {
@@ -274,11 +276,12 @@ const renderMarkdown = (text: string): React.ReactNode => {
   return <>{parts}</>;
 };
 
-const MessageBubble: React.FC<{ 
+interface MessageBubbleProps {
   message: Message;
-  messageIndex: number;
   onApplyCode?: (code: string, filePath?: string) => void;
-}> = ({ message, messageIndex, onApplyCode }) => {
+}
+
+const MessageBubble = memo(({ message, onApplyCode }: MessageBubbleProps) => {
   // Check if message contains completion marker
   const isCompletion = message.content.includes("Job's Done");
   
@@ -361,9 +364,9 @@ const MessageBubble: React.FC<{
       </div>
     </div>
   );
-};
+});
 
-const LoadingIndicator: React.FC<{ agentRunning: boolean }> = ({ agentRunning }) => (
+const LoadingIndicator = memo(({ agentRunning }: { agentRunning: boolean }) => (
   <div style={{
     display: 'flex',
     alignItems: 'center',
@@ -390,9 +393,9 @@ const LoadingIndicator: React.FC<{ agentRunning: boolean }> = ({ agentRunning })
       {agentRunning ? 'Working...' : 'Thinking...'}
     </span>
   </div>
-);
+));
 
-export const MessageList: React.FC<MessageListProps> = ({
+const MessageListComponent: React.FC<MessageListProps> = ({
   messages,
   isLoading,
   agentRunning,
@@ -402,6 +405,23 @@ export const MessageList: React.FC<MessageListProps> = ({
     const t = item.timestamp instanceof Date ? item.timestamp.getTime() : 0;
     return `${t}-${index}-${item.role}`;
   }, []);
+
+  const renderItem = useCallback((index: number, message: Message) => (
+    <div style={{ padding: '0 20px' }}>
+      <MessageBubble
+        message={message}
+        onApplyCode={onApplyCode}
+      />
+    </div>
+  ), [onApplyCode]);
+
+  const Footer = useCallback(() => (
+    isLoading ? (
+      <div style={{ padding: '0 20px 20px' }}>
+        <LoadingIndicator agentRunning={agentRunning} />
+      </div>
+    ) : null
+  ), [agentRunning, isLoading]);
 
   return (
     <div
@@ -420,22 +440,9 @@ export const MessageList: React.FC<MessageListProps> = ({
         initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
         followOutput={(isAtBottom) => (isAtBottom ? 'smooth' : false)}
         increaseViewportBy={{ top: 400, bottom: 600 }}
-        itemContent={(index, message) => (
-          <div style={{ padding: '0 20px' }}>
-            <MessageBubble
-              message={message}
-              messageIndex={index}
-              onApplyCode={onApplyCode}
-            />
-          </div>
-        )}
+        itemContent={renderItem}
         components={{
-          Footer: () =>
-            isLoading ? (
-              <div style={{ padding: '0 20px 20px' }}>
-                <LoadingIndicator agentRunning={agentRunning} />
-              </div>
-            ) : null
+          Footer
         }}
       />
 
@@ -448,6 +455,8 @@ export const MessageList: React.FC<MessageListProps> = ({
     </div>
   );
 };
+
+export const MessageList = memo(MessageListComponent);
 
 export default MessageList;
 

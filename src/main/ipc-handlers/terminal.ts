@@ -8,6 +8,8 @@
 import { IpcMain, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
+import { createLogger } from '../core/logger';
+import { resolveValidatedPath, validateShellExecutable } from '../security/ipcValidation';
 
 let pty: any;
 try {
@@ -27,6 +29,8 @@ interface TerminalSession {
 const sessions = new Map<string, TerminalSession>();
 let sessionCounter = 0;
 const MAX_HISTORY_CHARS = 200_000;
+const MAX_INPUT_CHARS = 8_192;
+const log = createLogger('TerminalIPC');
 
 const ERROR_PATTERNS = [
   { pattern: /Error:\s+(.+)/i, type: 'generic' },
@@ -65,6 +69,37 @@ interface TerminalDeps {
   getWorkspacePath: () => string | null;
 }
 
+function getDefaultShell(): string {
+  if (process.platform === 'win32') {
+    return 'powershell.exe';
+  }
+  return 'bash';
+}
+
+function getAllowedShells(): string[] {
+  return process.platform === 'win32'
+    ? ['powershell.exe', 'pwsh.exe', 'cmd.exe']
+    : ['bash', 'sh', 'zsh'];
+}
+
+function resolveTerminalCwd(workspacePath: string | null, cwd?: string): string {
+  if (workspacePath) {
+    if (!cwd) {
+      return path.resolve(workspacePath);
+    }
+    const validation = resolveValidatedPath(cwd, workspacePath, {
+      allowAbsolute: true,
+      sanitizeFilename: false,
+    });
+    if (!validation.valid || !validation.resolvedPath) {
+      throw new Error(`Invalid terminal working directory: ${validation.errors.join('; ')}`);
+    }
+    return validation.resolvedPath;
+  }
+
+  return os.homedir();
+}
+
 export function registerTerminalHandlers(deps: TerminalDeps): void {
   const { ipcMain, mainWindow, getWorkspacePath } = deps;
 
@@ -76,12 +111,13 @@ export function registerTerminalHandlers(deps: TerminalDeps): void {
   ipcMain.handle('terminal:create', async (_event, options?: { cwd?: string; shell?: string }) => {
     try {
       const id = `term_${++sessionCounter}`;
-      const cwd = options?.cwd || getWorkspacePath() || os.homedir();
-      
-      const shell = options?.shell || (
-        process.platform === 'win32' ? 'powershell.exe' :
-        process.env.SHELL || '/bin/bash'
-      );
+      const cwd = resolveTerminalCwd(getWorkspacePath(), options?.cwd);
+      const requestedShell = options?.shell || getDefaultShell();
+      const shellValidation = validateShellExecutable(requestedShell, getAllowedShells());
+      if (!shellValidation.valid) {
+        return { success: false, error: `Invalid shell: ${shellValidation.errors.join('; ')}` };
+      }
+      const shell = shellValidation.sanitized as string;
 
       const ptyProcess = pty.spawn(shell, [], {
         name: 'xterm-256color',
@@ -120,15 +156,22 @@ export function registerTerminalHandlers(deps: TerminalDeps): void {
         sessions.delete(id);
       });
 
-      console.log(`[Terminal] Created session ${id} (${shell}) in ${cwd}`);
+      log.info(`Created terminal session ${id}`, { shell, cwd });
       return { success: true, id, cwd, shell };
     } catch (error: any) {
-      console.error('[Terminal] Failed to create session:', error);
+      log.error('Failed to create terminal session', error);
       return { success: false, error: error.message };
     }
   });
 
   ipcMain.on('terminal:input', (_event, { id, data }: { id: string; data: string }) => {
+    if (typeof id !== 'string' || typeof data !== 'string' || data.length === 0) {
+      return;
+    }
+    if (data.length > MAX_INPUT_CHARS) {
+      log.warn(`Rejected oversized terminal input for ${id}`);
+      return;
+    }
     const session = sessions.get(id);
     if (session) {
       session.process.write(data);
@@ -136,10 +179,15 @@ export function registerTerminalHandlers(deps: TerminalDeps): void {
   });
 
   ipcMain.on('terminal:resize', (_event, { id, cols, rows }: { id: string; cols: number; rows: number }) => {
+    if (typeof id !== 'string' || !Number.isFinite(cols) || !Number.isFinite(rows)) {
+      return;
+    }
     const session = sessions.get(id);
     if (session) {
       try {
-        session.process.resize(cols, rows);
+        const safeCols = Math.max(20, Math.min(400, Math.floor(cols)));
+        const safeRows = Math.max(5, Math.min(200, Math.floor(rows)));
+        session.process.resize(safeCols, safeRows);
       } catch (e) {
         // Ignore resize errors
       }
@@ -189,7 +237,7 @@ export function registerTerminalHandlers(deps: TerminalDeps): void {
     };
   });
 
-  console.log('[Terminal] PTY terminal handlers registered');
+  log.info('PTY terminal handlers registered');
 }
 
 export function cleanupTerminals(): void {

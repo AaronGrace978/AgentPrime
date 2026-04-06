@@ -63,10 +63,10 @@ module.exports = {
   // ratchet upward as additional suites are added.
   coverageThreshold: {
     global: {
-      branches: 0.5,
-      functions: 0.5,
-      lines: 1,
-      statements: 1
+      branches: 3,
+      functions: 4,
+      lines: 5,
+      statements: 5
     },
     // Component-specific baseline guardrails (ratcheted upward)
     'src/main/ai-providers/': {
@@ -76,21 +76,22 @@ module.exports = {
       statements: 3
     },
     'src/main/core/': {
-      branches: 2,
-      functions: 4,
-      lines: 3,
-      statements: 3
+      branches: 8,
+      functions: 10,
+      lines: 10,
+      statements: 10
     },
     'src/main/agent/': {
-      branches: 2,
-      functions: 2,
-      lines: 3,
-      statements: 3
+      branches: 20,
+      functions: 25,
+      lines: 25,
+      statements: 25
     }
   },
 
   // Coverage output directory
   coverageDirectory: 'coverage',
+  coverageReporters: ['text-summary', 'json-summary', 'lcov'],
 
   // Verbose output
   verbose: true,

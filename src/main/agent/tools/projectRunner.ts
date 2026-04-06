@@ -12,7 +12,10 @@ import {
   getProjectKindLabel,
   type ProjectKind,
 } from '../project-runtime';
+import { createLogger } from '../../core/logger';
 import { getTelemetryService } from '../../core/telemetry-service';
+
+const log = createLogger('ProjectRunner');
 
 const execAsync = promisify(exec);
 
@@ -88,7 +91,7 @@ export class ProjectRunner {
         }
       }
     } catch (error) {
-      console.error('[ProjectRunner] Error detecting project:', error);
+      log.error('[ProjectRunner] Error detecting project:', error);
     }
     
     return info;
@@ -100,7 +103,7 @@ export class ProjectRunner {
   static async installDependencies(workspacePath: string, projectInfo: ProjectInfo): Promise<{ success: boolean; output: string }> {
     try {
       if (this.shouldInstallNodeDependencies(workspacePath, projectInfo) && projectInfo.installCommand) {
-        console.log('[ProjectRunner] Installing npm dependencies...');
+        log.info('[ProjectRunner] Installing npm dependencies...');
         
         // Import tool-path-finder to get proper npm command and environment
         // CRITICAL: getNodeEnv() ensures child processes can find node.exe
@@ -108,7 +111,7 @@ export class ProjectRunner {
         const npmCommand = resolveCommand(projectInfo.installCommand);
         const env = getNodeEnv();
         
-        console.log('[ProjectRunner] Running:', npmCommand);
+        log.info('[ProjectRunner] Running:', npmCommand);
         
         const { stdout, stderr } = await execAsync(npmCommand, {
           cwd: workspacePath,
@@ -120,7 +123,7 @@ export class ProjectRunner {
       }
       
       if (projectInfo.type === 'python' && projectInfo.requiresInstall) {
-        console.log('[ProjectRunner] Installing Python dependencies...');
+        log.info('[ProjectRunner] Installing Python dependencies...');
         
         // Use virtual environment pip if available
         let pipCmd = 'pip';
@@ -146,7 +149,7 @@ export class ProjectRunner {
       
       return { success: true, output: 'No dependencies to install' };
     } catch (error: any) {
-      console.error('[ProjectRunner] Dependency installation failed:', error);
+      log.error('[ProjectRunner] Dependency installation failed:', error);
       return { 
         success: false, 
         output: error.message || 'Installation failed' 
@@ -185,7 +188,7 @@ export class ProjectRunner {
     if (this.shouldInstallNodeDependencies(workspacePath, projectInfo)) {
       const nodeModulesPath = path.join(workspacePath, 'node_modules');
       if (!fs.existsSync(nodeModulesPath)) {
-        console.log('[ProjectRunner] 📦 Dependencies not found, installing...');
+        log.info('[ProjectRunner] 📦 Dependencies not found, installing...');
         const installResult = await this.installDependencies(workspacePath, projectInfo);
         if (!installResult.success) {
           return {
@@ -193,7 +196,7 @@ export class ProjectRunner {
             output: `Failed to install dependencies: ${installResult.output}`,
           };
         }
-        console.log('[ProjectRunner] ✅ Dependencies installed successfully');
+        log.info('[ProjectRunner] ✅ Dependencies installed successfully');
       }
     }
 
@@ -216,7 +219,7 @@ export class ProjectRunner {
     }
 
     try {
-      console.log(`[ProjectRunner] 🚀 Running: ${runtimeCommand}`);
+      log.info(`[ProjectRunner] 🚀 Running: ${runtimeCommand}`);
 
       const env = this.getRuntimeEnv(projectInfo, workspacePath);
       const child = exec(runtimeCommand, {
@@ -227,12 +230,12 @@ export class ProjectRunner {
       let output = '';
       child.stdout?.on('data', (data) => {
         output += data.toString();
-        console.log(`[ProjectRunner] ${data.toString().trim()}`);
+        log.info(`[ProjectRunner] ${data.toString().trim()}`);
       });
 
       child.stderr?.on('data', (data) => {
         output += data.toString();
-        console.error(`[ProjectRunner] ${data.toString().trim()}`);
+        log.error(`[ProjectRunner] ${data.toString().trim()}`);
       });
 
       await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -243,12 +246,12 @@ export class ProjectRunner {
       }
 
       if (output.includes('EADDRINUSE') || output.includes('address already in use')) {
-        console.log('[ProjectRunner] 🔧 Port conflict detected, finding available port...');
+        log.info('[ProjectRunner] 🔧 Port conflict detected, finding available port...');
 
         if ((projectInfo.type === 'node' || projectInfo.kind === 'vite') && port) {
           const newPort = await this.findAvailablePort(port);
           if (newPort && newPort !== port) {
-            console.log(`[ProjectRunner] 🔧 Switching from port ${port} to ${newPort}`);
+            log.info(`[ProjectRunner] 🔧 Switching from port ${port} to ${newPort}`);
             const rewired =
               projectInfo.kind === 'vite'
                 ? true
@@ -305,7 +308,7 @@ export class ProjectRunner {
         url: detectedUrl?.url,
       };
     } catch (error: any) {
-      console.error('[ProjectRunner] Run failed:', error);
+      log.error('[ProjectRunner] Run failed:', error);
       return {
         success: false,
         output: error.message || 'Failed to run project',
@@ -464,7 +467,7 @@ export class ProjectRunner {
 
     try {
       const command = projectInfo.buildCommand;
-      console.log(`[ProjectRunner] 🏗️ Running build: ${command}`);
+      log.info(`[ProjectRunner] 🏗️ Running build: ${command}`);
       const env = { ...this.getRuntimeEnv(projectInfo, workspacePath), NODE_ENV: 'production' };
       const shellCommand =
         command.startsWith('npm ')
@@ -581,7 +584,7 @@ export class ProjectRunner {
         const { stdout, stderr } = await execAsync(`${cmd} --version`, { timeout: 5000 });
         const versionOutput = `${stdout}${stderr}`;
         if (versionOutput.includes('Python')) {
-          console.log(`[ProjectRunner] ✅ Found Python: ${cmd} (${versionOutput.trim()})`);
+          log.info(`[ProjectRunner] ✅ Found Python: ${cmd} (${versionOutput.trim()})`);
           return cmd;
         }
       } catch (e) {
@@ -589,7 +592,7 @@ export class ProjectRunner {
       }
     }
     
-    console.warn('[ProjectRunner] ⚠️ Python not found in PATH');
+    log.warn('[ProjectRunner] ⚠️ Python not found in PATH');
     return undefined;
   }
   
@@ -601,13 +604,13 @@ export class ProjectRunner {
     
     // Check if venv already exists
     if (fs.existsSync(venvPath)) {
-      console.log('[ProjectRunner] Virtual environment already exists');
+      log.info('[ProjectRunner] Virtual environment already exists');
       return { success: true, path: venvPath, output: 'Virtual environment already exists' };
     }
     
     try {
       const pythonCmd = pythonPath || await this.findPython() || 'python';
-      console.log(`[ProjectRunner] Creating virtual environment with ${pythonCmd}...`);
+      log.info(`[ProjectRunner] Creating virtual environment with ${pythonCmd}...`);
       
       const { stdout, stderr } = await execAsync(`${pythonCmd} -m venv venv`, {
         cwd: workspacePath,
@@ -620,7 +623,7 @@ export class ProjectRunner {
         output: stdout + stderr || 'Virtual environment created' 
       };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create virtual environment:', error);
+      log.error('[ProjectRunner] Failed to create virtual environment:', error);
       return { 
         success: false, 
         output: error.message || 'Failed to create virtual environment' 
@@ -683,11 +686,11 @@ echo "[SUCCESS] Tauri development completed!"
 
       fs.writeFileSync(shPath, shContent, 'utf-8');
       fs.chmodSync(shPath, '755'); // Make executable
-      console.log(`[ProjectRunner] ✅ Created Tauri dev.sh for ${projectInfo.name}`);
+      log.info(`[ProjectRunner] ✅ Created Tauri dev.sh for ${projectInfo.name}`);
 
       return { success: true, filePath: shPath };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create Tauri shell script:', error);
+      log.error('[ProjectRunner] Failed to create Tauri shell script:', error);
       return { success: false };
     }
   }
@@ -880,11 +883,11 @@ pause
 `;
 
       fs.writeFileSync(batPath, batContent, 'utf-8');
-      console.log(`[ProjectRunner] ✅ Created Tauri dev.bat for ${projectInfo.name}`);
+      log.info(`[ProjectRunner] ✅ Created Tauri dev.bat for ${projectInfo.name}`);
 
       return { success: true, filePath: batPath };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create Tauri .bat file:', error);
+      log.error('[ProjectRunner] Failed to create Tauri .bat file:', error);
       return { success: false };
     }
   }
@@ -1044,11 +1047,11 @@ pause
 `;
       
       fs.writeFileSync(batPath, batContent, 'utf-8');
-      console.log(`[ProjectRunner] ✅ Created run.bat for Node.js project`);
+      log.info(`[ProjectRunner] ✅ Created run.bat for Node.js project`);
       
       return { success: true, filePath: batPath };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create Node.js .bat file:', error);
+      log.error('[ProjectRunner] Failed to create Node.js .bat file:', error);
       return { success: false };
     }
   }
@@ -1096,10 +1099,10 @@ npm run ${npmScript}
         // Ignore chmod errors on Windows
       }
       
-      console.log(`[ProjectRunner] ✅ Created run.sh for Node.js project`);
+      log.info(`[ProjectRunner] ✅ Created run.sh for Node.js project`);
       return { success: true, filePath: shPath };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create Node.js shell script:', error);
+      log.error('[ProjectRunner] Failed to create Node.js shell script:', error);
       return { success: false };
     }
   }
@@ -1154,11 +1157,11 @@ npm run ${npmScript}
       batContent.push('pause');
       
       fs.writeFileSync(batPath, batContent.join('\r\n'), 'utf-8');
-      console.log(`[ProjectRunner] ✅ Created run.bat`);
+      log.info(`[ProjectRunner] ✅ Created run.bat`);
       
       return { success: true, filePath: batPath };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create .bat file:', error);
+      log.error('[ProjectRunner] Failed to create .bat file:', error);
       return { success: false };
     }
   }
@@ -1212,10 +1215,10 @@ npm run ${npmScript}
         // Ignore on Windows
       }
       
-      console.log(`[ProjectRunner] ✅ Created run.sh`);
+      log.info(`[ProjectRunner] ✅ Created run.sh`);
       return { success: true, filePath: shPath };
     } catch (error: any) {
-      console.error('[ProjectRunner] Failed to create shell script:', error);
+      log.error('[ProjectRunner] Failed to create shell script:', error);
       return { success: false };
     }
   }
@@ -1231,7 +1234,7 @@ npm run ${npmScript}
     buildResult?: { success: boolean; output: string };
     runResult?: { success: boolean; output: string; port?: number; url?: string };
   }> {
-    console.log(`[ProjectRunner] 🔍 Detecting project in ${workspacePath}...`);
+    log.info(`[ProjectRunner] 🔍 Detecting project in ${workspacePath}...`);
     const telemetry = getTelemetryService();
     const runPhase = async <T>(phase: string, operation: () => Promise<T>): Promise<T> => {
       const startedAt = Date.now();
@@ -1258,11 +1261,11 @@ npm run ${npmScript}
     };
     
     const projectInfo = await runPhase('project_runner:detect', () => this.detectProject(workspacePath));
-    console.log(`[ProjectRunner] Detected: ${projectInfo.displayName}`);
+    log.info(`[ProjectRunner] Detected: ${projectInfo.displayName}`);
     
     // For Python projects: create virtual environment if needed
     if (projectInfo.type === 'python' && !projectInfo.hasVirtualEnv) {
-      console.log('[ProjectRunner] Creating virtual environment...');
+      log.info('[ProjectRunner] Creating virtual environment...');
       const venvResult = await this.createVirtualEnv(workspacePath, projectInfo.pythonPath);
       if (venvResult.success && venvResult.path) {
         projectInfo.hasVirtualEnv = true;
@@ -1281,7 +1284,7 @@ npm run ${npmScript}
     if (projectInfo.type === 'python') {
       const batResult = this.createBatchFile(workspacePath, projectInfo);
       if (batResult.success && batResult.filePath) {
-        console.log(`[ProjectRunner] ✅ Created launcher: ${batResult.filePath}`);
+        log.info(`[ProjectRunner] ✅ Created launcher: ${batResult.filePath}`);
       }
     }
     
@@ -1289,7 +1292,7 @@ npm run ${npmScript}
     if (projectInfo.type === 'tauri' && projectInfo.startCommand) {
       const batResult = this.createTauriBatchFile(workspacePath, projectInfo);
       if (batResult.success && batResult.filePath) {
-        console.log(`[ProjectRunner] ✅ Created Tauri dev launcher: ${batResult.filePath}`);
+        log.info(`[ProjectRunner] ✅ Created Tauri dev launcher: ${batResult.filePath}`);
       }
     }
 
@@ -1297,7 +1300,7 @@ npm run ${npmScript}
     if (projectInfo.type === 'node' && projectInfo.startCommand) {
       const batResult = this.createNodeBatchFile(workspacePath, projectInfo);
       if (batResult.success && batResult.filePath) {
-        console.log(`[ProjectRunner] ✅ Created Node.js launcher: ${batResult.filePath}`);
+        log.info(`[ProjectRunner] ✅ Created Node.js launcher: ${batResult.filePath}`);
       }
     }
     

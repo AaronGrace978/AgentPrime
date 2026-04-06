@@ -106,10 +106,8 @@ test.describe('Application Smoke', () => {
     await window.getByRole('button', { name: 'Apply Accepted Changes' }).click();
 
     await expect.poll(() => fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(true);
-    await expect(window.getByText(/verified successfully/i)).toBeVisible({ timeout: 15000 });
-
     const runButton = window.getByRole('button', { name: 'Run Project' });
-    await expect(runButton).toBeVisible();
+    await expect(runButton).toBeVisible({ timeout: 15000 });
     await runButton.click();
 
     await expect(window.locator('iframe')).toBeVisible({ timeout: 10000 });

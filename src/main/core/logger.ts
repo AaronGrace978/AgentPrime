@@ -42,6 +42,10 @@ export interface Logger {
   error: (...args: unknown[]) => void;
 }
 
+export function createOperationId(prefix: string = 'op'): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function createLogger(tag: string): Logger {
   return {
     debug(...args: unknown[]) {
