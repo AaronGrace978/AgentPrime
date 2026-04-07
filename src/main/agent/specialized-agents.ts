@@ -680,7 +680,7 @@ When creating React/Vite projects, you MUST create these files:
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>
 \`\`\`
@@ -745,12 +745,12 @@ When you create ANY CSS file, you MUST include it in index.html:
 \`\`\`html
 <head>
   <!-- ... other head content ... -->
-  <link rel="stylesheet" href="/src/styles.css" />  <!-- REQUIRED! -->
+  <link rel="stylesheet" href="./src/styles.css" />  <!-- REQUIRED! -->
 </head>
 \`\`\`
 
-If CSS file is at: src/styles.css → href="/src/styles.css"
-If CSS file is at: styles.css → href="/styles.css"
+If CSS file is at: src/styles.css → href="./src/styles.css" (prefer ./ for Vite; avoids broken production builds on some Windows paths)
+If CSS file is at: styles.css → href="./styles.css"
 
 WITHOUT THIS LINK, THE PAGE WILL BE UNSTYLED!
 
@@ -764,7 +764,7 @@ This is Vite/Webpack-only syntax! If user opens index.html directly:
 
 ✅ Instead, ALWAYS use <link> tags in index.html for CSS:
 \`\`\`html
-<link rel="stylesheet" href="/src/styles.css" />
+<link rel="stylesheet" href="./src/styles.css" />
 \`\`\`
 
 Only use CSS imports if:
@@ -849,7 +849,7 @@ Then create: styles.css in root (NOT src/styles.css)
 
 ### RULE 6: THREE.JS / WEBGL / REACT — USE VITE
 If the project imports \`three\`, React, Vue, or any npm module in \`src/*.js\`:
-- Include \`vite.config.js\`, \`vite\` in devDependencies, and module entry in \`index.html\` (\`<script type="module" src="/src/main.js">\` is correct **only** with Vite dev server).
+- Include \`vite.config.js\`, \`vite\` in devDependencies, and module entry in \`index.html\` using a **project-relative** URL: \`<script type="module" src="./src/main.tsx"></script>\` (or \`.js\` / \`.jsx\` as appropriate). Avoid root-absolute \`/src/...\` — it can break \`vite build\` on some systems (e.g. Windows paths with spaces).
 
 ${TOOL_CALL_FORMAT}`
   },
@@ -963,7 +963,7 @@ fn main() {
 
 ### index.html - CORRECT FORMAT
 \`\`\`html
-<script type="module" src="/src/main.tsx"></script>
+<script type="module" src="./src/main.tsx"></script>
 \`\`\`
 NEVER use .tsxx - always use .tsx for TypeScript React files!
 
@@ -995,7 +995,7 @@ NEVER use .tsxx - always use .tsx for TypeScript React files!
 ✅ icons/ directory (empty is OK, but NO text placeholder files)
 ✅ Security headers in index.html
 ✅ Comprehensive CSP policy
-✅ Correct script src in index.html: /src/main.tsx (NOT .tsxx)
+✅ Correct script src in index.html: ./src/main.tsx (NOT .tsxx; NOT root-absolute /src/...)
 
 ${TOOL_CALL_FORMAT}`
   },
@@ -2993,7 +2993,7 @@ ${buildSharedContext(sharedContext)}`
       const fullPath = path.join(context.workspacePath, indexPath);
       if (fs.existsSync(fullPath)) {
         const htmlContent = fs.readFileSync(fullPath, 'utf-8');
-        const htmlValidation = validateIndexHtml(htmlContent, createdFiles);
+        const htmlValidation = validateIndexHtml(htmlContent, createdFiles, indexPath);
         
         if (!htmlValidation.valid) {
           log.error(`[MirrorAgents] ❌ POST-VALIDATION FAILED: ${htmlValidation.error}`);
@@ -3002,8 +3002,17 @@ ${buildSharedContext(sharedContext)}`
           // Log which CSS files exist but aren't linked
           const cssFiles = trackedPaths.filter((filePath) => filePath.endsWith('.css'));
           if (cssFiles.length > 0) {
+            const htmlDir = path.posix.dirname(indexPath);
+            const suggestedCssHref = (() => {
+              const cleanCssPath = cssFiles[0].replace(/^\/+/, '').replace(/\\/g, '/');
+              const relativePath =
+                path.posix.relative(htmlDir === '.' ? '' : htmlDir, cleanCssPath) || path.posix.basename(cleanCssPath);
+              return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+            })();
             log.error(`[MirrorAgents] 🔴 CSS files created but NOT linked: ${cssFiles.join(', ')}`);
-            log.error(`[MirrorAgents] 🔴 Add to index.html: <link rel="stylesheet" href="/${cssFiles[0]}" />`);
+            log.error(
+              `[MirrorAgents] 🔴 Add to index.html: <link rel="stylesheet" href="${suggestedCssHref}" />`
+            );
           }
         } else {
           log.info(`[MirrorAgents] ✅ index.html validation passed - CSS/JS properly linked`);

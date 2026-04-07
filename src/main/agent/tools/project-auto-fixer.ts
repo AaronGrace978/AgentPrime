@@ -15,6 +15,8 @@ import * as path from 'path';
 import { getToolPaths, resolveCommand } from '../../core/tool-path-finder';
 import { ProjectRunner, ProjectInfo } from './projectRunner';
 
+const BUNDLER_CONFIG_FILES = ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs'];
+
 export interface FixResult {
   success: boolean;
   fixes: string[];
@@ -655,7 +657,7 @@ npm-debug.log*
             if (stat.size === 0) {
               // File is empty - this is a problem
               if (pattern === 'index.html') {
-                fs.writeFileSync(filePath, '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="UTF-8">\n  <title>App</title>\n</head>\n<body>\n  <div id="root"></div>\n  <script type="module" src="/src/main.tsx"></script>\n</body>\n</html>\n');
+                fs.writeFileSync(filePath, '<!DOCTYPE html>\n<html>\n<head>\n  <meta charset="UTF-8">\n  <title>App</title>\n</head>\n<body>\n  <div id="root"></div>\n  <script type="module" src="./src/main.tsx"></script>\n</body>\n</html>\n');
               } else if (pattern.endsWith('.tsx') || pattern.endsWith('.jsx')) {
                 fs.writeFileSync(filePath, 'export default function App() {\n  return <div>Hello World</div>;\n}\n');
               } else if (pattern.endsWith('.ts') || pattern.endsWith('.js')) {
@@ -726,13 +728,13 @@ npm-debug.log*
       const indexHtmlPath = path.join(workspacePath, 'index.html');
       if (!fs.existsSync(indexHtmlPath)) {
         // Determine the entry point file
-        let entryPoint = '/src/main.tsx';
+        let entryPoint = './src/main.tsx';
         if (fs.existsSync(path.join(workspacePath, 'src', 'main.jsx'))) {
-          entryPoint = '/src/main.jsx';
+          entryPoint = './src/main.jsx';
         } else if (fs.existsSync(path.join(workspacePath, 'src', 'index.tsx'))) {
-          entryPoint = '/src/index.tsx';
+          entryPoint = './src/index.tsx';
         } else if (fs.existsSync(path.join(workspacePath, 'src', 'index.jsx'))) {
-          entryPoint = '/src/index.jsx';
+          entryPoint = './src/index.jsx';
         }
         
         // Get project name from package.json if available
@@ -1783,6 +1785,28 @@ npm-debug.log*
         if (rawContent === null) continue; // OneDrive placeholder - skip
         let content = rawContent;
         let modified = false;
+        const projectRoot = this.detectHtmlProjectRoot(workspacePath, htmlPath, content);
+        const htmlDir = path.dirname(htmlPath);
+
+        const hasVite = BUNDLER_CONFIG_FILES.some((fileName) =>
+          fs.existsSync(path.join(projectRoot, fileName))
+        );
+
+        // Root-absolute /src/... breaks vite build on some Windows paths (spaces); ./src/... is reliable.
+        if (hasVite) {
+          const beforeNorm = content;
+          content = content.replace(/src=(["'])\/src\//g, 'src=$1./src/');
+          content = content.replace(/href=(["'])\/src\//g, 'href=$1./src/');
+          if (projectRoot !== workspacePath) {
+            const projectSegment = path.basename(projectRoot).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            content = content.replace(new RegExp(`src=(["'])\\.?\\/?${projectSegment}/src/`, 'g'), 'src=$1./src/');
+            content = content.replace(new RegExp(`href=(["'])\\.?\\/?${projectSegment}/src/`, 'g'), 'href=$1./src/');
+          }
+          if (content !== beforeNorm) {
+            modified = true;
+            fixes.push(`Normalized /src/ entry URLs to ./src/ in ${path.basename(htmlPath)} (Vite build-safe)`);
+          }
+        }
 
         // Fix CSS references that don't exist - check for common mismatches
         const cssRefs = content.match(/href=["']([^"']+\.css)["']/g) || [];
@@ -1793,19 +1817,19 @@ npm-debug.log*
             if (!fs.existsSync(cssPath)) {
               // Try to find the actual CSS file
               const possiblePaths = [
-                path.join(workspacePath, 'src', 'styles.css'),
-                path.join(workspacePath, 'styles.css'),
-                path.join(workspacePath, 'src', 'styles', 'main.css'),
-                path.join(workspacePath, 'src', 'main.css'),
+                path.join(projectRoot, 'src', 'styles.css'),
+                path.join(projectRoot, 'styles.css'),
+                path.join(projectRoot, 'src', 'styles', 'main.css'),
+                path.join(projectRoot, 'src', 'main.css'),
               ];
               
               for (const possiblePath of possiblePaths) {
                 if (fs.existsSync(possiblePath)) {
-                  const relativePath = path.relative(path.dirname(htmlPath), possiblePath).replace(/\\/g, '/');
+                  const relativePath = this.toHtmlRelativePath(htmlDir, possiblePath);
                   // Fix the reference
                   content = content.replace(
                     new RegExp(`href=["']${cssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`, 'g'),
-                    `href="${relativePath.startsWith('.') ? relativePath : './' + relativePath}"`
+                    `href="${relativePath}"`
                   );
                   fixes.push(`Fixed CSS reference in ${path.basename(htmlPath)}: ${cssFile} → ${relativePath}`);
                   modified = true;
@@ -1817,7 +1841,7 @@ npm-debug.log*
         }
 
         // Check if it's a React app but doesn't have #root
-        if (content.includes('React') || this.hasReactFiles(workspacePath)) {
+        if (content.includes('React') || this.hasReactFiles(projectRoot)) {
           if (!content.includes('id="root"') && !content.includes("id='root'")) {
             // Add root div
             if (content.includes('</body>')) {
@@ -1827,7 +1851,7 @@ npm-debug.log*
           }
 
           // Fix malformed Vite entry references without turning main.tsxx into main.tsxxx.
-          if (fs.existsSync(path.join(workspacePath, 'src', 'main.tsx'))) {
+          if (fs.existsSync(path.join(projectRoot, 'src', 'main.tsx'))) {
             content = content.replace(/main\.tsxx(?=["'])/g, 'main.tsx');
             if (content.includes('main.ts')) {
               content = content.replace(/main\.ts(?=["'])/g, 'main.tsx');
@@ -1839,8 +1863,8 @@ npm-debug.log*
           if (content.includes('src="src/') || content.includes("src='src/")) {
             // Already correct
           } else if (content.includes('src="main') || content.includes("src='main")) {
-            content = content.replace(/src="(main\.[^"]+)"/g, 'src="/src/$1"');
-            content = content.replace(/src='(main\.[^']+)'/g, "src='/src/$1'");
+            content = content.replace(/src="(main\.[^"]+)"/g, 'src="./src/$1"');
+            content = content.replace(/src='(main\.[^']+)'/g, "src='./src/$1'");
             modified = true;
           }
         }
@@ -1929,6 +1953,61 @@ npm-debug.log*
       }
     }
     return false;
+  }
+
+  private static detectHtmlProjectRoot(workspacePath: string, htmlPath: string, content: string): string {
+    const htmlDir = path.dirname(htmlPath);
+    const bundlerRoot = this.findNearestAncestorWithFiles(workspacePath, htmlDir, BUNDLER_CONFIG_FILES);
+    if (bundlerRoot) {
+      return bundlerRoot;
+    }
+
+    const packageRoot = this.findNearestAncestorWithFiles(workspacePath, htmlDir, ['package.json']);
+    if (packageRoot) {
+      return packageRoot;
+    }
+
+    if (/<script[^>]+src=["'][./]?src\//i.test(content) || fs.existsSync(path.join(htmlDir, 'src'))) {
+      return htmlDir;
+    }
+
+    return workspacePath;
+  }
+
+  private static findNearestAncestorWithFiles(
+    workspacePath: string,
+    startDir: string,
+    fileNames: string[]
+  ): string | undefined {
+    let currentDir = startDir;
+
+    while (this.isWithinWorkspace(workspacePath, currentDir)) {
+      if (fileNames.some((fileName) => fs.existsSync(path.join(currentDir, fileName)))) {
+        return currentDir;
+      }
+
+      if (path.resolve(currentDir) === path.resolve(workspacePath)) {
+        return undefined;
+      }
+
+      const parentDir = path.dirname(currentDir);
+      if (parentDir === currentDir) {
+        return undefined;
+      }
+      currentDir = parentDir;
+    }
+
+    return undefined;
+  }
+
+  private static isWithinWorkspace(workspacePath: string, candidatePath: string): boolean {
+    const relativePath = path.relative(workspacePath, candidatePath);
+    return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+  }
+
+  private static toHtmlRelativePath(htmlDir: string, targetPath: string): string {
+    const relativePath = path.relative(htmlDir, targetPath).replace(/\\/g, '/');
+    return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
   }
 
   /** True if any source file uses `from 'pkg'` where pkg is not a relative path — needs a bundler in the browser */

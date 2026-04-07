@@ -47,6 +47,10 @@ export class ProjectRunner {
     return projectInfo.requiresInstall;
   }
 
+  private static quoteShellArg(value: string): string {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+
   /**
    * Detect project type and structure
    */
@@ -87,7 +91,7 @@ export class ProjectRunner {
                 )
               : info.pythonPath || 'python';
 
-          info.startCommand = `${pythonCmd} ${info.mainFile}`;
+          info.startCommand = `${this.quoteShellArg(pythonCmd)} ${this.quoteShellArg(info.mainFile)}`;
         }
       }
     } catch (error) {
@@ -129,16 +133,18 @@ export class ProjectRunner {
         let pipCmd = 'pip';
         if (projectInfo.hasVirtualEnv && projectInfo.virtualEnvPath) {
           const isWindows = process.platform === 'win32';
-          pipCmd = path.join(projectInfo.virtualEnvPath, isWindows ? 'Scripts' : 'bin', isWindows ? 'pip.exe' : 'pip');
+          pipCmd = this.quoteShellArg(
+            path.join(projectInfo.virtualEnvPath, isWindows ? 'Scripts' : 'bin', isWindows ? 'pip.exe' : 'pip')
+          );
         } else {
           // Try to use python -m pip
           const pythonCmd = projectInfo.pythonPath || 'python';
-          pipCmd = `${pythonCmd} -m pip`;
+          pipCmd = `${this.quoteShellArg(pythonCmd)} -m pip`;
         }
         
         const installCommand = projectInfo.installCommand || 'pip install -r requirements.txt';
         const pipInstallCommand = installCommand.includes('pip install -r requirements.txt')
-          ? `${pipCmd} install -r requirements.txt`
+          ? `${pipCmd} install -r ${this.quoteShellArg('requirements.txt')}`
           : installCommand;
         const { stdout, stderr } = await execAsync(pipInstallCommand, {
           cwd: workspacePath,
@@ -612,7 +618,7 @@ export class ProjectRunner {
       const pythonCmd = pythonPath || await this.findPython() || 'python';
       log.info(`[ProjectRunner] Creating virtual environment with ${pythonCmd}...`);
       
-      const { stdout, stderr } = await execAsync(`${pythonCmd} -m venv venv`, {
+      const { stdout, stderr } = await execAsync(`${this.quoteShellArg(pythonCmd)} -m venv ${this.quoteShellArg('venv')}`, {
         cwd: workspacePath,
         timeout: 30000
       });
@@ -1142,7 +1148,7 @@ npm run ${npmScript}
           ? path.join(projectInfo.virtualEnvPath!, 'Scripts', 'pip.exe')
           : 'pip';
         batContent.push(`echo Installing dependencies...`);
-        batContent.push(`"${pipCmd}" install -r requirements.txt`);
+        batContent.push(`"${pipCmd}" install -r "requirements.txt"`);
         batContent.push('');
       }
       
@@ -1152,7 +1158,7 @@ npm run ${npmScript}
         : projectInfo.pythonPath || 'python';
       
       batContent.push(`echo Running ${projectInfo.mainFile}...`);
-      batContent.push(`"${pythonCmd}" ${projectInfo.mainFile}`);
+      batContent.push(`"${pythonCmd}" "${projectInfo.mainFile}"`);
       batContent.push('');
       batContent.push('pause');
       
@@ -1195,7 +1201,7 @@ npm run ${npmScript}
           ? path.join(projectInfo.virtualEnvPath!, 'bin', 'pip')
           : 'pip3';
         shContent.push('echo "Installing dependencies..."');
-        shContent.push(`${pipCmd} install -r requirements.txt`);
+        shContent.push(`${this.quoteShellArg(pipCmd)} install -r ${this.quoteShellArg('requirements.txt')}`);
         shContent.push('');
       }
       
@@ -1205,7 +1211,7 @@ npm run ${npmScript}
         : projectInfo.pythonPath || 'python3';
       
       shContent.push(`echo "Running ${projectInfo.mainFile}..."`);
-      shContent.push(`${pythonCmd} ${projectInfo.mainFile}`);
+      shContent.push(`${this.quoteShellArg(pythonCmd)} ${this.quoteShellArg(projectInfo.mainFile)}`);
       
       fs.writeFileSync(shPath, shContent.join('\n'), 'utf-8');
       // Make executable
@@ -1275,7 +1281,7 @@ npm run ${npmScript}
           const isWindows = process.platform === 'win32';
           const pythonExe = isWindows ? 'python.exe' : 'python';
           const venvPython = path.join(venvResult.path, isWindows ? 'Scripts' : 'bin', pythonExe);
-          projectInfo.startCommand = `${venvPython} ${projectInfo.mainFile}`;
+          projectInfo.startCommand = `${this.quoteShellArg(venvPython)} ${this.quoteShellArg(projectInfo.mainFile)}`;
         }
       }
     }

@@ -15,6 +15,8 @@ class ProjectPipeline {
         this.testCommands = [];
         this.deployCommands = [];
         this.detectedTools = {};
+        this.packageJson = null;
+        this.packageScripts = {};
 
         this.detectProjectType();
         this.inferCommands();
@@ -32,14 +34,27 @@ class ProjectPipeline {
                 const packageJson = path.join(this.projectPath, 'package.json');
                 const content = fs.readFileSync(packageJson, 'utf8');
                 const pkg = JSON.parse(content);
+                const deps = {
+                    ...(pkg.dependencies || {}),
+                    ...(pkg.devDependencies || {}),
+                };
+                const scripts = pkg.scripts || {};
 
-                if (pkg.dependencies?.['electron']) {
+                this.packageJson = pkg;
+                this.packageScripts = scripts;
+
+                if (deps['electron']) {
                     this.projectType = 'electron';
-                } else if (pkg.dependencies?.['tauri']) {
+                } else if (
+                    deps['@tauri-apps/api'] ||
+                    deps['@tauri-apps/cli'] ||
+                    deps['@tauri-apps/plugin-shell'] ||
+                    files.includes('src-tauri')
+                ) {
                     this.projectType = 'tauri';
-                } else if (pkg.dependencies?.['vue']) {
+                } else if (deps['vue']) {
                     this.projectType = 'vue';
-                } else if (pkg.dependencies?.['react']) {
+                } else if (deps['react']) {
                     this.projectType = 'react';
                 } else {
                     this.projectType = 'node';
@@ -100,13 +115,23 @@ class ProjectPipeline {
      * Infer build, test, and deploy commands based on project type
      */
     inferCommands() {
+        const scripts = this.packageScripts || {};
+
         switch (this.projectType) {
             case 'node':
             case 'react':
             case 'vue':
             case 'electron':
-                this.buildCommands = ['npm install'];
-                this.testCommands = ['npm test'];
+                this.buildCommands = scripts.build ? ['npm run build'] : [];
+                this.testCommands = scripts.test ? ['npm test'] : [];
+                this.deployCommands = []; // Custom deployment needed
+                break;
+
+            case 'tauri':
+                this.buildCommands = scripts.build
+                    ? ['npm run build']
+                    : ['cargo build --manifest-path src-tauri/Cargo.toml'];
+                this.testCommands = scripts.test ? ['npm test'] : [];
                 this.deployCommands = []; // Custom deployment needed
                 break;
 

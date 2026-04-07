@@ -366,3 +366,85 @@ http.createServer((_req, res) => {
     expect(runResult.output).toContain('python smoke ok');
   });
 });
+
+describe('ProjectRunner Python command quoting', () => {
+  const tempRoots: string[] = [];
+
+  afterEach(() => {
+    while (tempRoots.length > 0) {
+      const tempRoot = tempRoots.pop();
+      if (tempRoot && fs.existsSync(tempRoot)) {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  function createWorkspaceWithSpaces(prefix: string): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    const workspacePath = path.join(root, 'python workspace');
+    fs.mkdirSync(workspacePath, { recursive: true });
+    tempRoots.push(root);
+    return workspacePath;
+  }
+
+  function writeExecutable(filePath: string, content: string): void {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf-8');
+    if (process.platform !== 'win32') {
+      fs.chmodSync(filePath, 0o755);
+    }
+  }
+
+  it('quotes virtualenv start commands when the workspace path contains spaces', async () => {
+    const workspacePath = createWorkspaceWithSpaces('agentprime-python-spaces-');
+    const binDir = path.join(workspacePath, 'venv', process.platform === 'win32' ? 'Scripts' : 'bin');
+    const activateFile = path.join(binDir, process.platform === 'win32' ? 'activate.bat' : 'activate');
+    const pythonExecutable = path.join(
+      binDir,
+      process.platform === 'win32' ? 'python.exe' : 'python'
+    );
+
+    fs.writeFileSync(path.join(workspacePath, 'main.py'), 'print("quoted start")\n', 'utf-8');
+    writeExecutable(activateFile, process.platform === 'win32' ? '@echo off\r\n' : '#!/bin/sh\n');
+
+    const projectInfo = await ProjectRunner.detectProject(workspacePath);
+
+    expect(projectInfo.startCommand).toBe(`"${pythonExecutable}" "main.py"`);
+  });
+
+  it('quotes Python install commands when the interpreter path contains spaces', async () => {
+    const workspacePath = createWorkspaceWithSpaces('agentprime-python-install-');
+    const fakePythonPath = path.join(
+      workspacePath,
+      'bin with spaces',
+      process.platform === 'win32' ? 'fake python.cmd' : 'fake-python'
+    );
+
+    fs.writeFileSync(path.join(workspacePath, 'main.py'), 'print("quoted install")\n', 'utf-8');
+    fs.writeFileSync(path.join(workspacePath, 'requirements.txt'), 'requests==2.31.0\n', 'utf-8');
+    writeExecutable(
+      fakePythonPath,
+      process.platform === 'win32'
+        ? '@echo off\r\necho %*\r\nexit /b 0\r\n'
+        : '#!/bin/sh\necho "$@"\n'
+    );
+
+    const installResult = await ProjectRunner.installDependencies(workspacePath, {
+      type: 'python',
+      kind: 'python',
+      displayName: 'Python app',
+      hasPackageJson: false,
+      hasRequirements: true,
+      hasIndexHtml: false,
+      mainFile: 'main.py',
+      requiresInstall: true,
+      readinessSummary: 'quoted install',
+      pythonPath: fakePythonPath,
+      hasVirtualEnv: false,
+      installCommand: 'pip install -r requirements.txt',
+    } as any);
+
+    expect(installResult.success).toBe(true);
+    expect(installResult.output).toMatch(/-m pip install -r "?requirements\.txt"?/);
+  });
+});

@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { detectProjectType, isContentIncompatibleWithTask, resetFileTracker, validateIndexHtml, validateToolCall } from '../src/main/agent/tool-validation';
+import {
+  autoFixIndexHtml,
+  detectProjectType,
+  isContentIncompatibleWithTask,
+  resetFileTracker,
+  validateIndexHtml,
+  validateToolCall,
+} from '../src/main/agent/tool-validation';
 import { extractTaskKeywords } from '../src/main/mirror/opus-example-loader';
 
 describe('tool validation project typing', () => {
@@ -169,7 +176,7 @@ describe('scaffold_project validation', () => {
 describe('index.html validation', () => {
   it('allows Vite projects to manage CSS through module imports', () => {
     const validation = validateIndexHtml(
-      '<!DOCTYPE html><html><head></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>',
+      '<!DOCTYPE html><html><head></head><body><div id="root"></div><script type="module" src="./src/main.tsx"></script></body></html>',
       new Map([
         ['index.html', ['index.html']],
         ['vite.config.ts', ['vite.config.ts']],
@@ -179,6 +186,35 @@ describe('index.html validation', () => {
     );
 
     expect(validation.valid).toBe(true);
+  });
+
+  it('warns when Vite index.html uses root-absolute /src/ URLs (build fragility)', () => {
+    const validation = validateIndexHtml(
+      '<!DOCTYPE html><html><head></head><body><script type="module" src="/src/main.tsx"></script></body></html>',
+      new Map([
+        ['vite.config.ts', ['vite.config.ts']],
+        ['main.tsx', ['src/main.tsx']],
+      ])
+    );
+
+    expect(validation.valid).toBe(true);
+    expect(validation.warning).toMatch(/Prefer \.\/src/i);
+  });
+
+  it('suggests nested Vite entrypoints relative to the local index.html file', () => {
+    const validation = validateIndexHtml(
+      '<!DOCTYPE html><html><head></head><body><div id="root"></div></body></html>',
+      new Map([
+        ['index.html', ['frontend/index.html']],
+        ['vite.config.ts', ['frontend/vite.config.ts']],
+        ['main.tsx', ['frontend/src/main.tsx']],
+      ]),
+      'frontend/index.html'
+    );
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toContain('./src/main.tsx');
+    expect(validation.error).not.toContain('./frontend/src/main.tsx');
   });
 
   it('still rejects unlinked CSS for non-bundled projects', () => {
@@ -194,5 +230,21 @@ describe('index.html validation', () => {
     expect(validation.valid).toBe(false);
     expect(validation.error).toMatch(/styles\.css/);
     expect(validation.error).toMatch(/stylesheet/i);
+  });
+});
+
+describe('index.html auto-fix', () => {
+  it('adds nested asset references relative to the local Vite app root', () => {
+    const result = autoFixIndexHtml(
+      '<!DOCTYPE html><html><head></head><body><div id="root"></div></body></html>',
+      ['frontend/src/styles.css'],
+      ['frontend/src/main.tsx'],
+      'frontend/index.html'
+    );
+
+    expect(result.fixed).toBe(true);
+    expect(result.content).toContain('href="./src/styles.css"');
+    expect(result.content).toContain('src="./src/main.tsx"');
+    expect(result.content).not.toContain('./frontend/src/');
   });
 });

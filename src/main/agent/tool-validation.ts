@@ -171,6 +171,49 @@ function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
 }
 
+function normalizeProjectPath(filePath: string): string {
+  return filePath.replace(/^\/+/, '').replace(/\\/g, '/');
+}
+
+function resolveTrackedHtmlPath(trackedPaths: string[], htmlFilePath?: string): string {
+  if (htmlFilePath) {
+    return normalizeProjectPath(htmlFilePath);
+  }
+
+  const htmlCandidates = trackedPaths.filter((filePath) => /(^|\/)index\.html$/i.test(filePath));
+  return htmlCandidates[0] || 'index.html';
+}
+
+function hasTrackedViteConfigNearHtml(trackedPaths: string[], htmlFilePath: string): boolean {
+  const trackedSet = new Set(trackedPaths.map((filePath) => normalizeProjectPath(filePath)));
+  const viteConfigs = ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs'];
+  let currentDir = path.posix.dirname(htmlFilePath);
+
+  while (true) {
+    const prefix = currentDir === '.' ? '' : `${currentDir}/`;
+    if (viteConfigs.some((configName) => trackedSet.has(`${prefix}${configName}`))) {
+      return true;
+    }
+
+    if (currentDir === '.' || !currentDir) {
+      return false;
+    }
+
+    const parentDir = path.posix.dirname(currentDir);
+    if (parentDir === currentDir) {
+      return false;
+    }
+    currentDir = parentDir;
+  }
+}
+
+function toHtmlRelativeAssetPath(projectRelativePath: string, htmlFilePath: string): string {
+  const clean = normalizeProjectPath(projectRelativePath);
+  const htmlDir = path.posix.dirname(normalizeProjectPath(htmlFilePath));
+  const relativePath = path.posix.relative(htmlDir === '.' ? '' : htmlDir, clean) || path.posix.basename(clean);
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+}
+
 function hasBundlerRuntime(workspacePath?: string): boolean {
   if (!workspacePath) {
     return false;
@@ -188,7 +231,7 @@ function hasBundlerRuntime(workspacePath?: string): boolean {
     if (fs.existsSync(indexHtmlPath)) {
       const indexHtml = fs.readFileSync(indexHtmlPath, 'utf-8');
       const hasModuleScript = /<script[^>]+type=["']module["']/i.test(indexHtml);
-      const referencesSrcEntry = /src=["'][^"']*\/?src\/main\.(ts|tsx|js|jsx)["']/i.test(indexHtml);
+      const referencesSrcEntry = /src=["'][^"']*src\/main\.(ts|tsx|js|jsx)["']/i.test(indexHtml);
       if (hasModuleScript && referencesSrcEntry) {
         return true;
       }
@@ -1144,11 +1187,16 @@ function validateScaffoldProject(
  * 
  * ENHANCED: Now returns hard failures for missing CSS links and can auto-fix
  */
-export function validateIndexHtml(content: string, createdFiles: Map<string, string[]>): ValidationResult {
+export function validateIndexHtml(
+  content: string,
+  createdFiles: Map<string, string[]>,
+  htmlFilePath?: string
+): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const contentLower = content.toLowerCase();
-  const trackedPaths = Array.from(createdFiles.values()).flat().map((filePath) => filePath.replace(/\\/g, '/'));
+  const trackedPaths = Array.from(createdFiles.values()).flat().map((filePath) => normalizeProjectPath(filePath));
+  const resolvedHtmlPath = resolveTrackedHtmlPath(trackedPaths, htmlFilePath);
   
   // Get list of CSS files that were created
   const cssFiles = trackedPaths.filter(f => 
@@ -1170,17 +1218,20 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
   // Check if index.html has ANY script tag
   const hasScriptTag = contentLower.includes('<script');
   const hasModuleScript = hasScriptTag && contentLower.includes('type="module"');
-  const bundlerManagedProject = trackedPaths.some((filePath) =>
-    /(^|\/)vite\.config\.(ts|js)$/.test(filePath)
-  );
+  const bundlerManagedProject = hasTrackedViteConfigNearHtml(trackedPaths, resolvedHtmlPath);
   const allowBundlerManagedCss = bundlerManagedProject && hasModuleScript;
+
+  const suggestedAssetHref = (projectRelativePath: string): string => {
+    const clean = normalizeProjectPath(projectRelativePath);
+    return bundlerManagedProject ? toHtmlRelativeAssetPath(clean, resolvedHtmlPath) : `/${clean}`;
+  };
   
   // 🚨 HARD FAILURE: CSS files created but no stylesheet link
   if (cssFiles.length > 0 && !hasStylesheetLink && !allowBundlerManagedCss) {
     errors.push(
       `🚨 CRITICAL ERROR: CSS file(s) created (${cssFiles.join(', ')}) but index.html has NO <link rel="stylesheet"> tag!\n` +
       `The page will appear completely unstyled (404 for CSS).\n` +
-      `FIX: Add this inside <head>: <link rel="stylesheet" href="/${cssFiles[0]}" />`
+      `FIX: Add this inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFiles[0])}" />`
     );
   }
   
@@ -1196,7 +1247,8 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
       errors.push(
         `🚨 ERROR: JS file(s) created (${mainJsFiles.join(', ')}) but index.html has no <script> tag!\n` +
         `The JavaScript will not run (404 for JS).\n` +
-        `FIX: Add before </body>: <script src="/${mainJsFiles[0]}"></script>`
+        `FIX: Add before </body>: <script src="${suggestedAssetHref(mainJsFiles[0])}"></script>` +
+        (bundlerManagedProject ? ` (Vite: use type="module" and point at your entry, e.g. <script type="module" src="${suggestedAssetHref('src/main.tsx')}"></script>)` : '')
       );
     }
   }
@@ -1211,7 +1263,7 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
     if (!content.includes(cssFile) && !content.includes(fileName)) {
       errors.push(
         `CSS file "${cssFile}" was created but is not referenced in index.html.\n` +
-        `FIX: Add inside <head>: <link rel="stylesheet" href="/${cssFile}" />`
+        `FIX: Add inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFile)}" />`
       );
     }
   }
@@ -1222,6 +1274,12 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
       valid: false,
       error: `🚨 index.html CRITICAL ERRORS (will cause 404s):\n\n${errors.join('\n\n')}`
     };
+  }
+
+  if (bundlerManagedProject && /(?:src|href)=["']\/src\//.test(content)) {
+    warnings.push(
+      'index.html uses root-absolute /src/... URLs. Prefer ./src/... so `vite build` resolves reliably (e.g. Windows paths with spaces).'
+    );
   }
   
   if (warnings.length > 0) {
@@ -1241,7 +1299,8 @@ export function validateIndexHtml(content: string, createdFiles: Map<string, str
 export function autoFixIndexHtml(
   content: string, 
   cssFiles: string[], 
-  jsFiles: string[]
+  jsFiles: string[],
+  htmlFilePath: string = 'index.html'
 ): { fixed: boolean; content: string; changes: string[] } {
   let fixedContent = content;
   const changes: string[] = [];
@@ -1258,7 +1317,7 @@ export function autoFixIndexHtml(
     const contentLower = fixedContent.toLowerCase();
     
     if (!contentLower.includes(cssFile) && !contentLower.includes(fileName)) {
-      const linkTag = `    <link rel="stylesheet" href="/${cssFile}" />\n`;
+      const linkTag = `    <link rel="stylesheet" href="${toHtmlRelativeAssetPath(cssFile, htmlFilePath)}" />\n`;
       
       if (headCloseIndex !== -1) {
         // Insert before </head>
@@ -1283,7 +1342,7 @@ export function autoFixIndexHtml(
     const contentLower = fixedContent.toLowerCase();
     
     if (!contentLower.includes(jsFile) && !contentLower.includes(fileName)) {
-      const scriptTag = `    <script src="/${jsFile}"></script>\n`;
+      const scriptTag = `    <script src="${toHtmlRelativeAssetPath(jsFile, htmlFilePath)}"></script>\n`;
       
       // Find current position of </body> (may have moved)
       const currentBodyClose = fixedContent.indexOf('</body>');
