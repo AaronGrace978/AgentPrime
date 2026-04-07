@@ -75,6 +75,16 @@ import { initializeBackendManager } from './core/backend-manager';
 
 // Import Secure Key Storage
 import { getSecureKeyStorage } from './security/secureKeyStorage';
+import {
+  SUPPORTED_PROVIDER_API_KEYS,
+  buildProviderApiKeyStatusSnapshot,
+  normalizeSecretInput,
+  resolveProviderApiKeySource,
+  resolveProviderEnvironmentApiKey,
+  sanitizeSettingsForRenderer,
+  type ProviderApiKeyPreference,
+  type SupportedProviderApiKey,
+} from './security/providerApiKeys';
 
 // Import State Manager
 import { stateManager } from './core/state-manager';
@@ -373,6 +383,112 @@ function refreshStartupPreflightReport(log: boolean = false): StartupConfigPrefl
   return startupPreflightReport;
 }
 
+function isSupportedProviderApiKey(providerName: string): providerName is SupportedProviderApiKey {
+  return SUPPORTED_PROVIDER_API_KEYS.includes(providerName as SupportedProviderApiKey);
+}
+
+function ensureProviderSettingsEntry(providerName: string): Record<string, any> {
+  if (!settings.providers) {
+    settings.providers = {} as any;
+  }
+  const providerSettings = settings.providers as Record<string, any>;
+  providerSettings[providerName] = providerSettings[providerName] || {};
+  return providerSettings[providerName];
+}
+
+function getProviderApiKeyPreference(providerName: SupportedProviderApiKey): ProviderApiKeyPreference | undefined {
+  const providerConfig = (settings.providers as Record<string, any> | undefined)?.[providerName];
+  const source = providerConfig?.apiKeySource;
+  return source === 'secure-storage' || source === 'environment' ? source : undefined;
+}
+
+function setProviderApiKeyPreference(providerName: SupportedProviderApiKey, source?: ProviderApiKeyPreference): void {
+  const providerConfig = ensureProviderSettingsEntry(providerName);
+  if (source) {
+    providerConfig.apiKeySource = source;
+  } else {
+    delete providerConfig.apiKeySource;
+  }
+}
+
+function setProviderRuntimeApiKey(providerName: SupportedProviderApiKey, apiKey: string | null): void {
+  const providerConfig = ensureProviderSettingsEntry(providerName);
+  if (apiKey) {
+    providerConfig.apiKey = apiKey;
+  } else {
+    delete providerConfig.apiKey;
+  }
+}
+
+async function setProviderApiKeyValue(
+  providerName: SupportedProviderApiKey,
+  apiKey: string | null
+): Promise<void> {
+  const secureStorage = getSecureKeyStorage();
+  const normalizedApiKey = normalizeSecretInput(apiKey);
+
+  if (normalizedApiKey) {
+    await secureStorage.setApiKey(providerName, normalizedApiKey);
+    setProviderRuntimeApiKey(providerName, normalizedApiKey);
+    setProviderApiKeyPreference(providerName, 'secure-storage');
+    return;
+  }
+
+  await secureStorage.deleteApiKey(providerName);
+  const environmentKey = resolveProviderEnvironmentApiKey(providerName);
+  setProviderRuntimeApiKey(providerName, environmentKey.value);
+  setProviderApiKeyPreference(providerName, environmentKey.value ? 'environment' : undefined);
+}
+
+async function getProviderApiKeyStatus(providerName: SupportedProviderApiKey) {
+  const secureStorage = getSecureKeyStorage();
+  const storedKey = await secureStorage.getApiKey(providerName);
+  const environmentKey = resolveProviderEnvironmentApiKey(providerName);
+
+  return buildProviderApiKeyStatusSnapshot({
+    provider: providerName,
+    storedKey,
+    environmentKey: environmentKey.value,
+    environmentVariable: environmentKey.environmentVariable,
+    preferredSource: getProviderApiKeyPreference(providerName),
+    storageBackend: secureStorage.getBackendType(),
+  });
+}
+
+async function getProviderApiKeyStatuses() {
+  const statuses = await Promise.all(
+    SUPPORTED_PROVIDER_API_KEYS.map(async (providerName) => [providerName, await getProviderApiKeyStatus(providerName)] as const)
+  );
+
+  return Object.fromEntries(statuses);
+}
+
+function extractProviderApiKeyUpdates(providerConfigs?: Record<string, any>): Partial<Record<SupportedProviderApiKey, string | null>> {
+  const updates: Partial<Record<SupportedProviderApiKey, string | null>> = {};
+  if (!providerConfigs) {
+    return updates;
+  }
+
+  for (const [providerName, providerConfig] of Object.entries(providerConfigs)) {
+    if (!providerConfig || typeof providerConfig !== 'object') {
+      continue;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(providerConfig, 'apiKey')) {
+      continue;
+    }
+
+    const apiKey = normalizeSecretInput(providerConfig.apiKey);
+    delete providerConfig.apiKey;
+
+    if (isSupportedProviderApiKey(providerName)) {
+      updates[providerName] = apiKey;
+    }
+  }
+
+  return updates;
+}
+
 // Initialize AI providers from settings
 function initializeAIProviders(): void {
   // Back-compat: some UIs store `endpoint`, but providers expect `baseUrl`.
@@ -556,57 +672,33 @@ async function loadSecureApiKeys(): Promise<void> {
   try {
     const secureStorage = getSecureKeyStorage();
     log.info(`[Security] 🔐 Loading API keys from ${secureStorage.getBackendType()}`);
-    
-    // Providers primarily configured from environment variables for startup convenience
-    const envConfiguredProviders = ['ollama', 'ollamaSecondary', 'anthropic', 'openai'];
-    
-    // Map of .env variable names to provider names
-    const envKeyMap: Record<string, string> = {
-      'ollama': 'OLLAMA_API_KEY',
-      'ollamaSecondary': 'OLLAMA_API_KEY', // Same key for secondary
-      'anthropic': 'ANTHROPIC_API_KEY',
-      'openai': 'OPENAI_API_KEY',
-      'openrouter': 'OPENROUTER_API_KEY'
-    };
-    
+
     // Load API keys for each provider
     const providers = settings.providers as Record<string, any>;
     for (const provider of Object.keys(providers)) {
+      if (!isSupportedProviderApiKey(provider)) {
+        continue;
+      }
+
       try {
-        // Prefer environment-configured providers during startup initialization
-        if (envConfiguredProviders.includes(provider)) {
-          // Ensure environment values are set (they're already set in settings initialization)
-          if (provider === 'ollama') {
-            providers[provider].apiKey = OLLAMA_API_KEY;
-          } else if (provider === 'ollamaSecondary') {
-            providers[provider].apiKey = OLLAMA_API_KEY_DESKTOP || OLLAMA_API_KEY;
-          } else if (provider === 'anthropic') {
-            providers[provider].apiKey = ANTHROPIC_API_KEY;
-          } else if (provider === 'openai') {
-            providers[provider].apiKey = OPENAI_API_KEY;
-          }
-          log.info(`[Security] ✅ Using environment-configured API key for ${provider}`);
-          continue;
-        }
-        
-        // For other providers, load from secure storage or environment
         const storedKey = await secureStorage.getApiKey(provider);
-        const envVarName = envKeyMap[provider];
-        const envKey = envVarName ? process.env[envVarName] : undefined;
-        
-        // Prefer .env key if it exists and is different (allows updating via .env)
-        if (envKey && envKey.length > 10 && envKey !== storedKey) {
-          await secureStorage.setApiKey(provider, envKey);
-          providers[provider].apiKey = envKey;
-          log.info(`[Security] ✅ Updated API key for ${provider} from .env`);
-        } else if (storedKey) {
-          providers[provider].apiKey = storedKey;
-          log.info(`[Security] ✅ Loaded API key for ${provider}`);
-        } else if (envKey && envKey.length > 10) {
-          // No stored key, but .env has one - store it
-          await secureStorage.setApiKey(provider, envKey);
-          providers[provider].apiKey = envKey;
-          log.info(`[Security] ✅ Stored API key for ${provider} from .env`);
+        const environmentKey = resolveProviderEnvironmentApiKey(provider);
+        const activeSource = resolveProviderApiKeySource(
+          storedKey,
+          environmentKey.value,
+          getProviderApiKeyPreference(provider)
+        );
+
+        if (activeSource === 'secure-storage') {
+          setProviderRuntimeApiKey(provider, normalizeSecretInput(storedKey));
+          log.info(`[Security] ✅ Loaded API key for ${provider} from secure storage`);
+        } else if (activeSource === 'environment') {
+          setProviderRuntimeApiKey(provider, environmentKey.value);
+          log.info(
+            `[Security] ✅ Using ${environmentKey.environmentVariable || 'environment'} API key for ${provider}`
+          );
+        } else {
+          setProviderRuntimeApiKey(provider, null);
         }
       } catch (e) {
         // Key not found in secure storage, that's okay
@@ -626,6 +718,10 @@ async function loadSecureApiKeys(): Promise<void> {
               needsMigration = true;
               // Migrate to secure storage
               await secureStorage.setApiKey(provider, config.apiKey);
+              if (isSupportedProviderApiKey(provider)) {
+                setProviderRuntimeApiKey(provider, normalizeSecretInput(config.apiKey));
+                setProviderApiKeyPreference(provider, 'secure-storage');
+              }
               log.info(`[Security] 🔄 Migrated API key for ${provider} to secure storage`);
             }
           }
@@ -1136,7 +1232,7 @@ ipcMain.handle('get-workspace', () => {
 });
 
 ipcMain.handle('get-settings', () => {
-  return settings;
+  return sanitizeSettingsForRenderer(settings);
 });
 
 ipcMain.handle('startup-preflight:get-report', () => {
@@ -1164,7 +1260,42 @@ ipcMain.handle(
   }
 );
 
-ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
+ipcMain.handle('credentials:get-provider-api-key-statuses', async () => {
+  return getProviderApiKeyStatuses();
+});
+
+ipcMain.handle('credentials:set-provider-api-key', async (_event, providerName: string, apiKey: string) => {
+  if (!isSupportedProviderApiKey(providerName)) {
+    throw new Error(`Unsupported provider: ${providerName}`);
+  }
+
+  await setProviderApiKeyValue(providerName, apiKey);
+  saveSettings();
+  initializeAIProviders();
+  refreshStartupPreflightReport(false);
+  return getProviderApiKeyStatus(providerName);
+});
+
+ipcMain.handle('credentials:clear-provider-api-key', async (_event, providerName: string) => {
+  if (!isSupportedProviderApiKey(providerName)) {
+    throw new Error(`Unsupported provider: ${providerName}`);
+  }
+
+  await setProviderApiKeyValue(providerName, null);
+  saveSettings();
+  initializeAIProviders();
+  refreshStartupPreflightReport(false);
+  return getProviderApiKeyStatus(providerName);
+});
+
+ipcMain.handle('update-settings', async (event, newSettings: Partial<Settings>) => {
+  const providerApiKeyUpdates = extractProviderApiKeyUpdates(newSettings.providers as Record<string, any> | undefined);
+  await Promise.all(
+    Object.entries(providerApiKeyUpdates).map(([providerName, apiKey]) =>
+      setProviderApiKeyValue(providerName as SupportedProviderApiKey, apiKey)
+    )
+  );
+
   // Deep merge for nested objects
   if (newSettings.dualModelConfig && settings.dualModelConfig) {
     newSettings.dualModelConfig = {
@@ -1182,10 +1313,18 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
   }
   
   if (newSettings.providers && settings.providers) {
-    newSettings.providers = {
-      ...settings.providers,
-      ...newSettings.providers
-    };
+    const mergedProviders = {
+      ...settings.providers
+    } as Record<string, any>;
+
+    for (const [providerName, providerConfig] of Object.entries(newSettings.providers)) {
+      mergedProviders[providerName] = {
+        ...(mergedProviders[providerName] || {}),
+        ...(providerConfig || {})
+      };
+    }
+
+    newSettings.providers = mergedProviders as Settings['providers'];
   }
 
   if (newSettings.ollamaCloudOutputLimits || settings.ollamaCloudOutputLimits) {
@@ -1217,7 +1356,7 @@ ipcMain.handle('update-settings', (event, newSettings: Partial<Settings>) => {
   // Keep startup diagnostics in sync with current settings.
   refreshStartupPreflightReport(false);
 
-  return settings;
+  return sanitizeSettingsForRenderer(settings);
 });
 
 // AI Provider Management IPC Handlers
@@ -1272,6 +1411,12 @@ ipcMain.handle('set-active-provider', async (event, providerName: string, model:
 
 ipcMain.handle('configure-provider', async (event, providerName: string, config: any) => {
   try {
+    const hasApiKey = config && typeof config === 'object' && Object.prototype.hasOwnProperty.call(config, 'apiKey');
+    const apiKey = hasApiKey ? config.apiKey : undefined;
+    if (hasApiKey) {
+      delete config.apiKey;
+    }
+
     if (!settings.providers) {
       settings.providers = {} as any;
     }
@@ -1280,6 +1425,11 @@ ipcMain.handle('configure-provider', async (event, providerName: string, config:
       ...providerSettings[providerName],
       ...config
     };
+
+    if (hasApiKey && isSupportedProviderApiKey(providerName)) {
+      await setProviderApiKeyValue(providerName, apiKey);
+    }
+
     saveSettings();
     initializeAIProviders();
     refreshStartupPreflightReport(false);

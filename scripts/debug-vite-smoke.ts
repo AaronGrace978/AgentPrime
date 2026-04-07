@@ -56,7 +56,7 @@ server.listen(port, '127.0.0.1', () => {
     },
   });
   fs.writeFileSync(path.join(workspace, 'vite.config.js'), 'module.exports = {};');
-  fs.writeFileSync(path.join(workspace, 'index.html'), '<!doctype html><script type="module" src="/src/main.js"></script>');
+  fs.writeFileSync(path.join(workspace, 'index.html'), '<!doctype html><script type="module" src="./src/main.js"></script>');
   fs.writeFileSync(path.join(workspace, 'src', 'main.js'), 'console.log("vite smoke");\n');
 
   const result = await ProjectRunner.autoRun(workspace);

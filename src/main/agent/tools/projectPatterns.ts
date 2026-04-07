@@ -581,7 +581,7 @@ export const PROJECT_PATTERNS: Record<string, ProjectPattern> = {
           '<!DOCTYPE html>',
           '<html lang="en">',
           '<div id="root"></div>',
-          '<script type="module" src="/src/main.tsx"></script>',
+          '<script type="module" src="./src/main.tsx"></script>',
           'viewport meta tag'
         ],
         antiPatterns: [
@@ -675,7 +675,7 @@ export const PROJECT_PATTERNS: Record<string, ProjectPattern> = {
     qualityChecks: [
       'index.html exists in project root (NOT in src/)',
       'index.html has <div id="root"></div>',
-      'index.html has <script type="module" src="/src/main.tsx"></script>',
+      'index.html has <script type="module" src="./src/main.tsx"></script>',
       'tsconfig.json has "jsx": "react-jsx"',
       'All imports resolve correctly',
       'package.json has all required dependencies',

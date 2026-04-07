@@ -33,7 +33,7 @@ describe('deterministic Three.js bootstrap', () => {
     expect(packageJson.dependencies.three).toBeDefined();
 
     const indexHtml = fs.readFileSync(path.join(workspacePath, 'index.html'), 'utf-8');
-    expect(indexHtml).toContain('/src/main.tsx');
+    expect(indexHtml).toContain('./src/main.tsx');
   });
 
   it('detects canonical scaffold templates for browser three.js game requests', () => {

@@ -61,7 +61,7 @@ describe('tool-validation bundler coherence', () => {
     const workspace = makeTempWorkspace();
     fs.writeFileSync(
       path.join(workspace, 'index.html'),
-      '<!doctype html><html><body><script type="module" src="/src/main.tsx"></script></body></html>',
+      '<!doctype html><html><body><script type="module" src="./src/main.tsx"></script></body></html>',
       'utf-8'
     );
 

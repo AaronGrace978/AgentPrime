@@ -35,6 +35,15 @@ export interface StartupPreflightReport {
   generatedAt: string;
 }
 
+export interface ProviderApiKeyStatus {
+  provider: string;
+  hasStoredKey: boolean;
+  hasEnvironmentKey: boolean;
+  activeSource: 'secure-storage' | 'environment' | 'none';
+  storageBackend: 'keychain' | 'encrypted-file';
+  environmentVariable?: string;
+}
+
 export interface AgentAPI {
   [key: string]: any;
 
@@ -159,6 +168,9 @@ export interface AgentAPI {
   getSettings: () => Promise<Settings>;
   getStartupPreflightReport: () => Promise<StartupPreflightReport>;
   updateSettings: (settings: Partial<Settings>) => Promise<Settings>;
+  getProviderApiKeyStatuses: () => Promise<Record<string, ProviderApiKeyStatus>>;
+  setProviderApiKey: (providerName: string, apiKey: string) => Promise<ProviderApiKeyStatus>;
+  clearProviderApiKey: (providerName: string) => Promise<ProviderApiKeyStatus>;
   setTitleBarOverlay: (options: {
     color: string;
     symbolColor: string;

@@ -1416,6 +1416,185 @@
           "prompt": "Repair the accepted project changes so verification passes.\nOriginal task: __AGENTPRIME_TEST_REVIEW__\nDetected project: Vite App\nReadiness rule: Ready only after npm run build succeeds and npm run dev starts successfully.\nInstall command: npm install\nBuild command: npm run build\nRun command: npm run dev\nVerification failures:\n- [build] Build failed: x Build failed in 41ms\nerror during build:\n[vite]: Rollup failed to resolve import \"/src/script.js\" from \"C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/index.html\".\nThis is most likely unintended because it can break your application at runtime.\nIf you do want to externalize this module explicitly add it to\n`build.rollupOptions.external`\n    at viteWarn (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65855:17)\n    at onRollupWarning (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65887:5)\n    at onwarn (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65550:7)\n    at file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:21383:13\n    at Object.logger [as onLog] (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:23364:9)\n    at ModuleLoader.handleInvalidResolvedId (file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:22108:26)\n    at file:///C:/Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js:22066:26\n [files: /src/script.js, /Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/index.html, /Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js, /Users/AGrac/AppData/Local/Temp/agentprime-debug-ui-z2DLm7/node_modules/rollup/dist/es/shared/node-entry.js]\nFocus only on the accepted files and the concrete failures above. Do not add new features."
         }
       ]
+    },
+    {
+      "id": "proj_1775588405220_geb5g73a6",
+      "name": "Snakegame",
+      "path": "G:\\Snakegame",
+      "type": "web",
+      "description": "Can you build me a small little tic-tack-toe game please<3 ty love you buddy<3",
+      "createdAt": "2026-04-07T19:00:05.220Z",
+      "updatedAt": "2026-04-07T19:00:05.220Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "src/style.css",
+        "src/main.js",
+        "README.md",
+        "vite.config.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-07T19:00:05.220Z",
+          "action": "create",
+          "description": "Can you build me a small little tic-tack-toe game please<3 ty love you buddy<3",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "src/style.css",
+            "src/main.js",
+            "README.md",
+            "vite.config.js"
+          ],
+          "prompt": "Can you build me a small little tic-tack-toe game please<3 ty love you buddy<3 "
+        }
+      ]
+    },
+    {
+      "id": "proj_1775594874845_21oompg4k",
+      "name": "AdoptADino Site",
+      "path": "G:\\AdoptADino Site",
+      "type": "web",
+      "description": "Repair the verifier-failed project changes so verification passes",
+      "createdAt": "2026-04-07T20:47:54.845Z",
+      "updatedAt": "2026-04-07T22:05:35.881Z",
+      "files": [
+        "src/main.js",
+        "package.json",
+        "README.md",
+        "src/styles.css",
+        "vite.config.js",
+        "src/main.jsx",
+        "src/App.jsx"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite",
+        "React"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-07T20:47:54.845Z",
+          "action": "create",
+          "description": "Repair the verifier-failed project changes so verification passes",
+          "filesChanged": [
+            "src/main.js"
+          ],
+          "prompt": "Repair the verifier-failed project changes so verification passes.\nOriginal task: **Dino Adoption Site** – A playful \"adopt a dinosaur\" site where users can \"adopt\" a virtual dino pet!  can you make a beautiful website where users can adopt a Dino Buddy<3\nDetected project: Vite App\nReadiness rule: Ready only after npm run build succeeds and npm run dev starts successfully.\nInstall command: npm install\nBuild command: npm run build\nRun command: npm run dev\nVerification failures:\n- [build] Build failed: \u001b[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.\u001b[39m\n\u001b[31mx\u001b[39m Build failed in 48ms\n\u001b[31merror during build:\n\u001b[31m[vite]: Rollup failed to resolve import \"/src/main.js\" from \"G:/AdoptADino Site/index.html\".\nThis is most likely unintended because it can break your application at runtime.\nIf you do want to externalize this module explicitly add it to\n`build.rollupOptions.external`\u001b[31m\n    at viteWarn (file:///G:/AdoptADino%20Site/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65855:17)\n    at onRollupWarning (file:///G:/AdoptADino%20Site/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65887:5)\n    at onwarn (file:///G:/AdoptADino%20Site/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:65550:7)\n    at file:///G:/AdoptADino%20Site/node_modules/rollup/dist/es/shared/node-entry.js:21383:13\n    at Object.logger [as onLog] (file:///G:/AdoptADino%20Site/node_modules/rollup/dist/es/shared/node-entry.js:23364:9)\n    at ModuleLoader.handleInvalidResolvedId (file:///G:/AdoptADino%20Site/node_modules/rollup/dist/es/shared/node-entry.js:22108:26)\n    at file:///G:/AdoptADino%20Site/node_modules/rollup/dist/es/shared/node-entry.js:22066:26\u001b[39m\n [files: //vite.dev/guide/troubleshooting.html, /src/main.js, Site/index.html, 20Site/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js, 20Site/node_modules/rollup/dist/es/shared/node-entry.js]\nFocus only on the verifier-failed accepted files and the concrete failures above. Do not add new features."
+        },
+        {
+          "timestamp": "2026-04-07T22:05:35.881Z",
+          "action": "update",
+          "description": "Help me debug and fix issues in my code  I can't click past the start adopting screen FYI",
+          "filesChanged": [
+            "package.json",
+            "README.md",
+            "src/styles.css",
+            "src/main.js",
+            "vite.config.js",
+            "src/main.jsx",
+            "src/App.jsx"
+          ],
+          "prompt": "Help me debug and fix issues in my code  I can't click past the start adopting screen FYI"
+        }
+      ]
+    },
+    {
+      "id": "proj_1775601726776_eh7i84dyg",
+      "name": "Juice game",
+      "path": "G:\\Juice game",
+      "type": "web",
+      "description": "Hey, want to build me a Fanta Bottle collection game<3 in three",
+      "createdAt": "2026-04-07T22:42:06.776Z",
+      "updatedAt": "2026-04-07T22:42:06.776Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat",
+        "vite.config.js",
+        "public/vite.svg",
+        "src/main.ts",
+        "src/game/objects/FantaBottle.ts",
+        "src/vite-env.d.ts",
+        "src/main.js",
+        "src/game/Game.js",
+        "src/game/objects/Player.js",
+        "src/game/objects/Bottle.js",
+        "src/game/objects/Ground.js",
+        "src/game/effects/ParticleSystem.js",
+        "src/game/utils/Controls.js"
+      ],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-07T22:42:06.776Z",
+          "action": "create",
+          "description": "Hey, want to build me a Fanta Bottle collection game<3 in three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat",
+            "vite.config.js",
+            "public/vite.svg",
+            "src/main.ts",
+            "src/game/objects/FantaBottle.ts",
+            "src/vite-env.d.ts",
+            "src/main.js",
+            "src/game/Game.js",
+            "src/game/objects/Player.js",
+            "src/game/objects/Bottle.js",
+            "src/game/objects/Ground.js",
+            "src/game/effects/ParticleSystem.js",
+            "src/game/utils/Controls.js"
+          ],
+          "prompt": "Hey, want to build me a Fanta Bottle collection game<3 in three.js "
+        }
+      ]
     }
   ]
 }

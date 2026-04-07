@@ -28,7 +28,7 @@ import {
 } from '../../main/core/model-output-limits';
 import { ThemeId } from '../themes';
 import type { Settings } from '../../types';
-import type { StartupPreflightReport } from '../../types/ipc';
+import type { ProviderApiKeyStatus, StartupPreflightReport } from '../../types/ipc';
 
 type SettingsTab = 'general' | 'editor' | 'appearance' | 'ai' | 'shortcuts' | 'advanced';
 
@@ -81,6 +81,13 @@ const AUTONOMY_LABELS: Record<number, { label: string; description: string }> = 
   },
 };
 
+const PROVIDER_CREDENTIAL_COPY: Record<string, string> = {
+  openai: 'Paste a direct OpenAI API key for GPT models.',
+  anthropic: 'Paste a direct Anthropic API key for Claude models.',
+  ollama: 'Only needed for Ollama Cloud or authenticated hosted Ollama endpoints.',
+  openrouter: 'Paste your OpenRouter key for multi-provider routing.',
+};
+
 function clampAgentAutonomyLevel(value: unknown): 1 | 2 | 3 | 4 | 5 {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return 3;
@@ -105,6 +112,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [startupDiagnostics, setStartupDiagnostics] = useState<StartupPreflightReport | null>(null);
   const [startupDiagnosticsLoading, setStartupDiagnosticsLoading] = useState(false);
   const [startupDiagnosticsError, setStartupDiagnosticsError] = useState<string | null>(null);
+  const [providerApiKeyStatuses, setProviderApiKeyStatuses] = useState<Record<string, ProviderApiKeyStatus>>({});
+  const [providerApiKeyDrafts, setProviderApiKeyDrafts] = useState<Record<string, string>>({});
+  const [providerApiKeyVisibility, setProviderApiKeyVisibility] = useState<Record<string, boolean>>({});
+  const [providerApiKeyPending, setProviderApiKeyPending] = useState<Record<string, 'saving' | 'clearing' | undefined>>({});
+  const [providerApiKeyMessages, setProviderApiKeyMessages] = useState<
+    Record<string, { type: 'success' | 'error' | 'info'; text: string } | undefined>
+  >({});
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -162,11 +176,26 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, []);
 
+  const loadProviderApiKeyStatuses = useCallback(async () => {
+    try {
+      const statuses = await window.agentAPI.getProviderApiKeyStatuses();
+      setProviderApiKeyStatuses(statuses || {});
+    } catch (error) {
+      console.error('Failed to load provider API key statuses:', error);
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen && activeTab === 'advanced') {
       void loadStartupDiagnostics();
     }
   }, [activeTab, isOpen, loadStartupDiagnostics]);
+
+  useEffect(() => {
+    if (isOpen && activeTab === 'ai') {
+      void loadProviderApiKeyStatuses();
+    }
+  }, [activeTab, isOpen, loadProviderApiKeyStatuses]);
 
   const resetAllSettings = useCallback(() => {
     const defaults: Partial<Settings> = {
@@ -260,6 +289,99 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       [key]: safeValue
     });
   }, [getOllamaCloudLimits, updateSetting]);
+
+  const updateProviderApiKeyDraft = useCallback((provider: string, value: string) => {
+    setProviderApiKeyDrafts((prev) => ({ ...prev, [provider]: value }));
+    setProviderApiKeyMessages((prev) => ({ ...prev, [provider]: undefined }));
+  }, []);
+
+  const toggleProviderApiKeyVisibility = useCallback((provider: string) => {
+    setProviderApiKeyVisibility((prev) => ({ ...prev, [provider]: !prev[provider] }));
+  }, []);
+
+  const describeProviderApiKeyStatus = useCallback((status?: ProviderApiKeyStatus) => {
+    if (!status) {
+      return 'Checking secure storage status...';
+    }
+    if (status.activeSource === 'secure-storage') {
+      return `Stored in ${status.storageBackend === 'keychain' ? 'your OS keychain' : 'encrypted local storage'}.`;
+    }
+    if (status.activeSource === 'environment') {
+      return `Using ${status.environmentVariable || 'an environment variable'} right now. Saving here will override it.`;
+    }
+    return 'No API key stored yet.';
+  }, []);
+
+  const getProviderApiKeyPlaceholder = useCallback((status?: ProviderApiKeyStatus) => {
+    if (status?.activeSource === 'secure-storage') {
+      return 'Paste a new key to replace the stored one';
+    }
+    if (status?.activeSource === 'environment') {
+      return 'Paste a key to override the environment value';
+    }
+    return 'Paste API key';
+  }, []);
+
+  const handleSaveProviderApiKey = useCallback(async (provider: string) => {
+    const apiKey = providerApiKeyDrafts[provider]?.trim();
+    if (!apiKey) {
+      setProviderApiKeyMessages((prev) => ({
+        ...prev,
+        [provider]: { type: 'error', text: 'Paste an API key before saving.' }
+      }));
+      return;
+    }
+
+    setProviderApiKeyPending((prev) => ({ ...prev, [provider]: 'saving' }));
+    setProviderApiKeyMessages((prev) => ({ ...prev, [provider]: undefined }));
+
+    try {
+      const status = await window.agentAPI.setProviderApiKey(provider, apiKey);
+      setProviderApiKeyStatuses((prev) => ({ ...prev, [provider]: status }));
+      setProviderApiKeyDrafts((prev) => ({ ...prev, [provider]: '' }));
+      setProviderApiKeyMessages((prev) => ({
+        ...prev,
+        [provider]: {
+          type: 'success',
+          text: `Saved to ${status.storageBackend === 'keychain' ? 'your OS keychain' : 'encrypted local storage'}.`
+        }
+      }));
+    } catch (error: any) {
+      setProviderApiKeyMessages((prev) => ({
+        ...prev,
+        [provider]: { type: 'error', text: error?.message || 'Failed to save API key.' }
+      }));
+    } finally {
+      setProviderApiKeyPending((prev) => ({ ...prev, [provider]: undefined }));
+    }
+  }, [providerApiKeyDrafts]);
+
+  const handleClearProviderApiKey = useCallback(async (provider: string) => {
+    setProviderApiKeyPending((prev) => ({ ...prev, [provider]: 'clearing' }));
+    setProviderApiKeyMessages((prev) => ({ ...prev, [provider]: undefined }));
+
+    try {
+      const status = await window.agentAPI.clearProviderApiKey(provider);
+      setProviderApiKeyStatuses((prev) => ({ ...prev, [provider]: status }));
+      setProviderApiKeyDrafts((prev) => ({ ...prev, [provider]: '' }));
+      setProviderApiKeyMessages((prev) => ({
+        ...prev,
+        [provider]: {
+          type: 'info',
+          text: status.activeSource === 'environment'
+            ? `Stored key removed. Falling back to ${status.environmentVariable || 'the environment value'}.`
+            : 'Stored key removed.'
+        }
+      }));
+    } catch (error: any) {
+      setProviderApiKeyMessages((prev) => ({
+        ...prev,
+        [provider]: { type: 'error', text: error?.message || 'Failed to clear API key.' }
+      }));
+    } finally {
+      setProviderApiKeyPending((prev) => ({ ...prev, [provider]: undefined }));
+    }
+  }, []);
 
   const renderModelSelectorControls = (
     provider: string,
@@ -548,6 +670,89 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     handleActiveProviderChange,
                     handleActiveModelChange
                   )}
+                </div>
+
+                <div className="setting-subsection">
+                  <h4>Provider Credentials</h4>
+                  <p className="setting-subsection-copy">
+                    Paste provider API keys here. AgentPrime keeps them out of `settings.json` and stores them in your OS keychain when available, otherwise in encrypted local storage.
+                  </p>
+
+                  {PROVIDER_OPTIONS.map((option) => {
+                    const status = providerApiKeyStatuses[option.value];
+                    const message = providerApiKeyMessages[option.value];
+                    const pendingState = providerApiKeyPending[option.value];
+                    const draftValue = providerApiKeyDrafts[option.value] || '';
+                    const isVisible = providerApiKeyVisibility[option.value] === true;
+                    const statusLabel = status?.activeSource === 'secure-storage'
+                      ? 'Stored'
+                      : status?.activeSource === 'environment'
+                        ? 'Environment'
+                        : 'Missing';
+
+                    return (
+                      <div className="provider-credential-card" key={option.value}>
+                        <div className="provider-credential-head">
+                          <div className="provider-credential-title-row">
+                            <span className="setting-model-badge">{option.label}</span>
+                            <span className={`provider-credential-pill provider-credential-pill--${status?.activeSource || 'none'}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                          <div className="provider-credential-copy">
+                            {PROVIDER_CREDENTIAL_COPY[option.value] || option.description}
+                          </div>
+                          <div className="provider-credential-meta">
+                            {describeProviderApiKeyStatus(status)}
+                          </div>
+                        </div>
+
+                        <div className="provider-credential-controls">
+                          <input
+                            type={isVisible ? 'text' : 'password'}
+                            value={draftValue}
+                            onChange={(e) => updateProviderApiKeyDraft(option.value, e.target.value)}
+                            className="setting-text-input provider-credential-input"
+                            placeholder={getProviderApiKeyPlaceholder(status)}
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+
+                          <div className="provider-credential-actions">
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => toggleProviderApiKeyVisibility(option.value)}
+                            >
+                              {isVisible ? 'Hide' : 'Show'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => void handleClearProviderApiKey(option.value)}
+                              disabled={!status?.hasStoredKey || Boolean(pendingState)}
+                            >
+                              {pendingState === 'clearing' ? 'Clearing...' : 'Clear'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              onClick={() => void handleSaveProviderApiKey(option.value)}
+                              disabled={!draftValue.trim() || Boolean(pendingState)}
+                            >
+                              {pendingState === 'saving' ? 'Saving...' : status?.hasStoredKey ? 'Update Key' : 'Save Key'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {message && (
+                          <div className={`provider-credential-message provider-credential-message--${message.type}`}>
+                            {message.text}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="setting-group">
@@ -1037,6 +1242,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           .settings-panel .settings-tab,
           .settings-panel .setting-checkbox,
           .settings-panel .setting-select,
+          .settings-panel .setting-text-input,
           .settings-panel label.setting-label {
             cursor: pointer;
           }
@@ -1133,6 +1339,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             color: var(--prime-text);
           }
 
+          .setting-text-input {
+            width: 100%;
+            padding: 9px 12px;
+            background: var(--prime-surface);
+            border: 1px solid var(--prime-border);
+            border-radius: 8px;
+            color: var(--prime-text);
+            font-size: 13px;
+            font-family: inherit;
+            cursor: text !important;
+            transition: border-color 0.12s ease, box-shadow 0.12s ease;
+          }
+
+          .setting-text-input:focus {
+            border-color: var(--prime-accent);
+            outline: none;
+            box-shadow: 0 0 0 2px var(--prime-accent-glow);
+          }
+
           .setting-model-stack {
             min-width: 280px;
             width: min(100%, 360px);
@@ -1225,6 +1450,107 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             font-size: 12px;
             line-height: 1.5;
             color: var(--prime-text-muted);
+          }
+
+          .provider-credential-card {
+            display: grid;
+            gap: 10px;
+            padding: 14px 0;
+            border-top: 1px solid var(--prime-border-light, var(--prime-border));
+          }
+
+          .provider-credential-card:first-of-type {
+            border-top: none;
+            padding-top: 0;
+          }
+
+          .provider-credential-head {
+            display: grid;
+            gap: 6px;
+          }
+
+          .provider-credential-title-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+          }
+
+          .provider-credential-copy {
+            font-size: 12px;
+            color: var(--prime-text-secondary);
+            line-height: 1.4;
+          }
+
+          .provider-credential-meta {
+            font-size: 11px;
+            color: var(--prime-text-muted);
+            line-height: 1.4;
+          }
+
+          .provider-credential-controls {
+            display: grid;
+            gap: 10px;
+          }
+
+          .provider-credential-input {
+            min-width: 0;
+          }
+
+          .provider-credential-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+          }
+
+          .provider-credential-pill {
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+          }
+
+          .provider-credential-pill--secure-storage {
+            background: rgba(63, 185, 80, 0.16);
+            color: #3fb950;
+          }
+
+          .provider-credential-pill--environment {
+            background: rgba(88, 166, 255, 0.16);
+            color: #58a6ff;
+          }
+
+          .provider-credential-pill--none {
+            background: rgba(240, 246, 252, 0.08);
+            color: var(--prime-text-muted);
+          }
+
+          .provider-credential-message {
+            font-size: 12px;
+            line-height: 1.4;
+            padding: 8px 10px;
+            border-radius: 8px;
+          }
+
+          .provider-credential-message--success {
+            color: #3fb950;
+            background: rgba(63, 185, 80, 0.12);
+            border: 1px solid rgba(63, 185, 80, 0.24);
+          }
+
+          .provider-credential-message--info {
+            color: #58a6ff;
+            background: rgba(88, 166, 255, 0.12);
+            border: 1px solid rgba(88, 166, 255, 0.24);
+          }
+
+          .provider-credential-message--error {
+            color: #ff7b72;
+            background: rgba(255, 123, 114, 0.12);
+            border: 1px solid rgba(255, 123, 114, 0.24);
           }
 
           .startup-diagnostics-card {

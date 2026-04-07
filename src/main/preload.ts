@@ -127,6 +127,11 @@ const agentAPI: AgentAPI = {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getStartupPreflightReport: () => ipcRenderer.invoke('startup-preflight:get-report'),
   updateSettings: (settings: any) => ipcRenderer.invoke('update-settings', settings),
+  getProviderApiKeyStatuses: () => ipcRenderer.invoke('credentials:get-provider-api-key-statuses'),
+  setProviderApiKey: (providerName: string, apiKey: string) =>
+    ipcRenderer.invoke('credentials:set-provider-api-key', providerName, apiKey),
+  clearProviderApiKey: (providerName: string) =>
+    ipcRenderer.invoke('credentials:clear-provider-api-key', providerName),
   setTitleBarOverlay: (options: { color: string; symbolColor: string; height?: number }) =>
     ipcRenderer.invoke('set-title-bar-overlay', options),
   getProviders: () => ipcRenderer.invoke('get-providers'),
