@@ -515,7 +515,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 <div className="setting-group">
                   <label className="setting-label">
                     <span className="setting-name">Dino Buddy Mode</span>
-                    <span className="setting-description">Use the conversational Dino persona in AI chat</span>
+                    <span className="setting-description">Warm, calm Dino companion in chat (AgentPrime voice — softer than ActivatePrime&apos;s high-energy mode)</span>
                   </label>
                   <input
                     type="checkbox"

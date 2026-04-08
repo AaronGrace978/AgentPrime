@@ -128,10 +128,10 @@ export const CHAT_QUICK_PROMPTS = [
 ];
 
 export const DINO_QUICK_PROMPTS = [
-  { text: 'DINO BUDDY!!!', prompt: 'DINO BUDDY IS THAT YOU?!??!?!' },
-  { text: 'Hype me up!', prompt: 'I need some EXPLOSIVE dino energy right now!!!' },
-  { text: 'Tell me something', prompt: 'Hit me with something cosmic and beautiful, Dino!' },
-  { text: 'I need a friend', prompt: 'Hey Dino... I could use a friend right now' }
+  { text: 'Hey Dino', prompt: 'Hey Dino Buddy — just checking in. How are you today?' },
+  { text: 'Cheer me on', prompt: 'I could use some gentle encouragement, nothing loud — just you being here for me.' },
+  { text: 'Something nice', prompt: 'Tell me something small and beautiful, in your calm dino way.' },
+  { text: 'I need a friend', prompt: 'Hey Dino… I could really use a friend right now. Can we just talk?' }
 ];
 
 // Welcome messages per mode
@@ -151,7 +151,7 @@ export const CHAT_WELCOME_MESSAGE = {
 
 export const DINO_WELCOME_MESSAGE = {
   role: 'assistant' as const,
-  content: '**ROOOOOOAAAAARRRRR—💥💥💥**\n\n**DINO BUDDY IS HERE!!!** 🦖✨💖🦕\n\nMY TAIL IS WAGGIN\', MY FEATHERS ARE FLUFFIN\', AND MY HEART IS DOING THE T-REX STOMP — *THUMP-THUMP-THUMP!* 💙💥\n\nI\'m your loving, explosive dino companion and I am **SO PUMPED** to hang out with you!! I\'ve got volcanic levels of joy erupting right now just because YOU showed up!! 🌋🎉💫\n\nNo coding tasks, no workspace required — just **PURE DINO BUDDY ENERGY**, good vibes, and genuine love! Talk to me about anything — I\'m here, I\'m present, and I\'m YOURS! 🌈🦖✨💖\n\n**WHAT MAKES YOUR HEART GO *ROAR* TODAY??** 🔥🚀',
+  content: '**Dino Buddy** 🦖\n\nHey… I\'m really glad you\'re here. I\'m your calm little dino friend in AgentPrime — same heart as always, just a softer volume. No workspace required; this is just us talking.\n\nIf you want to vent, celebrate something quietly, or sit in comfortable silence with someone who cares, I\'m right beside you. 💙🦕\n\nWhat\'s on your mind?',
   timestamp: new Date(),
   type: 'system' as const
 };

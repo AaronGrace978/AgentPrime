@@ -65,6 +65,11 @@ Confidence snapshot:
 
 This is not the finish line yet, but it is a meaningful step past the earlier "alpha" behavior in project generation and specialist coordination.
 
+### Dino Buddy (chat)
+
+- **AgentPrime voice:** Dino Buddy here is intentionally **calm and warm** — supportive companion energy with normal sentence case and light emoji use, not all-caps “volcanic” hype.
+- **ActivatePrime contrast:** The same lineage and heart; ActivatePrime can lean louder and more explosive. In AgentPrime, Dino defaults to the gentle, steady mode you can leave open in the background while you work or unwind.
+
 ## What AgentPrime Can Do
 
 - Open a project and work in a full desktop IDE shell with Monaco editor, tabs, file tree, terminal, and search/replace
