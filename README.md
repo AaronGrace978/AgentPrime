@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="assets/agentprime-cloud-hero.svg" alt="AgentPrime cloud hero" width="1200" />
+ <img width="1917" height="1030" alt="image" src="https://github.com/user-attachments/assets/1937adbc-d62e-42cd-aaa3-0f45875076c9" />
 </p>
+
 
 <h1 align="center">AgentPrime</h1>
 
