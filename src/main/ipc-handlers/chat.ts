@@ -1025,17 +1025,18 @@ Separate files with blank lines.
       // Words to Code needs MUCH higher limits for complete game/app generation
       const isWordsToCodeMode = context.words_to_code_mode || context.wordsToCode || false;
       const isJustChatMode = context.just_chat_mode || context.justChatMode || false;
+      const isConversationalMode = isJustChatMode || context.dino_buddy_mode;
       const maxTokens = getBudgetAdjustedMaxTokens(
         activeModel,
-        isWordsToCodeMode ? 'words_to_code' : isJustChatMode ? 'just_chat' : 'chat',
+        isWordsToCodeMode ? 'words_to_code' : isConversationalMode ? 'just_chat' : 'chat',
         runtimeBudget
       );
       
       console.log(
-        `[Chat] Mode: ${isWordsToCodeMode ? 'Words to Code' : isJustChatMode ? 'Just Chat' : 'Standard'}, maxTokens: ${maxTokens}, ollamaCloud: ${isOllamaCloudModel(activeModel)}`
+        `[Chat] Mode: ${isWordsToCodeMode ? 'Words to Code' : context.dino_buddy_mode ? 'Dino' : isJustChatMode ? 'Just Chat' : 'Standard'}, maxTokens: ${maxTokens}, ollamaCloud: ${isOllamaCloudModel(activeModel)}`
       );
 
-      if (dualModelEnabled) {
+      if (dualModelEnabled && !isConversationalMode) {
         // Configure dual model system
         aiRouter.configureDualModel(settings.dualModelConfig);
         
@@ -1068,15 +1069,25 @@ Separate files with blank lines.
           }
         });
       } else {
-        // Standard single-model streaming
-        await aiRouter.stream(messagesWithSystem, processStreamChunk, {
-          model: activeModel,
-          maxTokens: maxTokens,
-          onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
-            latestRuntime = runtime;
-            emitRuntimeInfo(event.sender, requestId, runtime);
-          }
-        });
+        // Standard single-model streaming.
+        // For Just Chat / Dino, honor the explicitly selected provider+model instead of
+        // sending the request through dual-model routing, which can override the picker.
+        const originalProvider = settings?.activeProvider || null;
+        const originalModel = settings?.activeModel || null;
+
+        try {
+          aiRouter.setActiveProvider(activeProvider, activeModel);
+          await aiRouter.stream(messagesWithSystem, processStreamChunk, {
+            model: activeModel,
+            maxTokens: maxTokens,
+            onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
+              latestRuntime = runtime;
+              emitRuntimeInfo(event.sender, requestId, runtime);
+            }
+          });
+        } finally {
+          aiRouter.setActiveProvider(originalProvider, originalModel);
+        }
       }
 
       if (streamTerminalError) {

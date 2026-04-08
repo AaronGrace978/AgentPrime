@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { promptBuilder } from '../../agent';
-import type { AIRuntimeSnapshot } from '../../../types/ai-providers';
+import type { AIRuntimeSnapshot, ModelInfo } from '../../../types/ai-providers';
 import type { Settings } from '../../../types';
 
 // Types and constants
@@ -113,6 +113,15 @@ function resolveNonAgentSelection(
   return { provider, model };
 }
 
+function normalizeFetchedModelOptions(models: ModelInfo[] | undefined): Array<{ value: string; label: string }> {
+  return (models || [])
+    .filter((model) => Boolean(model?.id || model?.name))
+    .map((model) => ({
+      value: model.id || model.name,
+      label: model.name || model.id,
+    }));
+}
+
 const AIChat: React.FC<AIChatProps> = ({
   isVisible = true,
   onClose,
@@ -140,6 +149,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentSelectedModel, setAgentSelectedModel] = useState(DEFAULT_AGENT_MODEL);
   const [nonAgentSelections, setNonAgentSelections] = useState<Record<NonAgentMode, NonAgentSelection>>(DEFAULT_NON_AGENT_SELECTIONS);
+  const [availableProviderModels, setAvailableProviderModels] = useState<Record<string, Array<{ value: string; label: string }>>>({});
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [agentAutonomyLevel, setAgentAutonomyLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [agentPrefsHydrated, setAgentPrefsHydrated] = useState(false);
@@ -205,6 +215,24 @@ const AIChat: React.FC<AIChatProps> = ({
     }
   };
 
+  const fetchProviderModels = async (provider: string): Promise<Array<{ value: string; label: string }>> => {
+    try {
+      const models = await window.agentAPI.getProviderModels(provider);
+      const normalized = normalizeFetchedModelOptions(models);
+      if (normalized.length > 0) {
+        setAvailableProviderModels((prev) => ({ ...prev, [provider]: normalized }));
+        return normalized;
+      }
+    } catch (error) {
+      console.warn(`Failed to load live models for ${provider}:`, error);
+    }
+
+    return getModelOptionsForProvider(provider);
+  };
+
+  const getResolvedModelOptions = (provider: string) =>
+    availableProviderModels[provider]?.length ? availableProviderModels[provider] : getModelOptionsForProvider(provider);
+
   const loadHistoryForMode = async (mode: ChatMode) => {
     try {
       const result = await window.agentAPI.getChatHistory(mode);
@@ -240,15 +268,19 @@ const AIChat: React.FC<AIChatProps> = ({
           setAgentSelectedModel(settings?.activeModel || DEFAULT_AGENT_MODEL);
         }
 
-        const fallbackSelection: NonAgentSelection = {
-          provider: runtime?.displayProvider || runtime?.effectiveProvider || settings?.activeProvider || 'ollama',
-          model: runtime?.displayModel || runtime?.effectiveModel || settings?.activeModel || DEFAULT_AGENT_MODEL,
-        };
+        const fallbackSelection: NonAgentSelection = DEFAULT_NON_AGENT_SELECTIONS.chat;
 
         setNonAgentSelections({
-          chat: resolveNonAgentSelection('chat', settings, fallbackSelection),
-          dino: resolveNonAgentSelection('dino', settings, fallbackSelection),
+          chat: resolveNonAgentSelection('chat', settings, DEFAULT_NON_AGENT_SELECTIONS.chat),
+          dino: resolveNonAgentSelection('dino', settings, DEFAULT_NON_AGENT_SELECTIONS.dino),
         });
+
+        const providersToPrime = new Set<string>([
+          settings?.activeProvider || 'ollama',
+          resolveNonAgentSelection('chat', settings, DEFAULT_NON_AGENT_SELECTIONS.chat).provider,
+          resolveNonAgentSelection('dino', settings, DEFAULT_NON_AGENT_SELECTIONS.dino).provider,
+        ]);
+        await Promise.all(Array.from(providersToPrime).map((provider) => fetchProviderModels(provider)));
 
         const nextMode =
           settings?.chatMode && ['agent', 'chat', 'dino'].includes(settings.chatMode)
@@ -302,9 +334,30 @@ const AIChat: React.FC<AIChatProps> = ({
 
   const currentNonAgentSelection = isNonAgentMode(chatMode) ? nonAgentSelections[chatMode] : null;
   const currentNonAgentModelOptions = useMemo(
-    () => getModelOptionsForProvider(currentNonAgentSelection?.provider || DEFAULT_NON_AGENT_SELECTIONS.chat.provider),
-    [currentNonAgentSelection?.provider]
+    () => getResolvedModelOptions(currentNonAgentSelection?.provider || DEFAULT_NON_AGENT_SELECTIONS.chat.provider),
+    [availableProviderModels, currentNonAgentSelection?.provider]
   );
+
+  useEffect(() => {
+    const providers = new Set<string>([
+      nonAgentSelections.chat.provider,
+      nonAgentSelections.dino.provider,
+    ]);
+
+    void Promise.all(Array.from(providers).map((provider) => fetchProviderModels(provider)));
+  }, [nonAgentSelections.chat.provider, nonAgentSelections.dino.provider]);
+
+  useEffect(() => {
+    (['chat', 'dino'] as NonAgentMode[]).forEach((mode) => {
+      const selection = nonAgentSelections[mode];
+      const options = getResolvedModelOptions(selection.provider);
+      if (options.length > 0 && !options.some((option) => option.value === selection.model)) {
+        const nextSelection = { provider: selection.provider, model: options[0].value };
+        setNonAgentSelections((prev) => ({ ...prev, [mode]: nextSelection }));
+        void persistNonAgentSelection(mode, nextSelection);
+      }
+    });
+  }, [availableProviderModels]);
 
   const statusBarModel = useMemo(() => {
     if (chatMode === 'agent') {
@@ -583,7 +636,7 @@ const AIChat: React.FC<AIChatProps> = ({
   };
 
   const handleNonAgentProviderChange = async (mode: NonAgentMode, provider: string) => {
-    const modelOptions = getModelOptionsForProvider(provider);
+    const modelOptions = await fetchProviderModels(provider);
     const currentModel = nonAgentSelections[mode].model;
     const nextSelection = {
       provider,
@@ -624,6 +677,16 @@ const AIChat: React.FC<AIChatProps> = ({
     if (chatMode === 'chat' || chatMode === 'dino') {
       setIsLoading(true);
       const modeSelection = nonAgentSelections[chatMode];
+      const providerOptions = getResolvedModelOptions(modeSelection.provider);
+      const effectiveModeSelection =
+        providerOptions.length > 0 && !providerOptions.some((option) => option.value === modeSelection.model)
+          ? { provider: modeSelection.provider, model: providerOptions[0].value }
+          : modeSelection;
+
+      if (effectiveModeSelection.model !== modeSelection.model) {
+        setNonAgentSelections((prev) => ({ ...prev, [chatMode]: effectiveModeSelection }));
+        void persistNonAgentSelection(chatMode, effectiveModeSelection);
+      }
 
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -661,8 +724,8 @@ const AIChat: React.FC<AIChatProps> = ({
           just_chat_mode: chatMode === 'chat',
           dino_buddy_mode: chatMode === 'dino',
           deterministic_scaffold_only: deterministicScaffoldOnly,
-          provider: modeSelection.provider,
-          model: modeSelection.model,
+          provider: effectiveModeSelection.provider,
+          model: effectiveModeSelection.model,
           dual_mode: runtimeBudgetToDualMode(dualModel.mode),
           runtime_budget: dualModel.mode
         });

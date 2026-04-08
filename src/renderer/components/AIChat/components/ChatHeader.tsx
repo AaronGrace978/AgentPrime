@@ -38,7 +38,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               {meta.subtitle}
             </span>
             {chatMode === 'dino' && (
-              <span className="badge badge-rawr">RAWR</span>
+              <span className="badge badge-rawr">Calm</span>
             )}
             {pythonBrainStatus.connected ? (
               <span 
