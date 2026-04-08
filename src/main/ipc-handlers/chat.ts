@@ -101,7 +101,8 @@ function resolveProviderForModel(model: string | undefined, preferredProvider: s
 function resolveConfiguredModel(
   settings: any,
   requestedModel?: string,
-  runtimeBudget: 'instant' | 'standard' | 'deep' = DEFAULT_RUNTIME_BUDGET_MODE
+  runtimeBudget: 'instant' | 'standard' | 'deep' = DEFAULT_RUNTIME_BUDGET_MODE,
+  requestedProvider?: string
 ) {
   const localOllamaModel =
     settings?.providers?.ollama?.model ||
@@ -118,9 +119,10 @@ function resolveConfiguredModel(
     : undefined;
 
   const requestedModelForRun = requestedModel || budgetModel;
-  const runtime = resolveEffectiveAIRuntime(settings, requestedModelForRun, settings?.activeProvider || 'ollama');
+  const requestedProviderForRun = requestedProvider || settings?.activeProvider || 'ollama';
+  const runtime = resolveEffectiveAIRuntime(settings, requestedModelForRun, requestedProviderForRun);
   const activeModel = runtime.effectiveModel || localOllamaModel;
-  const activeProvider = runtime.effectiveProvider || resolveProviderForModel(activeModel, settings?.activeProvider || 'ollama');
+  const activeProvider = runtime.effectiveProvider || resolveProviderForModel(activeModel, requestedProviderForRun);
 
   return { activeModel, activeProvider, localOllamaModel, runtime };
 }
@@ -148,13 +150,25 @@ function emitRuntimeInfo(sender: WebContents, requestId: string, runtime: AIRunt
 // 🦖 DINO BUDDY: Conversation summarization for long sessions
 import { conversationSummarizer } from '../agent/conversation-summarizer';
 
+type ConversationMode = 'agent' | 'chat' | 'dino';
+
+function resolveConversationMode(context?: { just_chat_mode?: boolean; dino_buddy_mode?: boolean }): ConversationMode {
+  if (context?.dino_buddy_mode) {
+    return 'dino';
+  }
+  if (context?.just_chat_mode) {
+    return 'chat';
+  }
+  return 'agent';
+}
+
 interface ChatHandlerDeps {
   ipcMain: IpcMain;
   getWorkspacePath: () => string | null;
   getCurrentFile: () => string | null;
   getCurrentFolder: () => string | null;
-  getConversationHistory: () => Array<{ role: 'user' | 'assistant'; content: string }>;
-  addToConversationHistory: (role: 'user' | 'assistant', content: string) => void;
+  getConversationHistory: (mode?: ConversationMode) => Array<{ role: 'user' | 'assistant'; content: string }>;
+  addToConversationHistory: (mode: ConversationMode, role: 'user' | 'assistant', content: string) => void;
   getSettings: () => any;
 }
 
@@ -215,9 +229,9 @@ export function register(deps: ChatHandlerDeps): void {
   });
 
   // Get conversation history
-  ipcMain.handle('get-chat-history', async () => {
+  ipcMain.handle('get-chat-history', async (_event: any, mode?: ConversationMode) => {
     try {
-      const history = getConversationHistory();
+      const history = getConversationHistory(mode || 'agent');
       return {
         success: true,
         history: history.map((msg, index) => ({
@@ -324,9 +338,9 @@ export function register(deps: ChatHandlerDeps): void {
   });
 
   // 🦖 DINO BUDDY: Summarize conversation for long sessions
-  ipcMain.handle('summarize-conversation', async () => {
+  ipcMain.handle('summarize-conversation', async (_event: any, mode?: ConversationMode) => {
     try {
-      const history = getConversationHistory();
+      const history = getConversationHistory(mode || 'agent');
       
       if (!conversationSummarizer.needsSummarization(history, 8000)) {
         return {
@@ -383,6 +397,7 @@ export function register(deps: ChatHandlerDeps): void {
     message = messageValidation.sanitized || message;
 
     const context = parseChatIpcContext(contextRaw);
+    const conversationMode = resolveConversationMode(context);
     const runtimeBudget = context.runtime_budget || dualModeToRuntimeBudget(context.dual_mode) || DEFAULT_RUNTIME_BUDGET_MODE;
 
     try {
@@ -406,7 +421,7 @@ export function register(deps: ChatHandlerDeps): void {
           activeModel: selectedModel,
           activeProvider,
           runtime: requestedRuntime,
-        } = resolveConfiguredModel(agentSettings, context.model, runtimeBudget);
+        } = resolveConfiguredModel(agentSettings, context.model, runtimeBudget, context.provider);
         const autonomyLevel = clampAgentAutonomyLevel(context.agent_autonomy ?? agentSettings?.agentAutonomyLevel);
         const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
@@ -558,8 +573,8 @@ export function register(deps: ChatHandlerDeps): void {
             const reviewSession = specializedAgentLoop.consumePendingReviewSession();
 
             // Store in history
-            addToConversationHistory('user', message);
-            addToConversationHistory('assistant', response);
+            addToConversationHistory(conversationMode, 'user', message);
+            addToConversationHistory(conversationMode, 'assistant', response);
             telemetry.track('ai_response', {
               mode: 'specialized_dispatch',
               success: true,
@@ -690,8 +705,8 @@ export function register(deps: ChatHandlerDeps): void {
             }
 
             // Store in history
-            addToConversationHistory('user', message);
-            addToConversationHistory('assistant', response);
+            addToConversationHistory(conversationMode, 'user', message);
+            addToConversationHistory(conversationMode, 'assistant', response);
 
             // Send success reaction to Dino Buddy
             event.sender.send('dino:reaction', {
@@ -782,8 +797,8 @@ ${keyFilesList || '  (none found)'}
 
 Would you like me to examine any specific files or provide more details about a particular part of the codebase?`;
 
-              addToConversationHistory('user', message);
-              addToConversationHistory('assistant', response);
+              addToConversationHistory(conversationMode, 'user', message);
+              addToConversationHistory(conversationMode, 'assistant', response);
 
               return {
                 success: true,
@@ -855,7 +870,7 @@ Would you like me to examine any specific files or provide more details about a 
       }
       
       // Build conversation history
-      const history = getConversationHistory();
+      const history = getConversationHistory(conversationMode);
       const messages = [
         ...history.map(msg => ({ role: msg.role, content: msg.content })),
         { role: 'user' as const, content: message }
@@ -951,7 +966,7 @@ Separate files with blank lines.
         activeModel,
         activeProvider,
         runtime: initialRuntime,
-      } = resolveConfiguredModel(settings, context.model, runtimeBudget);
+      } = resolveConfiguredModel(settings, context.model, runtimeBudget, context.provider);
       emitRuntimeInfo(event.sender, requestId, initialRuntime);
       
       // Add system prompt as first message if provided
@@ -1125,8 +1140,8 @@ Separate files with blank lines.
       }
       
       // Store in history
-      addToConversationHistory('user', message);
-      addToConversationHistory('assistant', fullResponse);
+      addToConversationHistory(conversationMode, 'user', message);
+      addToConversationHistory(conversationMode, 'assistant', fullResponse);
       
       // Send success reaction to Dino Buddy
       event.sender.send('dino:reaction', {
@@ -1162,7 +1177,7 @@ Separate files with blank lines.
       
       // Get model and provider info for error context
       const settings = getSettings();
-      const { runtime } = resolveConfiguredModel(settings, context.model, runtimeBudget);
+      const { runtime } = resolveConfiguredModel(settings, context.model, runtimeBudget, context.provider);
       getTelemetryService().track('ai_response', {
         mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
         success: false,

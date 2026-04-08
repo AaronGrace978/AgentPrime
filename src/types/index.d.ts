@@ -17,6 +17,10 @@ export interface Settings {
   inlineCompletions: boolean;
   dinoBuddyMode: boolean;
   chatMode?: 'agent' | 'chat' | 'dino';
+  chatProvider?: string;
+  chatModel?: string;
+  dinoProvider?: string;
+  dinoModel?: string;
   activeProvider: string;
   activeModel: string;
   dualOllamaEnabled: boolean;

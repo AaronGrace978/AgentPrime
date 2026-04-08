@@ -36,8 +36,8 @@ const agentAPI: AgentAPI = {
   quickAction: (action: string, code: string, language?: string) =>
     ipcRenderer.invoke('quick-action', action, code, language),
   aiStatus: () => ipcRenderer.invoke('ai-status'),
-  clearHistory: () => ipcRenderer.invoke('clear-history'),
-  getChatHistory: () => ipcRenderer.invoke('get-chat-history'),
+  clearHistory: (mode?: 'agent' | 'chat' | 'dino') => ipcRenderer.invoke('clear-history', mode),
+  getChatHistory: (mode?: 'agent' | 'chat' | 'dino') => ipcRenderer.invoke('get-chat-history', mode),
   getChatHistoryForSession: (sessionId: string) => ipcRenderer.invoke('get-chat-history-for-session', sessionId),
   getCurrentAgentSessionId: () => ipcRenderer.invoke('get-current-agent-session-id'),
   summarizeConversation: () => ipcRenderer.invoke('summarize-conversation'),

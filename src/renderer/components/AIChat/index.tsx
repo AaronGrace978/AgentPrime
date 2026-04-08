@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { promptBuilder } from '../../agent';
 import type { AIRuntimeSnapshot } from '../../../types/ai-providers';
+import type { Settings } from '../../../types';
 
 // Types and constants
 import { Message, AIChatProps, ChatMode, AgentFileChange } from './types';
@@ -17,7 +18,10 @@ import {
   DINO_WELCOME_MESSAGE,
   QUICK_PROMPTS,
   CHAT_QUICK_PROMPTS,
-  DINO_QUICK_PROMPTS
+  DINO_QUICK_PROMPTS,
+  PROVIDER_OPTIONS,
+  getModelOptionsForProvider,
+  getProviderLabel,
 } from './constants';
 import { runtimeBudgetToDualMode } from '../../../types/runtime-budget';
 import type { AgentRepairScope } from '../../../types/agent-review';
@@ -62,6 +66,53 @@ function clampAgentAutonomyLevel(value: unknown): 1 | 2 | 3 | 4 | 5 {
   return rounded as 1 | 2 | 3 | 4 | 5;
 }
 
+type NonAgentMode = Extract<ChatMode, 'chat' | 'dino'>;
+type NonAgentSelection = { provider: string; model: string };
+
+const DEFAULT_AGENT_MODEL = 'qwen3-coder:480b-cloud';
+const DEFAULT_NON_AGENT_SELECTIONS: Record<NonAgentMode, NonAgentSelection> = {
+  chat: { provider: 'openai', model: 'gpt-5.4' },
+  dino: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+};
+
+function isNonAgentMode(mode: ChatMode): mode is NonAgentMode {
+  return mode === 'chat' || mode === 'dino';
+}
+
+function inferProviderForModel(model?: string): string | undefined {
+  if (!model) {
+    return undefined;
+  }
+
+  return PROVIDER_OPTIONS.find((option) =>
+    getModelOptionsForProvider(option.value).some((candidate) => candidate.value === model)
+  )?.value;
+}
+
+function resolveNonAgentSelection(
+  mode: NonAgentMode,
+  settings: Settings,
+  fallback: NonAgentSelection
+): NonAgentSelection {
+  const defaultSelection = DEFAULT_NON_AGENT_SELECTIONS[mode];
+  const savedProvider = mode === 'chat' ? settings.chatProvider : settings.dinoProvider;
+  const savedModel = mode === 'chat' ? settings.chatModel : settings.dinoModel;
+  const inferredProvider = inferProviderForModel(savedModel);
+  const provider =
+    PROVIDER_OPTIONS.some((option) => option.value === savedProvider)
+      ? savedProvider!
+      : inferredProvider || fallback.provider || defaultSelection.provider;
+  const providerModels = getModelOptionsForProvider(provider);
+  const model =
+    savedModel && providerModels.some((option) => option.value === savedModel)
+      ? savedModel
+      : fallback.model && providerModels.some((option) => option.value === fallback.model)
+        ? fallback.model
+        : providerModels[0]?.value || defaultSelection.model;
+
+  return { provider, model };
+}
+
 const AIChat: React.FC<AIChatProps> = ({
   isVisible = true,
   onClose,
@@ -87,7 +138,8 @@ const AIChat: React.FC<AIChatProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('qwen3-coder:480b-cloud');
+  const [agentSelectedModel, setAgentSelectedModel] = useState(DEFAULT_AGENT_MODEL);
+  const [nonAgentSelections, setNonAgentSelections] = useState<Record<NonAgentMode, NonAgentSelection>>(DEFAULT_NON_AGENT_SELECTIONS);
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [agentAutonomyLevel, setAgentAutonomyLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [agentPrefsHydrated, setAgentPrefsHydrated] = useState(false);
@@ -101,42 +153,6 @@ const AIChat: React.FC<AIChatProps> = ({
   const [currentTask, setCurrentTask] = useState('');
   const agentFileChangesRef = useRef<Map<string, AgentFileChange>>(new Map());
   const pendingRepairScopeRef = useRef<AgentRepairScope | null>(null);
-
-  // Load active model from settings
-  useEffect(() => {
-    const loadActiveModel = async () => {
-      try {
-        const status = await window.agentAPI.aiStatus();
-        if (!status?.success) {
-          throw new Error(status?.error || 'Failed to load runtime status');
-        }
-
-        setRuntimeStatus(status.runtime);
-        setSelectedModel(status.runtime.displayModel || status.runtime.effectiveModel || 'qwen3-coder:480b-cloud');
-      } catch (error) {
-        console.error('Failed to load active model:', error);
-      }
-    };
-    loadActiveModel();
-  }, []);
-
-  useEffect(() => {
-    const handleRuntimeInfo = (data: AIRuntimeSnapshot & { requestId?: string }) => {
-      if (!data) {
-        return;
-      }
-
-      setRuntimeStatus(data);
-      if (data.displayModel || data.effectiveModel) {
-        setSelectedModel(data.displayModel || data.effectiveModel);
-      }
-    };
-
-    window.agentAPI.onModelSelectionInfo(handleRuntimeInfo);
-    return () => {
-      window.agentAPI.removeModelSelectionInfo();
-    };
-  }, []);
 
   // Prefill chat input when templates route a request here.
   useEffect(() => {
@@ -177,46 +193,125 @@ const AIChat: React.FC<AIChatProps> = ({
     getCursorPosition
   });
 
+  const persistNonAgentSelection = async (mode: NonAgentMode, selection: NonAgentSelection) => {
+    try {
+      await window.agentAPI.updateSettings(
+        mode === 'chat'
+          ? { chatProvider: selection.provider, chatModel: selection.model }
+          : { dinoProvider: selection.provider, dinoModel: selection.model }
+      );
+    } catch (error) {
+      console.error(`Failed to save ${mode} model preference:`, error);
+    }
+  };
+
+  const loadHistoryForMode = async (mode: ChatMode) => {
+    try {
+      const result = await window.agentAPI.getChatHistory(mode);
+      if (result.success && Array.isArray(result.history) && result.history.length > 0) {
+        const historyMessages: Message[] = result.history.map((msg: any) => ({
+          role: msg.role,
+          content: msg.content,
+          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+        }));
+        setMessages(historyMessages);
+        return;
+      }
+    } catch (error) {
+      console.error(`Failed to load ${mode} chat history:`, error);
+    }
+
+    setMessages([welcomeForMode(mode)]);
+  };
+
+  useEffect(() => {
+    const loadInitialChatState = async () => {
+      try {
+        const [settings, status] = await Promise.all([
+          window.agentAPI.getSettings(),
+          window.agentAPI.aiStatus().catch((error) => ({ success: false as const, error: error?.message }))
+        ]);
+
+        const runtime = status && status.success ? status.runtime : null;
+        if (runtime) {
+          setRuntimeStatus(runtime);
+          setAgentSelectedModel(runtime.displayModel || runtime.effectiveModel || DEFAULT_AGENT_MODEL);
+        } else {
+          setAgentSelectedModel(settings?.activeModel || DEFAULT_AGENT_MODEL);
+        }
+
+        const fallbackSelection: NonAgentSelection = {
+          provider: runtime?.displayProvider || runtime?.effectiveProvider || settings?.activeProvider || 'ollama',
+          model: runtime?.displayModel || runtime?.effectiveModel || settings?.activeModel || DEFAULT_AGENT_MODEL,
+        };
+
+        setNonAgentSelections({
+          chat: resolveNonAgentSelection('chat', settings, fallbackSelection),
+          dino: resolveNonAgentSelection('dino', settings, fallbackSelection),
+        });
+
+        const nextMode =
+          settings?.chatMode && ['agent', 'chat', 'dino'].includes(settings.chatMode)
+            ? (settings.chatMode as ChatMode)
+            : settings?.dinoBuddyMode
+              ? 'dino'
+              : 'agent';
+
+        setChatMode(nextMode);
+        await loadHistoryForMode(nextMode);
+      } catch (error) {
+        console.error('Failed to initialize chat state:', error);
+      }
+    };
+
+    loadInitialChatState();
+  }, []);
+
+  useEffect(() => {
+    const handleRuntimeInfo = (data: AIRuntimeSnapshot & { requestId?: string }) => {
+      if (!data) {
+        return;
+      }
+
+      setRuntimeStatus(data);
+      if (chatMode === 'agent' && (data.displayModel || data.effectiveModel)) {
+        setAgentSelectedModel(data.displayModel || data.effectiveModel || DEFAULT_AGENT_MODEL);
+      }
+    };
+
+    window.agentAPI.onModelSelectionInfo(handleRuntimeInfo);
+    return () => {
+      window.agentAPI.removeModelSelectionInfo();
+    };
+  }, [chatMode]);
+
   /**
    * Resolve the model that Agent mode should request for the current runtime budget.
    * This must come from the Fast/Deep selectors, not the last runtime status snapshot.
    */
   const agentBudgetModel = useMemo(() => {
     if (dualModel.mode === 'instant') {
-      return brainConfig.fastModel.model || selectedModel;
+      return brainConfig.fastModel.model || agentSelectedModel;
     }
     if (dualModel.mode === 'deep') {
-      return brainConfig.deepModel.model || selectedModel;
+      return brainConfig.deepModel.model || agentSelectedModel;
     }
     // Standard mode keeps orchestration flexible while still honoring configured models.
-    return brainConfig.deepModel.model || brainConfig.fastModel.model || selectedModel;
-  }, [brainConfig.deepModel.model, brainConfig.fastModel.model, dualModel.mode, selectedModel]);
+    return brainConfig.deepModel.model || brainConfig.fastModel.model || agentSelectedModel;
+  }, [agentSelectedModel, brainConfig.deepModel.model, brainConfig.fastModel.model, dualModel.mode]);
+
+  const currentNonAgentSelection = isNonAgentMode(chatMode) ? nonAgentSelections[chatMode] : null;
+  const currentNonAgentModelOptions = useMemo(
+    () => getModelOptionsForProvider(currentNonAgentSelection?.provider || DEFAULT_NON_AGENT_SELECTIONS.chat.provider),
+    [currentNonAgentSelection?.provider]
+  );
 
   const statusBarModel = useMemo(() => {
     if (chatMode === 'agent') {
       return agentBudgetModel;
     }
-    return runtimeStatus?.displayModel || dualModel.currentModel || selectedModel;
-  }, [agentBudgetModel, chatMode, dualModel.currentModel, runtimeStatus?.displayModel, selectedModel]);
-
-  // Load saved chat mode from settings
-  useEffect(() => {
-    const loadChatMode = async () => {
-      try {
-        const settings = await window.agentAPI.getSettings();
-        if (settings?.chatMode && ['agent', 'chat', 'dino'].includes(settings.chatMode)) {
-          setChatMode(settings.chatMode as ChatMode);
-          setMessages([welcomeForMode(settings.chatMode as ChatMode)]);
-        } else if (settings?.dinoBuddyMode) {
-          setChatMode('dino');
-          setMessages([welcomeForMode('dino')]);
-        }
-      } catch (error) {
-        console.error('Failed to load chat mode:', error);
-      }
-    };
-    loadChatMode();
-  }, []);
+    return currentNonAgentSelection?.model || runtimeStatus?.displayModel || dualModel.currentModel || DEFAULT_AGENT_MODEL;
+  }, [agentBudgetModel, chatMode, currentNonAgentSelection?.model, dualModel.currentModel, runtimeStatus?.displayModel]);
 
   // Load specialized agents preference from settings
   useEffect(() => {
@@ -266,26 +361,6 @@ const AIChat: React.FC<AIChatProps> = ({
     };
     saveAutonomyPreference();
   }, [agentAutonomyLevel, agentPrefsHydrated]);
-
-  // Load chat history
-  useEffect(() => {
-    const loadHistory = async () => {
-      try {
-        const result = await window.agentAPI.getChatHistory();
-        if (result.success && result.history && result.history.length > 0) {
-          const historyMessages: Message[] = result.history.map((msg: any) => ({
-            role: msg.role,
-            content: msg.content,
-            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
-          }));
-          setMessages(historyMessages);
-        }
-      } catch (error) {
-        console.error('Failed to load chat history:', error);
-      }
-    };
-    loadHistory();
-  }, []);
 
   // Real-time agent progress streaming
   useEffect(() => {
@@ -481,7 +556,12 @@ const AIChat: React.FC<AIChatProps> = ({
   };
 
   // Clear chat
-  const handleClearChat = () => {
+  const handleClearChat = async () => {
+    try {
+      await window.agentAPI.clearHistory(chatMode);
+    } catch (error) {
+      console.error(`Failed to clear ${chatMode} chat history:`, error);
+    }
     setMessages([welcomeForMode(chatMode)]);
     setLastError(null);
   };
@@ -490,9 +570,9 @@ const AIChat: React.FC<AIChatProps> = ({
   const handleModeSwitch = async (mode: ChatMode) => {
     if (mode === chatMode) return;
     setChatMode(mode);
-    setMessages([welcomeForMode(mode)]);
     setLastError(null);
     try {
+      await loadHistoryForMode(mode);
       await window.agentAPI.updateSettings({
         chatMode: mode,
         dinoBuddyMode: mode === 'dino'
@@ -500,6 +580,30 @@ const AIChat: React.FC<AIChatProps> = ({
     } catch (e) {
       console.error('Failed to save chat mode:', e);
     }
+  };
+
+  const handleNonAgentProviderChange = async (mode: NonAgentMode, provider: string) => {
+    const modelOptions = getModelOptionsForProvider(provider);
+    const currentModel = nonAgentSelections[mode].model;
+    const nextSelection = {
+      provider,
+      model: modelOptions.some((option) => option.value === currentModel)
+        ? currentModel
+        : modelOptions[0]?.value || DEFAULT_NON_AGENT_SELECTIONS[mode].model,
+    };
+
+    setNonAgentSelections((prev) => ({ ...prev, [mode]: nextSelection }));
+    await persistNonAgentSelection(mode, nextSelection);
+  };
+
+  const handleNonAgentModelChange = async (mode: NonAgentMode, model: string) => {
+    const nextSelection = {
+      provider: nonAgentSelections[mode].provider,
+      model,
+    };
+
+    setNonAgentSelections((prev) => ({ ...prev, [mode]: nextSelection }));
+    await persistNonAgentSelection(mode, nextSelection);
   };
 
   // Send message — branches on chatMode
@@ -519,6 +623,7 @@ const AIChat: React.FC<AIChatProps> = ({
     // ── Chat / Dino mode (no workspace needed, streaming) ──
     if (chatMode === 'chat' || chatMode === 'dino') {
       setIsLoading(true);
+      const modeSelection = nonAgentSelections[chatMode];
 
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -556,14 +661,14 @@ const AIChat: React.FC<AIChatProps> = ({
           just_chat_mode: chatMode === 'chat',
           dino_buddy_mode: chatMode === 'dino',
           deterministic_scaffold_only: deterministicScaffoldOnly,
-          model: selectedModel,
+          provider: modeSelection.provider,
+          model: modeSelection.model,
           dual_mode: runtimeBudgetToDualMode(dualModel.mode),
           runtime_budget: dualModel.mode
         });
 
         if (result.runtime) {
           setRuntimeStatus(result.runtime);
-          setSelectedModel(result.runtime.displayModel || result.runtime.effectiveModel || selectedModel);
         }
 
         // Streaming may have filled it; fall back to full response if nothing streamed
@@ -675,7 +780,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
       if (result.runtime) {
         setRuntimeStatus(result.runtime);
-        setSelectedModel(result.runtime.displayModel || result.runtime.effectiveModel || agentModel);
+        setAgentSelectedModel(result.runtime.displayModel || result.runtime.effectiveModel || agentModel);
       }
 
       setMessages(prev => {
@@ -920,6 +1025,79 @@ const AIChat: React.FC<AIChatProps> = ({
                   <span style={{ fontSize: '11px', color: 'var(--prime-text)', fontWeight: 700, minWidth: '70px', textAlign: 'right' }}>
                     {AUTONOMY_LABELS[agentAutonomyLevel]}
                   </span>
+                </div>
+              </>
+            )}
+
+            {isNonAgentMode(chatMode) && currentNonAgentSelection && (
+              <>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px 8px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--prime-border)',
+                  background: 'var(--prime-surface)'
+                }}>
+                  <span style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>Provider</span>
+                  <select
+                    value={currentNonAgentSelection.provider}
+                    onChange={(e) => void handleNonAgentProviderChange(chatMode, e.target.value)}
+                    disabled={isLoading || agentRunning}
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--prime-text)',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: isLoading || agentRunning ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {PROVIDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {getProviderLabel(option.value)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px 8px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--prime-border)',
+                  background: 'var(--prime-surface)',
+                  maxWidth: '280px'
+                }}>
+                  <span style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>Model</span>
+                  <select
+                    value={currentNonAgentSelection.model}
+                    onChange={(e) => void handleNonAgentModelChange(chatMode, e.target.value)}
+                    disabled={isLoading || agentRunning}
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--prime-text)',
+                      border: 'none',
+                      outline: 'none',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: isLoading || agentRunning ? 'not-allowed' : 'pointer',
+                      minWidth: '160px',
+                      maxWidth: '220px'
+                    }}
+                  >
+                    {currentNonAgentModelOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </>
             )}

@@ -112,8 +112,8 @@ export interface AgentAPI {
   }>;
   quickAction: (action: string, code: string, language?: string) => Promise<any>;
   aiStatus: () => Promise<({ success: true } & AIStatusSnapshot) | { success: false; error?: string }>;
-  clearHistory: () => Promise<any>;
-  getChatHistory: () => Promise<any>;
+  clearHistory: (mode?: 'agent' | 'chat' | 'dino') => Promise<any>;
+  getChatHistory: (mode?: 'agent' | 'chat' | 'dino') => Promise<any>;
   getChatHistoryForSession: (sessionId: string) => Promise<any>;
   getCurrentAgentSessionId: () => Promise<any>;
   summarizeConversation: () => Promise<any>;

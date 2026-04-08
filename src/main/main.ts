@@ -280,7 +280,13 @@ let mainWindow: BrowserWindow | null = null;
 let workspacePath: string | null = null;
 let focusedFolderPath: string | null = null;
 let activeFilePath: string | null = null; // Track currently active file for completion context
-let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+type ConversationMode = 'agent' | 'chat' | 'dino';
+type ConversationMessage = { role: 'user' | 'assistant'; content: string };
+let conversationHistory: Record<ConversationMode, ConversationMessage[]> = {
+  agent: [],
+  chat: [],
+  dino: [],
+};
 const multiInstanceAllowed = allowMultipleInstances(process.env);
 const hasSingleInstanceLock = setupSingleInstanceGuard(
   app,
@@ -1184,12 +1190,15 @@ app.whenReady().then(async () => {
     getWorkspacePath: () => workspacePath,
     getCurrentFile: () => activeFilePath,
     getCurrentFolder: () => focusedFolderPath,
-    getConversationHistory: () => conversationHistory,
-    addToConversationHistory: (role: 'user' | 'assistant', content: string) => {
-      conversationHistory.push({ role, content });
+    getConversationHistory: (mode: ConversationMode = 'agent') => conversationHistory[mode] || [],
+    addToConversationHistory: (mode: ConversationMode, role: 'user' | 'assistant', content: string) => {
+      const history = conversationHistory[mode] || [];
+      history.push({ role, content });
       // Keep last 20 messages
-      if (conversationHistory.length > 20) {
-        conversationHistory = conversationHistory.slice(-20);
+      if (history.length > 20) {
+        conversationHistory[mode] = history.slice(-20);
+      } else {
+        conversationHistory[mode] = history;
       }
     },
     getSettings: () => settings
@@ -1594,9 +1603,17 @@ ipcMain.handle('ai-status', async () => {
 });
 
 // Clear Conversation History
-ipcMain.handle('clear-history', async () => {
+ipcMain.handle('clear-history', async (_event, mode?: ConversationMode) => {
   try {
-    conversationHistory.length = 0;
+    if (mode && conversationHistory[mode]) {
+      conversationHistory[mode] = [];
+    } else {
+      conversationHistory = {
+        agent: [],
+        chat: [],
+        dino: [],
+      };
+    }
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };

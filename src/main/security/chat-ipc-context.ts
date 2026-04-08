@@ -26,6 +26,7 @@ export const chatIpcContextSchema = z
     agent_mode: z.boolean().optional(),
     use_specialized_agents: z.boolean().optional(),
     specialized_mode: z.boolean().optional(),
+    provider: z.string().max(128).optional(),
     model: z.string().max(512).optional(),
     file_path: z.string().max(16384).optional(),
     open_files: z.array(z.string().max(16384)).max(4000).optional(),

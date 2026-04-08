@@ -9,11 +9,11 @@
 <h1 align="center">AgentPrime</h1>
 
 <p align="center">
-  Cloud-ready, local-capable AI coding workspace for desktop.
+  Desktop AI coding workspace with agent execution, multi-provider chat, and review-first automation.
 </p>
 
 <p align="center">
-  <strong>Now shipping:</strong> Agent autonomy dial, staged multi-file review controls, and faster semantic indexing at scale.
+  <strong>Now shipping:</strong> staged review/apply, bounded specialist agents, secure provider key management, and calmer mode-aware chat.
 </p>
 
 <p align="center">
@@ -26,65 +26,69 @@
 
 ## Overview
 
-AgentPrime is a desktop IDE designed to keep AI assistance close to the real coding workflow instead of turning the product into a generic chat shell.
+AgentPrime is a desktop AI IDE built to keep coding assistance inside a real workspace instead of reducing everything to a generic browser chat box.
 
 It combines:
 
-- A lean Electron desktop app with workspace, tabs, file tree, terminal, search, settings, and command palette
-- AI chat, agent execution, inline edit, and model routing across multiple providers
+- A full Electron desktop shell with tabs, Monaco editor, file tree, terminal, search, settings, and command palette
+- Multiple interaction styles: Agent Mode for workspace actions, Just Chat for general conversation, and Dino Buddy for calm companion chat
+- Multi-provider AI routing across Ollama, OpenAI, Anthropic, and OpenRouter
+- Review-first agent workflows with staged multi-file changes, verification, and repair loops
 - Template-based project starts, Git-aware workflows, live preview, and deployment helpers
-- Secure renderer-to-main IPC with a preload bridge and desktop-first privacy defaults
+- Secure renderer-to-main IPC, preload isolation, and desktop-first key handling
 
-The goal is simple: give you a practical local coding environment that feels fast, workspace-aware, and useful from the first launch.
+The goal is simple: make AI feel like part of your IDE, not a separate website.
 
 ## Project Status
 
-AgentPrime is in an active foundation-hardening phase: the desktop IDE shell is already real, but the main push right now is turning project creation and agent execution from "alpha-feeling" into a dependable loop.
+AgentPrime is beyond the “shell only” phase now. The desktop app, composer, settings, provider configuration, review flows, templates, and agent runtime are all live, and the current work is focused on making the end-to-end coding loop more dependable.
 
 Current status:
 
-- The desktop product shell is in place: workspace, Monaco editor, tabs, terminal, search, settings, chat, and model routing all exist.
-- The agent system is moving from prompt-only specialists to bounded discipline experts with file ownership, tool limits, command limits, and blackboard-style handoffs.
-- Template creation is now being hardened around a single materialization path instead of multiple drifting creation flows.
-- The current target loop is `create -> review -> apply -> install -> run -> repair`.
+- The desktop workspace is real and usable: editor, tabs, terminal, file tree, search, settings, model selection, and runtime status all exist in-app.
+- Agent execution is moving toward bounded discipline specialists with file ownership, validation, review sessions, and structured repair passes.
+- Provider setup is safer: API keys stay out of plain settings files, with secure storage and renderer-safe IPC.
+- Chat modes are now treated as distinct experiences instead of a single blended prompt surface.
+- The core target loop is `create -> review -> apply -> install -> run -> repair`.
 
 Recently verified:
 
-- Transactional template materialization with rollback support for failed project generation.
+- Transactional template materialization with rollback support on failed generation.
 - Deterministic scaffold routing for canonical template requests like `threejs-game`.
-- Specialist planning and blackboard state for bounded assignments and repair passes.
 - Specialist-aware tool validation for file, tool, and command boundaries.
-- Rollback-aware verification messaging and targeted repair behavior.
-- End-to-end `threejs-game` smoke coverage for `create -> npm install -> npm run build`.
+- Review-session plumbing for staged multi-file changes before final apply.
+- Nested Vite path handling, Python shell quoting, and CI install-script parity improvements.
+- Provider API key UX and secure runtime wiring across settings, preload, and main process.
+- Mode-scoped chat history plus provider/model controls for non-agent chat.
 
 Confidence snapshot:
 
-- `31/31` targeted regression tests passing for the scaffold, specialist, validation, and verification workstreams.
-- Lightweight Three.js routing smoke passing.
-- Filtered template smoke passing for the `threejs-game` template.
+- Typecheck, targeted regression coverage, and template/browser smoke work are part of the normal hardening path.
+- The riskiest active areas are now less about “can the app render?” and more about tightening the agent runtime, verification loop, and UX polish.
 
-This is not the finish line yet, but it is a meaningful step past the earlier "alpha" behavior in project generation and specialist coordination.
+This is still an active build, but it now behaves much more like an actual AI IDE product than a prototype with good intentions.
 
 ### Dino Buddy (chat)
 
-- **AgentPrime voice:** Dino Buddy here is intentionally **calm and warm** — supportive companion energy with normal sentence case and light emoji use, not all-caps “volcanic” hype.
-- **ActivatePrime contrast:** The same lineage and heart; ActivatePrime can lean louder and more explosive. In AgentPrime, Dino defaults to the gentle, steady mode you can leave open in the background while you work or unwind.
+- **AgentPrime voice:** Dino Buddy in AgentPrime is intentionally **calm, warm, and grounded** — a soft companion mode you can leave open while working or decompressing.
+- **Mode separation:** Agent, Just Chat, and Dino are meant to feel like different lanes with different context, history, and tone rather than one merged assistant.
+- **ActivatePrime contrast:** Same lineage and heart, different delivery. ActivatePrime can go louder and more explosive; AgentPrime’s Dino defaults to the steadier version.
 
 ## What AgentPrime Can Do
 
-- Open a project and work in a full desktop IDE shell with Monaco editor, tabs, file tree, terminal, and search/replace
-- Talk to AI in chat mode or let the agent operate on a workspace with file context, open tabs, and terminal history
-- Route requests through fast, deep, or auto model selection
-- Use multiple providers without locking the app to a single vendor
-- Run specialized agents for more structured multi-step work
-- Tune Agent Mode from guided to hands-off with runtime guardrails for tools, commands, and file writes
-- Review streamed agent progress and capture file changes for review
+- Open a project and work inside a full desktop IDE shell with Monaco, tabs, file tree, terminal, search, and settings
+- Use Agent Mode for workspace-aware implementation, edits, commands, and repair loops
+- Use Just Chat or Dino Buddy without needing an open workspace
+- Pick providers and models across OpenAI, Anthropic, Ollama, and OpenRouter
+- Route work through fast, deep, or auto runtime budgets
+- Run bounded specialized agents for more structured multi-step tasks
+- Review staged multi-file changes before applying them
 - Apply inline AI edits directly from the editor
 - Use ghost text completions and contextual coding assistance
-- Run natural-language file operations (including one-shot folder organization) with confirmation prompts before bulk moves
-- Generate projects from built-in templates
+- Run natural-language file operations with confirmation before risky bulk actions
+- Generate projects from built-in templates and then verify / repair them
 - Preview and deploy projects from inside the app
-- Work with Git actions and VibeHub-style repository workflows
+- Work with Git actions and repository workflows without leaving the desktop shell
 
 ## Recent Upgrades
 
