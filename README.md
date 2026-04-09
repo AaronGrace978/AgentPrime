@@ -54,7 +54,7 @@ Current status:
 Recently verified:
 
 - Transactional template materialization with rollback support on failed generation.
-- Deterministic scaffold routing for canonical template requests like `threejs-game`.
+- Deterministic scaffold routing for canonical template requests like `threejs-game` and `threejs-platformer`.
 - Specialist-aware tool validation for file, tool, and command boundaries.
 - Review-session plumbing for staged multi-file changes before final apply.
 - Nested Vite path handling, Python shell quoting, and CI install-script parity improvements.
@@ -94,9 +94,19 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 ### Agent & validation fixes (April 2026)
 
+### Three.js scaffold hardening (April 2026)
+
+- Added a new deterministic `threejs-platformer` template under `templates/threejs-platformer` for side-scroller/platformer prompts with stable WASD movement, jump physics, collectibles, a handcrafted course, and a buildable Vite + React + Three.js baseline.
+- Canonical scaffold detection in `src/main/agent/scaffold-resolver.ts` now treats prompts like `three.js side scroller`, `platformer`, `jump`, and `WASD` as a platformer request instead of falling back to the generic Three.js starter.
+- Generic 3D/Three.js projects still route to `threejs-game`, so open-ended ideas that are not platformers can continue to scaffold from the neutral space-game baseline.
+- When a scaffold-first create run for a canonical template still fails verification after retries, `src/main/agent/specialized-agent-loop.ts` now rolls back the broken generative pass and stages the clean deterministic scaffold for review instead of surfacing a busted project.
+- Added `threejs_platformer` project-pattern recognition, scaffold routing coverage, specialized-loop fallback tests, and template smoke coverage so the new template is exercised by the hardening path.
+- Updated Ollama-facing model defaults/options to prefer cloud-safe IDs like `glm-5.1:cloud` and `gemma4:31b-cloud` rather than plain `gemma4` in the planning fallback chain.
+
 - **Glob matching (`tool-validation.ts`):** `**` in patterns like `src/**/*.tsx` / `src/**/*.css` now matches files directly under `src/` (e.g. `src/App.tsx`, `src/index.css`). The previous regex incorrectly required an extra path segment and caused false “outside writable scope” rejections for specialists.
-- **Specialist writable scopes (`specialist-contracts.ts`):** `javascript_specialist` may write `src/**/*.css` and root `README.md` when co-wiring Vite/React entrypoints; `pipeline_specialist` includes `README.md`, `*.bat`, `Makefile`, and `Dockerfile*` alongside existing manifest/config globs. Pipeline and mirror prompts clarify that pipeline must not rewrite application source under `src/`.
-- **Task Master claims (`task-master.ts`):** Per-step `claimedFiles` for `javascript_specialist` and `pipeline_specialist` are aligned with those scopes (including `src/**/*.css` and `README.md`). This fixes tool calls that passed writable globs but failed with **“outside assigned file claims”** during multi-specialist runs.
+- **Specialist writable scopes (`specialist-contracts.ts`):** `javascript_specialist` may read `index.html`, write `src/**/*.css`, and edit root `README.md` when co-wiring Vite/React entrypoints; `pipeline_specialist` includes `README.md`, `*.bat`, `Makefile`, and `Dockerfile*` alongside existing manifest/config globs. Pipeline and mirror prompts clarify that pipeline must not rewrite application source under `src/`.
+- **Task Master claims (`task-master.ts`):** Per-step `claimedFiles` for `javascript_specialist` and `pipeline_specialist` are aligned with those scopes (including `src/**/*.css`, `index.html`, and `README.md`). This fixes tool calls that passed writable globs but failed with **“outside assigned file claims”** during multi-specialist runs.
+
 - **Plugin sandbox (`plugin-sandbox.ts`):** Replaced dynamic `require(moduleId)` with static requires for allowed Node built-ins so webpack no longer emits “Critical dependency: the request of a dependency is an expression” on the main bundle.
 - **Tests:** Extended `tests/agent/tool-validation-specialists.test.ts` and `tests/agent/task-master-plan.test.ts` for the above behavior.
 
@@ -385,6 +395,11 @@ The app also includes a keyboard shortcuts editor for reviewing and adjusting bi
 The `templates/` directory includes starter project scaffolds for common stacks and workflows so you can create a new project without starting from a blank folder.
 
 Examples include frontend, backend, desktop, and full-stack starters such as Vite, Next.js, Electron, Tauri, and FastAPI-oriented setups.
+
+For Three.js specifically:
+
+- `threejs-game` is still the general-purpose starter for open-ended 3D or non-platformer browser game ideas.
+- `threejs-platformer` is the deterministic side-scroller/platformer starter used for prompts that clearly ask for WASD movement, jumping, and platforming-style gameplay.
 
 ## Packaging
 

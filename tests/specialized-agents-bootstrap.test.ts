@@ -42,6 +42,12 @@ describe('deterministic Three.js bootstrap', () => {
     ).toBe('threejs-game');
   });
 
+  it('detects side scroller platformer prompts as canonical Three.js game scaffolds', () => {
+    expect(
+      detectCanonicalTemplateId('Build a Three.js side scroller with WASD movement and jump physics')
+    ).toBe('threejs-platformer');
+  });
+
   it('scaffolds explicit threejs_viewer requests through the canonical template path', async () => {
     const scaffolded = await scaffoldProjectFromTemplate(workspacePath, 'Create a 3D browser game', {
       projectType: 'threejs_viewer',
@@ -57,5 +63,23 @@ describe('deterministic Three.js bootstrap', () => {
       'src/main.tsx',
       'src/game/Game.ts',
     ]));
+  });
+
+  it('prefers the platformer template for side scroller prompts even when projectType is generic threejs_viewer', async () => {
+    const scaffolded = await scaffoldProjectFromTemplate(
+      workspacePath,
+      'Build a Three.js side scroller with WASD movement and jump physics',
+      {
+        projectType: 'threejs_viewer',
+        projectName: 'Bell Hop',
+        runPostCreate: false,
+      }
+    );
+
+    expect(scaffolded.success).toBe(true);
+    expect(scaffolded.templateId).toBe('threejs-platformer');
+
+    const readme = fs.readFileSync(path.join(workspacePath, 'README.md'), 'utf-8');
+    expect(readme).toContain('side-scrolling platformer');
   });
 });

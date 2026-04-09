@@ -231,4 +231,55 @@ describe('SpecializedAgentLoop orchestration retry', () => {
     await expect(loop.run('Build a resilient app')).rejects.toThrow('verification timed out');
     expect(rollbackToCheckpointSpy).toHaveBeenCalledWith('checkpoint_1');
   });
+
+  it('falls back to deterministic scaffold review after scaffold-first create retries still fail', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-scaffold-fallback-');
+    const loop = new SpecializedAgentLoop({ workspacePath, model: 'qwen-test' } as any);
+
+    jest.spyOn(specializedAgents, 'routeToSpecialists').mockReturnValue(['javascript_specialist'] as any);
+    const executeSpy = jest.spyOn(specializedAgents, 'executeWithSpecialists').mockResolvedValue({
+      results: [],
+      finalAnalysis: '',
+      executedTools: [],
+      scaffoldApplied: true,
+      scaffoldTemplateId: 'threejs-platformer',
+      skippedGenerativePass: false,
+    } as any);
+
+    jest.spyOn(loop as any, 'getProjectFiles').mockReturnValue([]);
+    jest.spyOn(loop as any, 'detectLanguage').mockReturnValue('typescript');
+    jest.spyOn(loop as any, 'detectProjectType').mockReturnValue('threejs');
+    jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: false,
+      missingFiles: [],
+      errors: ['[Build] src/game/Game.ts failed to compile'],
+      createdFiles: [],
+    });
+    const fallbackReviewSpy = jest
+      .spyOn(loop as any, 'runDeterministicScaffoldReview')
+      .mockResolvedValue('fallback scaffold review');
+
+    jest.spyOn(transactionManager, 'startTransaction')
+      .mockReturnValueOnce({
+        getOperationCount: () => 1,
+        getOperations: () => [],
+      } as any)
+      .mockReturnValueOnce({
+        getOperationCount: () => 1,
+        getOperations: () => [],
+      } as any);
+    const rollbackSpy = jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    jest.spyOn(reviewSessionManager, 'createSessionFromOperations').mockReturnValue(null);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run('Build a three.js side scroller with WASD movement and jumping');
+
+    expect(result).toBe('fallback scaffold review');
+    expect(executeSpy).toHaveBeenCalled();
+    expect(rollbackSpy).toHaveBeenCalled();
+    expect(fallbackReviewSpy).toHaveBeenCalled();
+  });
 });

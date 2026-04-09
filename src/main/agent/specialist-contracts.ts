@@ -241,7 +241,7 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'tests/**/*.tsx',
       'README.md',
     ],
-    readableGlobs: ['src/**', 'app/**', 'lib/**', 'pages/**', 'components/**', 'prisma/**', 'tests/**', 'package.json', 'tsconfig*.json', 'vite.config.*', 'next.config.*', 'README.md'],
+    readableGlobs: ['src/**', 'app/**', 'lib/**', 'pages/**', 'components/**', 'prisma/**', 'tests/**', 'package.json', 'tsconfig*.json', 'vite.config.*', 'next.config.*', 'index.html', 'README.md'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
     forbiddenActions: ['edit Python files', 'change CI or packaging policy', 'run install/build commands directly'],

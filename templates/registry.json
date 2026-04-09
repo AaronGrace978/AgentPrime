@@ -172,6 +172,20 @@
         { "name": "description", "label": "Description", "default": "A Three.js browser game" }
       ],
       "postCreate": ["npm install"]
+    },
+    {
+      "id": "threejs-platformer",
+      "name": "Three.js Platformer",
+      "description": "Three.js + React + Vite side-scroller starter with deterministic WASD movement, jump physics, collectibles, and a handcrafted course",
+      "icon": "🕹️",
+      "category": "games",
+      "tags": ["games", "threejs", "react", "typescript", "platformer", "sidescroller", "webgl"],
+      "variables": [
+        { "name": "projectName", "label": "Project Name", "default": "my-platformer" },
+        { "name": "author", "label": "Author", "default": "Developer" },
+        { "name": "description", "label": "Description", "default": "A Three.js platformer game" }
+      ],
+      "postCreate": ["npm install"]
     }
   ],
   "categories": [

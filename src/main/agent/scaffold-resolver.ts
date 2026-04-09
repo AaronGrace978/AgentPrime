@@ -39,22 +39,35 @@ export interface ScaffoldTemplateResult {
 const PROJECT_TYPE_TEMPLATE_MAP: Record<string, string> = {
   static_site: 'static-site',
   threejs_viewer: 'threejs-game',
+  threejs_platformer: 'threejs-platformer',
   vue_vite: 'vue-vite',
 };
 
 const REQUIRED_TEMPLATE_OUTPUTS: Record<string, string[]> = {
   'static-site': ['index.html', 'styles.css', 'app.js'],
   'threejs-game': ['package.json', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/Game.ts'],
+  'threejs-platformer': ['package.json', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/Game.ts'],
   'vue-vite': ['package.json', 'index.html', 'src/main.ts', 'src/App.vue', 'vite.config.ts'],
 };
 
 export function detectCanonicalTemplateId(task: string, projectType?: string): string | null {
+  const lower = task.toLowerCase();
+  const isThreeJsPlatformerTask =
+    (lower.includes('three.js') || lower.includes('threejs')) &&
+    (
+      lower.includes('side scroller') ||
+      lower.includes('sidescroller') ||
+      lower.includes('platformer') ||
+      lower.includes('jump') ||
+      lower.includes('wasd')
+    );
   const normalizedType = (projectType || '').trim().toLowerCase();
+  if (normalizedType === 'threejs_platformer' || (normalizedType === 'threejs_viewer' && isThreeJsPlatformerTask)) {
+    return 'threejs-platformer';
+  }
   if (normalizedType && PROJECT_TYPE_TEMPLATE_MAP[normalizedType]) {
     return PROJECT_TYPE_TEMPLATE_MAP[normalizedType];
   }
-
-  const lower = task.toLowerCase();
   const mentionsThreeJs = lower.includes('three.js') || lower.includes('threejs');
   const mentionsBrowser = lower.includes('browser') || lower.includes('web') || lower.includes('vite');
   const mentionsGameLikeGoal =
@@ -62,8 +75,16 @@ export function detectCanonicalTemplateId(task: string, projectType?: string): s
     lower.includes('simulator') ||
     lower.includes('flight') ||
     lower.includes('space') ||
-    lower.includes('3d');
+    lower.includes('3d') ||
+    lower.includes('side scroller') ||
+    lower.includes('sidescroller') ||
+    lower.includes('platformer') ||
+    lower.includes('jump') ||
+    lower.includes('wasd');
 
+  if (isThreeJsPlatformerTask) {
+    return 'threejs-platformer';
+  }
   if (mentionsThreeJs && (mentionsGameLikeGoal || mentionsBrowser)) {
     return 'threejs-game';
   }

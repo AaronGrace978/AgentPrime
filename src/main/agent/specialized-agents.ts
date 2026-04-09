@@ -2206,7 +2206,8 @@ export async function executeWithSpecialists(
   const defaultModelChain = orderBudgetChain([
     { name: 'Qwen3-Coder-Next Cloud', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
-    { name: 'Gemma 4', provider: 'ollama', model: 'gemma4', tier: 'deep' },
+    { name: 'GLM 5.1 Cloud', provider: 'ollama', model: 'glm-5.1:cloud', tier: 'deep' },
+    { name: 'Gemma 4 31B Cloud', provider: 'ollama', model: 'gemma4:31b-cloud', tier: 'deep' },
     { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
     { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },

@@ -588,8 +588,24 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
     }
   }
   
-  // Special case: game code detected when task doesn't mention game
-  if (contentType === 'game' && !taskLower.includes('game') && !taskLower.includes('player') && !taskLower.includes('canvas')) {
+  // Special case: only block obvious game drift when the task gives no gameplay hints at all.
+  // Three.js prompts often ask for side scrollers/platformers without literally saying "game".
+  const hasGameplayHint = [
+    'game',
+    'player',
+    'canvas',
+    'three.js',
+    'threejs',
+    'webgl',
+    'side scroller',
+    'sidescroller',
+    'platformer',
+    'platforming',
+    'jump',
+    'jumping',
+    'wasd',
+  ].some((hint) => taskLower.includes(hint));
+  if (contentType === 'game' && taskType !== 'threejs' && !hasGameplayHint) {
     return {
       incompatible: true,
       reason: `Content contains game code but task doesn't mention games`

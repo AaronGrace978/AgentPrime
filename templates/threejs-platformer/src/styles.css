@@ -1,0 +1,150 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  color: #f8fafc;
+  background:
+    radial-gradient(circle at top, rgba(99, 102, 241, 0.2), transparent 30%),
+    linear-gradient(180deg, #111827 0%, #020617 48%, #030712 100%);
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+.game-panel {
+  width: 100%;
+  height: 100%;
+}
+
+.game-panel canvas {
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  padding: 1.25rem;
+  pointer-events: none;
+}
+
+.hud-card {
+  width: min(26rem, calc(100vw - 2.5rem));
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 1rem;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
+  pointer-events: auto;
+}
+
+.hero-card h1,
+.controls-card h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.eyebrow {
+  margin-bottom: 0.45rem;
+  color: #93c5fd;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  margin: 0.6rem 0 0;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.metrics-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.metric {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.metric-label {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.metric-value {
+  font-size: 1rem;
+  color: #f8fafc;
+}
+
+.controls-grid {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.control-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #dbeafe;
+  font-size: 0.95rem;
+}
+
+.control-key {
+  min-width: 4.5rem;
+  font-weight: 700;
+  color: #fef08a;
+}
+
+.control-label {
+  color: #cbd5e1;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .hud {
+    padding: 0.9rem;
+  }
+
+  .hud-card {
+    width: min(100%, calc(100vw - 1.8rem));
+  }
+
+  .metrics-card {
+    grid-template-columns: 1fr;
+  }
+
+  .control-row {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .control-label {
+    text-align: left;
+  }
+}

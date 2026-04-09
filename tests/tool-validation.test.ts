@@ -78,6 +78,9 @@ function equals() {
   return eval(expression);
 }`;
 
+  const sideScrollerTask = `Can you build me a three.js side scroller something cool where you use WASD to move,
+space to jump, and make it feel like a playful platformer adventure?`;
+
   it('prefers explicit Three.js tasks over generic game keywords', () => {
     expect(detectProjectType(threeJsTask)).toBe('threejs');
   });
@@ -91,6 +94,13 @@ function equals() {
 
   it('does not misclassify Three.js movement math as calculator content', () => {
     expect(isContentIncompatibleWithTask(threeJsTask, threeJsPhysicsContent)).toEqual({
+      incompatible: false,
+      reason: '',
+    });
+  });
+
+  it('does not block side scroller gameplay code for a Three.js platformer prompt', () => {
+    expect(isContentIncompatibleWithTask(sideScrollerTask, threeJsPhysicsContent)).toEqual({
       incompatible: false,
       reason: '',
     });

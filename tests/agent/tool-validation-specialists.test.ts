@@ -46,6 +46,20 @@ describe('specialist-aware tool validation', () => {
     expect(readme.valid).toBe(true);
   });
 
+  it('allows javascript specialist to read index.html for Vite app wiring', () => {
+    const result = validateToolCall(
+      {
+        name: 'read_file',
+        arguments: { path: 'index.html' },
+      },
+      workspacePath,
+      'Wire the Vite entrypoint correctly',
+      { specialist: 'javascript_specialist' }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it('blocks javascript specialist from writing backend python files', () => {
     const result = validateToolCall(
       {

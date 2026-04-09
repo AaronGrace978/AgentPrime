@@ -24,7 +24,9 @@ export const PROVIDER_LABELS: Record<ModelProvider, string> = {
 export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   ollama: [
     { value: 'minimax-m2.7:cloud', label: 'MiniMax M2.7 - New Frontier' },
-    { value: 'gemma4', label: 'Gemma 4 - Cloud/Local (128K, multimodal)' },
+    { value: 'glm-5.1:cloud', label: 'GLM 5.1 - Agentic Coding' },
+    { value: 'gemma4:31b-cloud', label: 'Gemma 4 31B - Cloud' },
+    { value: 'gemma4', label: 'Gemma 4 - Local/Direct API (128K, multimodal)' },
     { value: 'gemma4:31b', label: 'Gemma 4 31B - Cloud/Local (256K)' },
     { value: 'gemma4:26b', label: 'Gemma 4 26B MoE - Cloud/Local (256K)' },
     { value: 'gemma4:e4b', label: 'Gemma 4 E4B - Edge (128K)' },

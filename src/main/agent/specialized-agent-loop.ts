@@ -28,7 +28,11 @@ import {
   getProjectRuntimeProfileSync,
   mapRuntimeKindToRegistryType,
 } from './project-runtime';
-import { scaffoldProjectFromTemplate } from './scaffold-resolver';
+import {
+  detectCanonicalTemplateId,
+  scaffoldProjectFromTemplate,
+  workspaceNeedsDeterministicScaffold,
+} from './scaffold-resolver';
 import {
   LEGACY_SPECIALIST_ROLE_MAP,
   type SpecialistBlackboard,
@@ -678,6 +682,28 @@ export class SpecializedAgentLoop extends EventEmitter {
       
       if (retryCount > MAX_RETRIES) {
         log.info('[SpecializedAgent] Max retries reached, returning partial result');
+      }
+    }
+
+    const fallbackTemplateId =
+      !verificationSucceeded && !isUpdate
+        ? detectCanonicalTemplateId(userMessage)
+        : null;
+
+    if (fallbackTemplateId) {
+      await transactionManager.rollbackTransaction();
+      if (workspaceNeedsDeterministicScaffold(this.context.workspacePath)) {
+        rolledBackIncomplete = true;
+        log.info(
+          `[SpecializedAgent] ↩️ Falling back to deterministic scaffold review (${fallbackTemplateId}) after verification failed`
+        );
+        const fallbackTransaction = transactionManager.startTransaction(this.context.workspacePath);
+        return await this.runDeterministicScaffoldReview(
+          userMessage,
+          fallbackTransaction,
+          taskStartedAt,
+          requestedRuntimeBudget
+        );
       }
     }
 

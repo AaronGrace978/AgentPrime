@@ -125,6 +125,78 @@ export const PROJECT_PATTERNS: Record<string, ProjectPattern> = {
       'No console errors'
     ]
   },
+
+  threejs_platformer: {
+    id: 'threejs_platformer',
+    type: 'threejs',
+    name: 'Three.js Platformer',
+    description: 'Side-scrolling Three.js platformer with deterministic movement, jumping, collectibles, and a handcrafted course',
+    structure: {
+      requiredFiles: ['package.json', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/Game.ts'],
+      optionalFiles: ['src/styles.css', 'src/game/entities/Player.ts', 'src/game/world/World.ts', 'README.md'],
+      dependencies: {
+        'three': '^0.160.0',
+        'react': '^18.2.0',
+        'react-dom': '^18.2.0'
+      },
+      devDependencies: {
+        'vite': '^5.0.0',
+        'typescript': '^5.2.2',
+        '@vitejs/plugin-react': '^4.2.0'
+      },
+      scripts: {
+        'dev': 'vite',
+        'build': 'tsc && vite build',
+        'preview': 'vite preview'
+      }
+    },
+    codePatterns: [
+      {
+        file: 'src/game/Game.ts',
+        patterns: [
+          'requestAnimationFrame game loop',
+          'camera follows player from a side-on angle',
+          'collectibles update HUD score',
+          'restart flow for falls or reset input'
+        ],
+        antiPatterns: [
+          'prototype monkey-patching',
+          'duplicated input listeners across files',
+          'strict-mode property initialization errors'
+        ]
+      },
+      {
+        file: 'src/game/entities/Player.ts',
+        patterns: [
+          'deterministic movement using input state',
+          'grounded jump logic',
+          'platform collision checks against world surfaces'
+        ],
+        antiPatterns: [
+          'window-global key state',
+          'hidden implicit dependencies on camera-only movement'
+        ]
+      }
+    ],
+    launchConfig: {
+      command: 'npm run dev',
+      port: 5173,
+      staticServer: false,
+      needsBuild: true
+    },
+    qualityChecks: [
+      'npm run build passes',
+      'player can move with keyboard input',
+      'jump only triggers when grounded',
+      'collectibles and goal update the HUD state'
+    ],
+    successCriteria: [
+      'Vite app starts without errors',
+      'platformer scene renders in browser',
+      'WASD movement and Space jump work',
+      'score progresses when collectibles are gathered'
+    ]
+  },
   
   express_api: {
     id: 'express_api',
@@ -908,8 +980,19 @@ export class ProjectPatternMatcher {
       return 'pixi_game';
     }
     
+    const mentionsThreeJs = lower.includes('three.js') || lower.includes('threejs');
+    const wantsPlatformer =
+      lower.includes('side scroller') ||
+      lower.includes('sidescroller') ||
+      lower.includes('platformer') ||
+      lower.includes('jump') ||
+      lower.includes('wasd');
+
     // 3D
-    if (lower.includes('three.js') || lower.includes('threejs') || lower.includes('3d scene') || lower.includes('3d viewer')) {
+    if (mentionsThreeJs && wantsPlatformer) {
+      return 'threejs_platformer';
+    }
+    if (mentionsThreeJs || lower.includes('3d scene') || lower.includes('3d viewer')) {
       return 'threejs_viewer';
     }
     

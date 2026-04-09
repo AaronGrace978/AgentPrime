@@ -1902,7 +1902,7 @@ Use read_file first to see the exact content you want to replace.`,
       properties: {
         project_type: {
           type: 'string',
-          enum: ['phaser_game', 'html_game', 'pixi_game', 'threejs_viewer', 'express_api', 'python_fastapi', 'python_script'],
+          enum: ['phaser_game', 'html_game', 'pixi_game', 'threejs_viewer', 'threejs_platformer', 'express_api', 'python_fastapi', 'python_script'],
           description: 'Type of project to scaffold'
         },
         project_name: {
@@ -2550,7 +2550,7 @@ window.startGame = startGame;
       }
       
       // Create styles.css for game projects - polished dark theme
-      if (project_type.includes('game') || project_type === 'html_game') {
+      if (project_type.includes('game') || project_type === 'html_game' || project_type === 'threejs_platformer') {
         const stylesCss = `/* ${project_name} - Game Styles */
 /* Modern dark theme with neon accents */
 
@@ -3039,7 +3039,7 @@ pause
 - str_replace: {"name": "str_replace", "arguments": {"path": "file.js", "old_string": "exact text to find", "new_string": "replacement text"}}
   ⚡ PREFERRED for edits! Much safer than rewriting entire files. old_string must match EXACTLY.
 - scaffold_project: {"name": "scaffold_project", "arguments": {"project_type": "phaser_game", "project_name": "MyGame"}}
-  Types: phaser_game, html_game, pixi_game, threejs_viewer, express_api, python_fastapi, python_script
+  Types: phaser_game, html_game, pixi_game, threejs_viewer, threejs_platformer, express_api, python_fastapi, python_script
   
 🎮 FOR GAMES: ALWAYS use scaffold_project FIRST to set up proper structure and dependencies!
 

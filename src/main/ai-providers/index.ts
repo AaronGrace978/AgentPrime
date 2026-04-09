@@ -1195,6 +1195,18 @@ class AIProviderRouter {
           context: 256000,
           cost: 'low'
         },
+        'glm-5.1:cloud': {
+          strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
+          speed: 'fast',
+          context: 198000,
+          cost: 'low'
+        },
+        'gemma4:31b-cloud': {
+          strengths: ['code', 'analysis', 'debug', 'complex'],
+          speed: 'medium',
+          context: 256000,
+          cost: 'low'
+        },
         'deepseek-v3.1:671b-cloud': {
           strengths: ['analysis', 'creative', 'complex', 'chat'],
           speed: 'medium',

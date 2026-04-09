@@ -1,0 +1,31 @@
+{
+  "id": "threejs-platformer",
+  "name": "Three.js Platformer",
+  "version": "1.0.0",
+  "postCreate": ["npm install"],
+  "directories": [
+    "src",
+    "src/game",
+    "src/game/entities",
+    "src/game/world",
+    "src/game/utils",
+    "src/assets",
+    "public"
+  ],
+  "files": [
+    { "template": "package.json", "path": "package.json" },
+    { "template": "vite.config.ts", "path": "vite.config.ts" },
+    { "template": "tsconfig.json", "path": "tsconfig.json" },
+    { "template": "tsconfig.node.json", "path": "tsconfig.node.json" },
+    { "template": "index.html", "path": "index.html" },
+    { "template": ".gitignore", "path": ".gitignore" },
+    { "template": "README.md", "path": "README.md" },
+    { "template": "src/main.tsx", "path": "src/main.tsx" },
+    { "template": "src/App.tsx", "path": "src/App.tsx" },
+    { "template": "src/styles.css", "path": "src/styles.css" },
+    { "template": "src/game/Game.ts", "path": "src/game/Game.ts" },
+    { "template": "src/game/world/World.ts", "path": "src/game/world/World.ts" },
+    { "template": "src/game/entities/Player.ts", "path": "src/game/entities/Player.ts" },
+    { "template": "src/game/utils/Controls.ts", "path": "src/game/utils/Controls.ts" }
+  ]
+}

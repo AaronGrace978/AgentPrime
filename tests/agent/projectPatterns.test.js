@@ -33,6 +33,15 @@ describe('ProjectPatternMatcher', () => {
         dependencies: { 'three': '^0.154.0' }
       }
     },
+    threejs_platformer: {
+      id: 'threejs_platformer',
+      type: 'threejs',
+      name: 'Three.js Platformer',
+      structure: {
+        requiredFiles: ['package.json', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/Game.ts'],
+        dependencies: { 'three': '^0.160.0', 'react': '^18.2.0', 'react-dom': '^18.2.0' }
+      }
+    },
     express_api: {
       id: 'express_api',
       type: 'express',
@@ -114,8 +123,19 @@ describe('ProjectPatternMatcher', () => {
       return 'pixi_game';
     }
     
+    const mentionsThreeJs = lower.includes('three.js') || lower.includes('threejs');
+    const wantsPlatformer =
+      lower.includes('side scroller') ||
+      lower.includes('sidescroller') ||
+      lower.includes('platformer') ||
+      lower.includes('jump') ||
+      lower.includes('wasd');
+
     // 3D
-    if (lower.includes('three.js') || lower.includes('threejs') || lower.includes('3d scene')) {
+    if (mentionsThreeJs && wantsPlatformer) {
+      return 'threejs_platformer';
+    }
+    if (mentionsThreeJs || lower.includes('3d scene')) {
       return 'threejs_viewer';
     }
     
@@ -240,6 +260,10 @@ describe('ProjectPatternMatcher', () => {
     });
 
     describe('3D Detection', () => {
+      it('should detect Three.js platformer prompts before generic 3D prompts', () => {
+        expect(detectFromMessage('Build a Three.js side scroller with WASD and jumping')).toBe('threejs_platformer');
+      });
+
       it('should detect Three.js from explicit mention', () => {
         expect(detectFromMessage('Create a Three.js scene')).toBe('threejs_viewer');
         expect(detectFromMessage('Build with threejs')).toBe('threejs_viewer');

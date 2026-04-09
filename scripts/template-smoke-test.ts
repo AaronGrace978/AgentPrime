@@ -34,7 +34,8 @@ const templateCommands: Record<string, CommandSpec[]> = {
   'python-cli': [{ command: `${pythonCommand} -m compileall src tests`, requiredTools: [pythonCommand] }],
   'go-microservice': [{ command: 'go mod tidy && go build ./...', requiredTools: ['go'] }],
   'rust-cli': [{ command: 'cargo build', requiredTools: ['cargo'] }],
-  'threejs-game': [{ command: 'npm run build', requiredTools: ['npm'] }]
+  'threejs-game': [{ command: 'npm run build', requiredTools: ['npm'] }],
+  'threejs-platformer': [{ command: 'npm run build', requiredTools: ['npm'] }]
 };
 
 const browserSmokeTemplates = new Set([
@@ -46,6 +47,7 @@ const browserSmokeTemplates = new Set([
   'vue-vite',
   'sveltekit',
   'threejs-game',
+  'threejs-platformer',
 ]);
 
 function isToolAvailable(commandSpec: string): boolean {
