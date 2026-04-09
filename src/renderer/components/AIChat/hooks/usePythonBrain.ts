@@ -14,6 +14,7 @@ interface UsePythonBrainReturn {
 
 export function usePythonBrain(): UsePythonBrainReturn {
   const [status, setStatus] = useState<PythonBrainStatus>({
+    enabled: false,
     connected: false,
     memories: 0,
     patterns: 0,
@@ -25,11 +26,28 @@ export function usePythonBrain(): UsePythonBrainReturn {
     const checkBrainStatus = async () => {
       try {
         const api = window.agentAPI as any;
+        const statusSummary = typeof api?.getSystemStatusSummary === 'function'
+          ? await api.getSystemStatusSummary().catch(() => null)
+          : null;
+        const brainEnabled = statusSummary?.success ? statusSummary.status?.brain?.enabled === true : false;
+
+        if (!brainEnabled) {
+          setStatus({
+            enabled: false,
+            connected: false,
+            memories: 0,
+            patterns: 0,
+            lastCheck: new Date()
+          });
+          return;
+        }
+
         if (api?.brainAvailable) {
           const isConnected = await api.brainAvailable();
           if (isConnected) {
             const stats = await api.brainStats();
             setStatus({
+              enabled: true,
               connected: true,
               memories: stats?.memory?.total_memories || 0,
               patterns: stats?.memory?.total_code_patterns || 0,
@@ -39,6 +57,7 @@ export function usePythonBrain(): UsePythonBrainReturn {
           } else {
             setStatus(prev => ({
               ...prev,
+              enabled: true,
               connected: false,
               lastCheck: new Date()
             }));
@@ -48,6 +67,7 @@ export function usePythonBrain(): UsePythonBrainReturn {
         console.warn('[AIChat] Python Brain not available:', error);
         setStatus(prev => ({
           ...prev,
+          enabled: prev.enabled,
           connected: false,
           lastCheck: new Date()
         }));

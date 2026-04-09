@@ -328,6 +328,29 @@ export function register(deps: ChatHandlerDeps): void {
     }
   });
 
+  ipcMain.handle('agent:review-get-latest-applied', async () => {
+    try {
+      const snapshot = reviewSessionManager.getLatestAppliedSession();
+      return { success: true, session: snapshot };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to load the latest applied review session' };
+    }
+  });
+
+  ipcMain.handle('agent:review-revert-latest-applied', async () => {
+    try {
+      const latestSession = reviewSessionManager.getLatestAppliedSession();
+      if (!latestSession) {
+        return { success: false, error: 'No applied agent review session is available to revert.' };
+      }
+
+      const snapshot = reviewSessionManager.revertAppliedChanges(latestSession.sessionId);
+      return { success: true, session: snapshot };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to revert the latest applied review session' };
+    }
+  });
+
   ipcMain.handle('agent:review-discard', async (_event: any, sessionId: string) => {
     try {
       reviewSessionManager.discardSession(sessionId);
@@ -602,6 +625,7 @@ export function register(deps: ChatHandlerDeps): void {
               reviewSessionId: reviewSession?.sessionId,
               reviewChanges: reviewSession?.changes,
               reviewVerification: reviewSession?.initialVerification,
+              reviewPlan: reviewSession?.plan,
               runtime: responseRuntime,
             };
           } catch (agentError: any) {
@@ -723,6 +747,7 @@ export function register(deps: ChatHandlerDeps): void {
               reviewSessionId: pipelineResult.reviewSessionId,
               reviewChanges: pipelineResult.reviewChanges,
               reviewVerification: pipelineResult.reviewVerification,
+              reviewPlan: (pipelineResult as any).reviewPlan,
               runtime: responseRuntime,
             };
           } catch (agentErr: unknown) {

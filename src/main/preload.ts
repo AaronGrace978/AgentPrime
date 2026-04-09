@@ -19,6 +19,8 @@ const agentAPI: AgentAPI = {
   updatePendingAgentReviewStatuses: (sessionId: string, status: 'accepted' | 'rejected') =>
     ipcRenderer.invoke('agent:review-update-pending', sessionId, status),
   applyAgentReview: (sessionId: string) => ipcRenderer.invoke('agent:review-apply', sessionId),
+  getLatestAppliedAgentReview: () => ipcRenderer.invoke('agent:review-get-latest-applied'),
+  revertLatestAppliedAgentReview: () => ipcRenderer.invoke('agent:review-revert-latest-applied'),
   discardAgentReview: (sessionId: string) => ipcRenderer.invoke('agent:review-discard', sessionId),
   readTree: (path?: string) => ipcRenderer.invoke('file:read-tree', path),
   readFile: (path: string) => ipcRenderer.invoke('file:read', path),
@@ -126,6 +128,8 @@ const agentAPI: AgentAPI = {
   // Settings and providers
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getStartupPreflightReport: () => ipcRenderer.invoke('startup-preflight:get-report'),
+  getSystemStatusSummary: () => ipcRenderer.invoke('system:get-status-summary'),
+  getSystemDoctorReport: () => ipcRenderer.invoke('system:get-doctor-report'),
   updateSettings: (settings: any) => ipcRenderer.invoke('update-settings', settings),
   getProviderApiKeyStatuses: () => ipcRenderer.invoke('credentials:get-provider-api-key-statuses'),
   setProviderApiKey: (providerName: string, apiKey: string) =>

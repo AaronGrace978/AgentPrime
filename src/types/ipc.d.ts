@@ -8,10 +8,12 @@ import type {
   AgentReviewChange,
   AgentReviewChangeStatus,
   AgentReviewFinding,
+  AgentReviewPlanSummary,
   AgentReviewSessionSnapshot,
   AgentReviewVerificationState,
 } from './agent-review';
 import type { AIStatusSnapshot, AIRuntimeSnapshot } from './ai-providers';
+import type { StartupPreflightReport, SystemDoctorReport, SystemStatusSummary } from './system-health';
 
 export interface TelemetryStats {
   totalEvents: number;
@@ -19,20 +21,6 @@ export interface TelemetryStats {
   sessionCount: number;
   lastEventTime: number | null;
   oldestEventTime: number | null;
-}
-
-export interface StartupPreflightIssue {
-  code: string;
-  severity: 'warn' | 'info';
-  message: string;
-  action?: string;
-}
-
-export interface StartupPreflightReport {
-  issues: StartupPreflightIssue[];
-  warningCount: number;
-  infoCount: number;
-  generatedAt: string;
 }
 
 export interface ProviderApiKeyStatus {
@@ -78,6 +66,8 @@ export interface AgentAPI {
     status: 'accepted' | 'rejected'
   ) => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot; error?: string }>;
   applyAgentReview: (sessionId: string) => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot; error?: string }>;
+  getLatestAppliedAgentReview: () => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot | null; error?: string }>;
+  revertLatestAppliedAgentReview: () => Promise<{ success: boolean; session?: AgentReviewSessionSnapshot | null; error?: string }>;
   discardAgentReview: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   readTree: (path?: string) => Promise<any>;
   readFile: (path: string) => Promise<{
@@ -107,6 +97,7 @@ export interface AgentAPI {
     reviewSessionId?: string;
     reviewChanges?: AgentReviewChange[];
     reviewVerification?: AgentReviewVerificationState;
+    reviewPlan?: AgentReviewPlanSummary;
     runtime?: AIRuntimeSnapshot;
     [key: string]: any;
   }>;
@@ -167,6 +158,8 @@ export interface AgentAPI {
   // Settings and provider management
   getSettings: () => Promise<Settings>;
   getStartupPreflightReport: () => Promise<StartupPreflightReport>;
+  getSystemStatusSummary: () => Promise<{ success: boolean; status?: SystemStatusSummary; error?: string }>;
+  getSystemDoctorReport: () => Promise<{ success: boolean; report?: SystemDoctorReport; error?: string }>;
   updateSettings: (settings: Partial<Settings>) => Promise<Settings>;
   getProviderApiKeyStatuses: () => Promise<Record<string, ProviderApiKeyStatus>>;
   setProviderApiKey: (providerName: string, apiKey: string) => Promise<ProviderApiKeyStatus>;

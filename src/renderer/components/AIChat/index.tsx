@@ -894,7 +894,8 @@ const AIChat: React.FC<AIChatProps> = ({
             meaningfulChanges,
             currentInput,
             result.reviewSessionId,
-            result.reviewVerification
+            result.reviewVerification,
+            result.reviewPlan
           );
         }
       }

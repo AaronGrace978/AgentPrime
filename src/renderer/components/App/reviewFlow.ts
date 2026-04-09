@@ -1,4 +1,8 @@
-import type { AgentReviewChange as ReviewFileChange, AgentReviewVerificationState as ReviewVerificationState } from '../../../types/agent-review';
+import type {
+  AgentReviewChange as ReviewFileChange,
+  AgentReviewPlanSummary,
+  AgentReviewVerificationState as ReviewVerificationState,
+} from '../../../types/agent-review';
 
 export type { ReviewVerificationState };
 
@@ -64,4 +68,41 @@ export function buildRepairPrompt(
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+export function buildFallbackReviewPlanSummary(
+  taskDescription: string,
+  changes: ReviewFileChange[]
+): AgentReviewPlanSummary {
+  const fileReasons = changes.map((change) => ({
+    filePath: change.filePath,
+    reason:
+      change.action === 'created'
+        ? 'New file added to satisfy the requested change.'
+        : change.action === 'deleted'
+          ? 'Existing file removed as part of the requested change.'
+          : 'Existing file updated to satisfy the requested change.',
+    owner: 'AgentPrime',
+  }));
+
+  return {
+    mode: 'edit',
+    summary: `Prepared ${changes.length} staged file${changes.length === 1 ? '' : 's'} for review.`,
+    rationale: 'AgentPrime collected the workspace edits behind a review checkpoint so you can inspect them before apply and verification.',
+    steps: [
+      {
+        id: 'review-plan',
+        title: 'AgentPrime',
+        summary: taskDescription || 'Apply the requested workspace edits.',
+        owner: 'AgentPrime',
+        files: changes.map((change) => change.filePath),
+        acceptanceCriteria: [
+          'Review the staged patch set before applying it to the workspace.',
+          'Verify accepted changes after apply.',
+        ],
+        status: 'completed',
+      },
+    ],
+    fileReasons,
+  };
 }

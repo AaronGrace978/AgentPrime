@@ -48,9 +48,12 @@ const DeployPanel = React.lazy(() => import('../DeployPanel'));
 const InlineEditDialog = React.lazy(() => import('../InlineEditDialog'));
 const MultiFileDiffReview = React.lazy(() => import('../MultiFileDiffReview'));
 const MatrixRain = React.lazy(() => import('../MatrixRain'));
+const SystemStatusPanel = React.lazy(() => import('../SystemStatusPanel'));
 import type { FileChange as ReviewFileChange } from '../MultiFileDiffReview';
-import type { AgentReviewSessionSnapshot } from '../../../types/agent-review';
+import type { AgentReviewPlanSummary, AgentReviewSessionSnapshot } from '../../../types/agent-review';
+import type { SystemDoctorReport, SystemStatusSummary } from '../../../types/system-health';
 import {
+  buildFallbackReviewPlanSummary,
   buildRepairPrompt,
   shouldAutoVerifyReviewChanges,
   type ReviewVerificationState,
@@ -73,89 +76,12 @@ import {
 
 import '../../vibe-styles.css';
 
-interface BackendStatusState {
-  connected: boolean;
-  checking: boolean;
-  dismissed: boolean;
-  lastCheckedAt: Date | null;
-  error: string | null;
-}
-
 const LazyPanelFallback: React.FC<{ lines?: number; padded?: boolean }> = ({
   lines = 6,
   padded = true,
 }) => (
   <div style={{ padding: padded ? 'var(--spacing-md)' : 0, height: '100%', overflow: 'hidden' }}>
     <PanelSkeleton lines={lines} padding={padded} />
-  </div>
-);
-
-const BackendOfflineOverlay: React.FC<{
-  status: BackendStatusState;
-  onRetry: () => void;
-  onDismiss: () => void;
-}> = ({ status, onRetry, onDismiss }) => (
-  <div
-    style={{
-      position: 'fixed',
-      inset: 0,
-      zIndex: 10010,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'rgba(10, 13, 22, 0.66)',
-      backdropFilter: 'blur(8px)',
-      padding: '24px',
-    }}
-  >
-    <div
-      style={{
-        width: 'min(560px, 92vw)',
-        padding: '24px',
-        borderRadius: '16px',
-        background: 'var(--prime-surface)',
-        border: '1px solid var(--prime-border)',
-        boxShadow: 'var(--prime-shadow-xl)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-      }}
-    >
-      <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--prime-text)' }}>
-        Python backend offline
-      </div>
-      <div style={{ color: 'var(--prime-text-secondary)', lineHeight: 1.6 }}>
-        AI routing, memory, verification, and repair flows are currently unavailable because the local backend is not responding.
-      </div>
-      {status.error && (
-        <div
-          style={{
-            padding: '10px 12px',
-            borderRadius: '10px',
-            background: 'var(--prime-accent-light)',
-            color: 'var(--prime-text-secondary)',
-            fontFamily: '"JetBrains Mono", monospace',
-            fontSize: '12px',
-            wordBreak: 'break-word',
-          }}
-        >
-          {status.error}
-        </div>
-      )}
-      <div style={{ color: 'var(--prime-text-muted)', fontSize: '12px' }}>
-        {status.lastCheckedAt
-          ? `Last checked ${status.lastCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-          : 'Checking backend availability...'}
-      </div>
-      <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-        <button onClick={onRetry} className="icon-btn" disabled={status.checking}>
-          {status.checking ? 'Retrying...' : 'Retry backend'}
-        </button>
-        <button onClick={onDismiss} className="icon-btn">
-          Continue offline
-        </button>
-      </div>
-    </div>
   </div>
 );
 
@@ -223,10 +149,17 @@ function App() {
   const [agentReviewSessionId, setAgentReviewSessionId] = useState<string | undefined>();
   const [agentReviewApplied, setAgentReviewApplied] = useState(false);
   const [agentReviewTask, setAgentReviewTask] = useState<string>('');
+  const [agentReviewPlan, setAgentReviewPlan] = useState<AgentReviewPlanSummary | undefined>();
   const [agentReviewVerification, setAgentReviewVerification] = useState<ReviewVerificationState>({
     status: 'idle',
     issues: [],
   });
+  const [latestAppliedReviewSession, setLatestAppliedReviewSession] = useState<AgentReviewSessionSnapshot | null>(null);
+  const [systemStatusSummary, setSystemStatusSummary] = useState<SystemStatusSummary | null>(null);
+  const [systemDoctorReport, setSystemDoctorReport] = useState<SystemDoctorReport | null>(null);
+  const [systemDoctorLoading, setSystemDoctorLoading] = useState(false);
+  const [systemDoctorError, setSystemDoctorError] = useState<string | null>(null);
+  const [systemPanelOpen, setSystemPanelOpen] = useState(false);
   const [codeIssues] = useState<any[]>([]);
   const [appSettings, setAppSettings] = useState<any>({
     theme: 'dark',
@@ -239,19 +172,11 @@ function App() {
     inlineCompletions: true,
     providers: {}
   });
-  const [backendStatus, setBackendStatus] = useState<BackendStatusState>({
-    connected: true,
-    checking: true,
-    dismissed: false,
-    lastCheckedAt: null,
-    error: null,
-  });
 
   const selectedFile = activeFile?.file || null;
   const fileContent = activeFile?.content || '';
   const hasChanges = activeFile?.isDirty || false;
   const workspaceName = currentPath ? currentPath.split(/[/\\]/).pop() || 'Workspace' : 'AgentPrime';
-  const showBackendOverlay = Boolean(currentPath) && !backendStatus.connected && !backendStatus.dismissed;
 
   // Keep backend in sync with the active file for completion context
   useEffect(() => {
@@ -262,48 +187,59 @@ function App() {
     if (composerOpen) setComposerMounted(true);
   }, [composerOpen]);
 
-  const checkBackendAvailability = useCallback(async () => {
-    const api = window.agentAPI as any;
-    if (typeof api?.brainAvailable !== 'function') {
-      setBackendStatus({
-        connected: true,
-        checking: false,
-        dismissed: false,
-        lastCheckedAt: new Date(),
-        error: null,
-      });
-      return;
-    }
-
-    setBackendStatus((prev) => ({ ...prev, checking: true }));
+  const refreshLatestAppliedReviewSession = useCallback(async () => {
     try {
-      const connected = await api.brainAvailable();
-      setBackendStatus((prev) => ({
-        connected,
-        checking: false,
-        dismissed: connected ? false : (prev.connected ? false : prev.dismissed),
-        lastCheckedAt: new Date(),
-        error: connected ? null : 'The backend health check did not receive a response.',
-      }));
+      const result = await window.agentAPI.getLatestAppliedAgentReview();
+      if (result?.success) {
+        setLatestAppliedReviewSession(result.session || null);
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setBackendStatus((prev) => ({
-        connected: false,
-        checking: false,
-        dismissed: prev.connected ? false : prev.dismissed,
-        lastCheckedAt: new Date(),
-        error: message || 'The backend health check failed.',
-      }));
+      console.warn('Failed to load latest applied review session:', error);
+    }
+  }, []);
+
+  const refreshSystemStatusSummary = useCallback(async () => {
+    try {
+      const result = await window.agentAPI.getSystemStatusSummary();
+      if (result?.success && result.status) {
+        setSystemStatusSummary(result.status);
+      }
+    } catch (error) {
+      console.warn('Failed to load system status summary:', error);
+    }
+  }, []);
+
+  const refreshSystemDoctorReport = useCallback(async () => {
+    setSystemDoctorLoading(true);
+    setSystemDoctorError(null);
+    try {
+      const result = await window.agentAPI.getSystemDoctorReport();
+      if (!result?.success || !result.report) {
+        throw new Error(result?.error || 'Failed to load diagnostics.');
+      }
+      setSystemDoctorReport(result.report);
+    } catch (error: any) {
+      setSystemDoctorError(error?.message || 'Failed to load diagnostics.');
+    } finally {
+      setSystemDoctorLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void checkBackendAvailability();
+    void refreshSystemStatusSummary();
+    void refreshLatestAppliedReviewSession();
     const interval = setInterval(() => {
-      void checkBackendAvailability();
+      void refreshSystemStatusSummary();
+      void refreshLatestAppliedReviewSession();
     }, 30000);
     return () => clearInterval(interval);
-  }, [checkBackendAvailability]);
+  }, [refreshLatestAppliedReviewSession, refreshSystemStatusSummary]);
+
+  useEffect(() => {
+    if (systemPanelOpen) {
+      void refreshSystemDoctorReport();
+    }
+  }, [refreshSystemDoctorReport, systemPanelOpen]);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -335,6 +271,7 @@ function App() {
     try {
       const updatedSettings = await window.agentAPI.updateSettings(newSettings);
       setAppSettings(updatedSettings);
+      await refreshSystemStatusSummary();
       window.dispatchEvent(new CustomEvent('agentprime-settings-changed', {
         detail: updatedSettings
       }));
@@ -343,7 +280,7 @@ function App() {
       console.error('Failed to save settings:', error);
       toast.error('Settings Error', 'Failed to save settings');
     }
-  }, [toast]);
+  }, [refreshSystemStatusSummary, toast]);
 
   const runScript = useCallback(() => {
     if (selectedFile) {
@@ -455,6 +392,7 @@ function App() {
     setAgentReviewSessionId(snapshot.sessionId);
     setAgentReviewApplied(Boolean(snapshot.appliedAt));
     setAgentReviewChanges(snapshot.changes);
+    setAgentReviewPlan((prev) => snapshot.plan || prev);
   }, []);
 
   const clearAgentReviewState = useCallback(async (discardSession: boolean = false) => {
@@ -471,6 +409,7 @@ function App() {
     setAgentReviewApplied(false);
     setAgentReviewChanges([]);
     setAgentReviewTask('');
+    setAgentReviewPlan(undefined);
     setAgentReviewVerification({ status: 'idle', issues: [] });
   }, [agentReviewSessionId]);
 
@@ -620,8 +559,69 @@ function App() {
       await loadDirectory(currentPath);
     }
 
+    await refreshLatestAppliedReviewSession();
+    await refreshSystemStatusSummary();
     toast.success('Changes Applied', `${acceptedChanges.length} file(s) written to the workspace`);
-  }, [agentReviewChanges, agentReviewSessionId, applyReviewSessionSnapshot, currentPath, loadDirectory, syncOpenFileFromDisk, toast]);
+  }, [
+    agentReviewChanges,
+    agentReviewSessionId,
+    applyReviewSessionSnapshot,
+    currentPath,
+    loadDirectory,
+    refreshLatestAppliedReviewSession,
+    refreshSystemStatusSummary,
+    syncOpenFileFromDisk,
+    toast,
+  ]);
+
+  const handleRevertLastAgentSession = useCallback(async () => {
+    const latestSession = latestAppliedReviewSession || (agentReviewSessionId ? {
+      sessionId: agentReviewSessionId,
+    } : null);
+    if (!latestSession) {
+      toast.error('Nothing to Revert', 'There is no applied agent session available to revert.');
+      return;
+    }
+
+    const confirmed = window.confirm('Revert the last applied agent session and restore the previous file contents?');
+    if (!confirmed) {
+      return;
+    }
+
+    const result = await window.agentAPI.revertLatestAppliedAgentReview();
+    if (!result?.success || !result.session) {
+      toast.error('Revert Failed', result?.error || 'Could not revert the last applied session.');
+      return;
+    }
+
+    const revertedSession = result.session;
+    for (const change of revertedSession.changes.filter((change) => change.status === 'accepted')) {
+      await syncOpenFileFromDisk(change.filePath);
+    }
+
+    if (currentPath) {
+      await loadDirectory(currentPath);
+    }
+
+    if (agentReviewSessionId === revertedSession.sessionId) {
+      setAgentReviewApplied(false);
+      setAgentReviewChanges(revertedSession.changes);
+      setAgentReviewVerification({ status: 'idle', issues: [] });
+    }
+
+    await refreshLatestAppliedReviewSession();
+    await refreshSystemStatusSummary();
+    toast.success('Session Reverted', 'The last applied agent session was restored to its previous state.');
+  }, [
+    agentReviewSessionId,
+    currentPath,
+    latestAppliedReviewSession,
+    loadDirectory,
+    refreshLatestAppliedReviewSession,
+    refreshSystemStatusSummary,
+    syncOpenFileFromDisk,
+    toast,
+  ]);
 
   const handleVerifyReviewedProject = useCallback(async () => {
     if (!agentReviewApplied) {
@@ -1281,13 +1281,14 @@ function App() {
                     }
                     handleContentChange(code);
                   }}
-                  onAgentChangesReady={(changes, taskDescription, reviewSessionId, reviewVerification) => {
+                  onAgentChangesReady={(changes, taskDescription, reviewSessionId, reviewVerification, reviewPlan) => {
                     if (agentReviewSessionId) {
                       void window.agentAPI.discardAgentReview(agentReviewSessionId);
                     }
                     setAgentReviewTask(taskDescription);
                     setAgentReviewSessionId(reviewSessionId);
                     setAgentReviewApplied(!reviewSessionId);
+                    setAgentReviewPlan(reviewPlan || buildFallbackReviewPlanSummary(taskDescription, changes));
                     setAgentReviewVerification(reviewVerification || { status: 'idle', issues: [] });
                     setAgentReviewChanges(changes.map((change) => ({
                       ...change,
@@ -1394,9 +1395,12 @@ function App() {
                   onVerifyAccepted={() => { void handleVerifyReviewedProject(); }}
                   onRunProject={() => { void handleRunReviewedProject(); }}
                   onRepair={handleRepairReviewedProject}
+                  onRevertSession={() => { void handleRevertLastAgentSession(); }}
                   verification={agentReviewVerification}
+                  plan={agentReviewPlan}
                   isStaged={Boolean(agentReviewSessionId)}
                   applied={agentReviewApplied}
+                  canRevertSession={agentReviewApplied && latestAppliedReviewSession?.sessionId === agentReviewSessionId}
                   onClose={() => { void clearAgentReviewState(Boolean(agentReviewSessionId)); }}
                   taskDescription={agentReviewTask}
                 />
@@ -1409,6 +1413,8 @@ function App() {
           currentFile={getCurrentFileInfo()}
           gitBranch={null}
           theme={themeType}
+          systemStatus={systemStatusSummary}
+          onOpenSystemStatus={() => setSystemPanelOpen(true)}
         />
 
         {/* Inline Edit Dialog (Cmd+K) */}
@@ -1441,13 +1447,24 @@ function App() {
           </div>
         )}
 
-        {showBackendOverlay && (
-          <BackendOfflineOverlay
-            status={backendStatus}
-            onRetry={() => { void checkBackendAvailability(); }}
-            onDismiss={() => setBackendStatus((prev) => ({ ...prev, dismissed: true }))}
+        <Suspense fallback={null}>
+          <SystemStatusPanel
+            isOpen={systemPanelOpen}
+            onClose={() => setSystemPanelOpen(false)}
+            status={systemStatusSummary}
+            doctorReport={systemDoctorReport}
+            doctorLoading={systemDoctorLoading}
+            doctorError={systemDoctorError}
+            latestAppliedReviewSession={latestAppliedReviewSession}
+            onRefresh={() => {
+              void refreshSystemStatusSummary();
+              void refreshLatestAppliedReviewSession();
+              void refreshSystemDoctorReport();
+            }}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onRevertLastSession={() => { void handleRevertLastAgentSession(); }}
           />
-        )}
+        </Suspense>
 
         <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} />
 

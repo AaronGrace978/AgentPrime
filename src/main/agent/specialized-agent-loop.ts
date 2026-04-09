@@ -40,6 +40,7 @@ import { reviewSessionManager } from './review-session-manager';
 import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from './autonomy-policy';
 import type {
   AgentReviewFinding,
+  AgentReviewPlanSummary,
   AgentReviewSessionSnapshot,
   AgentReviewVerificationState,
 } from '../../types/agent-review';
@@ -92,6 +93,13 @@ function inferVerificationStage(summary: string): AgentReviewFinding['stage'] {
     return 'validation';
   }
   return 'unknown';
+}
+
+function formatSpecialistTitle(id: SpecialistId): string {
+  return id
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 export class SpecializedAgentLoop extends EventEmitter {
@@ -228,6 +236,80 @@ export class SpecializedAgentLoop extends EventEmitter {
       artifacts: [],
       findings: [],
       approvalsRequired: [],
+    };
+  }
+
+  private buildPlanSummary(blackboard: SpecialistBlackboard): AgentReviewPlanSummary {
+    const fileReasons = new Map<string, { reason: string; owner?: string }>();
+    for (const step of blackboard.steps) {
+      for (const filePath of step.claimedFiles) {
+        if (!fileReasons.has(filePath)) {
+          fileReasons.set(filePath, {
+            reason: step.goal,
+            owner: formatSpecialistTitle(step.specialist),
+          });
+        }
+      }
+    }
+
+    const activeFiles = [...fileReasons.keys()];
+    const activeSpecialists = new Set(blackboard.steps.map((step) => step.specialist));
+    const summary =
+      blackboard.mode === 'repair'
+        ? `Targeted repair across ${activeFiles.length || 0} file(s) with ${activeSpecialists.size} specialist lane(s).`
+        : `Planned ${blackboard.mode} run across ${activeFiles.length || 0} file(s) with ${activeSpecialists.size} specialist lane(s).`;
+
+    const rationale =
+      blackboard.mode === 'repair'
+        ? 'Verification found concrete issues, so AgentPrime narrowed scope to the files implicated by those failures before asking for approval.'
+        : 'AgentPrime assigned bounded specialists to the files they own, staged the resulting patch set, and deferred workspace writes until review approval.';
+
+    return {
+      mode: blackboard.mode,
+      summary,
+      rationale,
+      steps: blackboard.steps.map((step) => ({
+        id: step.id,
+        title: formatSpecialistTitle(step.specialist),
+        summary: step.goal,
+        owner: formatSpecialistTitle(step.specialist),
+        files: [...step.claimedFiles],
+        acceptanceCriteria: [...step.acceptanceCriteria],
+        status: step.status,
+      })),
+      fileReasons: [...fileReasons.entries()].map(([filePath, data]) => ({
+        filePath,
+        reason: data.reason,
+        owner: data.owner,
+      })),
+    };
+  }
+
+  private buildFallbackPlanSummary(
+    taskDescription: string,
+    files: string[],
+    mode: AgentReviewPlanSummary['mode'] = 'create'
+  ): AgentReviewPlanSummary {
+    return {
+      mode,
+      summary: `Prepared ${files.length} staged file(s) for review.`,
+      rationale: 'AgentPrime generated a bounded patch set for the requested task and held the workspace write behind a review checkpoint.',
+      steps: [
+        {
+          id: `fallback_${Date.now()}`,
+          title: 'AgentPrime',
+          summary: taskDescription || 'Apply the requested workspace changes.',
+          owner: 'AgentPrime',
+          files: [...files],
+          acceptanceCriteria: ['Review the staged files before applying them to the workspace.'],
+          status: 'completed',
+        },
+      ],
+      fileReasons: files.map((filePath) => ({
+        filePath,
+        reason: taskDescription || 'Included in the staged patch set for this request.',
+        owner: 'AgentPrime',
+      })),
     };
   }
 
@@ -603,7 +685,8 @@ export class SpecializedAgentLoop extends EventEmitter {
     const stagedReview = reviewSessionManager.createSessionFromOperations(
       this.context.workspacePath,
       transaction.getOperations(),
-      this.buildInitialReviewVerification(lastVerification)
+      this.buildInitialReviewVerification(lastVerification),
+      blackboard ? this.buildPlanSummary(blackboard) : undefined
     );
     const response = this.buildResponse(allCreatedFiles, lastVerification, {
       rolledBack: rolledBackIncomplete,
@@ -1156,7 +1239,8 @@ export class SpecializedAgentLoop extends EventEmitter {
     const stagedReview = reviewSessionManager.createSessionFromOperations(
       this.context.workspacePath,
       transaction.getOperations(),
-      this.buildInitialReviewVerification(verification)
+      this.buildInitialReviewVerification(verification),
+      this.buildFallbackPlanSummary(userMessage, scaffolded.createdFiles)
     );
 
     const response = this.buildResponse(scaffolded.createdFiles, verification, {

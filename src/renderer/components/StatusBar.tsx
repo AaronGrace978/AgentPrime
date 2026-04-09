@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import type { AIRuntimeSnapshot } from '../../types/ai-providers';
+import React, { useEffect, useState } from 'react';
+import type { SystemStatusSummary } from '../../types/system-health';
 
 interface StatusBarProps {
   currentFile?: {
@@ -10,55 +10,12 @@ interface StatusBarProps {
   } | null;
   gitBranch?: string | null;
   theme: 'light' | 'dark';
+  systemStatus?: SystemStatusSummary | null;
+  onOpenSystemStatus?: () => void;
 }
 
-interface AIStatus {
-  provider: string;
-  model: string;
-  connected: boolean;
-  dualModelEnabled: boolean;
-  reason?: string;
-  runtime?: AIRuntimeSnapshot;
-}
-
-const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) => {
-  const [aiStatus, setAiStatus] = useState<AIStatus>({
-    provider: 'ollama',
-    model: 'loading...',
-    connected: false,
-    dualModelEnabled: false,
-  });
+const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, systemStatus, onOpenSystemStatus }) => {
   const [time, setTime] = useState(new Date());
-
-  // Load AI status from settings
-  useEffect(() => {
-    const loadStatus = async () => {
-      try {
-        const status = await window.agentAPI.aiStatus();
-        if (!status?.success) {
-          throw new Error(status?.error || 'Failed to load AI runtime status');
-        }
-
-        setAiStatus({
-          provider: status.runtime.displayProvider || status.runtime.effectiveProvider,
-          model: status.runtime.displayModel || status.runtime.effectiveModel,
-          connected: status.connected || false,
-          dualModelEnabled: status.dualModelEnabled || false,
-          reason: status.runtime.reason,
-          runtime: status.runtime,
-        });
-      } catch (error) {
-        console.error('Failed to load status:', error);
-        setAiStatus(prev => ({ ...prev, connected: false }));
-      }
-    };
-
-    loadStatus();
-
-    // Refresh status every 30 seconds
-    const interval = setInterval(loadStatus, 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Update time every minute
   useEffect(() => {
@@ -91,6 +48,17 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
     return model;
   };
 
+  const ai = systemStatus?.ai;
+  const brain = systemStatus?.brain;
+  const startup = systemStatus?.startup;
+  const doctorLabel = startup
+    ? startup.warningCount > 0
+      ? `${startup.warningCount} warning${startup.warningCount === 1 ? '' : 's'}`
+      : startup.infoCount > 0
+        ? `${startup.infoCount} note${startup.infoCount === 1 ? '' : 's'}`
+        : 'Healthy'
+    : 'Checking';
+
   return (
     <div className="status-bar" data-theme={theme}>
       {/* Left Section */}
@@ -105,26 +73,55 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme }) 
 
         {/* Connection Status */}
         <div 
-          className={`status-item connection ${aiStatus.connected ? 'connected' : 'disconnected'}`}
-          title={aiStatus.reason || (aiStatus.connected ? 'AI Connected' : 'AI Disconnected')}
+          className={`status-item connection ${ai?.connected ? 'connected' : 'disconnected'}`}
+          title={ai?.reason || (ai?.connected ? 'AI Connected' : 'AI Disconnected')}
         >
           <span className="status-dot"></span>
-          <span className="status-text">{aiStatus.provider}</span>
+          <span className="status-text">{ai?.provider || 'AI'}</span>
         </div>
 
         {/* Current Model */}
-        <div className="status-item model" title={aiStatus.reason ? `Model: ${aiStatus.model}\n${aiStatus.reason}` : `Model: ${aiStatus.model}`}>
+        <div className="status-item model" title={ai?.reason ? `Model: ${ai.model}\n${ai.reason}` : `Model: ${ai?.model || 'loading...'}`}>
           <span className="status-icon">AI</span>
-          <span className="status-text">{formatModel(aiStatus.model)}</span>
-          {aiStatus.dualModelEnabled && (
-            <span className="dual-badge" title="Dual Model System Active">Dual</span>
-          )}
+          <span className="status-text">{formatModel(ai?.model || 'loading...')}</span>
         </div>
       </div>
 
-      {/* Center Section - Notifications would go here */}
       <div className="status-bar-center">
-        {/* Reserved for notifications */}
+        <button
+          type="button"
+          onClick={onOpenSystemStatus}
+          className="status-item"
+          title={brain?.enabled
+            ? `Python Brain is ${brain.connected ? 'connected' : 'offline'}`
+            : 'Desktop-only mode active. Python Brain is optional and disabled by default.'}
+          style={{
+            border: '1px solid var(--prime-border)',
+            background: 'transparent',
+            color: 'var(--prime-text-secondary)',
+            cursor: onOpenSystemStatus ? 'pointer' : 'default',
+          }}
+        >
+          <span className="status-icon">{brain?.enabled ? 'BR' : 'PC'}</span>
+          <span className="status-text">
+            {brain?.enabled ? (brain.connected ? 'Brain On' : 'Brain Off') : 'Desktop Only'}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenSystemStatus}
+          className="status-item"
+          title={startup ? `${startup.warningCount} warning(s), ${startup.infoCount} info message(s)` : 'Open system status'}
+          style={{
+            border: '1px solid var(--prime-border)',
+            background: 'transparent',
+            color: 'var(--prime-text-secondary)',
+            cursor: onOpenSystemStatus ? 'pointer' : 'default',
+          }}
+        >
+          <span className="status-icon">DR</span>
+          <span className="status-text">{doctorLabel}</span>
+        </button>
       </div>
 
       {/* Right Section */}

@@ -2,7 +2,7 @@
  * AIChat Types - Shared type definitions for the chat component
  */
 
-import type { AgentReviewChange, AgentReviewVerificationState } from '../../../types/agent-review';
+import type { AgentReviewChange, AgentReviewPlanSummary, AgentReviewVerificationState } from '../../../types/agent-review';
 import type { RuntimeBudgetMode } from '../../../types/runtime-budget';
 
 export interface FileItem {
@@ -44,7 +44,8 @@ export interface AIChatProps {
     changes: AgentFileChange[],
     taskDescription: string,
     reviewSessionId?: string,
-    verification?: AgentReviewVerificationState
+    verification?: AgentReviewVerificationState,
+    plan?: AgentReviewPlanSummary
   ) => void;
 }
 
@@ -69,6 +70,7 @@ export interface BrainConfig {
 }
 
 export interface PythonBrainStatus {
+  enabled: boolean;
   connected: boolean;
   memories: number;
   patterns: number;

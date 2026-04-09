@@ -121,4 +121,42 @@ describe('ReviewSessionManager', () => {
       command: 'npm run build',
     });
   });
+
+  it('reverts the latest applied review session back to original contents', () => {
+    const workspacePath = createTempDir('agentprime-review-revert-');
+    fs.mkdirSync(path.join(workspacePath, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, 'src', 'keep.ts'), 'before', 'utf-8');
+
+    const manager = new ReviewSessionManager();
+    const session = manager.createSessionFromOperations(workspacePath, [
+      {
+        path: 'src/keep.ts',
+        originalContent: 'before',
+        newContent: 'after',
+        existed: true,
+      },
+      {
+        path: 'src/new.ts',
+        originalContent: null,
+        newContent: 'created',
+        existed: false,
+      },
+    ]);
+
+    expect(session).toBeTruthy();
+    manager.updateChangeStatus(session!.sessionId, 'src/keep.ts', 'accepted');
+    manager.updateChangeStatus(session!.sessionId, 'src/new.ts', 'accepted');
+    manager.applyAcceptedChanges(session!.sessionId);
+
+    expect(manager.getLatestAppliedSession()?.sessionId).toBe(session!.sessionId);
+    expect(fs.readFileSync(path.join(workspacePath, 'src', 'keep.ts'), 'utf-8')).toBe('after');
+    expect(fs.existsSync(path.join(workspacePath, 'src', 'new.ts'))).toBe(true);
+
+    const reverted = manager.revertAppliedChanges(session!.sessionId);
+
+    expect(reverted.revertedAt).toBeTruthy();
+    expect(fs.readFileSync(path.join(workspacePath, 'src', 'keep.ts'), 'utf-8')).toBe('before');
+    expect(fs.existsSync(path.join(workspacePath, 'src', 'new.ts'))).toBe(false);
+    expect(manager.getLatestAppliedSession()).toBeNull();
+  });
 });

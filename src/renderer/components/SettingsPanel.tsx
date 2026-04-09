@@ -28,7 +28,8 @@ import {
 } from '../../main/core/model-output-limits';
 import { ThemeId } from '../themes';
 import type { Settings } from '../../types';
-import type { ProviderApiKeyStatus, StartupPreflightReport } from '../../types/ipc';
+import type { ProviderApiKeyStatus } from '../../types/ipc';
+import type { StartupPreflightReport } from '../../types/system-health';
 
 type SettingsTab = 'general' | 'editor' | 'appearance' | 'ai' | 'shortcuts' | 'advanced';
 

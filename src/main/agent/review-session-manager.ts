@@ -5,6 +5,7 @@ import type {
   AgentReviewAction,
   AgentReviewChange,
   AgentReviewChangeStatus,
+  AgentReviewPlanSummary,
   AgentReviewSessionSnapshot,
   AgentReviewVerificationState,
 } from '../../types/agent-review';
@@ -26,6 +27,17 @@ function cloneSession(session: ReviewSessionRecord): AgentReviewSessionSnapshot 
   return {
     ...session,
     changes: session.changes.map(cloneChange),
+    plan: session.plan
+      ? {
+          ...session.plan,
+          steps: session.plan.steps.map((step) => ({
+            ...step,
+            files: [...step.files],
+            acceptanceCriteria: [...step.acceptanceCriteria],
+          })),
+          fileReasons: session.plan.fileReasons.map((reason) => ({ ...reason })),
+        }
+      : undefined,
     initialVerification: session.initialVerification
       ? {
           ...session.initialVerification,
@@ -41,11 +53,13 @@ function cloneSession(session: ReviewSessionRecord): AgentReviewSessionSnapshot 
 
 export class ReviewSessionManager {
   private readonly sessions = new Map<string, ReviewSessionRecord>();
+  private lastAppliedSessionId: string | null = null;
 
   createSessionFromOperations(
     workspacePath: string,
     operations: ReadonlyArray<ReviewOperation>,
-    initialVerification?: AgentReviewVerificationState
+    initialVerification?: AgentReviewVerificationState,
+    plan?: AgentReviewPlanSummary
   ): AgentReviewSessionSnapshot | null {
     const aggregated = new Map<string, AgentReviewChange>();
 
@@ -89,6 +103,7 @@ export class ReviewSessionManager {
       createdAt: Date.now(),
       changes,
       initialVerification,
+      plan,
     };
 
     this.sessions.set(sessionId, snapshot);
@@ -154,6 +169,57 @@ export class ReviewSessionManager {
     }
 
     session.appliedAt = Date.now();
+    session.revertedAt = undefined;
+    this.lastAppliedSessionId = sessionId;
+    return cloneSession(session);
+  }
+
+  revertAppliedChanges(sessionId: string): AgentReviewSessionSnapshot {
+    const session = this.requireMutableSession(sessionId, { allowApplied: true });
+    if (!session.appliedAt) {
+      throw new Error('The review session has not been applied yet.');
+    }
+    if (session.revertedAt) {
+      throw new Error('The applied review session has already been reverted.');
+    }
+
+    const accepted = session.changes.filter((change) => change.status === 'accepted');
+    for (const change of accepted) {
+      const fullPath = path.resolve(session.workspacePath, change.filePath);
+      const parentDir = path.dirname(fullPath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+
+      if (change.action === 'created') {
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+        continue;
+      }
+
+      fs.writeFileSync(fullPath, change.oldContent, 'utf-8');
+    }
+
+    if (accepted.length > 0) {
+      scheduleWorkspaceSymbolIndexRebuildForAgents();
+    }
+
+    session.revertedAt = Date.now();
+    if (this.lastAppliedSessionId === sessionId) {
+      this.lastAppliedSessionId = null;
+    }
+    return cloneSession(session);
+  }
+
+  getLatestAppliedSession(): AgentReviewSessionSnapshot | null {
+    if (!this.lastAppliedSessionId) {
+      return null;
+    }
+    const session = this.sessions.get(this.lastAppliedSessionId);
+    if (!session || session.revertedAt) {
+      return null;
+    }
     return cloneSession(session);
   }
 
@@ -164,6 +230,9 @@ export class ReviewSessionManager {
     }
 
     session.discardedAt = Date.now();
+    if (this.lastAppliedSessionId === sessionId) {
+      this.lastAppliedSessionId = null;
+    }
     this.sessions.delete(sessionId);
   }
 

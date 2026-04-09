@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import axios from 'axios';
 import type { Settings } from '../types';
+import type { SystemDoctorReport, SystemStatusSummary } from '../types/system-health';
 import { getTheme, getTitleBarOverlay, type ThemeId } from '../renderer/themes';
 import { createLogger } from './core/logger';
 import { initAppLogging, initOptionalSentry, logCrash } from './core/app-logger';
@@ -90,12 +91,14 @@ import {
 import { stateManager } from './core/state-manager';
 
 // Import Feature Flags
-import { resolveFeatureFlags } from './core/feature-flags';
+import { getFeatureFlags, resolveFeatureFlags } from './core/feature-flags';
 import { runStartupConfigPreflight, type StartupConfigPreflightReport } from './core/startup-config-preflight';
 
 // Import Telemetry Service
 import { initializeTelemetry, getTelemetryService } from './core/telemetry-service';
 import { resolveEffectiveAIRuntime } from './core/ai-runtime-state';
+import { collectSystemDoctorReport } from './core/system-health';
+import { isBrainAvailable } from './ipc-handlers/brain-handler';
 
 // Import Auto-Updater
 import { initializeAutoUpdater, checkForUpdates, downloadUpdate, installUpdate, getAppVersion } from './core/auto-updater';
@@ -387,6 +390,48 @@ function refreshStartupPreflightReport(log: boolean = false): StartupConfigPrefl
   const featureFlags = resolveFeatureFlags();
   startupPreflightReport = runStartupConfigPreflight(settings, featureFlags, { log });
   return startupPreflightReport;
+}
+
+function getAppRootForDiagnostics(): string {
+  return app.isPackaged ? path.dirname(process.execPath) : path.join(__dirname, '../..');
+}
+
+async function buildSystemStatusSummary(): Promise<SystemStatusSummary> {
+  const runtime = resolveEffectiveAIRuntime(settings, settings.activeModel, settings.activeProvider);
+  const providerStatus = await aiRouter.testProvider(runtime.effectiveProvider).catch((error: any) => ({
+    success: false,
+    error: error?.message || String(error),
+  }));
+  const featureFlags = getFeatureFlags();
+  const brainConnected = featureFlags.pythonBrain ? await isBrainAvailable().catch(() => false) : false;
+
+  return {
+    ai: {
+      provider: runtime.displayProvider,
+      model: runtime.displayModel,
+      connected: providerStatus?.success || false,
+      reason: runtime.reason,
+    },
+    brain: {
+      enabled: featureFlags.pythonBrain,
+      connected: brainConnected,
+      modeLabel: featureFlags.pythonBrain ? 'brain-enabled' : 'desktop-only',
+    },
+    startup: startupPreflightReport || refreshStartupPreflightReport(false),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function buildSystemDoctorReport(): Promise<SystemDoctorReport> {
+  const summary = await buildSystemStatusSummary();
+  return collectSystemDoctorReport({
+    settings,
+    appRoot: getAppRootForDiagnostics(),
+    startupPreflightReport: summary.startup,
+    aiConnected: summary.ai.connected,
+    brainEnabled: summary.brain.enabled,
+    brainConnected: summary.brain.connected,
+  });
 }
 
 function isSupportedProviderApiKey(providerName: string): providerName is SupportedProviderApiKey {
@@ -1249,6 +1294,24 @@ ipcMain.handle('startup-preflight:get-report', () => {
     return refreshStartupPreflightReport(false);
   }
   return startupPreflightReport;
+});
+
+ipcMain.handle('system:get-status-summary', async () => {
+  try {
+    const status = await buildSystemStatusSummary();
+    return { success: true, status };
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to load system status summary.' };
+  }
+});
+
+ipcMain.handle('system:get-doctor-report', async () => {
+  try {
+    const report = await buildSystemDoctorReport();
+    return { success: true, report };
+  } catch (error: any) {
+    return { success: false, error: error?.message || 'Failed to run system diagnostics.' };
+  }
 });
 
 ipcMain.handle(

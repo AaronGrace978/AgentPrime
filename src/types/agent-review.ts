@@ -43,12 +43,40 @@ export interface AgentRepairScope {
   findings: AgentReviewFinding[];
 }
 
+export type AgentReviewPlanMode = 'talk' | 'create' | 'edit' | 'verify' | 'repair';
+
+export interface AgentReviewPlanStep {
+  id: string;
+  title: string;
+  summary: string;
+  owner?: string;
+  files: string[];
+  acceptanceCriteria: string[];
+  status: 'pending' | 'in_progress' | 'blocked' | 'completed' | 'failed';
+}
+
+export interface AgentReviewPlanFileReason {
+  filePath: string;
+  reason: string;
+  owner?: string;
+}
+
+export interface AgentReviewPlanSummary {
+  mode: AgentReviewPlanMode;
+  summary: string;
+  rationale: string;
+  steps: AgentReviewPlanStep[];
+  fileReasons: AgentReviewPlanFileReason[];
+}
+
 export interface AgentReviewSessionSnapshot {
   sessionId: string;
   workspacePath: string;
   createdAt: number;
   appliedAt?: number;
+  revertedAt?: number;
   discardedAt?: number;
   changes: AgentReviewChange[];
   initialVerification?: AgentReviewVerificationState;
+  plan?: AgentReviewPlanSummary;
 }

@@ -6,7 +6,12 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import type { AgentReviewChange, AgentReviewFinding, AgentReviewVerificationState } from '../../types/agent-review';
+import type {
+  AgentReviewChange,
+  AgentReviewFinding,
+  AgentReviewPlanSummary,
+  AgentReviewVerificationState,
+} from '../../types/agent-review';
 
 export type FileChange = AgentReviewChange;
 
@@ -20,11 +25,14 @@ interface MultiFileDiffReviewProps {
   onVerifyAccepted?: () => void;
   onRunProject?: () => void;
   onRepair?: () => void;
+  onRevertSession?: () => void;
   onClose: () => void;
   taskDescription?: string;
+  plan?: AgentReviewPlanSummary;
   verification?: AgentReviewVerificationState;
   isStaged?: boolean;
   applied?: boolean;
+  canRevertSession?: boolean;
 }
 
 type FileStatusFilter = 'all' | 'pending' | 'accepted' | 'rejected';
@@ -78,17 +86,21 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   onVerifyAccepted,
   onRunProject,
   onRepair,
+  onRevertSession,
   onClose,
   taskDescription,
+  plan,
   verification,
   isStaged = false,
   applied = false,
+  canRevertSession = false,
 }) => {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(
     new Set(changes.slice(0, 3).map(c => c.filePath))
   );
   const [statusFilter, setStatusFilter] = useState<FileStatusFilter>('all');
   const [fileQuery, setFileQuery] = useState('');
+  const [showPlanSummary, setShowPlanSummary] = useState(true);
 
   const toggleFile = useCallback((filePath: string) => {
     setExpandedFiles(prev => {
@@ -137,6 +149,22 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   const acceptedCount = stats.accepted;
   const showVerificationActions = reviewComplete && acceptedCount > 0 && (!isStaged || applied);
   const showApplyAction = isStaged && reviewComplete && acceptedCount > 0 && !applied;
+  const checkpoints = [
+    { label: 'Plan', state: plan ? 'complete' : 'current' },
+    { label: 'Review', state: reviewComplete ? 'complete' : 'current' },
+    { label: 'Apply', state: isStaged ? (applied ? 'complete' : reviewComplete ? 'current' : 'upcoming') : 'complete' },
+    {
+      label: verification?.status === 'failed' ? 'Repair' : 'Verify',
+      state:
+        verification?.status === 'passed'
+          ? 'complete'
+          : verification?.status === 'failed'
+            ? 'current'
+            : showVerificationActions
+              ? 'current'
+              : 'upcoming',
+    },
+  ] as const;
   const reviewDecisionCopy = isStaged
     ? reviewComplete
       ? applied
@@ -409,7 +437,112 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
               Repair With Agent
             </button>
           )}
+          {applied && canRevertSession && onRevertSession && (
+            <button onClick={onRevertSession} style={{
+              padding: '7px 12px',
+              borderRadius: '8px',
+              border: '1px solid var(--prime-border)',
+              background: 'transparent',
+              color: '#ff7b72',
+              fontSize: '11px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}>
+              Revert Last Session
+            </button>
+          )}
         </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {checkpoints.map((checkpoint) => (
+            <span
+              key={checkpoint.label}
+              style={{
+                padding: '5px 9px',
+                borderRadius: '999px',
+                fontSize: '10px',
+                fontWeight: 700,
+                border: '1px solid var(--prime-border)',
+                color:
+                  checkpoint.state === 'complete'
+                    ? '#3fb950'
+                    : checkpoint.state === 'current'
+                      ? '#58a6ff'
+                      : 'var(--prime-text-muted)',
+                background:
+                  checkpoint.state === 'complete'
+                    ? 'rgba(63, 185, 80, 0.10)'
+                    : checkpoint.state === 'current'
+                      ? 'rgba(88, 166, 255, 0.10)'
+                      : 'transparent',
+              }}
+            >
+              {checkpoint.label}
+            </span>
+          ))}
+        </div>
+        {plan && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            padding: '10px 12px',
+            borderRadius: '10px',
+            border: '1px solid var(--prime-border)',
+            background: 'rgba(88, 166, 255, 0.05)',
+          }}>
+            <div
+              onClick={() => setShowPlanSummary((prev) => !prev)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--prime-text)' }}>Plan Explanation</span>
+                <span style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
+                  {plan.summary}
+                </span>
+              </div>
+              <span style={{ fontSize: '10px', color: 'var(--prime-text-muted)' }}>{showPlanSummary ? 'Hide' : 'Show'}</span>
+            </div>
+            {showPlanSummary && (
+              <>
+                <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
+                  {plan.rationale}
+                </div>
+                <div style={{ display: 'grid', gap: '6px' }}>
+                  {plan.steps.slice(0, 4).map((step) => (
+                    <div
+                      key={step.id}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(148, 163, 184, 0.14)',
+                        background: 'rgba(15, 23, 42, 0.18)',
+                      }}
+                    >
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--prime-text)' }}>{step.title}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--prime-text-secondary)', lineHeight: 1.45, marginTop: '3px' }}>
+                        {step.summary}
+                      </div>
+                      {step.files.length > 0 && (
+                        <div style={{ fontSize: '10px', color: 'var(--prime-text-muted)', marginTop: '4px' }}>
+                          {step.files.slice(0, 4).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {plan.fileReasons.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {plan.fileReasons.slice(0, 5).map((reason) => (
+                      <div key={reason.filePath} style={{ fontSize: '10px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
+                        <code>{reason.filePath}</code> - {reason.reason}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"
@@ -828,6 +961,16 @@ const VerificationPanel: React.FC<{
       background: statusConfig.bg,
       overflow: 'hidden',
     }}>
+      <div style={{
+        padding: '9px 12px 0',
+        fontSize: '10px',
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'var(--prime-text-muted)',
+      }}>
+        Verification Report
+      </div>
       {/* Status banner */}
       <div style={{
         display: 'flex',

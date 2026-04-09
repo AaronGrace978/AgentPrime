@@ -1,4 +1,5 @@
 import {
+  buildFallbackReviewPlanSummary,
   buildRepairPrompt,
   shouldAutoVerifyReviewChanges,
   type ReviewVerificationState,
@@ -84,5 +85,25 @@ describe('Review flow helpers', () => {
     expect(prompt).toContain('Build failed: Missing dependency');
     expect(prompt).toContain('verifier-failed accepted files');
     expect(prompt).toContain('Do not add new features');
+  });
+
+  it('builds a fallback review plan summary from staged changes', () => {
+    const plan = buildFallbackReviewPlanSummary('Refactor the login form', [
+      {
+        filePath: 'src/Login.tsx',
+        oldContent: 'before',
+        newContent: 'after',
+        action: 'modified',
+        status: 'pending',
+      },
+    ]);
+
+    expect(plan.summary).toContain('1 staged file');
+    expect(plan.rationale).toContain('review checkpoint');
+    expect(plan.steps[0].summary).toContain('Refactor the login form');
+    expect(plan.fileReasons[0]).toMatchObject({
+      filePath: 'src/Login.tsx',
+      owner: 'AgentPrime',
+    });
   });
 });

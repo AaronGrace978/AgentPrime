@@ -30,7 +30,7 @@ export interface FeatureFlags {
 const DEFAULTS: FeatureFlags = {
   mirror: true,
   activatePrime: true,
-  pythonBrain: true,
+  pythonBrain: false,
   telemetry: true,
   codebaseIndexing: true,
   inferenceServer: false,
