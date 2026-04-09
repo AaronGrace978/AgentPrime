@@ -213,6 +213,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       activeModel: 'qwen3-coder:480b-cloud',
       dualOllamaEnabled: false,
       agentAutonomyLevel: 3,
+      pythonBrainEnabled: false,
       dualModelEnabled: true,
       dualModelConfig: DEFAULT_DUAL_MODEL_CONFIG,
       ollamaCloudOutputLimits: DEFAULT_OLLAMA_CLOUD_OUTPUT_LIMITS,
@@ -961,6 +962,31 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     className="setting-checkbox"
                   />
                 </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Enable Python Brain</span>
+                    <span className="setting-description">
+                      Turn on the optional Python backend for memory and orchestration features. Restart AgentPrime after changing this setting.
+                    </span>
+                  </label>
+                  <input
+                    type="checkbox"
+                    checked={localSettings.pythonBrainEnabled === true}
+                    onChange={(e) => updateSetting('pythonBrainEnabled', e.target.checked)}
+                    className="setting-checkbox"
+                  />
+                </div>
+
+                {localSettings.pythonBrainEnabled !== settings.pythonBrainEnabled && (
+                  <div className="setting-group full-width">
+                    <div className="startup-diagnostics-card" style={{ borderColor: 'rgba(88, 166, 255, 0.25)' }}>
+                      <div className="startup-diagnostics-empty" style={{ color: 'var(--prime-text-secondary)' }}>
+                        Restart required: Python Brain will be {localSettings.pythonBrainEnabled ? 'enabled' : 'disabled'} the next time AgentPrime starts.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="setting-group">
                   <label className="setting-label">

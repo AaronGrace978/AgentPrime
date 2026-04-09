@@ -91,7 +91,7 @@ import {
 import { stateManager } from './core/state-manager';
 
 // Import Feature Flags
-import { getFeatureFlags, resolveFeatureFlags } from './core/feature-flags';
+import { buildFeatureFlags, getFeatureFlags, type FeatureFlags, resolveFeatureFlags } from './core/feature-flags';
 import { runStartupConfigPreflight, type StartupConfigPreflightReport } from './core/startup-config-preflight';
 
 // Import Telemetry Service
@@ -330,6 +330,7 @@ let settings: Settings = {
   dualOllamaEnabled: false,
   agentAutonomyLevel: 3,
   agentMonolithicApplyImmediately: false,
+  pythonBrainEnabled: false,
   plugins: {
     enabled: true,
     autoUpdate: false,
@@ -385,9 +386,16 @@ let settings: Settings = {
 };
 
 let startupPreflightReport: StartupConfigPreflightReport | null = null;
+let runtimeFeatureFlags: FeatureFlags | null = null;
+
+function getFeatureFlagSettingsOverrides(source: Settings): Partial<FeatureFlags> {
+  return {
+    pythonBrain: source.pythonBrainEnabled === true,
+  };
+}
 
 function refreshStartupPreflightReport(log: boolean = false): StartupConfigPreflightReport {
-  const featureFlags = resolveFeatureFlags();
+  const featureFlags = buildFeatureFlags(getFeatureFlagSettingsOverrides(settings));
   startupPreflightReport = runStartupConfigPreflight(settings, featureFlags, { log });
   return startupPreflightReport;
 }
@@ -402,7 +410,7 @@ async function buildSystemStatusSummary(): Promise<SystemStatusSummary> {
     success: false,
     error: error?.message || String(error),
   }));
-  const featureFlags = getFeatureFlags();
+  const featureFlags = runtimeFeatureFlags || getFeatureFlags();
   const brainConnected = featureFlags.pythonBrain ? await isBrainAvailable().catch(() => false) : false;
 
   return {
@@ -933,7 +941,8 @@ app.whenReady().then(async () => {
   initOptionalSentry();
 
   loadSettings();
-  const featureFlags = resolveFeatureFlags();
+  const featureFlags = resolveFeatureFlags(getFeatureFlagSettingsOverrides(settings));
+  runtimeFeatureFlags = featureFlags;
 
   // Load API keys from secure storage (migrates from plain text if needed)
   await loadSecureApiKeys();

@@ -170,6 +170,7 @@ function App() {
     lineNumbers: 'on',
     autoSave: true,
     inlineCompletions: true,
+    pythonBrainEnabled: false,
     providers: {}
   });
 
@@ -269,6 +270,9 @@ function App() {
 
   const handleSettingsChange = useCallback(async (newSettings: any) => {
     try {
+      const brainToggleChanged =
+        typeof newSettings?.pythonBrainEnabled === 'boolean' &&
+        newSettings.pythonBrainEnabled !== appSettings.pythonBrainEnabled;
       const updatedSettings = await window.agentAPI.updateSettings(newSettings);
       setAppSettings(updatedSettings);
       await refreshSystemStatusSummary();
@@ -276,11 +280,17 @@ function App() {
         detail: updatedSettings
       }));
       toast.success('Settings Saved', 'Your preferences have been updated');
+      if (brainToggleChanged) {
+        toast.info(
+          'Restart Required',
+          `Python Brain will be ${newSettings.pythonBrainEnabled ? 'enabled' : 'disabled'} after you restart AgentPrime.`
+        );
+      }
     } catch (error) {
       console.error('Failed to save settings:', error);
       toast.error('Settings Error', 'Failed to save settings');
     }
-  }, [refreshSystemStatusSummary, toast]);
+  }, [appSettings.pythonBrainEnabled, refreshSystemStatusSummary, toast]);
 
   const runScript = useCallback(() => {
     if (selectedFile) {

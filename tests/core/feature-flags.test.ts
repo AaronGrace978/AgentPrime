@@ -2,7 +2,7 @@
  * Tests for Feature Flags system
  */
 
-import { resolveFeatureFlags, getFeatureFlags, resetFeatureFlags } from '../../src/main/core/feature-flags';
+import { buildFeatureFlags, resolveFeatureFlags, getFeatureFlags, resetFeatureFlags } from '../../src/main/core/feature-flags';
 
 describe('Feature Flags', () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('Feature Flags', () => {
     const flags = resolveFeatureFlags();
     expect(flags.mirror).toBe(true);
     expect(flags.activatePrime).toBe(true);
-    expect(flags.pythonBrain).toBe(true);
+    expect(flags.pythonBrain).toBe(false);
     expect(flags.telemetry).toBe(true);
     expect(flags.codebaseIndexing).toBe(true);
     expect(flags.inferenceServer).toBe(false);
@@ -38,9 +38,18 @@ describe('Feature Flags', () => {
   });
 
   it('should respect settings overrides', () => {
-    const flags = resolveFeatureFlags({ mirror: false, consciousness: true });
+    const flags = resolveFeatureFlags({ mirror: false, consciousness: true, pythonBrain: true });
     expect(flags.mirror).toBe(false);
     expect(flags.consciousness).toBe(true);
+    expect(flags.pythonBrain).toBe(true);
+  });
+
+  it('buildFeatureFlags should allow previewing setting overrides without caching them', () => {
+    const preview = buildFeatureFlags({ pythonBrain: true });
+    expect(preview.pythonBrain).toBe(true);
+
+    const resolved = resolveFeatureFlags();
+    expect(resolved.pythonBrain).toBe(false);
   });
 
   it('should cache flags after first resolution', () => {

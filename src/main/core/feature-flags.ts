@@ -3,7 +3,7 @@
  * 
  * Controls which heavy/experimental modules are loaded at startup.
  * Flags can be set via environment variables (AGENTPRIME_ENABLE_*) or
- * the settings.json `featureFlags` object.
+ * app settings overrides resolved at startup.
  *
  * Default: lean core only. Opt-in to heavier subsystems as needed.
  */
@@ -40,6 +40,29 @@ const DEFAULTS: FeatureFlags = {
 
 let resolvedFlags: FeatureFlags | null = null;
 
+function envBool(env: NodeJS.ProcessEnv, key: string, fallback: boolean): boolean {
+  const val = env[key];
+  if (val === undefined) return fallback;
+  return val === 'true' || val === '1';
+}
+
+export function buildFeatureFlags(
+  settingsOverrides?: Partial<FeatureFlags>,
+  env: NodeJS.ProcessEnv = process.env
+): FeatureFlags {
+  return {
+    mirror: envBool(env, 'AGENTPRIME_ENABLE_MIRROR', DEFAULTS.mirror),
+    activatePrime: envBool(env, 'AGENTPRIME_ENABLE_ACTIVATEPRIME', DEFAULTS.activatePrime),
+    pythonBrain: envBool(env, 'AGENTPRIME_ENABLE_BRAIN', DEFAULTS.pythonBrain),
+    inferenceServer: envBool(env, 'AGENTPRIME_ENABLE_INFERENCE', DEFAULTS.inferenceServer),
+    smartMode: envBool(env, 'AGENTPRIME_ENABLE_SMART_MODE', DEFAULTS.smartMode),
+    consciousness: envBool(env, 'AGENTPRIME_ENABLE_CONSCIOUSNESS', DEFAULTS.consciousness),
+    telemetry: envBool(env, 'AGENTPRIME_ENABLE_TELEMETRY', DEFAULTS.telemetry),
+    codebaseIndexing: envBool(env, 'AGENTPRIME_ENABLE_INDEXING', DEFAULTS.codebaseIndexing),
+    ...settingsOverrides,
+  };
+}
+
 /**
  * Resolve feature flags from environment + optional settings override.
  * Call once at startup; cached after first call.
@@ -47,23 +70,7 @@ let resolvedFlags: FeatureFlags | null = null;
 export function resolveFeatureFlags(settingsOverrides?: Partial<FeatureFlags>): FeatureFlags {
   if (resolvedFlags) return resolvedFlags;
 
-  const envBool = (key: string, fallback: boolean): boolean => {
-    const val = process.env[key];
-    if (val === undefined) return fallback;
-    return val === 'true' || val === '1';
-  };
-
-  resolvedFlags = {
-    mirror: envBool('AGENTPRIME_ENABLE_MIRROR', DEFAULTS.mirror),
-    activatePrime: envBool('AGENTPRIME_ENABLE_ACTIVATEPRIME', DEFAULTS.activatePrime),
-    pythonBrain: envBool('AGENTPRIME_ENABLE_BRAIN', DEFAULTS.pythonBrain),
-    inferenceServer: envBool('AGENTPRIME_ENABLE_INFERENCE', DEFAULTS.inferenceServer),
-    smartMode: envBool('AGENTPRIME_ENABLE_SMART_MODE', DEFAULTS.smartMode),
-    consciousness: envBool('AGENTPRIME_ENABLE_CONSCIOUSNESS', DEFAULTS.consciousness),
-    telemetry: envBool('AGENTPRIME_ENABLE_TELEMETRY', DEFAULTS.telemetry),
-    codebaseIndexing: envBool('AGENTPRIME_ENABLE_INDEXING', DEFAULTS.codebaseIndexing),
-    ...settingsOverrides,
-  };
+  resolvedFlags = buildFeatureFlags(settingsOverrides);
 
   const enabled = Object.entries(resolvedFlags)
     .filter(([, v]) => v)
