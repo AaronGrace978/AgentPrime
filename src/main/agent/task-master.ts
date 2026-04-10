@@ -11,7 +11,6 @@
  * 4. Stores mistakes so the agent learns
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import { detectProjectType, detectProjectTypeFromContent } from './tool-validation';
 import { storeTaskLearning } from '../mirror/mirror-singleton';

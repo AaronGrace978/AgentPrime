@@ -188,8 +188,9 @@ function hasTrackedViteConfigNearHtml(trackedPaths: string[], htmlFilePath: stri
   const trackedSet = new Set(trackedPaths.map((filePath) => normalizeProjectPath(filePath)));
   const viteConfigs = ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs'];
   let currentDir = path.posix.dirname(htmlFilePath);
+  let shouldSearch = true;
 
-  while (true) {
+  while (shouldSearch) {
     const prefix = currentDir === '.' ? '' : `${currentDir}/`;
     if (viteConfigs.some((configName) => trackedSet.has(`${prefix}${configName}`))) {
       return true;
@@ -201,10 +202,13 @@ function hasTrackedViteConfigNearHtml(trackedPaths: string[], htmlFilePath: stri
 
     const parentDir = path.posix.dirname(currentDir);
     if (parentDir === currentDir) {
-      return false;
+      shouldSearch = false;
+      continue;
     }
     currentDir = parentDir;
   }
+
+  return false;
 }
 
 function toHtmlRelativeAssetPath(projectRelativePath: string, htmlFilePath: string): string {
@@ -1012,16 +1016,7 @@ function validateWriteFile(
   // ==========================================
   if (taskContext) {
     const taskLower = taskContext.toLowerCase();
-    
-    // Check for common mismatches
-    const mismatches: { [key: string]: string[] } = {
-      'minecraft': ['tetris', 'snake', 'pong', 'breakout'],
-      'tetris': ['minecraft', 'snake', 'pong'],
-      'snake': ['minecraft', 'tetris', 'pong'],
-      'voxel': ['tetris', 'snake'],
-      'block': ['tetris', 'snake']
-    };
-    
+
     // If task mentions Minecraft/voxel/block, reject Tetris-related files
     if ((taskLower.includes('minecraft') || taskLower.includes('voxel') || taskLower.includes('block')) && 
         fileName.includes('tetris')) {

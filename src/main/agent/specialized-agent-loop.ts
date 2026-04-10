@@ -148,8 +148,6 @@ function inferSpecialistOwnerForFinding(
   summary: string,
   files: string[]
 ): SpecialistId {
-  const normalized = summary.toLowerCase();
-
   if (/(security|auth|authorize|authorization|permission|rbac|secret|token|xss|csrf|injection|csp)/i.test(summary)) {
     return 'security_specialist';
   }
@@ -643,7 +641,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     const repairScope = this.context.repairScope;
     
     let retryCount = 0;
-    let allCreatedFiles: string[] = [];
+    const allCreatedFiles: string[] = [];
     let lastVerification: ProjectVerification | null = null;
     let lastStructuredFindings: VerificationFinding[] = [];
     let verificationSucceeded = false;
@@ -651,9 +649,10 @@ export class SpecializedAgentLoop extends EventEmitter {
     let blackboard: SpecialistBlackboard | null = null;
     let lastReflectionBudget: RuntimeBudgetMode = requestedRuntimeBudget;
     let attemptCount = 0;
+    let shouldContinue = true;
 
     // Main execution loop with retries
-    while (true) {
+    while (shouldContinue) {
       if (this.stopRequested) {
         await transactionManager.rollbackTransaction();
         return `⏹️ **Agent stopped by user**\n\nCreated so far: ${allCreatedFiles.length} file(s).`;
@@ -823,7 +822,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         throw error;
       }
 
-      const { results, finalAnalysis, executedTools, scaffoldApplied, scaffoldTemplateId, skippedGenerativePass } = specialistRun;
+      const { finalAnalysis, executedTools, scaffoldApplied, scaffoldTemplateId, skippedGenerativePass } = specialistRun;
       if (blackboard) {
         blackboard.status = 'verifying';
         this.emit('blackboard-update', blackboard);
@@ -868,6 +867,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             blackboard.status = 'completed';
             this.emit('blackboard-update', blackboard);
           }
+          shouldContinue = false;
           break;
         }
 
@@ -941,7 +941,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             blackboard.status = 'completed';
             this.emit('blackboard-update', blackboard);
           }
-          
+          shouldContinue = false;
           break;
         }
       }
@@ -958,6 +958,7 @@ export class SpecializedAgentLoop extends EventEmitter {
 
       if (retryCount >= maxRepairPasses) {
         log.info('[SpecializedAgent] Max repair passes reached, returning partial result');
+        shouldContinue = false;
         break;
       }
 
@@ -1987,13 +1988,6 @@ export class SpecializedAgentLoop extends EventEmitter {
     const projectContext = this.inferProjectContext(allFiles);
     
     // Common mismatches
-    const mismatches: { [key: string]: string[] } = {
-      'minecraft': ['tetris', 'snake', 'pong', 'breakout'],
-      'tetris': ['minecraft', 'voxel', 'chunk', 'block'],
-      'voxel': ['tetris', 'snake'],
-      'block': ['tetris', 'snake']
-    };
-    
     // If project is Minecraft/voxel/block related, reject Tetris files
     if (projectContext.includes('minecraft') || projectContext.includes('voxel') || projectContext.includes('block')) {
       if (fileNameLower.includes('tetris') || fileNameLower.includes('snake')) {

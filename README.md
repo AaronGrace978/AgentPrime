@@ -101,6 +101,7 @@ This is still an active build, but it now behaves much more like an actual AI ID
 - **Repair-scope continuity:** Suggested owners are preserved in structured verifier findings so staged-review repair flows can reopen the composer with a narrower, better-routed repair scope.
 - **Template sweeps broadened:** Template smoke coverage now supports broader runtime-oriented sweeps, and the Rust CLI template/runtime path was hardened by introducing a Rust-safe crate identifier during template materialization.
 - **UI-level review regression coverage:** Electron E2E now asserts the staged review budget/checkpoint surface in addition to the existing apply-and-run happy path.
+- **Clean-up hardening pass:** Follow-up fixes removed lint-blocking constant-condition loops and dead locals/imports in the agent validation and retry path so the current review/checkpoint work lands in a clean lint/typecheck state instead of shipping with a known branch blocker.
 
 ### Agent & validation fixes (April 2026)
 
@@ -196,6 +197,7 @@ The next major milestones are focused on making AgentPrime feel like a proper AI
 - Expand hardening around generated project manifests so dependency inference, install retries, and bundler detection keep converging toward one predictable path.
 - Add more focused smoke coverage around the review/apply flow, non-agent provider/model switching, and startup hydration behavior.
 - Keep trimming noisy agent retries by improving failure classification so only the specialists relevant to the current breakage get called back in.
+- Break the remaining repo-wide ESLint warnings into focused cleanup batches so future hardening work can stay warning-light without mixing product changes and style debt in the same commit.
 
 For the current specialist architecture direction, see `docs/BOUNDED_SPECIALIST_MATRIX.md`.
 
