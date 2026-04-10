@@ -392,7 +392,7 @@ export class TaskMaster {
     retryFiles: string[]
   ): string[] {
     if (specialist === 'repair_specialist') {
-      const baseline = ['src/**', 'backend/**', 'tests/**', 'package.json', 'vite.config.*', 'tsconfig*.json', 'README.md'];
+      const baseline = ['index.html', 'src/**', 'backend/**', 'tests/**', 'package.json', 'vite.config.*', 'tsconfig*.json', 'tailwind.config.*', 'postcss.config.*', 'README.md'];
       return retryFiles.length > 0
         ? [...new Set([...retryFiles, ...baseline])]
         : baseline;
@@ -407,6 +407,7 @@ export class TaskMaster {
             : [];
       case 'javascript_specialist':
         return [
+          'index.html',
           'src/**/*.js',
           'src/**/*.jsx',
           'src/**/*.ts',
@@ -417,7 +418,7 @@ export class TaskMaster {
           'README.md',
         ];
       case 'styling_ux_specialist':
-        return ['src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'public/**'];
+        return ['index.html', 'src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'public/**'];
       case 'python_specialist':
         return ['backend/**/*.py', 'scripts/**/*.py', 'tests/**/*.py'];
       case 'tauri_specialist':

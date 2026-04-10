@@ -267,13 +267,12 @@ const isCloudModel = (model: string) => model.includes('-cloud') || model.includ
 
 // Get cloud URL from environment or use default
 // For DeepSeek models, use https://ollama.deepseek.com
-// For other cloud models, you must set OLLAMA_URL in your environment
+// For other cloud models, default to the official Ollama Cloud endpoint.
 const getCloudUrl = (model: string): string => {
   if (model.toLowerCase().includes('deepseek')) {
     return 'https://ollama.deepseek.com';
   }
-  // Default cloud endpoint - user should configure OLLAMA_URL for their specific provider
-  return 'https://api.ollama.com';
+  return 'https://ollama.com';
 };
 
 const OLLAMA_URL = process.env.OLLAMA_URL || (isCloudModel(OLLAMA_MODEL) ? getCloudUrl(OLLAMA_MODEL) : 'http://127.0.0.1:11434');

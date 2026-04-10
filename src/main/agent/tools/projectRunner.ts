@@ -47,6 +47,55 @@ export class ProjectRunner {
     return projectInfo.requiresInstall;
   }
 
+  private static removeNodeModules(workspacePath: string): void {
+    const nodeModulesPath = path.join(workspacePath, 'node_modules');
+    if (fs.existsSync(nodeModulesPath)) {
+      fs.rmSync(nodeModulesPath, { recursive: true, force: true });
+    }
+  }
+
+  private static nodeModulesLooksHealthy(workspacePath: string): boolean {
+    const nodeModulesPath = path.join(workspacePath, 'node_modules');
+    if (!fs.existsSync(nodeModulesPath)) {
+      return false;
+    }
+
+    try {
+      if (!fs.statSync(nodeModulesPath).isDirectory()) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+
+    return (
+      fs.existsSync(path.join(nodeModulesPath, '.bin')) ||
+      fs.existsSync(path.join(nodeModulesPath, '.package-lock.json'))
+    );
+  }
+
+  private static shouldReinstallNodeDependencies(workspacePath: string, projectInfo: ProjectInfo): boolean {
+    if (!this.shouldInstallNodeDependencies(workspacePath, projectInfo)) {
+      return false;
+    }
+
+    const nodeModulesPath = path.join(workspacePath, 'node_modules');
+    if (!fs.existsSync(nodeModulesPath) || !this.nodeModulesLooksHealthy(workspacePath)) {
+      return true;
+    }
+
+    const manifestPaths = ['package.json', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']
+      .map((file) => path.join(workspacePath, file))
+      .filter((file) => fs.existsSync(file));
+
+    if (manifestPaths.length === 0) {
+      return false;
+    }
+
+    const nodeModulesMtime = fs.statSync(nodeModulesPath).mtimeMs;
+    return manifestPaths.some((file) => fs.statSync(file).mtimeMs > nodeModulesMtime);
+  }
+
   private static quoteShellArg(value: string): string {
     return `"${value.replace(/"/g, '\\"')}"`;
   }
@@ -116,14 +165,28 @@ export class ProjectRunner {
         const env = getNodeEnv();
         
         log.info('[ProjectRunner] Running:', npmCommand);
-        
-        const { stdout, stderr } = await execAsync(npmCommand, {
-          cwd: workspacePath,
-          timeout: 180000, // 3 minutes
-          env: env,
-          maxBuffer: 10 * 1024 * 1024
-        });
-        return { success: true, output: stdout + stderr };
+
+        let lastError: any = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const { stdout, stderr } = await execAsync(npmCommand, {
+              cwd: workspacePath,
+              timeout: 180000, // 3 minutes
+              env: env,
+              maxBuffer: 10 * 1024 * 1024
+            });
+            return { success: true, output: stdout + stderr };
+          } catch (error: any) {
+            lastError = error;
+            if (attempt === 1) {
+              log.warn('[ProjectRunner] npm install failed, clearing node_modules and retrying once...');
+              this.removeNodeModules(workspacePath);
+              continue;
+            }
+          }
+        }
+
+        throw lastError;
       }
       
       if (projectInfo.type === 'python' && projectInfo.requiresInstall) {
@@ -191,19 +254,16 @@ export class ProjectRunner {
       return { success: false, output: 'No start command found' };
     }
 
-    if (this.shouldInstallNodeDependencies(workspacePath, projectInfo)) {
-      const nodeModulesPath = path.join(workspacePath, 'node_modules');
-      if (!fs.existsSync(nodeModulesPath)) {
-        log.info('[ProjectRunner] 📦 Dependencies not found, installing...');
-        const installResult = await this.installDependencies(workspacePath, projectInfo);
-        if (!installResult.success) {
-          return {
-            success: false,
-            output: `Failed to install dependencies: ${installResult.output}`,
-          };
-        }
-        log.info('[ProjectRunner] ✅ Dependencies installed successfully');
+    if (this.shouldReinstallNodeDependencies(workspacePath, projectInfo)) {
+      log.info('[ProjectRunner] 📦 Dependencies missing, stale, or unhealthy; installing...');
+      const installResult = await this.installDependencies(workspacePath, projectInfo);
+      if (!installResult.success) {
+        return {
+          success: false,
+          output: `Failed to install dependencies: ${installResult.output}`,
+        };
       }
+      log.info('[ProjectRunner] ✅ Dependencies installed successfully');
     }
 
     const runtimeProfile = getProjectRuntimeProfileSync(workspacePath);

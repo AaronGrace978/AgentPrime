@@ -32,6 +32,11 @@ const looksLikeCloudModel = (model?: string): boolean => {
   return model.includes('-cloud') || model.includes(':cloud');
 };
 
+const looksLikePrefixedOllamaModel = (model?: string): boolean => {
+  if (!model) return false;
+  return model.trim().toLowerCase().startsWith('ollama/');
+};
+
 const hasValue = (value?: string): boolean => Boolean(value && value.trim().length > 0);
 
 const reportIssue = (issues: PreflightIssue[], issue: PreflightIssue): void => {
@@ -94,12 +99,31 @@ const validateActiveProvider = (issues: PreflightIssue[], settings: Settings): v
 
   if (activeProvider === 'ollama') {
     const ollamaKey = providers.ollama?.apiKey || '';
+    const ollamaBaseUrl = providers.ollama?.baseUrl || '';
     if (looksLikeCloudModel(activeModel) && !hasValue(ollamaKey)) {
       reportIssue(issues, {
         code: 'OLLAMA_CLOUD_KEY_MISSING',
         severity: 'warn',
         message: `Active model "${activeModel}" looks cloud-hosted but OLLAMA_API_KEY is empty.`,
         action: 'Set OLLAMA_API_KEY for cloud models, or switch to a local model endpoint.'
+      });
+    }
+
+    if (looksLikePrefixedOllamaModel(activeModel)) {
+      reportIssue(issues, {
+        code: 'OLLAMA_MODEL_PREFIXED',
+        severity: 'warn',
+        message: `Active Ollama model "${activeModel}" includes the provider prefix.`,
+        action: 'Store Ollama models as plain model ids such as gemma4:31b-cloud or qwen3-coder-next:cloud.'
+      });
+    }
+
+    if (ollamaBaseUrl.includes('api.ollama.com')) {
+      reportIssue(issues, {
+        code: 'OLLAMA_LEGACY_CLOUD_URL',
+        severity: 'info',
+        message: `Ollama base URL "${ollamaBaseUrl}" uses the legacy api.ollama.com host.`,
+        action: 'Switch to https://ollama.com unless you intentionally rely on a custom reverse proxy.'
       });
     }
   }
@@ -117,6 +141,19 @@ const validateDualModelConfig = (issues: PreflightIssue[], settings: Settings): 
       message: 'Dual-model mode is enabled, but both fast and deep models are disabled.',
       action: 'Enable at least one dual-model lane, or disable dual-model mode.'
     });
+  }
+
+  const fastModel = settings.dualModelConfig?.fastModel;
+  const deepModel = settings.dualModelConfig?.deepModel;
+  for (const lane of [fastModel, deepModel]) {
+    if (lane?.provider === 'ollama' && looksLikePrefixedOllamaModel(lane.model)) {
+      reportIssue(issues, {
+        code: 'DUAL_MODEL_OLLAMA_PREFIXED',
+        severity: 'warn',
+        message: `Dual-model Ollama lane "${lane.model}" includes the provider prefix.`,
+        action: 'Use plain Ollama model ids in dual-model settings, without the "ollama/" prefix.'
+      });
+    }
   }
 };
 

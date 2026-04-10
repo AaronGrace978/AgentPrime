@@ -349,6 +349,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     const requestedRuntimeBudget = this.context.runtimeBudget || 'standard';
     const autonomyLevel = clampAgentAutonomyLevel(this.context.autonomyLevel);
     const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
+    const applyImmediately = this.context.monolithicApplyImmediately === true || autonomyLevel >= 5;
     telemetry.track('agent_task_start', {
       mode: 'specialized',
       workspacePath: this.context.workspacePath,
@@ -708,12 +709,14 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     const operationCount = transaction.getOperationCount();
-    const stagedReview = reviewSessionManager.createSessionFromOperations(
-      this.context.workspacePath,
-      transaction.getOperations(),
-      this.buildInitialReviewVerification(lastVerification),
-      blackboard ? this.buildPlanSummary(blackboard) : undefined
-    );
+    const stagedReview = applyImmediately
+      ? null
+      : reviewSessionManager.createSessionFromOperations(
+          this.context.workspacePath,
+          transaction.getOperations(),
+          this.buildInitialReviewVerification(lastVerification),
+          blackboard ? this.buildPlanSummary(blackboard) : undefined
+        );
     const response = this.buildResponse(allCreatedFiles, lastVerification, {
       rolledBack: rolledBackIncomplete,
       stagedReview: Boolean(stagedReview),
@@ -1222,6 +1225,8 @@ export class SpecializedAgentLoop extends EventEmitter {
     requestedRuntimeBudget: AgentContext['runtimeBudget']
   ): Promise<string> {
     const telemetry = getTelemetryService();
+    const autonomyLevel = clampAgentAutonomyLevel(this.context.autonomyLevel);
+    const applyImmediately = this.context.monolithicApplyImmediately === true || autonomyLevel >= 5;
     this.emit('step-start', {
       type: 'deterministic_scaffold',
       title: 'deterministic_scaffold',
@@ -1262,20 +1267,21 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     const verification = await this.verifyProject(scaffolded.createdFiles);
-    const stagedReview = reviewSessionManager.createSessionFromOperations(
-      this.context.workspacePath,
-      transaction.getOperations(),
-      this.buildInitialReviewVerification(verification),
-      this.buildFallbackPlanSummary(userMessage, scaffolded.createdFiles)
-    );
+    const stagedReview = applyImmediately
+      ? null
+      : reviewSessionManager.createSessionFromOperations(
+          this.context.workspacePath,
+          transaction.getOperations(),
+          this.buildInitialReviewVerification(verification),
+          this.buildFallbackPlanSummary(userMessage, scaffolded.createdFiles)
+        );
 
     const response = this.buildResponse(scaffolded.createdFiles, verification, {
       stagedReview: Boolean(stagedReview),
     });
 
-    await transactionManager.rollbackTransaction();
-
     if (stagedReview) {
+      await transactionManager.rollbackTransaction();
       this.pendingReviewSession = stagedReview;
       telemetry.track('agent_task_complete', {
         mode: 'specialized',
@@ -1288,6 +1294,12 @@ export class SpecializedAgentLoop extends EventEmitter {
         runtimeBudget: requestedRuntimeBudget || 'standard',
       });
       return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
+    }
+
+    if (transaction.getOperationCount() > 0) {
+      transactionManager.commitTransaction();
+    } else {
+      await transactionManager.rollbackTransaction();
     }
 
     telemetry.track('agent_task_complete', {

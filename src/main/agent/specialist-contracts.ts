@@ -227,6 +227,7 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'Did I accidentally cross into styling, backend, or pipeline concerns?',
     ],
     writableGlobs: [
+      'index.html',
       'src/**/*.js',
       'src/**/*.jsx',
       'src/**/*.ts',
@@ -260,7 +261,7 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'Did I improve clarity, hierarchy, and interaction affordances instead of just adding decoration?',
       'Did I stay inside styling and UX concerns without rewriting unrelated application logic?',
     ],
-    writableGlobs: ['src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'app/**/*.css', 'app/**/*.tsx', 'components/**/*.css', 'components/**/*.tsx', 'public/**'],
+    writableGlobs: ['index.html', 'src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'app/**/*.css', 'app/**/*.tsx', 'components/**/*.css', 'components/**/*.tsx', 'public/**'],
     readableGlobs: ['src/**', 'app/**', 'components/**', 'public/**', 'tests/**', 'index.html'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
@@ -406,6 +407,7 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'Am I introducing new scope while trying to repair?',
     ],
     writableGlobs: [
+      'index.html',
       'src/**',
       'app/**',
       'pages/**',

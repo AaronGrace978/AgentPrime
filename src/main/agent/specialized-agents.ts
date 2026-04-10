@@ -159,7 +159,7 @@ function isCloudProvider(provider: string, model: string): boolean {
   }
   if (provider === 'ollama') {
     // Ollama cloud models often include "cloud" in the model id.
-    if (model.includes('-cloud') || model.includes(':cloud') || model.includes('cloud')) {
+    if (model.includes('-cloud') || model.includes(':cloud')) {
       return true;
     }
 

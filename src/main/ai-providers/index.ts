@@ -826,6 +826,39 @@ class AIProviderRouter {
            error.response?.status === 429;
   }
 
+  private isTransientProviderError(error: any): boolean {
+    if (!error) return false;
+
+    const msg = (error.message || error.error || String(error)).toLowerCase();
+    const status = error.status || error.response?.status;
+
+    if (typeof status === 'number' && (status === 408 || status >= 500)) {
+      return true;
+    }
+
+    return msg.includes('timeout') ||
+           msg.includes('timed out') ||
+           msg.includes('econnreset') ||
+           msg.includes('eai_again') ||
+           msg.includes('enotfound') ||
+           msg.includes('enetunreach') ||
+           msg.includes('ehostunreach') ||
+           msg.includes('network unreachable') ||
+           msg.includes('connection reset') ||
+           msg.includes('temporarily unavailable') ||
+           msg.includes('service unavailable') ||
+           msg.includes('bad gateway') ||
+           msg.includes('gateway timeout');
+  }
+
+  private shouldFallbackFromResult(result: ChatResult): boolean {
+    return !result.success && (this.isRateLimitError(result) || this.isTransientProviderError(result));
+  }
+
+  private shouldFallbackFromError(error: any): boolean {
+    return this.isRateLimitError(error) || this.isTransientProviderError(error);
+  }
+
   /**
    * Check whether a model id is likely compatible with a provider.
    * Uses lightweight heuristics to avoid sending provider-specific models
@@ -975,20 +1008,18 @@ class AIProviderRouter {
         false
       );
       
-      // Check for rate limit in result error
-      const shouldFallback = !result.success && 
-        (this.isRateLimitError(result) || this.isRateLimitError({ message: result.error }));
+      const shouldFallback = this.shouldFallbackFromResult(result);
       
       if (
         routerFallbackEnabled &&
-        (shouldFallback || !result.success) &&
+        shouldFallback &&
         this.fallbackProvider &&
         this.fallbackProvider !== this.activeProvider
       ) {
-        if (shouldFallback) {
+        if (this.isRateLimitError(result)) {
           console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
         } else {
-          console.log(`Primary provider failed, trying fallback: ${this.fallbackProvider}`);
+          console.log(`[AI Router] Primary provider hit a transient error, trying fallback: ${this.fallbackProvider}`);
         }
         
         // Check if fallback is Ollama and verify it's available
@@ -1024,8 +1055,13 @@ class AIProviderRouter {
 
       return result;
     } catch (e: any) {
-      if (routerFallbackEnabled && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
-        console.log(`Primary provider error, trying fallback: ${this.fallbackProvider}`);
+      const shouldFallback = this.shouldFallbackFromError(e);
+      if (routerFallbackEnabled && shouldFallback && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
+        if (this.isRateLimitError(e)) {
+          console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
+        } else {
+          console.log(`[AI Router] Primary provider hit a transient error, trying fallback: ${this.fallbackProvider}`);
+        }
         
         // Check if fallback is Ollama and verify it's available
         if (this.fallbackProvider === 'ollama') {
@@ -1077,7 +1113,8 @@ class AIProviderRouter {
       return await provider.stream(messagesWithCreed, onChunk, { ...options, model });
     } catch (e: any) {
       const isRateLimit = this.isRateLimitError(e);
-      if (this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
+      const shouldFallback = this.shouldFallbackFromError(e);
+      if (shouldFallback && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
         if (isRateLimit) {
           console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
         } else {

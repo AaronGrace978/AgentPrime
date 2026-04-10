@@ -450,7 +450,7 @@ export function register(deps: ChatHandlerDeps): void {
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
         
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
-        const isOllamaCloud = selectedModel?.includes('cloud') || 
+        const isOllamaCloud = selectedModel?.includes(':cloud') ||
                               selectedModel?.includes('-cloud') ||
                               agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.com') ||
                               agentSettings?.providers?.ollama?.baseUrl?.includes('api.ollama.com') ||
@@ -554,6 +554,7 @@ export function register(deps: ChatHandlerDeps): void {
             autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly,
+            monolithicApplyImmediately: agentSettings?.agentMonolithicApplyImmediately === true,
           };
 
           // Recreate specialized loop per run so we always bind fresh sender listeners.
