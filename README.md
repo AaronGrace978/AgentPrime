@@ -94,6 +94,13 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 ### Agent & validation fixes (April 2026)
 
+- **Review UX & progress visibility:** `src/renderer/components/AgentProgressTracker.tsx` and `src/renderer/components/MultiFileDiffReview.tsx` now give the staged-review flow more structure, making it easier to see agent progress, inspect multi-file diffs, and understand what is ready to apply.
+- **Quieter settings hydration:** `src/renderer/components/AIChat/index.tsx` no longer writes unchanged `useSpecializedAgents` or `agentAutonomyLevel` values back to settings during startup hydration, which reduces noisy persistence on first load.
+- **Honest OpenAI model loading:** `src/main/ai-providers/openai-provider.ts`, `src/main/main.ts`, and the AI chat UI now surface OpenAI auth/model-list failures directly instead of silently substituting a misleading default list. The chat UI still falls back to curated static model options so the selector stays usable.
+- **Safer TypeScript option validation:** `src/main/agent/tools/project-auto-fixer.ts` no longer depends on internal `ts.optionDeclarations`; compiler-option cleanup now uses the public TypeScript validation path so it is less brittle across TS upgrades.
+- **Controlled dependency backfill:** Inferred runtime dependencies now resolve through npm metadata instead of writing raw `'latest'` into generated `package.json` files. When a version cannot be resolved safely, the auto-fixer skips it and records the issue instead of guessing.
+- **Focused regression coverage:** Added/extended tests around auto-fixer compiler-option cleanup and OpenAI model loading so these hardening changes are covered by the normal regression path.
+
 ### Three.js scaffold hardening (April 2026)
 
 - Added a new deterministic `threejs-platformer` template under `templates/threejs-platformer` for side-scroller/platformer prompts with stable WASD movement, jump physics, collectibles, a handcrafted course, and a buildable Vite + React + Three.js baseline.
@@ -171,6 +178,14 @@ The next major milestones are focused on making AgentPrime feel like a proper AI
 4. Continue replacing language-only roles with discipline-first specialists such as styling/UX, testing, security, performance, and data-contract experts.
 5. Tighten the `install -> run -> verify -> repair` loop so AgentPrime can recover from failures with smaller, more targeted fixes.
 6. Keep reducing latency in the agent path so the system feels closer to a fast local assistant than a slow multi-agent committee.
+
+### Near-Term Likely Fixes
+
+- Continue reducing false-positive validation failures where specialist writable scopes, claimed files, and repair passes disagree on what is allowed.
+- Add a clearer provider-health surface in the UI so auth, rate-limit, and endpoint issues are visible before a chat run fails.
+- Expand hardening around generated project manifests so dependency inference, install retries, and bundler detection keep converging toward one predictable path.
+- Add more focused smoke coverage around the review/apply flow, non-agent provider/model switching, and startup hydration behavior.
+- Keep trimming noisy agent retries by improving failure classification so only the specialists relevant to the current breakage get called back in.
 
 For the current specialist architecture direction, see `docs/BOUNDED_SPECIALIST_MATRIX.md`.
 
