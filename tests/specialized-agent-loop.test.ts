@@ -152,9 +152,43 @@ describe('SpecializedAgentLoop verification', () => {
 
     expect(refined).toEqual([
       'javascript_specialist',
-      'pipeline_specialist',
       'repair_specialist',
     ]);
+  });
+
+  it('adds directly owned security and data-contract specialists from verifier findings', () => {
+    const workspacePath = createTempDir('agentprime-specialized-owned-findings-');
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+
+    const refined = (loop as any).refineRolesForRetry(
+      ['tool_orchestrator', 'javascript_specialist', 'repair_specialist'],
+      {
+        isComplete: false,
+        missingFiles: [],
+        createdFiles: [],
+        errors: ['[Run] API request failed with unauthorized token', '[Build] src/api/contracts.ts type mismatch'],
+      },
+      [
+        {
+          severity: 'error',
+          summary: '[Run] API request failed with unauthorized token',
+          files: ['src/auth/session.ts'],
+          suggestedOwner: 'security_specialist',
+        },
+        {
+          severity: 'error',
+          summary: '[Build] src/api/contracts.ts type mismatch',
+          files: ['src/api/contracts.ts'],
+          suggestedOwner: 'data_contract_specialist',
+        },
+      ]
+    );
+
+    expect(refined).toEqual(expect.arrayContaining([
+      'security_specialist',
+      'data_contract_specialist',
+      'repair_specialist',
+    ]));
   });
 
   it('surfaces rollback messaging when verification fails and changes were reverted', () => {

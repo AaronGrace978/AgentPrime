@@ -15,6 +15,7 @@ const repairScopeSchema = z.object({
     severity: z.enum(['info', 'warning', 'error', 'critical']),
     summary: z.string().max(8000),
     files: z.array(z.string().max(4096)).max(200),
+    suggestedOwner: z.string().max(128).optional(),
     command: z.string().max(4096).optional(),
     output: z.string().max(16000).optional(),
   })).max(200)

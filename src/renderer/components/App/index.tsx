@@ -50,7 +50,11 @@ const MultiFileDiffReview = React.lazy(() => import('../MultiFileDiffReview'));
 const MatrixRain = React.lazy(() => import('../MatrixRain'));
 const SystemStatusPanel = React.lazy(() => import('../SystemStatusPanel'));
 import type { FileChange as ReviewFileChange } from '../MultiFileDiffReview';
-import type { AgentReviewPlanSummary, AgentReviewSessionSnapshot } from '../../../types/agent-review';
+import type {
+  AgentReviewCheckpointSummary,
+  AgentReviewPlanSummary,
+  AgentReviewSessionSnapshot,
+} from '../../../types/agent-review';
 import type { SystemDoctorReport, SystemStatusSummary } from '../../../types/system-health';
 import {
   buildFallbackReviewPlanSummary,
@@ -150,6 +154,7 @@ function App() {
   const [agentReviewApplied, setAgentReviewApplied] = useState(false);
   const [agentReviewTask, setAgentReviewTask] = useState<string>('');
   const [agentReviewPlan, setAgentReviewPlan] = useState<AgentReviewPlanSummary | undefined>();
+  const [agentReviewCheckpoint, setAgentReviewCheckpoint] = useState<AgentReviewCheckpointSummary | undefined>();
   const [agentReviewVerification, setAgentReviewVerification] = useState<ReviewVerificationState>({
     status: 'idle',
     issues: [],
@@ -403,6 +408,7 @@ function App() {
     setAgentReviewApplied(Boolean(snapshot.appliedAt));
     setAgentReviewChanges(snapshot.changes);
     setAgentReviewPlan((prev) => snapshot.plan || prev);
+    setAgentReviewCheckpoint((prev) => snapshot.checkpoint || prev);
   }, []);
 
   const clearAgentReviewState = useCallback(async (discardSession: boolean = false) => {
@@ -420,6 +426,7 @@ function App() {
     setAgentReviewChanges([]);
     setAgentReviewTask('');
     setAgentReviewPlan(undefined);
+    setAgentReviewCheckpoint(undefined);
     setAgentReviewVerification({ status: 'idle', issues: [] });
   }, [agentReviewSessionId]);
 
@@ -1291,7 +1298,7 @@ function App() {
                     }
                     handleContentChange(code);
                   }}
-                  onAgentChangesReady={(changes, taskDescription, reviewSessionId, reviewVerification, reviewPlan) => {
+                  onAgentChangesReady={(changes, taskDescription, reviewSessionId, reviewVerification, reviewPlan, reviewCheckpoint) => {
                     if (agentReviewSessionId) {
                       void window.agentAPI.discardAgentReview(agentReviewSessionId);
                     }
@@ -1299,6 +1306,7 @@ function App() {
                     setAgentReviewSessionId(reviewSessionId);
                     setAgentReviewApplied(!reviewSessionId);
                     setAgentReviewPlan(reviewPlan || buildFallbackReviewPlanSummary(taskDescription, changes));
+                    setAgentReviewCheckpoint(reviewCheckpoint);
                     setAgentReviewVerification(reviewVerification || { status: 'idle', issues: [] });
                     setAgentReviewChanges(changes.map((change) => ({
                       ...change,
@@ -1408,6 +1416,7 @@ function App() {
                   onRevertSession={() => { void handleRevertLastAgentSession(); }}
                   verification={agentReviewVerification}
                   plan={agentReviewPlan}
+                  checkpoint={agentReviewCheckpoint}
                   isStaged={Boolean(agentReviewSessionId)}
                   applied={agentReviewApplied}
                   canRevertSession={agentReviewApplied && latestAppliedReviewSession?.sessionId === agentReviewSessionId}

@@ -72,6 +72,7 @@ interface TemplateContext extends Variables {
   originalProjectName: string;
   projectDirName: string;
   packageName: string;
+  rustCrateName: string;
   currentYear: string;
 }
 
@@ -319,6 +320,7 @@ class TemplateEngine {
       projectName,
       projectDirName: projectName,
       packageName,
+      rustCrateName: packageName.replace(/-/g, '_'),
       author,
       description,
       currentYear: new Date().getFullYear().toString()

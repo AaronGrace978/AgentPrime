@@ -8,6 +8,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import type {
   AgentReviewChange,
+  AgentReviewCheckpointSummary,
   AgentReviewFinding,
   AgentReviewPlanSummary,
   AgentReviewVerificationState,
@@ -29,6 +30,7 @@ interface MultiFileDiffReviewProps {
   onClose: () => void;
   taskDescription?: string;
   plan?: AgentReviewPlanSummary;
+  checkpoint?: AgentReviewCheckpointSummary;
   verification?: AgentReviewVerificationState;
   isStaged?: boolean;
   applied?: boolean;
@@ -90,6 +92,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   onClose,
   taskDescription,
   plan,
+  checkpoint,
   verification,
   isStaged = false,
   applied = false,
@@ -149,12 +152,19 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   const acceptedCount = stats.accepted;
   const showVerificationActions = reviewComplete && acceptedCount > 0 && (!isStaged || applied);
   const showApplyAction = isStaged && reviewComplete && acceptedCount > 0 && !applied;
-  const checkpoints = [
-    { label: 'Plan', state: plan ? 'complete' : 'current' },
-    { label: 'Review', state: reviewComplete ? 'complete' : 'current' },
-    { label: 'Apply', state: isStaged ? (applied ? 'complete' : reviewComplete ? 'current' : 'upcoming') : 'complete' },
+  const checkpoints = checkpoint?.items || [
+    { id: 'plan', label: 'Plan', stage: 'plan', state: plan ? 'complete' : 'current' },
+    { id: 'review', label: 'Review', stage: 'review', state: reviewComplete ? 'complete' : 'current' },
     {
+      id: 'apply',
+      label: 'Apply',
+      stage: 'apply',
+      state: isStaged ? (applied ? 'complete' : reviewComplete ? 'current' : 'upcoming') : 'complete',
+    },
+    {
+      id: verification?.status === 'failed' ? 'repair' : 'verify',
       label: verification?.status === 'failed' ? 'Repair' : 'Verify',
+      stage: verification?.status === 'failed' ? 'repair' : 'verify',
       state:
         verification?.status === 'passed'
           ? 'complete'
@@ -164,7 +174,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
               ? 'current'
               : 'upcoming',
     },
-  ] as const;
+  ];
   const reviewDecisionCopy = isStaged
     ? reviewComplete
       ? applied
@@ -384,9 +394,23 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                   Checkpoint — not on disk until you apply
                 </span>
               )}
+              {checkpoint?.reflectionBudget && (
+                <span style={{
+                  fontSize: '10px',
+                  color: '#58a6ff',
+                  background: 'rgba(88, 166, 255, 0.10)',
+                  border: '1px solid rgba(88, 166, 255, 0.24)',
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  textTransform: 'capitalize',
+                }}>
+                  {checkpoint.reflectionBudget} review budget
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '11.5px', color: 'var(--prime-text-secondary)', lineHeight: 1.45 }}>
-              {reviewDecisionCopy}
+              {checkpoint?.summary || reviewDecisionCopy}
             </div>
             {taskDescription && (
               <div style={{

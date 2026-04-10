@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>Now shipping:</strong> staged review/apply, bounded specialist agents, secure provider key management, and calmer mode-aware chat.
+  <strong>Now shipping:</strong> explicit review/apply checkpoints, `instant` / `standard` / `deep` reflection budgets, discipline-first specialists, and calmer mode-aware chat.
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ AgentPrime is beyond the “shell only” phase now. The desktop app, composer, 
 Current status:
 
 - The desktop workspace is real and usable: editor, tabs, terminal, file tree, search, settings, model selection, and runtime status all exist in-app.
-- Agent execution is moving toward bounded discipline specialists with file ownership, validation, review sessions, and structured repair passes.
+- Agent execution now uses bounded discipline specialists with file ownership, validation, explicit review sessions, and structured repair passes.
 - Provider setup is safer: API keys stay out of plain settings files, with secure storage and renderer-safe IPC.
 - Chat modes are now treated as distinct experiences instead of a single blended prompt surface.
 - The core target loop is `create -> review -> apply -> install -> run -> repair`.
@@ -82,7 +82,8 @@ This is still an active build, but it now behaves much more like an actual AI ID
 - Pick providers and models across OpenAI, Anthropic, Ollama, and OpenRouter
 - Route work through fast, deep, or auto runtime budgets
 - Run bounded specialized agents for more structured multi-step tasks
-- Review staged multi-file changes before applying them
+- Review staged multi-file changes behind explicit `plan -> review -> apply -> verify/repair` checkpoints
+- See which reflection budget (`instant`, `standard`, or `deep`) the agent used before a patch set is applied
 - Apply inline AI edits directly from the editor
 - Use ghost text completions and contextual coding assistance
 - Run natural-language file operations with confirmation before risky bulk actions
@@ -91,6 +92,15 @@ This is still an active build, but it now behaves much more like an actual AI ID
 - Work with Git actions and repository workflows without leaving the desktop shell
 
 ## Recent Upgrades
+
+### Review checkpoints, reflection budgets, and discipline routing (April 2026)
+
+- **Explicit staged checkpoints:** Review sessions now carry first-class checkpoint metadata so the UI can show `Plan`, `Review`, `Apply`, and `Verify` / `Repair` as real agent states instead of deriving them purely from renderer state.
+- **Reflection budgets:** Specialized execution now resolves `instant`, `standard`, and `deep` reflection policies in one place and uses them to control planning depth, reflection-question count, repair-pass limits, and specialist recovery retries.
+- **Discipline-first verifier routing:** Runtime findings are now classified toward concrete owners like `security_specialist`, `performance_specialist`, and `data_contract_specialist` before retry planning, instead of sending every issue to a generic repair lane and depending mostly on keyword guesses later.
+- **Repair-scope continuity:** Suggested owners are preserved in structured verifier findings so staged-review repair flows can reopen the composer with a narrower, better-routed repair scope.
+- **Template sweeps broadened:** Template smoke coverage now supports broader runtime-oriented sweeps, and the Rust CLI template/runtime path was hardened by introducing a Rust-safe crate identifier during template materialization.
+- **UI-level review regression coverage:** Electron E2E now asserts the staged review budget/checkpoint surface in addition to the existing apply-and-run happy path.
 
 ### Agent & validation fixes (April 2026)
 
@@ -172,12 +182,12 @@ This batch tightens long-term memory, auth, logging, startup reliability, UI fee
 
 The next major milestones are focused on making AgentPrime feel like a proper AI IDE instead of a promising prototype:
 
-1. Add user-visible review/apply checkpoints so generated patch sets can be staged before writes are finalized.
-2. Split reflection into `instant`, `standard`, and `deep` budgets so specialists stay fast on easy turns and only escalate on risky or failing work.
-3. Expand smoke coverage from the current scaffold path into broader template sweeps and browser/UI-level end-to-end checks.
-4. Continue replacing language-only roles with discipline-first specialists such as styling/UX, testing, security, performance, and data-contract experts.
-5. Tighten the `install -> run -> verify -> repair` loop so AgentPrime can recover from failures with smaller, more targeted fixes.
-6. Keep reducing latency in the agent path so the system feels closer to a fast local assistant than a slow multi-agent committee.
+1. Route even more verifier findings through direct owner assignments so retries use evidence-first specialist selection instead of broad fallback lanes.
+2. Keep expanding template/runtime/browser sweeps until every maintained starter has a meaningful install/build/run or browser proof path.
+3. Tighten the `install -> run -> verify -> repair` loop so AgentPrime can recover from failures with smaller, more targeted fixes.
+4. Keep reducing latency in the agent path so the system feels closer to a fast local assistant than a slow multi-agent committee.
+5. Keep shrinking false-positive validation and ownership mismatches where writable scopes, claims, and repair plans still disagree.
+6. Improve provider/runtime health visibility so auth, endpoint, and dependency failures are obvious before a long agent run starts.
 
 ### Near-Term Likely Fixes
 

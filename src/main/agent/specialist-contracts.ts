@@ -8,6 +8,9 @@ export type SpecialistId =
   | 'tauri_specialist'
   | 'pipeline_specialist'
   | 'testing_specialist'
+  | 'security_specialist'
+  | 'performance_specialist'
+  | 'data_contract_specialist'
   | 'integration_verifier'
   | 'repair_specialist';
 
@@ -21,6 +24,9 @@ export type SpecialistDiscipline =
   | 'desktop_runtime'
   | 'build_and_release'
   | 'test_engineering'
+  | 'security_review'
+  | 'performance_optimization'
+  | 'data_contracts'
   | 'verification'
   | 'repair';
 
@@ -376,6 +382,66 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     escalatesTo: ['integration_verifier', 'repair_specialist'],
     mustReportTo: ['task_master'],
   },
+  security_specialist: {
+    id: 'security_specialist',
+    discipline: 'security_review',
+    phase: 'verify',
+    title: 'Security Specialist',
+    purpose: 'Own auth, secrets handling, unsafe input paths, and security-sensitive hardening within assigned files.',
+    reflectionFocus: [
+      'Did I reduce a concrete security risk instead of adding generic hardening?',
+      'Did I avoid weakening existing trust boundaries, validation, or secret handling?',
+    ],
+    writableGlobs: ['src/**', 'app/**', 'backend/**', 'lib/**', 'components/**', 'tests/**', 'package.json', '*.config.*', '.github/workflows/**'],
+    readableGlobs: ['**/*'],
+    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
+    allowedCommandPrefixes: [],
+    forbiddenActions: ['disable security controls for convenience', 'broaden feature scope while fixing a risk'],
+    consumes: ['execution_plan', 'verification_report', 'repair_plan'],
+    produces: ['file_patch_set', 'verification_report'],
+    escalatesTo: ['integration_verifier', 'repair_specialist'],
+    mustReportTo: ['task_master'],
+  },
+  performance_specialist: {
+    id: 'performance_specialist',
+    discipline: 'performance_optimization',
+    phase: 'implement',
+    title: 'Performance Specialist',
+    purpose: 'Own runtime hotspots, render/update pressure, bundle weight, and performance-sensitive workflow changes.',
+    reflectionFocus: [
+      'Did I improve a measurable bottleneck or latency path instead of rewriting broadly?',
+      'Did I preserve correctness while reducing unnecessary work?',
+    ],
+    writableGlobs: ['src/**', 'app/**', 'components/**', 'backend/**', 'public/**', 'tests/**', 'package.json', '*.config.*'],
+    readableGlobs: ['**/*'],
+    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
+    allowedCommandPrefixes: [],
+    forbiddenActions: ['micro-optimize unrelated code', 'trade away correctness or accessibility for speed'],
+    consumes: ['execution_plan', 'verification_report', 'repair_plan'],
+    produces: ['file_patch_set'],
+    escalatesTo: ['testing_specialist', 'integration_verifier', 'repair_specialist'],
+    mustReportTo: ['task_master'],
+  },
+  data_contract_specialist: {
+    id: 'data_contract_specialist',
+    discipline: 'data_contracts',
+    phase: 'implement',
+    title: 'Data Contract Specialist',
+    purpose: 'Own schemas, DTOs, API contracts, validation layers, and cross-boundary data shape consistency.',
+    reflectionFocus: [
+      'Did I keep request/response or schema changes consistent across every touched boundary?',
+      'Did I add or preserve validation where the contract enters the system?',
+    ],
+    writableGlobs: ['src/**', 'app/**', 'lib/**', 'backend/**', 'prisma/**', 'tests/**', 'package.json'],
+    readableGlobs: ['**/*'],
+    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
+    allowedCommandPrefixes: [],
+    forbiddenActions: ['change unrelated UI styling', 'hide contract mismatches by removing validation'],
+    consumes: ['execution_plan', 'verification_report', 'repair_plan'],
+    produces: ['file_patch_set'],
+    escalatesTo: ['testing_specialist', 'integration_verifier', 'repair_specialist'],
+    mustReportTo: ['task_master'],
+  },
   integration_verifier: {
     id: 'integration_verifier',
     discipline: 'verification',
@@ -452,6 +518,9 @@ export const SPECIALIST_EXECUTION_ORDER: SpecialistId[] = [
   'tauri_specialist',
   'pipeline_specialist',
   'testing_specialist',
+  'security_specialist',
+  'performance_specialist',
+  'data_contract_specialist',
   'integration_verifier',
   'repair_specialist',
 ];

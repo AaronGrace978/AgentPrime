@@ -1,3 +1,5 @@
+import type { RuntimeBudgetMode } from './runtime-budget';
+
 export type AgentReviewChangeStatus = 'pending' | 'accepted' | 'rejected';
 
 export type AgentReviewAction = 'modified' | 'created' | 'deleted';
@@ -19,6 +21,7 @@ export interface AgentReviewFinding {
   severity: AgentReviewFindingSeverity;
   summary: string;
   files: string[];
+  suggestedOwner?: string;
   command?: string;
   output?: string;
 }
@@ -61,10 +64,32 @@ export interface AgentReviewPlanFileReason {
   owner?: string;
 }
 
+export type AgentReviewCheckpointStage = 'plan' | 'review' | 'apply' | 'verify' | 'repair';
+
+export type AgentReviewCheckpointState = 'complete' | 'current' | 'upcoming';
+
+export interface AgentReviewCheckpointItem {
+  id: string;
+  label: string;
+  stage: AgentReviewCheckpointStage;
+  state: AgentReviewCheckpointState;
+  summary?: string;
+}
+
+export interface AgentReviewCheckpointSummary {
+  strategy: 'staged_patch_set';
+  requiresExplicitApply: boolean;
+  reflectionBudget: RuntimeBudgetMode;
+  attemptCount: number;
+  summary: string;
+  items: AgentReviewCheckpointItem[];
+}
+
 export interface AgentReviewPlanSummary {
   mode: AgentReviewPlanMode;
   summary: string;
   rationale: string;
+  reflectionBudget?: RuntimeBudgetMode;
   steps: AgentReviewPlanStep[];
   fileReasons: AgentReviewPlanFileReason[];
 }
@@ -79,4 +104,5 @@ export interface AgentReviewSessionSnapshot {
   changes: AgentReviewChange[];
   initialVerification?: AgentReviewVerificationState;
   plan?: AgentReviewPlanSummary;
+  checkpoint?: AgentReviewCheckpointSummary;
 }

@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use colored::*;
 
-use {{packageName}}::{greet, get_info};
+use {{rustCrateName}}::{greet, get_info};
 
 #[derive(Parser)]
 #[command(name = "{{packageName}}")]

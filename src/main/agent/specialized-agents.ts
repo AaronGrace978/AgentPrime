@@ -291,7 +291,10 @@ async function getMirrorContext(task: string) {
 async function buildMirrorEnhancedPrompt(
   task: string, 
   role: AgentRole, 
-  basePrompt: string
+  basePrompt: string,
+  options: {
+    reflectionQuestionLimit?: number;
+  } = {}
 ): Promise<string> {
   let enhancedPrompt = `You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
 
@@ -356,17 +359,18 @@ ${basePrompt}`;
     enhancedPrompt += getRoleMirrorGuidance(role);
 
     // 🧠 MIRROR STEP 5: Add discipline reflection loop prompts
-    const specialistId =
-      role === 'repair_specialist'
-        ? 'repair_specialist'
-        : LEGACY_SPECIALIST_ROLE_MAP[role as keyof typeof LEGACY_SPECIALIST_ROLE_MAP];
+    const specialistId = roleToSpecialistId(role);
     if (specialistId) {
       const specialistDefinition = getSpecialistDefinition(specialistId);
       if (specialistDefinition.reflectionFocus.length > 0) {
+        const limitedQuestions = specialistDefinition.reflectionFocus.slice(
+          0,
+          Math.max(1, options.reflectionQuestionLimit ?? specialistDefinition.reflectionFocus.length)
+        );
         enhancedPrompt += '\n\n## 🔁 DOMAIN REFLECTION LOOP\n';
         enhancedPrompt += `You are operating as a ${specialistDefinition.discipline} expert.\n`;
         enhancedPrompt += 'Before finalizing your response, reflect on these questions:\n';
-        for (const question of specialistDefinition.reflectionFocus) {
+        for (const question of limitedQuestions) {
           enhancedPrompt += `- ${question}\n`;
         }
         enhancedPrompt += 'If any answer reveals scope drift, weak evidence, or incomplete work, revise before responding.\n';
@@ -466,6 +470,24 @@ If the task needs fixes in \`src/\`, emit no source writes here; use run_command
 - Keep fixtures focused and deterministic
 - Avoid tests that just restate implementation details`,
 
+    security_specialist: `
+## 🎯 MIRROR: SECURITY REVIEW
+- Reduce concrete security risk with the smallest viable change
+- Prefer explicit validation, least privilege, and safe defaults
+- Keep fixes scoped to the vulnerable path and its trust boundary`,
+
+    performance_specialist: `
+## 🎯 MIRROR: PERFORMANCE ENGINEERING
+- Remove bottlenecks with small, measurable changes
+- Prefer cutting unnecessary work over broad rewrites
+- Protect correctness and UX while reducing latency or render cost`,
+
+    data_contract_specialist: `
+## 🎯 MIRROR: DATA CONTRACTS
+- Keep schemas, DTOs, and validation aligned across boundaries
+- Preserve explicit contracts instead of relying on implied shapes
+- Fix mismatches at the boundary where data enters or leaves a system`,
+
     integration_analyst: `
 ## 🎯 MIRROR: SENIOR ENGINEER CODE REVIEW
 - Mirror how senior engineers review PRs
@@ -498,8 +520,26 @@ export type AgentRole =
   | 'tauri_specialist'  // Tauri v2 / Rust desktop apps
   | 'pipeline_specialist'  // Build/deploy/CI/CD
   | 'testing_specialist'  // Automated tests and browser checks
+  | 'security_specialist'  // Auth, trust boundaries, validation, and secrets
+  | 'performance_specialist'  // Runtime, bundle, and latency improvements
+  | 'data_contract_specialist'  // Schemas, DTOs, validation, and API contracts
   | 'integration_analyst'  // Reviews, verifies, and ensures coherence
   | 'repair_specialist';  // Applies narrow fixes after verification failures
+
+function roleToSpecialistId(role: AgentRole): SpecialistId {
+  if (
+    role === 'styling_ux_specialist' ||
+    role === 'testing_specialist' ||
+    role === 'repair_specialist' ||
+    role === 'security_specialist' ||
+    role === 'performance_specialist' ||
+    role === 'data_contract_specialist'
+  ) {
+    return role;
+  }
+
+  return LEGACY_SPECIALIST_ROLE_MAP[role as keyof typeof LEGACY_SPECIALIST_ROLE_MAP];
+}
 
 export interface AgentConfig {
   role: AgentRole;
@@ -1076,6 +1116,69 @@ ${TOOL_CALL_FORMAT}`
 ${TOOL_CALL_FORMAT}`
   },
 
+  security_specialist: {
+    role: 'security_specialist',
+    model: 'minimax-m2.7:cloud',
+    provider: 'ollama',
+    temperature: 0.2,
+    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'analysis'),
+    systemPrompt: `You are a security specialist. You harden trust boundaries, validation, auth, secrets handling, and unsafe input paths within the assigned files.
+
+## YOUR JOB
+- Fix concrete security risks with the smallest viable patch
+- Prefer validation, least privilege, and explicit safe defaults
+- Keep changes scoped to the risky path and its adjacent contract surface
+
+## RULES
+- Do not broaden scope into unrelated feature work
+- Do not remove protections to make a test pass
+- If a security issue crosses files, touch only the minimum set needed to restore the boundary
+
+${TOOL_CALL_FORMAT}`
+  },
+
+  performance_specialist: {
+    role: 'performance_specialist',
+    model: 'minimax-m2.7:cloud',
+    provider: 'ollama',
+    temperature: 0.2,
+    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
+    systemPrompt: `You are a performance specialist. You reduce latency, unnecessary work, render cost, and runtime overhead inside the assigned files.
+
+## YOUR JOB
+- Make the smallest measurable improvement that addresses the reported bottleneck
+- Prefer removing repeated work, redundant renders, large payloads, or blocking steps
+- Preserve correctness, accessibility, and maintainability while speeding things up
+
+## RULES
+- Do not rewrite large subsystems without evidence
+- Avoid premature micro-optimizations
+- If verification found a slow or flaky path, focus only on that path
+
+${TOOL_CALL_FORMAT}`
+  },
+
+  data_contract_specialist: {
+    role: 'data_contract_specialist',
+    model: 'minimax-m2.7:cloud',
+    provider: 'ollama',
+    temperature: 0.2,
+    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
+    systemPrompt: `You are a data contract specialist. You own schemas, DTOs, validation layers, request/response shapes, and persistence boundary consistency.
+
+## YOUR JOB
+- Keep data shapes aligned across callers, handlers, storage, and tests
+- Add or preserve validation where data crosses a boundary
+- Fix mismatches with explicit contract updates instead of implicit assumptions
+
+## RULES
+- Do not hide shape mismatches by deleting validation
+- Do not drift into unrelated UX or pipeline work
+- If a contract change affects multiple files, update the minimum full chain so types and runtime behavior agree
+
+${TOOL_CALL_FORMAT}`
+  },
+
   integration_analyst: {
     role: 'integration_analyst',
     model: 'deepseek-v3.1:671b-cloud',  // CLOUD MODEL - SMART FOR ANALYSIS
@@ -1304,6 +1407,45 @@ export function routeToSpecialists(
     taskLower.includes('e2e') ||
     taskLower.includes('end-to-end');
 
+  const needsSecurity =
+    taskLower.includes('security') ||
+    taskLower.includes('auth') ||
+    taskLower.includes('authorize') ||
+    taskLower.includes('authorization') ||
+    taskLower.includes('permission') ||
+    taskLower.includes('rbac') ||
+    taskLower.includes('secret') ||
+    taskLower.includes('token') ||
+    taskLower.includes('sanitize') ||
+    taskLower.includes('xss') ||
+    taskLower.includes('csrf') ||
+    taskLower.includes('injection') ||
+    taskLower.includes('csp');
+
+  const needsPerformance =
+    taskLower.includes('performance') ||
+    taskLower.includes('latency') ||
+    taskLower.includes('slow') ||
+    taskLower.includes('optimize') ||
+    taskLower.includes('optimise') ||
+    taskLower.includes('throughput') ||
+    taskLower.includes('memory') ||
+    taskLower.includes('bundle') ||
+    taskLower.includes('render cost') ||
+    taskLower.includes('fast local assistant');
+
+  const needsDataContracts =
+    taskLower.includes('schema') ||
+    taskLower.includes('contract') ||
+    taskLower.includes('dto') ||
+    taskLower.includes('payload') ||
+    taskLower.includes('validation') ||
+    taskLower.includes('zod') ||
+    taskLower.includes('openapi') ||
+    taskLower.includes('json schema') ||
+    taskLower.includes('response shape') ||
+    taskLower.includes('request shape');
+
   // Add specialists
   if (isJavaScript) {
     roles.push('javascript_specialist');
@@ -1321,6 +1463,15 @@ export function routeToSpecialists(
   }
   if (needsTesting) {
     roles.push('testing_specialist');
+  }
+  if (needsSecurity) {
+    roles.push('security_specialist');
+  }
+  if (needsPerformance) {
+    roles.push('performance_specialist');
+  }
+  if (needsDataContracts) {
+    roles.push('data_contract_specialist');
   }
 
   // Always add integration analyst for multi-file projects
@@ -1345,7 +1496,7 @@ export function routeToSpecialists(
     roles.push('javascript_specialist');
   }
 
-  return roles;
+  return [...new Set(roles)] as AgentRole[];
 }
 
 /**
@@ -1562,11 +1713,7 @@ export interface SpecialistExecutionCallbacks {
 }
 
 function resolveBlackboardSpecialistId(role: AgentRole): SpecialistId {
-  if (role === 'repair_specialist') {
-    return 'repair_specialist';
-  }
-
-  return LEGACY_SPECIALIST_ROLE_MAP[role as keyof typeof LEGACY_SPECIALIST_ROLE_MAP];
+  return roleToSpecialistId(role);
 }
 
 function getClaimedFilesForRole(blackboard: SpecialistBlackboard | undefined, role: AgentRole): string[] {
@@ -2084,6 +2231,22 @@ export async function executeWithSpecialists(
     context.runtimeBudget === 'instant' || context.runtimeBudget === 'deep'
       ? context.runtimeBudget
       : 'standard';
+  const reflectionQuestionLimit =
+    typeof context.reflectionQuestionLimit === 'number' && Number.isFinite(context.reflectionQuestionLimit)
+      ? Math.max(1, Math.floor(context.reflectionQuestionLimit))
+      : runtimeBudget === 'instant'
+        ? 1
+        : runtimeBudget === 'deep'
+          ? 3
+          : 2;
+  const planningMode: 'skip' | 'compact' | 'full' =
+    context.planningMode === 'skip' || context.planningMode === 'full'
+      ? context.planningMode
+      : 'compact';
+  const reflectionSummary =
+    typeof context.reflectionSummary === 'string' && context.reflectionSummary.trim().length > 0
+      ? context.reflectionSummary.trim()
+      : '';
   const autonomyPolicy = resolveAgentAutonomyPolicy(context.autonomyLevel);
   const autonomyUsage = {
     toolCalls: 0,
@@ -2154,13 +2317,16 @@ export async function executeWithSpecialists(
   const policyPrompt = `\n\n## AUTONOMY GUARDRAILS\nAutonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}). ${autonomyPolicy.description}\n- Max tool calls: ${autonomyPolicy.maxToolCalls}\n- Max run_command calls: ${autonomyPolicy.maxCommandCalls}${autonomyPolicy.allowRunCommands ? '' : ' (commands disabled)'}\n- Max unique file writes: ${autonomyPolicy.maxWriteFiles}\nStay within these limits by planning compact, high-signal edits.`;
   const applyBudgetPrompt = (basePrompt: string): string => {
     const withPolicy = `${basePrompt}${policyPrompt}`;
+    const withReflectionPolicy = reflectionSummary
+      ? `${withPolicy}\n\n## REFLECTION POLICY\n${reflectionSummary}`
+      : withPolicy;
     if (runtimeBudget === 'instant') {
-      return `${withPolicy}\n\n## RUNTIME BUDGET\nUse the instant budget. Prefer the smallest viable patch, keep reasoning terse, and skip speculative refactors.`;
+      return `${withReflectionPolicy}\n\n## RUNTIME BUDGET\nUse the instant budget. Prefer the smallest viable patch, keep reasoning terse, and skip speculative refactors.`;
     }
     if (runtimeBudget === 'deep') {
-      return `${withPolicy}\n\n## RUNTIME BUDGET\nUse the deep budget. Spend extra effort on failure modes, architecture risks, and verifier-facing correctness before finalizing.`;
+      return `${withReflectionPolicy}\n\n## RUNTIME BUDGET\nUse the deep budget. Spend extra effort on failure modes, architecture risks, and verifier-facing correctness before finalizing.`;
     }
-    return `${withPolicy}\n\n## RUNTIME BUDGET\nUse the standard budget. Stay balanced: complete the task with bounded reflection and no unnecessary detours.`;
+    return `${withReflectionPolicy}\n\n## RUNTIME BUDGET\nUse the standard budget. Stay balanced: complete the task with bounded reflection and no unnecessary detours.`;
   };
   const budgetedTokens = (model: string | undefined, mode: 'analysis' | 'words_to_code' | 'specialist' | 'pipeline') =>
     getBudgetAdjustedMaxTokens(model, mode, runtimeBudget);
@@ -2264,9 +2430,17 @@ export async function executeWithSpecialists(
   }
 
   // Step 0: Planning Phase - Break down task into requirements (FAST)
-  if (deterministicScaffoldOnly) {
-    beginPhase('planning', { skipped: true, deterministicScaffoldOnly: true });
-    endPhase('planning', 'success', { skipped: true, deterministicScaffoldOnly: true });
+  if (deterministicScaffoldOnly || planningMode === 'skip') {
+    beginPhase('planning', {
+      skipped: true,
+      deterministicScaffoldOnly: deterministicScaffoldOnly || undefined,
+      planningMode,
+    });
+    endPhase('planning', 'success', {
+      skipped: true,
+      deterministicScaffoldOnly: deterministicScaffoldOnly || undefined,
+      planningMode,
+    });
   } else {
     log.info(`[MirrorAgents] 📋 Step 0: Planning with ${planningModel.model}`);
     markBlackboardOwner(blackboard, 'tool_orchestrator', 'planning');
@@ -2277,15 +2451,20 @@ export async function executeWithSpecialists(
     const planningPrompt = applyBudgetPrompt(await buildMirrorEnhancedPrompt(
       task,
       'tool_orchestrator',
-      planningOrchestrator.systemPrompt
+      planningOrchestrator.systemPrompt,
+      { reflectionQuestionLimit }
     ));
+    const planningRequest =
+      planningMode === 'compact'
+        ? `Task: ${task}
 
-    let planningResponse;
-    try {
-      planningResponse = await withAITimeoutAndRetry(
-        () => aiRouter.chat([
-          { role: 'system', content: planningPrompt },
-          { role: 'user', content: `Task: ${task}
+Break this task down into:
+1. Must-have deliverables
+2. Likely file touch points
+3. Verification or integration risks
+
+Keep it brief, concrete, and focused on execution.`
+        : `Task: ${task}
 
 Break this task down into:
 1. Core features (must-have) - list each feature
@@ -2294,7 +2473,14 @@ Break this task down into:
 4. File structure needed
 5. Dependencies required
 
-Output as a structured list. Be specific and comprehensive.` }
+Output as a structured list. Be specific and comprehensive.`;
+
+    let planningResponse;
+    try {
+      planningResponse = await withAITimeoutAndRetry(
+        () => aiRouter.chat([
+          { role: 'system', content: planningPrompt },
+          { role: 'user', content: planningRequest }
         ], {
           model: planningModel.model,
           temperature: 0.3,
@@ -2328,11 +2514,13 @@ Output as a structured list. Be specific and comprehensive.` }
         actualProvider: planningResponse.servedBy?.provider || planningModel.provider,
         actualModel: planningResponse.servedBy?.model || planningModel.model,
         requirementCount: requirements.length,
+        planningMode,
       });
     } else {
       endPhase('planning', 'failure', {
         requestedProvider: planningModel.provider,
         requestedModel: planningModel.model,
+        planningMode,
       });
     }
   }
@@ -2402,7 +2590,11 @@ Output as a structured list. Be specific and comprehensive.` }
 
   // 🧠 MIRROR: Build pattern-enhanced prompt for orchestrator
   const enhancedOrchestratorPrompt = appendScaffoldCustomizationInstructions(
-    applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt)),
+    applyBudgetPrompt(
+      await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt, {
+        reflectionQuestionLimit,
+      })
+    ),
     scaffoldApplied,
     scaffoldTemplateId
   );
@@ -2631,7 +2823,9 @@ Output as a structured list. Be specific and comprehensive.` }
 
     // 🧠 MIRROR: Build pattern-enhanced prompt for this specialist
     const enhancedPrompt = appendScaffoldCustomizationInstructions(
-      applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, role, config.systemPrompt)),
+      applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, role, config.systemPrompt, {
+        reflectionQuestionLimit,
+      })),
       scaffoldApplied,
       scaffoldTemplateId
     );
@@ -2840,7 +3034,11 @@ ${buildSharedContext(sharedContext)}`
 
     // 🧠 MIRROR: Build pattern-enhanced prompt for analyst
     const enhancedAnalystPrompt = appendScaffoldCustomizationInstructions(
-      applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, 'integration_analyst', analyst.systemPrompt)),
+      applyBudgetPrompt(
+        await buildMirrorEnhancedPrompt(task, 'integration_analyst', analyst.systemPrompt, {
+          reflectionQuestionLimit,
+        })
+      ),
       scaffoldApplied,
       scaffoldTemplateId
     );

@@ -100,6 +100,8 @@ test.describe('Application Smoke', () => {
 
     const reviewHeading = window.getByText('Review Agent Changes');
     await expect(reviewHeading).toBeVisible();
+    await expect(window.getByText('standard review budget')).toBeVisible();
+    await expect(window.getByText(/review\/apply checkpoint/i)).toBeVisible();
     expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(false);
 
     await window.getByRole('button', { name: /Accept Pending/ }).click();
@@ -142,6 +144,12 @@ test.describe('Application Smoke', () => {
     expect(result.reviewSessionId).toBeTruthy();
     expect(Array.isArray(result.reviewChanges)).toBe(true);
     expect(result.reviewChanges.length).toBeGreaterThan(0);
+    expect(result.reviewCheckpoint).toMatchObject({
+      strategy: 'staged_patch_set',
+      reflectionBudget: 'standard',
+      requiresExplicitApply: true,
+    });
+    expect(Array.isArray(result.reviewCheckpoint.items)).toBe(true);
     expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(false);
     expect(fs.existsSync(path.join(workspacePath, 'styles.css'))).toBe(false);
     expect(result.reviewChanges.map((change) => change.filePath)).toEqual(

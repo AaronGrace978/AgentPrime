@@ -703,6 +703,9 @@ export class AgentCoordinator {
       tauri_specialist: `Write Tauri v2/Rust desktop app code for: ${task}`,
       pipeline_specialist: `Set up build/deploy pipeline for: ${task}`,
       testing_specialist: `Add or improve tests for: ${task}`,
+      security_specialist: `Harden security-sensitive paths for: ${task}`,
+      performance_specialist: `Improve runtime and latency characteristics for: ${task}`,
+      data_contract_specialist: `Align schemas and data contracts for: ${task}`,
       integration_analyst: `Review and integrate work for: ${task}`,
       repair_specialist: `Diagnose and repair issues for: ${task}`,
     };
@@ -732,6 +735,9 @@ export class AgentCoordinator {
       tauri_specialist: 120000, // 2 minutes
       pipeline_specialist: 60000, // 1 minute
       testing_specialist: 120000, // 2 minutes
+      security_specialist: 90000, // 1.5 minutes
+      performance_specialist: 90000, // 1.5 minutes
+      data_contract_specialist: 90000, // 1.5 minutes
       integration_analyst: 90000, // 1.5 minutes
       repair_specialist: 90000, // 1.5 minutes
     };

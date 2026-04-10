@@ -44,6 +44,7 @@ import { getRecommendedMaxTokens, isOllamaCloudModel } from './core/model-output
 import { TaskMode, detectTaskMode } from './agent/task-mode';
 import { parseToolCallsContent } from './agent/tool-call-parser';
 import { finalizeAgentTransactionForReview } from './agent/transaction-finalization';
+import { buildReviewCheckpointSummary } from './agent/reflection-policy';
 
 const log = createLogger('AgentLoop');
 
@@ -1016,6 +1017,7 @@ export interface AgentContext {
       severity: 'info' | 'warning' | 'error' | 'critical';
       summary: string;
       files: string[];
+      suggestedOwner?: string;
       command?: string;
       output?: string;
     }>;
@@ -5425,6 +5427,11 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
       workspacePath: this.context.workspacePath,
       finalAnswer,
       monolithicApplyImmediately: this.context.monolithicApplyImmediately,
+      checkpoint: buildReviewCheckpointSummary({
+        reflectionBudget: this.context.runtimeBudget || 'standard',
+        attemptCount: 1,
+        verificationFailed: false,
+      }),
     });
     this.pendingReviewSession = finalized.pendingReviewSession;
     log.info(`[${runId}] Agent loop run completed`, {

@@ -15,6 +15,8 @@ import type { AgentContext } from './agent-loop';
 import { detectTaskMode, TaskMode } from './agent/task-mode';
 import type {
   AgentReviewChange,
+  AgentReviewCheckpointSummary,
+  AgentReviewPlanSummary,
   AgentReviewVerificationState,
 } from '../types/agent-review';
 
@@ -55,6 +57,8 @@ export interface PipelineResult {
   reviewSessionId?: string;
   reviewChanges?: AgentReviewChange[];
   reviewVerification?: AgentReviewVerificationState;
+  reviewPlan?: AgentReviewPlanSummary;
+  reviewCheckpoint?: AgentReviewCheckpointSummary;
 }
 
 export interface PipelineOptions {
@@ -185,6 +189,8 @@ export class AgentPipeline extends EventEmitter {
         reviewSessionId: reviewSession?.sessionId,
         reviewChanges: reviewSession?.changes,
         reviewVerification: reviewSession?.initialVerification,
+        reviewPlan: reviewSession?.plan,
+        reviewCheckpoint: reviewSession?.checkpoint,
       };
 
     } catch (err: any) {

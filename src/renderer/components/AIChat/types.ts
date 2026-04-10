@@ -2,7 +2,12 @@
  * AIChat Types - Shared type definitions for the chat component
  */
 
-import type { AgentReviewChange, AgentReviewPlanSummary, AgentReviewVerificationState } from '../../../types/agent-review';
+import type {
+  AgentReviewChange,
+  AgentReviewCheckpointSummary,
+  AgentReviewPlanSummary,
+  AgentReviewVerificationState,
+} from '../../../types/agent-review';
 import type { RuntimeBudgetMode } from '../../../types/runtime-budget';
 
 export interface FileItem {
@@ -45,7 +50,8 @@ export interface AIChatProps {
     taskDescription: string,
     reviewSessionId?: string,
     verification?: AgentReviewVerificationState,
-    plan?: AgentReviewPlanSummary
+    plan?: AgentReviewPlanSummary,
+    checkpoint?: AgentReviewCheckpointSummary
   ) => void;
 }
 

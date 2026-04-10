@@ -23,6 +23,7 @@ import axios from 'axios';
 import { reviewSessionManager } from '../agent/review-session-manager';
 import { detectCanonicalTemplateId, workspaceNeedsDeterministicScaffold } from '../agent/scaffold-resolver';
 import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from '../agent/autonomy-policy';
+import { buildReviewCheckpointSummary } from '../agent/reflection-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
 import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
@@ -458,42 +459,52 @@ export function register(deps: ChatHandlerDeps): void {
 
         // Keep the review/apply happy-path E2E deterministic even if local settings disable specialists.
         if (message.trim() === '__AGENTPRIME_TEST_REVIEW__') {
-          const reviewSession = reviewSessionManager.createSessionFromOperations(workspacePath, [
-            {
-              path: 'index.html',
-              originalContent: null,
-              newContent: [
-                '<!doctype html>',
-                '<html lang="en">',
-                '<head>',
-                '  <meta charset="UTF-8" />',
-                '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
-                '  <title>AgentPrime Test Fixture</title>',
-                '  <link rel="stylesheet" href="./styles.css" />',
-                '</head>',
-                '<body>',
-                '  <main class="shell">',
-                '    <h1>AgentPrime Review Fixture</h1>',
-                '    <p>Static fixture for review/apply verification.</p>',
-                '    <button type="button">Launch</button>',
-                '  </main>',
-                '</body>',
-                '</html>',
-              ].join('\n'),
-              existed: false,
-            },
-            {
-              path: 'styles.css',
-              originalContent: null,
-              newContent: [
-                ':root { color-scheme: dark; }',
-                'body { margin: 0; font-family: system-ui, sans-serif; background: #111827; color: #f9fafb; }',
-                '.shell { min-height: 100vh; display: grid; place-items: center; gap: 12px; }',
-                'button { padding: 10px 16px; border: none; border-radius: 999px; background: #2563eb; color: white; }',
-              ].join('\n'),
-              existed: false,
-            },
-          ]);
+          const reviewSession = reviewSessionManager.createSessionFromOperations(
+            workspacePath,
+            [
+              {
+                path: 'index.html',
+                originalContent: null,
+                newContent: [
+                  '<!doctype html>',
+                  '<html lang="en">',
+                  '<head>',
+                  '  <meta charset="UTF-8" />',
+                  '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+                  '  <title>AgentPrime Test Fixture</title>',
+                  '  <link rel="stylesheet" href="./styles.css" />',
+                  '</head>',
+                  '<body>',
+                  '  <main class="shell">',
+                  '    <h1>AgentPrime Review Fixture</h1>',
+                  '    <p>Static fixture for review/apply verification.</p>',
+                  '    <button type="button">Launch</button>',
+                  '  </main>',
+                  '</body>',
+                  '</html>',
+                ].join('\n'),
+                existed: false,
+              },
+              {
+                path: 'styles.css',
+                originalContent: null,
+                newContent: [
+                  ':root { color-scheme: dark; }',
+                  'body { margin: 0; font-family: system-ui, sans-serif; background: #111827; color: #f9fafb; }',
+                  '.shell { min-height: 100vh; display: grid; place-items: center; gap: 12px; }',
+                  'button { padding: 10px 16px; border: none; border-radius: 999px; background: #2563eb; color: white; }',
+                ].join('\n'),
+                existed: false,
+              },
+            ],
+            undefined,
+            undefined,
+            buildReviewCheckpointSummary({
+              reflectionBudget: 'standard',
+              attemptCount: 1,
+              verificationFailed: false,
+            })
+          );
 
           return {
             success: true,
@@ -503,6 +514,7 @@ export function register(deps: ChatHandlerDeps): void {
             specialized_mode: useSpecializedAgents,
             reviewSessionId: reviewSession?.sessionId,
             reviewChanges: reviewSession?.changes,
+            reviewCheckpoint: reviewSession?.checkpoint,
           };
         }
         
@@ -627,6 +639,7 @@ export function register(deps: ChatHandlerDeps): void {
               reviewChanges: reviewSession?.changes,
               reviewVerification: reviewSession?.initialVerification,
               reviewPlan: reviewSession?.plan,
+              reviewCheckpoint: reviewSession?.checkpoint,
               runtime: responseRuntime,
             };
           } catch (agentError: any) {
@@ -748,7 +761,8 @@ export function register(deps: ChatHandlerDeps): void {
               reviewSessionId: pipelineResult.reviewSessionId,
               reviewChanges: pipelineResult.reviewChanges,
               reviewVerification: pipelineResult.reviewVerification,
-              reviewPlan: (pipelineResult as any).reviewPlan,
+              reviewPlan: pipelineResult.reviewPlan,
+              reviewCheckpoint: pipelineResult.reviewCheckpoint,
               runtime: responseRuntime,
             };
           } catch (agentErr: unknown) {

@@ -53,4 +53,39 @@ describe('TaskMaster buildPlan', () => {
     const repairStep = plan.steps.find((step) => step.specialist === 'repair_specialist');
     expect(repairStep?.acceptanceCriteria.join(' ')).toContain('src/App.tsx');
   });
+
+  it('keeps direct verifier-owned specialists in the repair plan', () => {
+    const taskMaster = new TaskMaster('G:/AgentPrime', 'Repair the verifier failures only');
+
+    const plan = taskMaster.buildPlan({
+      mode: 'repair',
+      specialists: ['task_master', 'security_specialist', 'data_contract_specialist', 'repair_specialist', 'integration_verifier'],
+      retryContext: {
+        missingFiles: [],
+        errors: ['Unauthorized token in src/auth/session.ts', 'Type mismatch in src/api/contracts.ts'],
+        findings: [
+          {
+            severity: 'error',
+            summary: 'Unauthorized token in src/auth/session.ts',
+            files: ['src/auth/session.ts'],
+            suggestedOwner: 'security_specialist',
+          },
+          {
+            severity: 'error',
+            summary: 'Type mismatch in src/api/contracts.ts',
+            files: ['src/api/contracts.ts'],
+            suggestedOwner: 'data_contract_specialist',
+          },
+        ],
+      },
+    });
+
+    expect(plan.steps.map((step) => step.specialist)).toEqual(expect.arrayContaining([
+      'security_specialist',
+      'data_contract_specialist',
+      'repair_specialist',
+    ]));
+    expect(plan.claimedFiles.security_specialist).toEqual(expect.arrayContaining(['src/**', 'backend/**']));
+    expect(plan.claimedFiles.data_contract_specialist).toEqual(expect.arrayContaining(['src/**', 'prisma/**']));
+  });
 });

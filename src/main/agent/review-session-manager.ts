@@ -5,6 +5,7 @@ import type {
   AgentReviewAction,
   AgentReviewChange,
   AgentReviewChangeStatus,
+  AgentReviewCheckpointSummary,
   AgentReviewPlanSummary,
   AgentReviewSessionSnapshot,
   AgentReviewVerificationState,
@@ -48,6 +49,31 @@ function cloneSession(session: ReviewSessionRecord): AgentReviewSessionSnapshot 
           })),
         }
       : undefined,
+    checkpoint: session.checkpoint
+      ? {
+          ...session.checkpoint,
+          items: session.checkpoint.items.map((item) => ({ ...item })),
+        }
+      : undefined,
+  };
+}
+
+function markCheckpointApplied(session: ReviewSessionRecord): void {
+  if (!session.checkpoint) {
+    return;
+  }
+
+  session.checkpoint = {
+    ...session.checkpoint,
+    items: session.checkpoint.items.map((item) => {
+      if (item.stage === 'review' || item.stage === 'apply') {
+        return { ...item, state: 'complete' };
+      }
+      if (item.stage === 'verify' || item.stage === 'repair') {
+        return { ...item, state: 'current' };
+      }
+      return { ...item, state: 'complete' };
+    }),
   };
 }
 
@@ -59,7 +85,8 @@ export class ReviewSessionManager {
     workspacePath: string,
     operations: ReadonlyArray<ReviewOperation>,
     initialVerification?: AgentReviewVerificationState,
-    plan?: AgentReviewPlanSummary
+    plan?: AgentReviewPlanSummary,
+    checkpoint?: AgentReviewCheckpointSummary
   ): AgentReviewSessionSnapshot | null {
     const aggregated = new Map<string, AgentReviewChange>();
 
@@ -104,6 +131,7 @@ export class ReviewSessionManager {
       changes,
       initialVerification,
       plan,
+      checkpoint,
     };
 
     this.sessions.set(sessionId, snapshot);
@@ -170,6 +198,7 @@ export class ReviewSessionManager {
 
     session.appliedAt = Date.now();
     session.revertedAt = undefined;
+    markCheckpointApplied(session);
     this.lastAppliedSessionId = sessionId;
     return cloneSession(session);
   }

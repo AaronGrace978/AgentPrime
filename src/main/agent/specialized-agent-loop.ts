@@ -10,7 +10,7 @@
  * 6. Project memory - remembers past projects for updates
  */
 
-import { routeToSpecialists, executeWithSpecialists, AGENT_CONFIGS, AgentRole, type SpecialistExecutionCallbacks } from './specialized-agents';
+import { routeToSpecialists, executeWithSpecialists, AgentRole, type SpecialistExecutionCallbacks } from './specialized-agents';
 import { AgentContext } from '../agent-loop';
 import { getProjectRegistry, ProjectRegistry } from './project-registry';
 import { ProjectDocumenter } from './project-documenter';
@@ -37,11 +37,17 @@ import {
   LEGACY_SPECIALIST_ROLE_MAP,
   type SpecialistBlackboard,
   type SpecialistId,
+  type VerificationFinding,
 } from './specialist-contracts';
 import { ProjectRunner } from './tools/projectRunner';
 import { getPluginManager } from '../core/plugin-singleton';
 import { reviewSessionManager } from './review-session-manager';
 import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from './autonomy-policy';
+import {
+  buildReviewCheckpointSummary,
+  resolveReflectionBudget,
+  shouldApplyAgentChangesImmediately,
+} from './reflection-policy';
 import type {
   AgentReviewFinding,
   AgentReviewPlanSummary,
@@ -51,9 +57,9 @@ import type {
 
 import { PromptSanitizer } from '../security/prompt-sanitizer';
 import { createLogger, createOperationId } from '../core/logger';
+import type { RuntimeBudgetMode } from '../../types/runtime-budget';
 
 const log = createLogger('SpecializedAgent');
-const MAX_RETRIES = 2;
 
 interface ProjectVerification {
   isComplete: boolean;
@@ -106,9 +112,113 @@ function formatSpecialistTitle(id: SpecialistId): string {
     .join(' ');
 }
 
+function inferSpecialistOwnerFromPath(filePath: string): SpecialistId {
+  const normalized = filePath.replace(/\\/g, '/');
+  if (/^(tests|__tests__)\//i.test(normalized) || /(playwright|vitest|jest)\.config\./i.test(normalized)) {
+    return 'testing_specialist';
+  }
+  if (/^src-tauri\//i.test(normalized)) {
+    return 'tauri_specialist';
+  }
+  if (/^(backend|scripts)\/.*\.py$/i.test(normalized)) {
+    return 'python_specialist';
+  }
+  if (/(\.css\b|\.scss\b|\.html\b|(^|\/)index\.html$|^public\/)/i.test(normalized)) {
+    return 'styling_ux_specialist';
+  }
+  if (/(schema|contract|dto|payload|response|request|validator|zod|openapi|prisma)/i.test(normalized)) {
+    return 'data_contract_specialist';
+  }
+  if (/(auth|security|permission|secret|token|csp|csrf|xss)/i.test(normalized)) {
+    return 'security_specialist';
+  }
+  if (
+    /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig.*\.json|vite\.config\.[^/]+|tailwind\.config\.[^/]+|postcss\.config\.[^/]+|next\.config\.[^/]+|Dockerfile(\.[^/]+)?|Makefile|requirements[^/]*\.txt|pyproject\.toml|\.github\/workflows\/)/i.test(normalized)
+  ) {
+    return 'pipeline_specialist';
+  }
+  if (/\.(tsx?|jsx?)$/i.test(normalized) || /^(src|app|pages|components|lib)\//i.test(normalized)) {
+    return 'javascript_specialist';
+  }
+  return 'repair_specialist';
+}
+
+function inferSpecialistOwnerForFinding(
+  stage: AgentReviewFinding['stage'],
+  summary: string,
+  files: string[]
+): SpecialistId {
+  const normalized = summary.toLowerCase();
+
+  if (/(security|auth|authorize|authorization|permission|rbac|secret|token|xss|csrf|injection|csp)/i.test(summary)) {
+    return 'security_specialist';
+  }
+  if (/(performance|latency|slow|timeout|memory|bundle|render|blocking)/i.test(summary)) {
+    return 'performance_specialist';
+  }
+  if (/(schema|contract|dto|payload|response shape|request shape|validation|zod|openapi|type mismatch|ts2322)/i.test(summary)) {
+    return 'data_contract_specialist';
+  }
+
+  const fileOwnedSpecialists = [...new Set(files.map((filePath) => inferSpecialistOwnerFromPath(filePath)))];
+  if (fileOwnedSpecialists.length === 1) {
+    return fileOwnedSpecialists[0];
+  }
+  if (fileOwnedSpecialists.includes('pipeline_specialist') && (stage === 'install' || stage === 'build')) {
+    return 'pipeline_specialist';
+  }
+  if (fileOwnedSpecialists.includes('styling_ux_specialist') && stage === 'browser') {
+    return 'styling_ux_specialist';
+  }
+  if (fileOwnedSpecialists.includes('testing_specialist')) {
+    return 'testing_specialist';
+  }
+  if (fileOwnedSpecialists.includes('python_specialist')) {
+    return 'python_specialist';
+  }
+  if (fileOwnedSpecialists.includes('tauri_specialist')) {
+    return 'tauri_specialist';
+  }
+
+  switch (stage) {
+    case 'install':
+    case 'build':
+      return 'pipeline_specialist';
+    case 'browser':
+      return /(\.css\b|layout|visual|theme|accessibility|index\.html)/i.test(summary)
+        ? 'styling_ux_specialist'
+        : 'javascript_specialist';
+    case 'run':
+      return 'javascript_specialist';
+    case 'validation':
+      return files[0] ? inferSpecialistOwnerFromPath(files[0]) : 'repair_specialist';
+    default:
+      return fileOwnedSpecialists[0] || 'repair_specialist';
+  }
+}
+
+function mapFindingOwnerToAgentRole(owner: SpecialistId): AgentRole {
+  switch (owner) {
+    case 'styling_ux_specialist':
+    case 'testing_specialist':
+    case 'security_specialist':
+    case 'performance_specialist':
+    case 'data_contract_specialist':
+    case 'repair_specialist':
+    case 'javascript_specialist':
+    case 'python_specialist':
+    case 'tauri_specialist':
+    case 'pipeline_specialist':
+      return owner;
+    case 'integration_verifier':
+      return 'integration_analyst';
+    default:
+      return 'repair_specialist';
+  }
+}
+
 export class SpecializedAgentLoop extends EventEmitter {
   private context: AgentContext;
-  private workHistory: Map<AgentRole, string[]> = new Map();
   private registry: ProjectRegistry;
   private stopRequested = false;
   private pendingReviewSession: AgentReviewSessionSnapshot | null = null;
@@ -136,32 +246,11 @@ export class SpecializedAgentLoop extends EventEmitter {
     return isUpdate ? 'edit' : 'create';
   }
 
-  private resolveRuntimeBudget(
-    requestedBudget: AgentContext['runtimeBudget'],
-    userMessage: string,
-    isUpdate: boolean,
-    retryCount: number
-  ): 'instant' | 'standard' | 'deep' {
-    if (retryCount > 0) {
-      return 'deep';
-    }
-    if (requestedBudget === 'deep') {
-      return 'deep';
-    }
-
-    const normalizedTask = userMessage.toLowerCase();
-    const looksRisky =
-      (!isUpdate && /(scaffold|template|full app|full application|tauri|desktop|browser test|e2e|security|performance|migrate)/.test(normalizedTask)) ||
-      normalizedTask.length > 800;
-
-    if (requestedBudget === 'instant') {
-      return looksRisky ? 'standard' : 'instant';
-    }
-
-    return looksRisky ? 'deep' : 'standard';
-  }
-
-  private refineRolesForRetry(roles: AgentRole[], lastVerification: ProjectVerification | null): AgentRole[] {
+  private refineRolesForRetry(
+    roles: AgentRole[],
+    lastVerification: ProjectVerification | null,
+    findings: VerificationFinding[] = []
+  ): AgentRole[] {
     if (!lastVerification) {
       return roles;
     }
@@ -185,9 +274,34 @@ export class SpecializedAgentLoop extends EventEmitter {
     const hasStylingSpecificFailures = lastVerification.errors.some((error) =>
       /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
     );
+    const hasSecurityFailures = lastVerification.errors.some((error) =>
+      /(security|auth|authorize|authorization|permission|rbac|secret|token|xss|csrf|injection|csp)/i.test(error)
+    );
+    const hasPerformanceFailures = lastVerification.errors.some((error) =>
+      /(performance|latency|slow|timeout|memory|bundle|render)/i.test(error)
+    );
+    const hasDataContractFailures = lastVerification.errors.some((error) =>
+      /(schema|contract|dto|payload|response shape|request shape|validation|zod|ts2322|type mismatch)/i.test(error)
+    );
+    const directRetryRoles = new Set(findings.map((finding) => mapFindingOwnerToAgentRole(finding.suggestedOwner)));
     if (!hasStylingSpecificFailures && refined.includes('styling_ux_specialist')) {
       refined = refined.filter((role) => role !== 'styling_ux_specialist');
       log.info('[SpecializedAgent] ℹ️ Retry has no styling-specific failures; skipping styling_ux_specialist');
+    }
+    if (!hasSecurityFailures && refined.includes('security_specialist')) {
+      refined = refined.filter((role) => role !== 'security_specialist');
+    } else if (hasSecurityFailures && !refined.includes('security_specialist')) {
+      refined.push('security_specialist');
+    }
+    if (!hasPerformanceFailures && refined.includes('performance_specialist')) {
+      refined = refined.filter((role) => role !== 'performance_specialist');
+    } else if (hasPerformanceFailures && !refined.includes('performance_specialist')) {
+      refined.push('performance_specialist');
+    }
+    if (!hasDataContractFailures && refined.includes('data_contract_specialist')) {
+      refined = refined.filter((role) => role !== 'data_contract_specialist');
+    } else if (hasDataContractFailures && !refined.includes('data_contract_specialist')) {
+      refined.push('data_contract_specialist');
     }
 
     const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|\[install\]|typescript|ts\d{4}|npm error|yarn error|pnpm error/i.test(error));
@@ -230,6 +344,12 @@ export class SpecializedAgentLoop extends EventEmitter {
       log.info('[SpecializedAgent] ℹ️ Retry only targets application source files; skipping pipeline_specialist');
     }
 
+    for (const directRole of directRetryRoles) {
+      if (directRole !== 'integration_analyst' && !refined.includes(directRole)) {
+        refined.push(directRole);
+      }
+    }
+
     return refined;
   }
 
@@ -250,6 +370,17 @@ export class SpecializedAgentLoop extends EventEmitter {
       /(^|[\s:])(tests|__tests__)\//i.test(value) || /(playwright|vitest|jest)\.config\./i.test(value)
     );
     const hasStylingTargets = targetTexts.some((value) => /(\.css\b|\.scss\b|stylesheet|layout|theme|accessibility|index\.html)/i.test(value));
+    const hasSecurityTargets = targetTexts.some((value) => /(security|auth|authorize|authorization|permission|rbac|secret|token|xss|csrf|injection|csp)/i.test(value));
+    const hasPerformanceTargets = targetTexts.some((value) => /(performance|latency|slow|timeout|memory|bundle|render)/i.test(value));
+    const hasDataContractTargets = targetTexts.some((value) => /(schema|contract|dto|payload|response shape|request shape|validation|zod)/i.test(value));
+    const directRepairRoles = new Set(
+      repairScope.findings.map((finding) =>
+        mapFindingOwnerToAgentRole(
+          ('suggestedOwner' in finding ? (finding.suggestedOwner as SpecialistId | undefined) : undefined) ||
+            inferSpecialistOwnerForFinding(finding.stage, finding.summary, finding.files)
+        )
+      )
+    );
 
     refined = refined.filter((role) => role !== 'integration_analyst' && role !== 'tool_orchestrator');
 
@@ -262,11 +393,34 @@ export class SpecializedAgentLoop extends EventEmitter {
     if (!hasStylingTargets) {
       refined = refined.filter((role) => role !== 'styling_ux_specialist');
     }
+    if (!hasSecurityTargets) {
+      refined = refined.filter((role) => role !== 'security_specialist');
+    }
+    if (!hasPerformanceTargets) {
+      refined = refined.filter((role) => role !== 'performance_specialist');
+    }
+    if (!hasDataContractTargets) {
+      refined = refined.filter((role) => role !== 'data_contract_specialist');
+    }
     if (hasSourceTargets && !refined.includes('javascript_specialist')) {
       refined.push('javascript_specialist');
     }
     if (hasConfigTargets && !refined.includes('pipeline_specialist')) {
       refined.push('pipeline_specialist');
+    }
+    if (hasSecurityTargets && !refined.includes('security_specialist')) {
+      refined.push('security_specialist');
+    }
+    if (hasPerformanceTargets && !refined.includes('performance_specialist')) {
+      refined.push('performance_specialist');
+    }
+    if (hasDataContractTargets && !refined.includes('data_contract_specialist')) {
+      refined.push('data_contract_specialist');
+    }
+    for (const directRole of directRepairRoles) {
+      if (directRole !== 'integration_analyst' && !refined.includes(directRole)) {
+        refined.push(directRole);
+      }
     }
     if (!refined.includes('repair_specialist')) {
       refined.push('repair_specialist');
@@ -276,8 +430,15 @@ export class SpecializedAgentLoop extends EventEmitter {
   }
 
   private mapLegacyRoleToSpecialist(role: AgentRole): SpecialistId {
-    if (role === 'repair_specialist') {
-      return 'repair_specialist';
+    if (
+      role === 'styling_ux_specialist' ||
+      role === 'testing_specialist' ||
+      role === 'repair_specialist' ||
+      role === 'security_specialist' ||
+      role === 'performance_specialist' ||
+      role === 'data_contract_specialist'
+    ) {
+      return role;
     }
     return LEGACY_SPECIALIST_ROLE_MAP[role as keyof typeof LEGACY_SPECIALIST_ROLE_MAP];
   }
@@ -330,7 +491,10 @@ export class SpecializedAgentLoop extends EventEmitter {
     };
   }
 
-  private buildPlanSummary(blackboard: SpecialistBlackboard): AgentReviewPlanSummary {
+  private buildPlanSummary(
+    blackboard: SpecialistBlackboard,
+    reflectionBudget?: RuntimeBudgetMode
+  ): AgentReviewPlanSummary {
     const fileReasons = new Map<string, { reason: string; owner?: string }>();
     for (const step of blackboard.steps) {
       for (const filePath of step.claimedFiles) {
@@ -359,6 +523,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       mode: blackboard.mode,
       summary,
       rationale,
+      reflectionBudget,
       steps: blackboard.steps.map((step) => ({
         id: step.id,
         title: formatSpecialistTitle(step.specialist),
@@ -379,12 +544,14 @@ export class SpecializedAgentLoop extends EventEmitter {
   private buildFallbackPlanSummary(
     taskDescription: string,
     files: string[],
-    mode: AgentReviewPlanSummary['mode'] = 'create'
+    mode: AgentReviewPlanSummary['mode'] = 'create',
+    reflectionBudget?: RuntimeBudgetMode
   ): AgentReviewPlanSummary {
     return {
       mode,
       summary: `Prepared ${files.length} staged file(s) for review.`,
       rationale: 'AgentPrime generated a bounded patch set for the requested task and held the workspace write behind a review checkpoint.',
+      reflectionBudget,
       steps: [
         {
           id: `fallback_${Date.now()}`,
@@ -436,7 +603,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     const requestedRuntimeBudget = this.context.runtimeBudget || 'standard';
     const autonomyLevel = clampAgentAutonomyLevel(this.context.autonomyLevel);
     const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
-    const applyImmediately = this.context.monolithicApplyImmediately === true || autonomyLevel >= 5;
+    const applyImmediately = shouldApplyAgentChangesImmediately(this.context.monolithicApplyImmediately);
     telemetry.track('agent_task_start', {
       mode: 'specialized',
       workspacePath: this.context.workspacePath,
@@ -478,16 +645,32 @@ export class SpecializedAgentLoop extends EventEmitter {
     let retryCount = 0;
     let allCreatedFiles: string[] = [];
     let lastVerification: ProjectVerification | null = null;
+    let lastStructuredFindings: VerificationFinding[] = [];
     let verificationSucceeded = false;
     let rolledBackIncomplete = false;
     let blackboard: SpecialistBlackboard | null = null;
+    let lastReflectionBudget: RuntimeBudgetMode = requestedRuntimeBudget;
+    let attemptCount = 0;
 
     // Main execution loop with retries
-    while (retryCount <= MAX_RETRIES) {
+    while (true) {
       if (this.stopRequested) {
         await transactionManager.rollbackTransaction();
         return `⏹️ **Agent stopped by user**\n\nCreated so far: ${allCreatedFiles.length} file(s).`;
       }
+
+      const reflectionPlan = resolveReflectionBudget({
+        requestedBudget: requestedRuntimeBudget,
+        userMessage,
+        isUpdate,
+        retryCount,
+        hasRepairScope: Boolean(repairScope),
+        verificationFailed: retryCount > 0,
+      });
+      const maxRepairPasses = reflectionPlan.maxRepairPasses;
+      const runtimeBudget = reflectionPlan.budget;
+      lastReflectionBudget = runtimeBudget;
+      attemptCount = retryCount + 1;
 
       // Step 1: Route to appropriate specialists
       const routedRoles = routeToSpecialists(userMessage, {
@@ -506,23 +689,34 @@ export class SpecializedAgentLoop extends EventEmitter {
         roles = this.refineRolesForRepairScope(roles, repairScope);
       }
       if (retryCount > 0 && lastVerification) {
-        roles = this.refineRolesForRetry(roles, lastVerification);
+        roles = this.refineRolesForRetry(roles, lastVerification, lastStructuredFindings);
       }
 
       const mode = this.resolveMode(isUpdate, retryCount);
-      const runtimeBudget = this.resolveRuntimeBudget(requestedRuntimeBudget, userMessage, isUpdate, retryCount);
       const retryContext = lastVerification
-        ? { missingFiles: lastVerification.missingFiles, errors: lastVerification.errors }
+        ? {
+            missingFiles: lastVerification.missingFiles,
+            errors: lastVerification.errors,
+            findings: lastStructuredFindings,
+          }
         : repairScope
           ? {
               missingFiles: repairScope.allowedFiles,
               errors: repairScope.findings.map((finding) => finding.summary),
+              findings: repairScope.findings.map((finding) => ({
+                severity: finding.severity,
+                summary: finding.summary,
+                files: finding.files,
+                suggestedOwner: inferSpecialistOwnerForFinding(finding.stage, finding.summary, finding.files),
+              })),
             }
           : undefined;
       blackboard = this.buildBlackboard(userMessage, mode, roles, retryContext);
       this.emit('blackboard-update', blackboard);
 
-      log.info(`[SpecializedAgent] Attempt ${retryCount + 1}/${MAX_RETRIES + 1} - Routing to: ${roles.join(', ')} (budget: ${runtimeBudget})`);
+      log.info(
+        `[SpecializedAgent] Attempt ${attemptCount}/${maxRepairPasses + 1} - Routing to: ${roles.join(', ')} (budget: ${runtimeBudget})`
+      );
 
       // Step 2: Build the task message (include missing files if retrying)
       let taskMessage = userMessage;
@@ -591,7 +785,7 @@ export class SpecializedAgentLoop extends EventEmitter {
 
       let specialistRun: Awaited<ReturnType<typeof executeWithSpecialists>>;
       try {
-        const specialistRetryLimit = retryCount > 0 ? 0 : 1;
+        const specialistRetryLimit = reflectionPlan.specialistRecoveryRetries;
         specialistRun = await retryWithRecovery(
           () => executeWithSpecialists(
             taskMessage,
@@ -601,6 +795,10 @@ export class SpecializedAgentLoop extends EventEmitter {
               files: this.getProjectFiles(),
               model: this.context.model,
               runtimeBudget,
+              reflectionBudget: runtimeBudget,
+              reflectionQuestionLimit: reflectionPlan.reflectionQuestionLimit,
+              planningMode: reflectionPlan.planningMode,
+              reflectionSummary: reflectionPlan.summary,
               autonomyLevel,
               deterministicScaffoldOnly: this.context.deterministicScaffoldOnly,
               blackboard,
@@ -654,21 +852,9 @@ export class SpecializedAgentLoop extends EventEmitter {
       // Step 5: VERIFY the project is complete
       lastVerification = await this.verifyProject(allCreatedFiles);
       const verificationSnapshot = lastVerification;
-      if (blackboard && verificationSnapshot.errors.length > 0) {
-        blackboard.findings = verificationSnapshot.errors.map((error) => ({
-          severity: 'error',
-          summary: error,
-          files: extractFilesFromVerificationIssue(error),
-          suggestedOwner: 'repair_specialist',
-        }));
-        if (verificationSnapshot.missingFiles.length > 0) {
-          blackboard.findings.push({
-            severity: 'error',
-            summary: `Missing files: ${verificationSnapshot.missingFiles.join(', ')}`,
-            files: verificationSnapshot.missingFiles,
-            suggestedOwner: 'repair_specialist',
-          });
-        }
+      lastStructuredFindings = this.buildVerificationFindings(verificationSnapshot);
+      if (blackboard && lastStructuredFindings.length > 0) {
+        blackboard.findings = [...lastStructuredFindings];
         this.emit('blackboard-update', blackboard);
       }
 
@@ -723,7 +909,7 @@ export class SpecializedAgentLoop extends EventEmitter {
               
               const criticalIssues = browserTestResult.issues.filter(i => i.severity === 'critical');
 
-              if (criticalIssues.length > 0 && retryCount < MAX_RETRIES) {
+              if (criticalIssues.length > 0 && retryCount < maxRepairPasses) {
                 log.info(`[SpecializedAgent] 🔧 Found ${criticalIssues.length} critical browser/runtime issues - will retry`);
                 lastVerification.isComplete = false;
                 lastVerification.errors.push(
@@ -769,11 +955,16 @@ export class SpecializedAgentLoop extends EventEmitter {
         blackboard.status = 'repairing';
         this.emit('blackboard-update', blackboard);
       }
-      retryCount++;
-      
-      if (retryCount > MAX_RETRIES) {
-        log.info('[SpecializedAgent] Max retries reached, returning partial result');
+
+      if (retryCount >= maxRepairPasses) {
+        log.info('[SpecializedAgent] Max repair passes reached, returning partial result');
+        break;
       }
+
+      retryCount++;
+      log.info(
+        `[SpecializedAgent] Escalating to another repair pass (${retryCount}/${maxRepairPasses}) with ${runtimeBudget} reflection budget`
+      );
     }
 
     const fallbackTemplateId =
@@ -805,7 +996,12 @@ export class SpecializedAgentLoop extends EventEmitter {
           this.context.workspacePath,
           transaction.getOperations(),
           this.buildInitialReviewVerification(lastVerification),
-          blackboard ? this.buildPlanSummary(blackboard) : undefined
+          blackboard ? this.buildPlanSummary(blackboard, lastReflectionBudget) : undefined,
+          buildReviewCheckpointSummary({
+            reflectionBudget: lastReflectionBudget,
+            attemptCount,
+            verificationFailed: Boolean(lastVerification && !lastVerification.isComplete),
+          })
         );
     const response = this.buildResponse(allCreatedFiles, lastVerification, {
       rolledBack: rolledBackIncomplete,
@@ -833,7 +1029,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         fileCount: allCreatedFiles.length,
         durationMs: Date.now() - taskStartedAt,
         stagedReview: true,
-        runtimeBudget: requestedRuntimeBudget,
+        runtimeBudget: lastReflectionBudget,
         autonomyLevel,
         autonomyLabel: autonomyPolicy.label,
       });
@@ -857,7 +1053,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       fileCount: allCreatedFiles.length,
       durationMs: Date.now() - taskStartedAt,
       stagedReview: false,
-      runtimeBudget: requestedRuntimeBudget,
+      runtimeBudget: lastReflectionBudget,
       autonomyLevel,
       autonomyLabel: autonomyPolicy.label,
     });
@@ -1264,6 +1460,32 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
   }
 
+  private buildVerificationFindings(verification: ProjectVerification | null): VerificationFinding[] {
+    if (!verification) {
+      return [];
+    }
+
+    const findings: VerificationFinding[] = verification.missingFiles.map((missingFile) => ({
+      severity: 'error',
+      summary: `Missing file: ${missingFile}`,
+      files: [missingFile],
+      suggestedOwner: inferSpecialistOwnerFromPath(missingFile),
+    }));
+
+    for (const error of verification.errors) {
+      const stage = inferVerificationStage(error);
+      const files = extractFilesFromVerificationIssue(error);
+      findings.push({
+        severity: 'error',
+        summary: error,
+        files,
+        suggestedOwner: inferSpecialistOwnerForFinding(stage, error, files),
+      });
+    }
+
+    return findings;
+  }
+
   /**
    * Build the final response with project status
    */
@@ -1275,25 +1497,13 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     const runtimeProfile = getProjectRuntimeProfileSync(this.context.workspacePath);
-    const findings: AgentReviewFinding[] = [];
-
-    for (const missingFile of verification.missingFiles) {
-      findings.push({
-        stage: 'validation',
-        severity: 'error',
-        summary: `Missing file: ${missingFile}`,
-        files: [missingFile],
-      });
-    }
-
-    for (const error of verification.errors) {
-      findings.push({
-        stage: inferVerificationStage(error),
-        severity: 'error',
-        summary: error,
-        files: extractFilesFromVerificationIssue(error),
-      });
-    }
+    const findings: AgentReviewFinding[] = this.buildVerificationFindings(verification).map((finding) => ({
+      stage: finding.summary.startsWith('Missing file:') ? 'validation' : inferVerificationStage(finding.summary),
+      severity: finding.severity,
+      summary: finding.summary,
+      files: finding.files,
+      suggestedOwner: finding.suggestedOwner,
+    }));
 
     const issues = findings.map((finding) => finding.summary);
     if (issues.length === 0) {
@@ -1319,8 +1529,13 @@ export class SpecializedAgentLoop extends EventEmitter {
     requestedRuntimeBudget: AgentContext['runtimeBudget']
   ): Promise<string> {
     const telemetry = getTelemetryService();
-    const autonomyLevel = clampAgentAutonomyLevel(this.context.autonomyLevel);
-    const applyImmediately = this.context.monolithicApplyImmediately === true || autonomyLevel >= 5;
+    const reflectionPlan = resolveReflectionBudget({
+      requestedBudget: requestedRuntimeBudget || 'standard',
+      userMessage,
+      isUpdate: false,
+      retryCount: 0,
+    });
+    const applyImmediately = shouldApplyAgentChangesImmediately(this.context.monolithicApplyImmediately);
     this.emit('step-start', {
       type: 'deterministic_scaffold',
       title: 'deterministic_scaffold',
@@ -1367,7 +1582,12 @@ export class SpecializedAgentLoop extends EventEmitter {
           this.context.workspacePath,
           transaction.getOperations(),
           this.buildInitialReviewVerification(verification),
-          this.buildFallbackPlanSummary(userMessage, scaffolded.createdFiles)
+          this.buildFallbackPlanSummary(userMessage, scaffolded.createdFiles, 'create', reflectionPlan.budget),
+          buildReviewCheckpointSummary({
+            reflectionBudget: reflectionPlan.budget,
+            attemptCount: 1,
+            verificationFailed: !verification.isComplete,
+          })
         );
 
     const response = this.buildResponse(scaffolded.createdFiles, verification, {
@@ -1385,7 +1605,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         fileCount: scaffolded.createdFiles.length,
         durationMs: Date.now() - taskStartedAt,
         stagedReview: true,
-        runtimeBudget: requestedRuntimeBudget || 'standard',
+        runtimeBudget: reflectionPlan.budget,
       });
       return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
     }
@@ -1404,7 +1624,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       fileCount: scaffolded.createdFiles.length,
       durationMs: Date.now() - taskStartedAt,
       stagedReview: false,
-      runtimeBudget: requestedRuntimeBudget || 'standard',
+      runtimeBudget: reflectionPlan.budget,
     });
     return response;
   }

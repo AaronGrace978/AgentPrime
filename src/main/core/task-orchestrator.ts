@@ -409,6 +409,9 @@ export class TaskOrchestrator {
       tauri_specialist: `Implement Tauri v2/Rust desktop solution: ${task}`,
       pipeline_specialist: `Set up build and deployment: ${task}`,
       testing_specialist: `Implement or extend tests for: ${task}`,
+      security_specialist: `Harden security-sensitive behavior for: ${task}`,
+      performance_specialist: `Improve runtime and latency behavior for: ${task}`,
+      data_contract_specialist: `Align data schemas and contracts for: ${task}`,
       integration_analyst: `Review and integrate: ${task}`,
       repair_specialist: `Diagnose and repair issues for: ${task}`,
     };
@@ -547,6 +550,9 @@ export class TaskOrchestrator {
       tauri_specialist: 120000,
       pipeline_specialist: 60000,
       testing_specialist: 120000,
+      security_specialist: 90000,
+      performance_specialist: 90000,
+      data_contract_specialist: 90000,
       integration_analyst: 90000,
       repair_specialist: 90000,
     };

@@ -14,7 +14,7 @@
  * - Successes/failures are stored for future learning
  * - Anti-patterns are avoided based on past mistakes
  */
-export type AgentRole = 'tool_orchestrator' | 'javascript_specialist' | 'styling_ux_specialist' | 'python_specialist' | 'tauri_specialist' | 'pipeline_specialist' | 'testing_specialist' | 'integration_analyst' | 'repair_specialist';
+export type AgentRole = 'tool_orchestrator' | 'javascript_specialist' | 'styling_ux_specialist' | 'python_specialist' | 'tauri_specialist' | 'pipeline_specialist' | 'testing_specialist' | 'security_specialist' | 'performance_specialist' | 'data_contract_specialist' | 'integration_analyst' | 'repair_specialist';
 export interface AgentConfig {
     role: AgentRole;
     model: string;

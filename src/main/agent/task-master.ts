@@ -21,6 +21,7 @@ import {
   type SpecialistBlackboard,
   type SpecialistId,
   type SpecialistStepAssignment,
+  type VerificationFinding,
 } from './specialist-contracts';
 
 export interface BossReviewResult {
@@ -40,6 +41,7 @@ export interface FileToReview {
 export interface TaskMasterRetryContext {
   missingFiles: string[];
   errors: string[];
+  findings?: VerificationFinding[];
 }
 
 export interface TaskMasterPlan {
@@ -369,6 +371,9 @@ export class TaskMaster {
       tauri_specialist: [],
       pipeline_specialist: [],
       testing_specialist: [],
+      security_specialist: [],
+      performance_specialist: [],
+      data_contract_specialist: [],
       integration_verifier: [],
       repair_specialist: [],
     };
@@ -447,6 +452,12 @@ export class TaskMaster {
         ];
       case 'testing_specialist':
         return ['tests/**', 'playwright.config.*', 'package.json', 'scripts/**/*.ts'];
+      case 'security_specialist':
+        return ['src/**', 'app/**', 'lib/**', 'backend/**', 'components/**', 'tests/**', 'package.json', '.env', '.env.local', '*.config.js', '*.config.ts', '*.config.mjs', '.github/workflows/**'];
+      case 'performance_specialist':
+        return ['src/**', 'app/**', 'components/**', 'backend/**', 'public/**', 'tests/**', 'package.json', '*.config.js', '*.config.ts', '*.config.mjs'];
+      case 'data_contract_specialist':
+        return ['src/**', 'app/**', 'lib/**', 'backend/**', 'prisma/**', 'tests/**', 'package.json'];
       default:
         return [];
     }
@@ -457,6 +468,10 @@ export class TaskMaster {
     mode: SpecialistBlackboard['mode'],
     retryContext?: TaskMasterRetryContext
   ): string {
+    const relevantFindings = (retryContext?.findings || [])
+      .filter((finding) => finding.suggestedOwner === specialist)
+      .slice(0, 2)
+      .map((finding) => finding.summary);
     if (specialist === 'repair_specialist') {
       return retryContext
         ? `Repair only the concrete failures: ${[...retryContext.missingFiles, ...retryContext.errors].slice(0, 4).join('; ')}`
@@ -479,10 +494,18 @@ export class TaskMaster {
         return `${prefix} only build, dependency, and automation files needed to run and verify the project.`;
       case 'testing_specialist':
         return `${prefix} the focused test coverage and browser checks needed to prove the requested behavior.`;
+      case 'security_specialist':
+        return `${prefix} the concrete security boundary fixes needed to make the verifier findings safe.`;
+      case 'performance_specialist':
+        return `${prefix} the targeted performance or latency fixes surfaced by verification.`;
+      case 'data_contract_specialist':
+        return `${prefix} the schema, validation, and request/response contract fixes needed for consistency.`;
       case 'integration_verifier':
         return 'Verify the current diff, runtime wiring, and command results without changing files.';
       default:
-        return `${prefix} the assigned work.`;
+        return relevantFindings.length > 0
+          ? `${prefix} the assigned work. Focus on: ${relevantFindings.join('; ')}`
+          : `${prefix} the assigned work.`;
     }
   }
 
@@ -516,6 +539,15 @@ export class TaskMaster {
     }
     if (specialist === 'testing_specialist') {
       criteria.push('Add only tests that materially reduce regression risk.');
+    }
+    if (specialist === 'security_specialist') {
+      criteria.push('Preserve or strengthen validation, auth, and secret-handling boundaries.');
+    }
+    if (specialist === 'performance_specialist') {
+      criteria.push('Reduce unnecessary work without changing the requested behavior.');
+    }
+    if (specialist === 'data_contract_specialist') {
+      criteria.push('Keep schemas, validation, and boundary data shapes aligned end to end.');
     }
     return criteria;
   }

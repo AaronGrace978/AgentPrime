@@ -1,4 +1,6 @@
 import type {
+  AgentReviewCheckpointSummary,
+  AgentReviewPlanSummary,
   AgentReviewSessionSnapshot,
   AgentReviewVerificationState,
 } from '../../types/agent-review';
@@ -28,7 +30,9 @@ interface ReviewSessionManagerLike {
   createSessionFromOperations(
     workspacePath: string,
     operations: ReadonlyArray<TransactionOperation>,
-    initialVerification?: AgentReviewVerificationState
+    initialVerification?: AgentReviewVerificationState,
+    plan?: AgentReviewPlanSummary,
+    checkpoint?: AgentReviewCheckpointSummary
   ): AgentReviewSessionSnapshot | null;
 }
 
@@ -38,6 +42,8 @@ export interface FinalizeAgentTransactionOptions {
   monolithicApplyImmediately?: boolean;
   reviewRequiredMessage?: string;
   initialVerification?: AgentReviewVerificationState;
+  reviewPlan?: AgentReviewPlanSummary;
+  checkpoint?: AgentReviewCheckpointSummary;
 }
 
 export interface FinalizeAgentTransactionResult {
@@ -57,6 +63,8 @@ export async function finalizeAgentTransactionForReview(
     monolithicApplyImmediately = false,
     reviewRequiredMessage = '\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.',
     initialVerification,
+    reviewPlan,
+    checkpoint,
   } = options;
 
   if (!monolithicApplyImmediately) {
@@ -72,7 +80,9 @@ export async function finalizeAgentTransactionForReview(
       const stagedReview = reviewSessionManager.createSessionFromOperations(
         workspacePath,
         ops,
-        initialVerification
+        initialVerification,
+        reviewPlan,
+        checkpoint
       );
 
       if (stagedReview) {

@@ -7,6 +7,7 @@ import type { Settings } from './index';
 import type {
   AgentReviewChange,
   AgentReviewChangeStatus,
+  AgentReviewCheckpointSummary,
   AgentReviewFinding,
   AgentReviewPlanSummary,
   AgentReviewSessionSnapshot,
@@ -98,6 +99,7 @@ export interface AgentAPI {
     reviewChanges?: AgentReviewChange[];
     reviewVerification?: AgentReviewVerificationState;
     reviewPlan?: AgentReviewPlanSummary;
+    reviewCheckpoint?: AgentReviewCheckpointSummary;
     runtime?: AIRuntimeSnapshot;
     [key: string]: any;
   }>;

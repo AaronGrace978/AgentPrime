@@ -50,6 +50,11 @@ const browserSmokeTemplates = new Set([
   'threejs-platformer',
 ]);
 
+const runtimeProbeCommands: Record<string, CommandSpec[]> = {
+  'go-microservice': [{ command: 'go test ./...', requiredTools: ['go'] }],
+  'rust-cli': [{ command: 'cargo run -- info', requiredTools: ['cargo'] }],
+};
+
 function isToolAvailable(commandSpec: string): boolean {
   const [command, ...args] = commandSpec.split(' ').filter(Boolean);
   if (!command) {
@@ -91,6 +96,8 @@ async function main(): Promise<void> {
   const registry = engine.loadRegistry();
   const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-template-smoke-'));
   const keepArtifacts = process.env.AGENTPRIME_KEEP_TEMPLATE_SMOKE === 'true';
+  const enableRuntimeSweep =
+    process.env.CI === 'true' || process.env.AGENTPRIME_RUNTIME_SWEEP === 'true';
   const filter = new Set(
     (process.env.AGENTPRIME_TEMPLATE_FILTER || '')
       .split(',')
@@ -126,7 +133,11 @@ async function main(): Promise<void> {
 
       console.log(result.installOutput || 'No automatic install output.');
 
-      for (const spec of commands) {
+      const commandsToRun = enableRuntimeSweep
+        ? [...commands, ...(runtimeProbeCommands[templateId] || [])]
+        : commands;
+
+      for (const spec of commandsToRun) {
         const missingTools = (spec.requiredTools || []).filter((tool) => !isToolAvailable(tool));
         if (missingTools.length > 0) {
           const reason = `Missing required tools: ${missingTools.join(', ')}`;
@@ -184,7 +195,7 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('\nAll templates generated and built successfully.');
+  console.log('\nAll templates generated and passed configured smoke sweeps.');
   if (!keepArtifacts) {
     fs.rmSync(baseDir, { recursive: true, force: true });
   }
