@@ -84,6 +84,11 @@ const agentAPI: AgentAPI = {
     ipcRenderer.on('agent:task-start', listener);
     return () => ipcRenderer.removeListener('agent:task-start', listener);
   },
+  onAgentStepStart: (callback: (data: { type: string; title: string; specialist?: string }) => void) => {
+    const listener = (_event: any, data: { type: string; title: string; specialist?: string }) => callback(data);
+    ipcRenderer.on('agent:step-start', listener);
+    return () => ipcRenderer.removeListener('agent:step-start', listener);
+  },
   onAgentStepComplete: (callback: (data: { type: string; title: string; success: boolean }) => void) => {
     const listener = (_event: any, data: { type: string; title: string; success: boolean }) => callback(data);
     ipcRenderer.on('agent:step-complete', listener);
@@ -101,6 +106,7 @@ const agentAPI: AgentAPI = {
   },
   removeAgentListeners: () => {
     ipcRenderer.removeAllListeners('agent:task-start');
+    ipcRenderer.removeAllListeners('agent:step-start');
     ipcRenderer.removeAllListeners('agent:step-complete');
     ipcRenderer.removeAllListeners('agent:file-modified');
     ipcRenderer.removeAllListeners('agent:critique-complete');

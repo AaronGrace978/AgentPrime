@@ -542,6 +542,21 @@ function getProjectTypeScores(content: string): Record<string, number> {
 export function isContentIncompatibleWithTask(taskContext: string, content: string): { incompatible: boolean; reason: string } {
   const taskLower = taskContext.toLowerCase();
   const contentLower = content.toLowerCase();
+  const hasPresentationSiteIntent = [
+    'website',
+    'web site',
+    'webpage',
+    'web page',
+    'homepage',
+    'home page',
+    'landing page',
+    'landingpage',
+    'marketing site',
+    'promo site',
+    'beautiful website',
+    'beautiful site',
+    'beautiful webpage',
+  ].some((hint) => taskLower.includes(hint));
   
   // Detect task type using the same prioritised logic as the rest of validation.
   const taskType = detectProjectType(taskContext);
@@ -575,7 +590,7 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
   }
   
   // Special case: portfolio code detected when task doesn't mention portfolio
-  if (contentType === 'portfolio' && !taskLower.includes('portfolio')) {
+  if (contentType === 'portfolio' && !taskLower.includes('portfolio') && !hasPresentationSiteIntent && taskType !== 'landing') {
     // Check for strong portfolio indicators
     const strongPortfolioIndicators = ['hamburger', 'nav-menu', 'hero-content', 'skills', 'experience'];
     const portfolioMatches = strongPortfolioIndicators.filter(ind => contentLower.includes(ind)).length;
@@ -641,6 +656,10 @@ export function validateToolCall(
   // Validate write_file tool
   if (toolCall.name === 'write_file' || toolCall.name === 'create_file') {
     return validateWriteFile(toolCall, workspacePath, taskContext, specialistContext);
+  }
+
+  if (toolCall.name === 'patch_file') {
+    return validatePatchFile(toolCall, workspacePath, specialistContext);
   }
 
   // Validate run_command tool
@@ -1082,15 +1101,108 @@ function validateWriteFile(
     return { valid: false, error: 'write_file: missing content argument' };
   }
 
-  // ==========================================
-  // CHECK 7: TypeScript Config Sanity
-  // ==========================================
+  return validateStructuredFileContent(filePath, String(content));
+}
+
+function validatePatchFile(
+  toolCall: any,
+  workspacePath: string,
+  specialistContext?: SpecialistValidationContext
+): ValidationResult {
+  const args = toolCall.arguments || {};
+  const filePath = args.path;
+  const oldText = args.old_text;
+  const newText = args.new_text;
+  const replaceAll = args.replace_all === true;
+
+  if (!filePath) {
+    return { valid: false, error: 'patch_file: missing path argument' };
+  }
+  if (oldText === undefined) {
+    return { valid: false, error: 'patch_file: missing old_text argument' };
+  }
+  if (newText === undefined) {
+    return { valid: false, error: 'patch_file: missing new_text argument' };
+  }
+
+  const specialistBoundary = validateSpecialistWriteBoundary(specialistContext, filePath);
+  if (specialistBoundary) {
+    return specialistBoundary;
+  }
+
+  let relativePath = filePath;
+  if (path.isAbsolute(filePath)) {
+    try {
+      const candidate = path.relative(workspacePath, filePath);
+      if (!candidate.startsWith('..')) {
+        relativePath = candidate;
+      } else {
+        return {
+          valid: false,
+          error: `patch_file: absolute path detected (${filePath}). Use relative paths only.`,
+        };
+      }
+    } catch {
+      return {
+        valid: false,
+        error: `patch_file: invalid path: ${filePath}`,
+      };
+    }
+  }
+
+  const resolvedPath = path.resolve(workspacePath, relativePath);
+  const normalizedWorkspace = path.normalize(workspacePath);
+  const normalizedResolved = path.normalize(resolvedPath);
+  if (!normalizedResolved.startsWith(normalizedWorkspace)) {
+    return {
+      valid: false,
+      error: `patch_file: path outside workspace: ${relativePath}`,
+    };
+  }
+
+  if (!fs.existsSync(resolvedPath)) {
+    return {
+      valid: false,
+      error: `patch_file: file not found: ${relativePath}`,
+    };
+  }
+
+  const currentContent = fs.readFileSync(resolvedPath, 'utf-8');
+  if (!currentContent.includes(String(oldText))) {
+    return {
+      valid: false,
+      error: `patch_file: old_text not found in ${relativePath}. Use read_file first and copy the exact text.`,
+    };
+  }
+
+  let nextContent: string;
+  if (replaceAll) {
+    const escapedOldText = String(oldText).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    nextContent = currentContent.replace(new RegExp(escapedOldText, 'g'), String(newText));
+  } else {
+    nextContent = currentContent.replace(String(oldText), String(newText));
+  }
+
+  return validateStructuredFileContent(relativePath, nextContent);
+}
+
+function validateStructuredFileContent(filePath: string, content: string): ValidationResult {
   const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
-  const looksLikeTsConfig = normalizedPath.endsWith('.json') && path.basename(normalizedPath).startsWith('tsconfig');
+  const fileName = path.basename(normalizedPath);
+
+  const looksLikeTsConfig =
+    normalizedPath.endsWith('.json') && fileName.startsWith('tsconfig');
   if (looksLikeTsConfig) {
-    const tsConfigValidation = validateTypeScriptConfig(String(content), filePath);
+    const tsConfigValidation = validateTypeScriptConfig(content, filePath);
     if (!tsConfigValidation.valid) {
       return tsConfigValidation;
+    }
+  }
+
+  if (fileName === 'package.json') {
+    const packageValidation = validatePackageJson(content);
+    if (!packageValidation.valid) {
+      return packageValidation;
     }
   }
 

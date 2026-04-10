@@ -133,6 +133,7 @@ export interface AgentAPI {
 
   // Agent progress events
   onAgentTaskStart: (callback: (data: { task: string }) => void) => (() => void) | void;
+  onAgentStepStart: (callback: (data: { type: string; title: string; specialist?: string }) => void) => (() => void) | void;
   onAgentStepComplete: (callback: (data: { type: string; title: string; success: boolean }) => void) => (() => void) | void;
   onAgentFileModified: (callback: (data: { path: string; action: string; oldContent?: string; newContent?: string }) => void) => (() => void) | void;
   onAgentCritiqueComplete: (callback: (data: any) => void) => (() => void) | void;

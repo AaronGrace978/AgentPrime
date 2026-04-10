@@ -665,6 +665,8 @@ ${TOOL_CALL_FORMAT}`
 ✅ Error handling for all edge cases
 ✅ All features requested must be fully implemented
 ✅ Each file must be self-contained and complete
+✅ In strict TypeScript projects, annotate callback parameters and store helpers so no TS7006 implicit-any errors remain
+✅ Prefer built-in React/browser capabilities unless the task truly requires an extra npm package
 
 ## REACT + VITE + TYPESCRIPT CRITICAL REQUIREMENTS
 When creating React/Vite projects, you MUST create these files:
@@ -1015,12 +1017,39 @@ ${TOOL_CALL_FORMAT}`
 - Package management (npm, pip, cargo)
 
 ## FILES YOU MAY EDIT (write_file / patch_file)
-Only tooling and project metadata, for example: package.json, lockfiles, vite.config.*, tsconfig*.json, pyproject.toml, requirements*.txt, .github/workflows/**, Dockerfile*, Makefile, and root *.bat launchers.
+Only tooling and project metadata, for example: package.json, lockfiles, vite.config.*, tsconfig*.json, tailwind.config.*, postcss.config.*, pyproject.toml, requirements*.txt, .github/workflows/**, Dockerfile*, Makefile, and root *.bat launchers.
 Do not invent paths outside this role; the executor will reject writes to application source.
 
 ## FILES YOU MUST NOT EDIT
 Never write or patch application/runtime code under src/, backend/, or tests/ (including games, React, Three.js, APIs). That work is for javascript_specialist, python_specialist, styling_ux_specialist, testing_specialist, or repair_specialist.
 You may still run_command for npm install, npm run build, npm test, etc., to surface errors for others to fix.
+
+## TYPESCRIPT CONFIG RULES
+- When you create tsconfig.json, use only official TypeScript compiler options.
+- NEVER invent option names like useFesmAct, useDefineTS, allowSyntheticDefaults, or any option not in TypeScript docs.
+- For Vite + React + TypeScript, prefer this minimal safe shape:
+  {
+    "compilerOptions": {
+      "target": "ES2020",
+      "useDefineForClassFields": true,
+      "lib": ["ES2020", "DOM", "DOM.Iterable"],
+      "module": "ESNext",
+      "skipLibCheck": true,
+      "moduleResolution": "bundler",
+      "allowImportingTsExtensions": true,
+      "resolveJsonModule": true,
+      "isolatedModules": true,
+      "noEmit": true,
+      "jsx": "react-jsx",
+      "strict": true
+    },
+    "include": ["src"]
+  }
+- If you create vite.config.ts, also create tsconfig.node.json with only valid compiler options.
+- Scan the current source files for bare npm imports and make package.json declare every runtime package they use.
+- Runtime imports from app code belong in dependencies. Build-only tools belong in devDependencies.
+- Example: react-dom/client => dependency react-dom, zustand => dependency zustand.
+- NEVER leave package.json missing a package that src/** imports.
 
 ${TOOL_CALL_FORMAT}`
   },
@@ -1153,6 +1182,8 @@ ${TOOL_CALL_FORMAT}`
 - If verification mentions build/runtime errors, patch only the files involved
 - Prefer surgical edits over broad rewrites
 - Preserve the accepted scaffold and existing working code
+- If verification reports TS7006 implicit-any errors, add explicit parameter types instead of weakening tsconfig
+- If verification reports TS2307 cannot find module, either remove the bad import or ensure the required dependency is declared in package.json
 
 ${TOOL_CALL_FORMAT}`
   }

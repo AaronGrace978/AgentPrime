@@ -66,6 +66,16 @@ function clampAgentAutonomyLevel(value: unknown): 1 | 2 | 3 | 4 | 5 {
   return rounded as 1 | 2 | 3 | 4 | 5;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+  return 'Unknown error';
+}
+
 type NonAgentMode = Extract<ChatMode, 'chat' | 'dino'>;
 type NonAgentSelection = { provider: string; model: string };
 
@@ -150,6 +160,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [agentSelectedModel, setAgentSelectedModel] = useState(DEFAULT_AGENT_MODEL);
   const [nonAgentSelections, setNonAgentSelections] = useState<Record<NonAgentMode, NonAgentSelection>>(DEFAULT_NON_AGENT_SELECTIONS);
   const [availableProviderModels, setAvailableProviderModels] = useState<Record<string, Array<{ value: string; label: string }>>>({});
+  const [providerModelLoadErrors, setProviderModelLoadErrors] = useState<Record<string, string>>({});
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [agentAutonomyLevel, setAgentAutonomyLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [agentPrefsHydrated, setAgentPrefsHydrated] = useState(false);
@@ -163,6 +174,8 @@ const AIChat: React.FC<AIChatProps> = ({
   const [currentTask, setCurrentTask] = useState('');
   const agentFileChangesRef = useRef<Map<string, AgentFileChange>>(new Map());
   const pendingRepairScopeRef = useRef<AgentRepairScope | null>(null);
+  const hydratedUseSpecializedAgentsRef = useRef<boolean | null>(null);
+  const hydratedAutonomyLevelRef = useRef<1 | 2 | 3 | 4 | 5 | null>(null);
 
   // Prefill chat input when templates route a request here.
   useEffect(() => {
@@ -203,6 +216,17 @@ const AIChat: React.FC<AIChatProps> = ({
     getCursorPosition
   });
 
+  const clearProviderModelLoadError = (provider: string) => {
+    setProviderModelLoadErrors((prev) => {
+      if (!(provider in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[provider];
+      return next;
+    });
+  };
+
   const persistNonAgentSelection = async (mode: NonAgentMode, selection: NonAgentSelection) => {
     try {
       await window.agentAPI.updateSettings(
@@ -219,12 +243,15 @@ const AIChat: React.FC<AIChatProps> = ({
     try {
       const models = await window.agentAPI.getProviderModels(provider);
       const normalized = normalizeFetchedModelOptions(models);
+      clearProviderModelLoadError(provider);
       if (normalized.length > 0) {
         setAvailableProviderModels((prev) => ({ ...prev, [provider]: normalized }));
         return normalized;
       }
     } catch (error) {
-      console.warn(`Failed to load live models for ${provider}:`, error);
+      const message = getErrorMessage(error);
+      setProviderModelLoadErrors((prev) => ({ ...prev, [provider]: message }));
+      console.warn(`Failed to load live models for ${provider}:`, message);
     }
 
     return getModelOptionsForProvider(provider);
@@ -337,6 +364,9 @@ const AIChat: React.FC<AIChatProps> = ({
     () => getResolvedModelOptions(currentNonAgentSelection?.provider || DEFAULT_NON_AGENT_SELECTIONS.chat.provider),
     [availableProviderModels, currentNonAgentSelection?.provider]
   );
+  const currentProviderModelLoadError = currentNonAgentSelection
+    ? providerModelLoadErrors[currentNonAgentSelection.provider] || null
+    : null;
 
   useEffect(() => {
     const providers = new Set<string>([
@@ -371,10 +401,17 @@ const AIChat: React.FC<AIChatProps> = ({
     const loadAgentPreferences = async () => {
       try {
         const settings = await window.agentAPI.getSettings();
-        if (settings && typeof settings.useSpecializedAgents === 'boolean') {
-          setUseSpecializedAgents(settings.useSpecializedAgents);
-        }
-        setAgentAutonomyLevel(clampAgentAutonomyLevel(settings?.agentAutonomyLevel));
+        const nextUseSpecializedAgents =
+          settings && typeof settings.useSpecializedAgents === 'boolean'
+            ? settings.useSpecializedAgents
+            : true;
+        const nextAutonomyLevel = clampAgentAutonomyLevel(settings?.agentAutonomyLevel);
+
+        hydratedUseSpecializedAgentsRef.current = nextUseSpecializedAgents;
+        hydratedAutonomyLevelRef.current = nextAutonomyLevel;
+
+        setUseSpecializedAgents(nextUseSpecializedAgents);
+        setAgentAutonomyLevel(nextAutonomyLevel);
       } catch (error) {
         console.error('Failed to load specialized agents setting:', error);
       } finally {
@@ -389,9 +426,13 @@ const AIChat: React.FC<AIChatProps> = ({
     if (!agentPrefsHydrated) {
       return;
     }
+    if (hydratedUseSpecializedAgentsRef.current === useSpecializedAgents) {
+      return;
+    }
 
     const saveSpecializedAgents = async () => {
       try {
+        hydratedUseSpecializedAgentsRef.current = useSpecializedAgents;
         await window.agentAPI.updateSettings({ useSpecializedAgents });
       } catch (error) {
         console.error('Failed to save specialized agents setting:', error);
@@ -404,9 +445,13 @@ const AIChat: React.FC<AIChatProps> = ({
     if (!agentPrefsHydrated) {
       return;
     }
+    if (hydratedAutonomyLevelRef.current === agentAutonomyLevel) {
+      return;
+    }
 
     const saveAutonomyPreference = async () => {
       try {
+        hydratedAutonomyLevelRef.current = agentAutonomyLevel;
         await window.agentAPI.updateSettings({ agentAutonomyLevel });
       } catch (error) {
         console.error('Failed to save agent autonomy level:', error);
@@ -1163,6 +1208,29 @@ const AIChat: React.FC<AIChatProps> = ({
                     ))}
                   </select>
                 </div>
+
+                {currentProviderModelLoadError && (
+                  <div
+                    title={currentProviderModelLoadError}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '5px 8px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(245, 158, 11, 0.4)',
+                      background: 'rgba(245, 158, 11, 0.12)',
+                      color: '#fbbf24',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      maxWidth: '320px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                  >
+                    Live model lookup failed: {currentProviderModelLoadError}
+                  </div>
+                )}
               </>
             )}
 

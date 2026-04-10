@@ -95,18 +95,18 @@ export class OpenAIProvider extends BaseProvider {
         owned_by: m.owned_by
       })).sort((a: ModelInfo, b: ModelInfo) => b.id.localeCompare(a.id));
     } catch (e: any) {
-      console.error('OpenAI getModels error:', e.message);
-      // Return default models
-      return [
-        { id: 'gpt-5.4', name: 'GPT-5.4 (Frontier Default)', provider: 'openai' },
-        { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini (Fast Coding)', provider: 'openai' },
-        { id: 'gpt-5.4-nano', name: 'GPT-5.4 Nano (Lightweight)', provider: 'openai' },
-        { id: 'gpt-5.3-instant', name: 'GPT-5.3 Instant (Low Latency)', provider: 'openai' },
-        { id: 'gpt-5.2-2025-12-11', name: 'GPT-5.2 (Previous Pinned)', provider: 'openai' },
-        { id: 'gpt-5.2', name: 'GPT-5.2 (Previous Alias)', provider: 'openai' },
-        { id: 'gpt-4o', name: 'GPT-4o (Balanced)', provider: 'openai' },
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Legacy Fast)', provider: 'openai' }
-      ];
+      const providerMessage =
+        e.response?.data?.error?.message ||
+        e.response?.data?.message ||
+        e.message ||
+        'Unknown OpenAI error';
+      console.error('OpenAI getModels error:', providerMessage);
+
+      if (e.response?.status === 401 || e.response?.status === 403) {
+        throw new Error(`OpenAI authentication failed: ${providerMessage}`);
+      }
+
+      throw new Error(`Failed to load OpenAI models: ${providerMessage}`);
     }
   }
 

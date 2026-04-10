@@ -1461,7 +1461,7 @@ ipcMain.handle('get-provider-models', async (event, providerName: string) => {
     return models;
   } catch (error: any) {
     log.error('[IPC] get-provider-models error:', error);
-    return [];
+    throw new Error(error?.message || 'Failed to load provider models');
   }
 });
 

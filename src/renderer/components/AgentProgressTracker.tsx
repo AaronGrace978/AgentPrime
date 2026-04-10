@@ -50,6 +50,33 @@ const STATUS_COLORS: Record<AgentStep['status'], string> = {
   skipped: '#6b7280'
 };
 
+const STATUS_LABELS: Record<AgentStep['status'], string> = {
+  pending: 'Queued',
+  in_progress: 'In Progress',
+  completed: 'Done',
+  failed: 'Needs Attention',
+  skipped: 'Skipped',
+};
+
+function mapAgentEventType(type?: string): AgentStep['type'] {
+  const typeMap: Record<string, AgentStep['type']> = {
+    read_file: 'file_read',
+    write_file: 'file_write',
+    patch_file: 'file_write',
+    run_command: 'command',
+    review_session: 'review',
+    deterministic_scaffold: 'tool_call',
+  };
+  return typeMap[type || ''] || 'tool_call';
+}
+
+function formatSpecialistLabel(value?: string): string | undefined {
+  if (!value) return undefined;
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
   isRunning,
   currentTask,
@@ -87,16 +114,21 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
 
   // Listen for agent progress events
   useEffect(() => {
+    const handleStepStart = (data: any) => {
+      setCurrentStep({
+        id: `step-live-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: mapAgentEventType(data?.type),
+        status: 'in_progress',
+        title: data?.title || 'Working on next step',
+        description: formatSpecialistLabel(data?.specialist),
+        startTime: Date.now(),
+      });
+    };
+
     const handleStepComplete = (data: any) => {
-      const typeMap: Record<string, AgentStep['type']> = {
-        read_file: 'file_read',
-        write_file: 'file_write',
-        run_command: 'command',
-        patch_file: 'file_write'
-      };
       const completedStep: AgentStep = {
         id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        type: typeMap[data?.type] || 'tool_call',
+        type: mapAgentEventType(data?.type),
         status: data?.success ? 'completed' : 'failed',
         title: data?.title || 'Processing step',
         startTime: Date.now(),
@@ -124,11 +156,13 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
         startTime: Date.now()
       });
     });
+    const removeStepStart = window.agentAPI?.onAgentStepStart?.(handleStepStart);
     const removeStepComplete = window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
     const removeFileModified = window.agentAPI?.onAgentFileModified?.(handleFileModified);
 
     return () => {
       if (typeof removeTaskStart === 'function') removeTaskStart();
+      if (typeof removeStepStart === 'function') removeStepStart();
       if (typeof removeStepComplete === 'function') removeStepComplete();
       if (typeof removeFileModified === 'function') removeFileModified();
     };
@@ -153,280 +187,409 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
 
   if (!isRunning) return null;
 
+  const currentTaskPreview = currentTask.trim() || 'Preparing your workspace changes';
+  const visibleSteps = [...steps].slice(-6).reverse();
+  const visibleFiles = [...filesModified].slice(-6).reverse();
+  const progressLabel =
+    progressPercentage >= 92 ? 'Wrapping up' :
+    progressPercentage >= 65 ? 'Making steady progress' :
+    progressPercentage >= 30 ? 'Building project files' :
+    'Preparing the first pass';
+  const surfaceCard: React.CSSProperties = {
+    background: 'linear-gradient(180deg, var(--prime-surface-elevated) 0%, var(--prime-surface) 100%)',
+    border: '1px solid var(--prime-border)',
+    borderRadius: '14px',
+    boxShadow: 'var(--prime-shadow-sm)',
+  };
+  const actionButtonStyle = (variant: 'secondary' | 'danger'): React.CSSProperties => ({
+    border: variant === 'danger' ? '1px solid rgba(239, 68, 68, 0.24)' : '1px solid var(--prime-border)',
+    background: variant === 'danger' ? 'rgba(239, 68, 68, 0.10)' : 'var(--prime-surface-hover)',
+    color: variant === 'danger' ? 'var(--prime-error)' : 'var(--prime-text-secondary)',
+    borderRadius: '10px',
+    padding: '7px 12px',
+    fontSize: '11px',
+    fontWeight: 700,
+    cursor: 'pointer',
+    transition: 'all 0.18s var(--ease-out-expo)',
+    fontFamily: 'inherit',
+  });
+
   return (
     <div style={{
       position: 'fixed',
-      bottom: '80px',
+      bottom: '88px',
       right: '20px',
-      width: '360px',
-      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-      borderRadius: '16px',
-      boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
-      border: '1px solid #e5e7eb',
+      width: '380px',
+      background: 'linear-gradient(180deg, var(--prime-surface-elevated) 0%, var(--prime-surface) 100%)',
+      borderRadius: '20px',
+      boxShadow: 'var(--prime-shadow-xl), 0 0 0 1px rgba(255, 255, 255, 0.04)',
+      border: '1px solid var(--prime-border)',
       overflow: 'hidden',
       zIndex: 1000,
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      fontFamily: 'inherit',
+      backdropFilter: 'blur(12px)',
     }}>
       {/* Header */}
       <div style={{
-        background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-        padding: '12px 16px',
+        background: 'linear-gradient(135deg, var(--prime-accent) 0%, #7c5cff 100%)',
+        padding: '16px 18px 14px',
         display: 'flex',
-        alignItems: 'center',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        gap: '14px',
+        borderBottom: '1px solid rgba(255,255,255,0.14)',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-start',
         justifyContent: 'space-between',
         gap: '12px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            animation: isPaused ? 'none' : 'pulse 2s infinite'
-          }}>
-            <span style={{ fontSize: '12px' }}>🤖</span>
-          </div>
-          <div>
-            <div style={{ color: 'white', fontWeight: '600', fontSize: '13px' }}>
-              {isPaused ? 'Agent Paused' : 'Agent Working'}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', minWidth: 0, flex: 1 }}>
+            <div style={{
+              width: '30px',
+              height: '30px',
+              borderRadius: '10px',
+              background: 'rgba(255, 255, 255, 0.18)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18)',
+              animation: isPaused ? 'none' : 'pulse 2s infinite'
+            }}>
+              <span style={{ fontSize: '13px' }}>AI</span>
             </div>
-            <div style={{ color: 'rgba(255, 255, 255, 0.8)', fontSize: '11px' }}>
+            <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div style={{ color: 'white', fontWeight: 800, fontSize: '14px', letterSpacing: '-0.01em' }}>
+                  {isPaused ? 'Agent Paused' : 'Agent Working'}
+                </div>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '4px 9px',
+                  borderRadius: '999px',
+                  background: 'rgba(255,255,255,0.14)',
+                  color: 'rgba(255,255,255,0.92)',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  backdropFilter: 'blur(6px)',
+                }}>
+                  <span style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '999px',
+                    background: isPaused ? 'rgba(255,255,255,0.72)' : '#7ef7c4',
+                    boxShadow: isPaused ? 'none' : '0 0 10px rgba(126, 247, 196, 0.8)',
+                  }} />
+                  {isPaused ? 'Paused' : 'Live'}
+                </span>
+              </div>
+              <div style={{
+                color: 'rgba(255, 255, 255, 0.84)',
+                fontSize: '11px',
+                lineHeight: 1.45,
+                maxHeight: '34px',
+                overflow: 'hidden',
+              }}>
+                {currentTaskPreview}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', flexShrink: 0 }}>
+            <span style={{
+              padding: '5px 9px',
+              borderRadius: '999px',
+              background: 'rgba(255,255,255,0.14)',
+              color: 'white',
+              fontSize: '10px',
+              fontWeight: 700,
+            }}>
               {formatTime(elapsedTime)}
+            </span>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {onPause && (
+                <button
+                  onClick={handlePause}
+                  style={{
+                    ...actionButtonStyle('secondary'),
+                    background: 'rgba(255,255,255,0.16)',
+                    border: '1px solid rgba(255,255,255,0.18)',
+                    color: 'white',
+                  }}
+                >
+                  {isPaused ? 'Resume' : 'Pause'}
+                </button>
+              )}
+              <button
+                onClick={onCancel}
+                style={{
+                  ...actionButtonStyle('danger'),
+                  background: 'rgba(255,255,255,0.12)',
+                  border: '1px solid rgba(255,255,255,0.16)',
+                  color: 'white',
+                }}
+              >
+                Stop
+              </button>
             </div>
           </div>
         </div>
-        
-        <div style={{ display: 'flex', gap: '6px' }}>
-          {onPause && (
-            <button
-              onClick={handlePause}
-              style={{
-                background: 'rgba(255, 255, 255, 0.2)',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '6px 10px',
-                color: 'white',
-                cursor: 'pointer',
-                fontSize: '11px',
-                fontWeight: '500'
-              }}
-            >
-              {isPaused ? '▶️ Resume' : '⏸ Pause'}
-            </button>
-          )}
-          <button
-            onClick={onCancel}
-            style={{
-              background: 'rgba(239, 68, 68, 0.8)',
-              border: 'none',
-              borderRadius: '6px',
-              padding: '6px 10px',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: '500'
-            }}
-          >
-            ✕ Stop
-          </button>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr auto',
+          gap: '10px',
+          alignItems: 'center',
+          padding: '10px 12px',
+          borderRadius: '14px',
+          background: 'rgba(255,255,255,0.12)',
+          boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12)',
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              Progress
+            </div>
+            <div style={{ color: 'white', fontSize: '12px', fontWeight: 700, marginTop: '2px' }}>
+              {progressLabel}
+            </div>
+          </div>
+          <div style={{
+            color: 'white',
+            fontSize: '18px',
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+          }}>
+            {progressPercentage}%
+          </div>
         </div>
       </div>
-      
-      {/* Progress Bar */}
-      {progressPercentage !== null && (
+
+      <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--prime-surface)' }}>
+        {/* Progress Bar */}
         <div style={{
-          height: '4px',
-          background: '#e5e7eb'
+          height: '8px',
+          background: 'var(--prime-surface-hover)',
+          borderRadius: '999px',
+          overflow: 'hidden',
+          boxShadow: 'inset 0 0 0 1px rgba(15, 23, 42, 0.04)',
         }}>
           <div style={{
             height: '100%',
             width: `${progressPercentage}%`,
-            background: 'linear-gradient(90deg, #3b82f6, #10b981)',
+            background: 'linear-gradient(90deg, var(--prime-accent), var(--prime-success))',
+            boxShadow: '0 0 20px var(--prime-accent-glow)',
             transition: 'width 0.5s ease'
           }} />
         </div>
-      )}
-      
-      {/* Current Action */}
-      {currentStep && (
-        <div style={{
-          padding: '12px 16px',
-          background: '#f0f9ff',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px'
-        }}>
+
+        {/* Current Action */}
+        <div style={{ ...surfaceCard, padding: '12px 14px' }}>
           <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '8px',
-            background: STATUS_COLORS[currentStep.status],
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            animation: 'pulse 1.5s infinite'
+            gap: '12px'
           }}>
-            <span style={{ fontSize: '14px' }}>{STEP_ICONS[currentStep.type]}</span>
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ color: '#1e40af', fontWeight: '600', fontSize: '13px' }}>
-              {currentStep.title}
+            <div style={{
+              width: '34px',
+              height: '34px',
+              borderRadius: '12px',
+              background: currentStep ? 'rgba(59, 130, 246, 0.12)' : 'var(--prime-surface-hover)',
+              color: currentStep ? 'var(--prime-accent)' : 'var(--prime-text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: currentStep ? 'inset 0 0 0 1px rgba(59, 130, 246, 0.14)' : 'none',
+            }}>
+              <span style={{ fontSize: '15px' }}>{currentStep ? STEP_ICONS[currentStep.type] : '…'}</span>
             </div>
-            {currentStep.description && (
-              <div style={{ 
-                color: '#64748b', 
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: 'var(--prime-text-muted)', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '3px' }}>
+                Current step
+              </div>
+              <div style={{ color: 'var(--prime-text)', fontWeight: 700, fontSize: '13px' }}>
+                {currentStep?.title || 'Preparing next action'}
+              </div>
+              <div style={{
+                color: 'var(--prime-text-secondary)',
                 fontSize: '11px',
+                marginTop: '3px',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                maxWidth: '240px'
+                maxWidth: '248px'
               }}>
-                {currentStep.description}
+                {currentStep?.description || 'Watching the agent as it plans, writes files, and runs checks.'}
               </div>
-            )}
-          </div>
-          <div style={{
-            width: '16px',
-            height: '16px',
-            borderRadius: '50%',
-            border: '2px solid #3b82f6',
-            borderTopColor: 'transparent',
-            animation: isPaused ? 'none' : 'spin 1s linear infinite'
-          }} />
-        </div>
-      )}
-      
-      {/* Step History */}
-      <div 
-        style={{
-          maxHeight: showDetails ? '200px' : '0',
-          overflow: 'hidden',
-          transition: 'max-height 0.3s ease'
-        }}
-      >
-        <div style={{
-          padding: '12px 16px',
-          maxHeight: '200px',
-          overflowY: 'auto'
-        }}>
-          {steps.length === 0 ? (
-            <div style={{ color: '#9ca3af', fontSize: '12px', textAlign: 'center', padding: '20px' }}>
-              Starting...
             </div>
-          ) : (
-            steps.map((step, index) => (
-              <div
-                key={step.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '10px',
-                  padding: '8px 0',
-                  borderBottom: index < steps.length - 1 ? '1px solid #f3f4f6' : 'none',
-                  opacity: step.status === 'in_progress' ? 1 : 0.7
-                }}
-              >
-                <div style={{
-                  width: '20px',
-                  height: '20px',
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 8px',
+              borderRadius: '999px',
+              background: currentStep ? 'rgba(59, 130, 246, 0.08)' : 'var(--prime-surface-hover)',
+              color: currentStep ? 'var(--prime-accent)' : 'var(--prime-text-secondary)',
+              fontSize: '10px',
+              fontWeight: 700,
+            }}>
+              {currentStep && !isPaused && (
+                <span style={{
+                  width: '10px',
+                  height: '10px',
                   borderRadius: '50%',
-                  background: STATUS_COLORS[step.status],
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  {step.status === 'completed' ? (
-                    <span style={{ color: 'white', fontSize: '10px' }}>✓</span>
-                  ) : step.status === 'failed' ? (
-                    <span style={{ color: 'white', fontSize: '10px' }}>✕</span>
-                  ) : (
-                    <span style={{ fontSize: '10px' }}>{STEP_ICONS[step.type]}</span>
-                  )}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ 
-                    color: '#374151', 
-                    fontSize: '12px',
-                    fontWeight: step.status === 'in_progress' ? '600' : '400'
-                  }}>
-                    {step.title}
-                  </div>
-                  {step.error && (
-                    <div style={{ color: '#ef4444', fontSize: '10px', marginTop: '2px' }}>
-                      {step.error}
-                    </div>
-                  )}
-                </div>
-                {step.endTime && step.startTime && (
-                  <div style={{ color: '#9ca3af', fontSize: '10px' }}>
-                    {((step.endTime - step.startTime) / 1000).toFixed(1)}s
-                  </div>
-                )}
-              </div>
-            ))
-          )}
+                  border: '2px solid var(--prime-accent)',
+                  borderTopColor: 'transparent',
+                  animation: 'spin 1s linear infinite'
+                }} />
+              )}
+              {STATUS_LABELS[currentStep?.status || 'pending']}
+            </div>
+          </div>
         </div>
-      </div>
-      
-      {/* Files Modified */}
-      {filesModified.length > 0 && (
+
+        {/* Detail content */}
         <div style={{
-          padding: '8px 16px',
-          background: '#f0fdf4',
-          borderTop: '1px solid #e5e7eb'
+          maxHeight: showDetails ? '320px' : '0',
+          overflow: 'hidden',
+          transition: 'max-height 0.28s var(--ease-out-expo)'
         }}>
-          <div style={{ color: '#15803d', fontSize: '11px', fontWeight: '600', marginBottom: '4px' }}>
-            📁 Files Modified ({filesModified.length})
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-            {filesModified.slice(0, 5).map((file, i) => (
-              <span
-                key={i}
-                style={{
-                  background: '#dcfce7',
-                  color: '#166534',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  fontSize: '10px'
-                }}
-              >
-                {file.split('/').pop()}
-              </span>
-            ))}
-            {filesModified.length > 5 && (
-              <span style={{ color: '#15803d', fontSize: '10px' }}>
-                +{filesModified.length - 5} more
-              </span>
-            )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ ...surfaceCard, padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                <div style={{ color: 'var(--prime-text)', fontSize: '12px', fontWeight: 800 }}>
+                  Recent activity
+                </div>
+                <div style={{ color: 'var(--prime-text-muted)', fontSize: '10px', fontWeight: 700 }}>
+                  {stepsCompleted} completed
+                </div>
+              </div>
+              {visibleSteps.length === 0 ? (
+                <div style={{ color: 'var(--prime-text-muted)', fontSize: '12px', textAlign: 'center', padding: '14px 0' }}>
+                  Starting the first step...
+                </div>
+              ) : (
+                visibleSteps.map((step, index) => (
+                  <div
+                    key={step.id}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '22px 1fr auto',
+                      alignItems: 'start',
+                      gap: '10px',
+                      padding: index === visibleSteps.length - 1 ? '0' : '0 0 10px',
+                      marginBottom: index === visibleSteps.length - 1 ? 0 : '10px',
+                      borderBottom: index === visibleSteps.length - 1 ? 'none' : '1px solid var(--prime-border-light)',
+                    }}
+                  >
+                    <div style={{
+                      width: '22px',
+                      height: '22px',
+                      borderRadius: '999px',
+                      background: `${STATUS_COLORS[step.status]}18`,
+                      color: STATUS_COLORS[step.status],
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      boxShadow: `inset 0 0 0 1px ${STATUS_COLORS[step.status]}30`,
+                    }}>
+                      {step.status === 'completed' ? '✓' : step.status === 'failed' ? '!' : STEP_ICONS[step.type]}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{
+                        color: 'var(--prime-text)',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        lineHeight: 1.35,
+                      }}>
+                        {step.title}
+                      </div>
+                      {step.error && (
+                        <div style={{ color: 'var(--prime-error)', fontSize: '10px', marginTop: '4px', lineHeight: 1.4 }}>
+                          {step.error}
+                        </div>
+                      )}
+                    </div>
+                    {step.endTime && step.startTime ? (
+                      <div style={{ color: 'var(--prime-text-muted)', fontSize: '10px', fontWeight: 700 }}>
+                        {((step.endTime - step.startTime) / 1000).toFixed(1)}s
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--prime-text-muted)', fontSize: '10px', fontWeight: 700 }}>
+                        Live
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ ...surfaceCard, padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                <div style={{ color: 'var(--prime-text)', fontSize: '12px', fontWeight: 800 }}>
+                  Files touched
+                </div>
+                <div style={{ color: 'var(--prime-text-muted)', fontSize: '10px', fontWeight: 700 }}>
+                  {filesModified.length} total
+                </div>
+              </div>
+              {visibleFiles.length === 0 ? (
+                <div style={{ color: 'var(--prime-text-muted)', fontSize: '11px' }}>
+                  No file writes yet.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {visibleFiles.map((file, i) => (
+                    <span
+                      key={`${file}-${i}`}
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.10)',
+                        color: 'var(--prime-success)',
+                        border: '1px solid rgba(16, 185, 129, 0.18)',
+                        padding: '5px 8px',
+                        borderRadius: '999px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        maxWidth: '100%',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                      title={file}
+                    >
+                      {file.split(/[\\/]/).pop()}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
-      
-      {/* Toggle Details */}
-      <button
-        onClick={() => setShowDetails(!showDetails)}
-        style={{
-          width: '100%',
-          padding: '8px',
-          background: '#f9fafb',
-          border: 'none',
-          borderTop: '1px solid #e5e7eb',
-          color: '#6b7280',
-          fontSize: '11px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '4px'
-        }}
-      >
-        {showDetails ? '▲ Hide Details' : '▼ Show Details'}
-      </button>
+
+        {/* Toggle Details */}
+        <button
+          onClick={() => setShowDetails(!showDetails)}
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            background: 'var(--prime-surface-hover)',
+            border: '1px solid var(--prime-border)',
+            borderRadius: '12px',
+            color: 'var(--prime-text-secondary)',
+            fontSize: '11px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px'
+          }}
+        >
+          {showDetails ? 'Hide activity details' : 'Show activity details'}
+        </button>
+      </div>
       
       {/* Animations */}
       <style>{`

@@ -12,10 +12,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { getToolPaths, resolveCommand } from '../../core/tool-path-finder';
+import { execSync } from 'child_process';
+import * as ts from 'typescript';
+import { getNodeEnv, getToolPaths, resolveCommand } from '../../core/tool-path-finder';
 import { ProjectRunner, ProjectInfo } from './projectRunner';
 
 const BUNDLER_CONFIG_FILES = ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs'];
+const INFERRED_DEPENDENCY_VERSION_CACHE = new Map<string, string | null>();
 
 export interface FixResult {
   success: boolean;
@@ -245,6 +248,28 @@ export default defineConfig({
           commonDevDeps['@types/react'] = '^18.2.0';
           commonDevDeps['@types/react-dom'] = '^18.2.0';
           fixes.push('Added missing React TypeScript types');
+          modified = true;
+        }
+      }
+
+      const declaredDeps = {
+        ...(packageJson.dependencies || {}),
+        ...(packageJson.devDependencies || {}),
+        ...commonDeps,
+        ...commonDevDeps,
+      };
+      const inferredRuntimeDeps = this.collectMissingRuntimeDependencies(workspacePath, declaredDeps);
+      for (const depName of inferredRuntimeDeps) {
+        if (!commonDeps[depName]) {
+          const resolvedVersion = this.resolveInferredDependencyVersion(depName);
+          if (!resolvedVersion) {
+            errors.push(
+              `Skipped inferred runtime dependency ${depName}: unable to resolve a safe version via npm metadata`
+            );
+            continue;
+          }
+          commonDeps[depName] = resolvedVersion;
+          fixes.push(`Added missing runtime dependency inferred from imports: ${depName}@${resolvedVersion}`);
           modified = true;
         }
       }
@@ -779,6 +804,12 @@ npm-debug.log*
 
           if (!tsconfig.compilerOptions) {
             tsconfig.compilerOptions = {};
+            modified = true;
+          }
+
+          const removedInvalidOptions = this.removeInvalidCompilerOptions(tsconfig.compilerOptions);
+          if (removedInvalidOptions.length > 0) {
+            fixes.push(`Removed invalid tsconfig compiler options: ${removedInvalidOptions.join(', ')}`);
             modified = true;
           }
 
@@ -1887,6 +1918,27 @@ npm-debug.log*
   private static fixTypeScriptConfig(workspacePath: string, fixes: string[], errors: string[]): void {
     const tsconfigPath = path.join(workspacePath, 'tsconfig.json');
     const viteConfigPath = path.join(workspacePath, 'vite.config.ts');
+
+    if (fs.existsSync(tsconfigPath)) {
+      try {
+        const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf-8'));
+        let modified = false;
+        if (!tsconfig.compilerOptions || typeof tsconfig.compilerOptions !== 'object') {
+          tsconfig.compilerOptions = {};
+          modified = true;
+        }
+        const removedInvalidOptions = this.removeInvalidCompilerOptions(tsconfig.compilerOptions);
+        if (removedInvalidOptions.length > 0) {
+          fixes.push(`Removed invalid tsconfig compiler options: ${removedInvalidOptions.join(', ')}`);
+          modified = true;
+        }
+        if (modified) {
+          fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2) + '\n', 'utf-8');
+        }
+      } catch (error: any) {
+        errors.push(`Error sanitizing tsconfig.json: ${error.message}`);
+      }
+    }
     
     // If vite.config.ts exists, we need tsconfig.node.json
     if (fs.existsSync(viteConfigPath)) {
@@ -2026,6 +2078,143 @@ npm-debug.log*
       if (bareFrom.test(content)) return true;
     }
     return false;
+  }
+
+  private static collectMissingRuntimeDependencies(
+    workspacePath: string,
+    declaredDeps: Record<string, string>
+  ): string[] {
+    const missing = new Set<string>();
+    const sourceDirs = ['src', 'app', 'pages', 'components', 'lib'];
+    const files = [
+      ...this.findFiles(workspacePath, '.js'),
+      ...this.findFiles(workspacePath, '.ts'),
+      ...this.findFiles(workspacePath, '.jsx'),
+      ...this.findFiles(workspacePath, '.tsx'),
+    ];
+
+    for (const file of files) {
+      const normalized = file.replace(/\\/g, '/');
+      if (!sourceDirs.some((dir) => normalized.includes(`/${dir}/`) || normalized.endsWith(`/${dir}`) || normalized.startsWith(`${workspacePath.replace(/\\/g, '/')}/${dir}/`))) {
+        continue;
+      }
+      if (normalized.includes('/node_modules/')) {
+        continue;
+      }
+      const content = this.safeReadFileSync(file, 'utf-8');
+      if (!content) {
+        continue;
+      }
+      for (const specifier of this.extractBarePackageImports(content)) {
+        const packageName = this.normalizePackageImport(specifier);
+        if (!packageName || declaredDeps[packageName] || this.isNodeBuiltinPackage(packageName)) {
+          continue;
+        }
+        missing.add(packageName);
+      }
+    }
+
+    return [...missing];
+  }
+
+  private static extractBarePackageImports(content: string): string[] {
+    const matches = [
+      ...content.matchAll(/import\s+[^'"]*['"]([^'"]+)['"]/g),
+      ...content.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g),
+      ...content.matchAll(/export\s+[^'"]*from\s+['"]([^'"]+)['"]/g),
+      ...content.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ];
+
+    return matches
+      .map((match) => match[1])
+      .filter((value): value is string => Boolean(value))
+      .filter((value) => !value.startsWith('.') && !value.startsWith('/'))
+      .filter((value) => !value.startsWith('node:'))
+      .filter((value) => !value.startsWith('virtual:'))
+      .filter((value) => !value.startsWith('#'));
+  }
+
+  private static normalizePackageImport(specifier: string): string | null {
+    const cleanSpecifier = specifier.split('?')[0].split('#')[0];
+    if (!cleanSpecifier) {
+      return null;
+    }
+    if (cleanSpecifier.startsWith('@')) {
+      const [scope, name] = cleanSpecifier.split('/');
+      return scope && name ? `${scope}/${name}` : cleanSpecifier;
+    }
+    const [name] = cleanSpecifier.split('/');
+    return name || null;
+  }
+
+  private static isNodeBuiltinPackage(packageName: string): boolean {
+    return ts.sys !== undefined && require('module').builtinModules.includes(packageName);
+  }
+
+  private static resolveInferredDependencyVersion(packageName: string): string | null {
+    if (INFERRED_DEPENDENCY_VERSION_CACHE.has(packageName)) {
+      return INFERRED_DEPENDENCY_VERSION_CACHE.get(packageName) ?? null;
+    }
+
+    try {
+      const npmCommand = resolveCommand(`npm view "${packageName}" version --json`);
+      const stdout = execSync(npmCommand, {
+        encoding: 'utf-8',
+        timeout: 10000,
+        env: getNodeEnv(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+      const parsed = stdout ? JSON.parse(stdout) : null;
+      const version = Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed;
+      const normalizedVersion = this.normalizeResolvedDependencyVersion(version);
+
+      INFERRED_DEPENDENCY_VERSION_CACHE.set(packageName, normalizedVersion);
+      return normalizedVersion;
+    } catch (error: any) {
+      console.warn(
+        `[ProjectAutoFixer] Failed to resolve version for inferred dependency "${packageName}": ${error?.message || error}`
+      );
+      INFERRED_DEPENDENCY_VERSION_CACHE.set(packageName, null);
+      return null;
+    }
+  }
+
+  private static normalizeResolvedDependencyVersion(version: unknown): string | null {
+    if (typeof version !== 'string') {
+      return null;
+    }
+
+    const trimmedVersion = version.trim();
+    if (!trimmedVersion) {
+      return null;
+    }
+
+    return /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(trimmedVersion)
+      ? `^${trimmedVersion}`
+      : trimmedVersion;
+  }
+
+  private static removeInvalidCompilerOptions(compilerOptions: Record<string, unknown>): string[] {
+    const removed: string[] = [];
+    const basePath = ts.sys.getCurrentDirectory?.() || process.cwd();
+
+    for (const [key, value] of Object.entries(compilerOptions)) {
+      const validation = ts.convertCompilerOptionsFromJson({ [key]: value }, basePath, 'tsconfig.json');
+      const hasUnknownOptionDiagnostic = validation.errors.some((diagnostic) => {
+        if (diagnostic.code === 5023) {
+          return true;
+        }
+        const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n').toLowerCase();
+        return message.includes('unknown compiler option');
+      });
+
+      if (hasUnknownOptionDiagnostic) {
+        delete compilerOptions[key];
+        removed.push(key);
+      }
+    }
+
+    return removed;
   }
 
   private static findBatchFiles(workspacePath: string): string[] {

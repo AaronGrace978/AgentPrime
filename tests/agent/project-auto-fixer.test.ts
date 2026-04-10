@@ -66,3 +66,21 @@ describe('ProjectAutoFixer HTML entrypoints', () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe('ProjectAutoFixer compiler option validation', () => {
+  it('removes unknown compiler options without depending on internal TypeScript declarations', () => {
+    const compilerOptions = {
+      jsx: 'react-jsx',
+      totallyFakeOption: true,
+      target: 'es999',
+    };
+
+    const removed = (ProjectAutoFixer as any).removeInvalidCompilerOptions(compilerOptions);
+
+    expect(removed).toEqual(['totallyFakeOption']);
+    expect(compilerOptions).toEqual({
+      jsx: 'react-jsx',
+      target: 'es999',
+    });
+  });
+});

@@ -1595,6 +1595,61 @@
           "prompt": "Hey, want to build me a Fanta Bottle collection game<3 in three.js "
         }
       ]
+    },
+    {
+      "id": "proj_1775833791727_aeb5ucqnd",
+      "name": "DinoTest",
+      "path": "G:\\DinoTest",
+      "type": "web",
+      "description": "Can you build me a website so for BostonAi",
+      "createdAt": "2026-04-10T15:09:51.727Z",
+      "updatedAt": "2026-04-10T15:13:37.064Z",
+      "files": [
+        "package.json",
+        "vite.config.js",
+        "tailwind.config.js",
+        "postcss.config.js",
+        "index.html",
+        "src/index.css",
+        "src/main.jsx",
+        "src/App.jsx",
+        "README.md",
+        ".github/workflows/deploy.yml"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-10T15:09:51.727Z",
+          "action": "create",
+          "description": "Can you build me a website so for BostonAi",
+          "filesChanged": [
+            "package.json",
+            "vite.config.js",
+            "tailwind.config.js",
+            "postcss.config.js",
+            "index.html",
+            "src/index.css",
+            "src/main.jsx",
+            "src/App.jsx",
+            "README.md",
+            ".github/workflows/deploy.yml"
+          ],
+          "prompt": "Can you build me a website so for BostonAi.io I want something I can have  so people can chat with my ActivatePrime - Dino Buddy "
+        },
+        {
+          "timestamp": "2026-04-10T15:13:37.064Z",
+          "action": "update",
+          "description": "Repair the verifier-failed project changes so verification passes",
+          "filesChanged": [],
+          "prompt": "Repair the verifier-failed project changes so verification passes.\nOriginal task: Can you build me a website so for BostonAi.io I want something I can have  so people can chat with my ActivatePrime - Dino Buddy \nDetected project: Vite App\nReadiness rule: Ready only after npm run build succeeds and npm run dev starts successfully.\nInstall command: npm install\nBuild command: npm run build\nRun command: npm run dev\nVerification failures:\n- [build] Build failed: \u001b[31mEPERM: operation not permitted, mkdir 'G:\\DinoTest\\dist\\assets'\u001b[39m\n\u001b[31merror during build:\nError: EPERM: operation not permitted, mkdir 'G:\\DinoTest\\dist\\assets'\n    at async mkdir (node:internal/fs/promises:860:10)\n    at async writeOutputFile (file:///G:/DinoTest/node_modules/rollup/dist/es/shared/node-entry.js:26872:5)\n    at async Queue.work (file:///G:/DinoTest/node_modules/rollup/dist/es/shared/node-entry.js:25683:32)\u001b[39m\n [files: /DinoTest/node_modules/rollup/dist/es/shared/node-entry.js]\nFocus only on the verifier-failed accepted files and the concrete failures above. Do not add new features."
+        }
+      ]
     }
   ]
 }

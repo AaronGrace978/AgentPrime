@@ -167,6 +167,21 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     let refined = [...roles];
+    const retryFiles = new Set<string>([
+      ...lastVerification.missingFiles,
+      ...lastVerification.errors.flatMap((error) => extractFilesFromVerificationIssue(error)),
+    ]);
+    const normalizedRetryFiles = [...retryFiles].map((file) => file.replace(/\\/g, '/'));
+    const hasConcreteRetryTargets = normalizedRetryFiles.length > 0;
+    const hasSourceTargets = normalizedRetryFiles.some((file) =>
+      /^(src|app|pages|components|lib|backend|public)\//.test(file)
+    );
+    const hasConfigTargets = normalizedRetryFiles.some((file) =>
+      /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig.*\.json|vite\.config\.[^/]+|tailwind\.config\.[^/]+|postcss\.config\.[^/]+|next\.config\.[^/]+|Dockerfile(\.[^/]+)?|Makefile|requirements[^/]*\.txt|pyproject\.toml|\.github\/workflows\/)/i.test(file)
+    );
+    const hasTestTargets = normalizedRetryFiles.some((file) =>
+      /^(tests|__tests__)\//.test(file) || /(playwright|vitest|jest)\.config\./i.test(file)
+    );
     const hasStylingSpecificFailures = lastVerification.errors.some((error) =>
       /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
     );
@@ -176,6 +191,11 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     const isBuildHeavyRetry = lastVerification.errors.some((error) => /\[build\]|\[install\]|typescript|ts\d{4}|npm error|yarn error|pnpm error/i.test(error));
+    const isConcreteRepairRetry =
+      hasConcreteRetryTargets ||
+      lastVerification.missingFiles.length > 0 ||
+      lastVerification.errors.some((error) => /imports missing file|cannot find module|missing dependency/i.test(error));
+
     if (isBuildHeavyRetry && refined.includes('integration_analyst')) {
       refined = refined.filter((role) => role !== 'integration_analyst');
       log.info('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping integration_analyst');
@@ -184,8 +204,75 @@ export class SpecializedAgentLoop extends EventEmitter {
       refined = refined.filter((role) => role !== 'tool_orchestrator');
       log.info('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping tool_orchestrator');
     }
+    if (isBuildHeavyRetry && refined.includes('testing_specialist') && !hasTestTargets) {
+      refined = refined.filter((role) => role !== 'testing_specialist');
+      log.info('[SpecializedAgent] ℹ️ Retry focused on build errors; skipping testing_specialist');
+    }
+    if (isConcreteRepairRetry && refined.includes('integration_analyst')) {
+      refined = refined.filter((role) => role !== 'integration_analyst');
+      log.info('[SpecializedAgent] ℹ️ Retry has concrete repair targets; skipping integration_analyst');
+    }
+    if (isConcreteRepairRetry && refined.includes('tool_orchestrator')) {
+      refined = refined.filter((role) => role !== 'tool_orchestrator');
+      log.info('[SpecializedAgent] ℹ️ Retry has concrete repair targets; skipping tool_orchestrator');
+    }
+    if (isConcreteRepairRetry && refined.includes('testing_specialist') && !hasTestTargets) {
+      refined = refined.filter((role) => role !== 'testing_specialist');
+      log.info('[SpecializedAgent] ℹ️ Retry has no test-specific failures; skipping testing_specialist');
+    }
+    if (
+      hasConcreteRetryTargets &&
+      hasSourceTargets &&
+      !hasConfigTargets &&
+      refined.includes('pipeline_specialist')
+    ) {
+      refined = refined.filter((role) => role !== 'pipeline_specialist');
+      log.info('[SpecializedAgent] ℹ️ Retry only targets application source files; skipping pipeline_specialist');
+    }
 
     return refined;
+  }
+
+  private refineRolesForRepairScope(
+    roles: AgentRole[],
+    repairScope: NonNullable<AgentContext['repairScope']>
+  ): AgentRole[] {
+    let refined = [...roles];
+    const targetTexts = [
+      ...repairScope.allowedFiles.map((file) => file.replace(/\\/g, '/')),
+      ...repairScope.findings.map((finding) => finding.summary),
+    ];
+    const hasSourceTargets = targetTexts.some((value) => /(^|[\s:])(src|app|pages|components|lib|backend|public)\//i.test(value));
+    const hasConfigTargets = targetTexts.some((value) =>
+      /(^|[\s:])(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig.*\.json|vite\.config\.[^\s]+|tailwind\.config\.[^\s]+|postcss\.config\.[^\s]+|next\.config\.[^\s]+|Dockerfile(\.[^\s]+)?|Makefile|requirements[^\s]*\.txt|pyproject\.toml|\.github\/workflows\/)/i.test(value)
+    );
+    const hasTestTargets = targetTexts.some((value) =>
+      /(^|[\s:])(tests|__tests__)\//i.test(value) || /(playwright|vitest|jest)\.config\./i.test(value)
+    );
+    const hasStylingTargets = targetTexts.some((value) => /(\.css\b|\.scss\b|stylesheet|layout|theme|accessibility|index\.html)/i.test(value));
+
+    refined = refined.filter((role) => role !== 'integration_analyst' && role !== 'tool_orchestrator');
+
+    if (!hasTestTargets) {
+      refined = refined.filter((role) => role !== 'testing_specialist');
+    }
+    if (!hasConfigTargets) {
+      refined = refined.filter((role) => role !== 'pipeline_specialist');
+    }
+    if (!hasStylingTargets) {
+      refined = refined.filter((role) => role !== 'styling_ux_specialist');
+    }
+    if (hasSourceTargets && !refined.includes('javascript_specialist')) {
+      refined.push('javascript_specialist');
+    }
+    if (hasConfigTargets && !refined.includes('pipeline_specialist')) {
+      refined.push('pipeline_specialist');
+    }
+    if (!refined.includes('repair_specialist')) {
+      refined.push('repair_specialist');
+    }
+
+    return [...new Set(refined)];
   }
 
   private mapLegacyRoleToSpecialist(role: AgentRole): SpecialistId {
@@ -414,6 +501,9 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
       if (repairScope && !roles.includes('repair_specialist')) {
         roles.push('repair_specialist');
+      }
+      if (repairScope && retryCount === 0) {
+        roles = this.refineRolesForRepairScope(roles, repairScope);
       }
       if (retryCount > 0 && lastVerification) {
         roles = this.refineRolesForRetry(roles, lastVerification);
@@ -1092,6 +1182,10 @@ export class SpecializedAgentLoop extends EventEmitter {
     };
     const hasDep = (name: string) => name in deps;
 
+    for (const finding of this.findMissingDependencyDeclarations(existingFiles, workspacePath, hasDep)) {
+      errors.push(finding);
+    }
+
     // ── Next.js App Router (supports both app/ and src/app/) ──────
     const appRouterPrefix = hasDir('src/app') ? 'src/app' : hasDir('app') ? 'app' : null;
     if (appRouterPrefix && hasDep('next')) {
@@ -1523,6 +1617,94 @@ export class SpecializedAgentLoop extends EventEmitter {
       .map((match) => match[1])
       .filter((value): value is string => Boolean(value))
       .filter((value) => value.startsWith('.') || value.startsWith('/'));
+  }
+
+  private findMissingDependencyDeclarations(
+    existingFiles: string[],
+    workspacePath: string,
+    hasDep: (name: string) => boolean
+  ): string[] {
+    const missing = new Map<string, Set<string>>();
+
+    for (const file of existingFiles) {
+      if (!this.isApplicationSourceFile(file)) {
+        continue;
+      }
+
+      const filePath = path.join(workspacePath, file);
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, 'utf-8');
+      } catch {
+        continue;
+      }
+
+      for (const specifier of this.extractBareImports(content)) {
+        const packageName = this.normalizePackageImport(specifier);
+        if (!packageName || hasDep(packageName)) {
+          continue;
+        }
+        if (!missing.has(packageName)) {
+          missing.set(packageName, new Set<string>());
+        }
+        missing.get(packageName)?.add(file);
+      }
+    }
+
+    return [...missing.entries()].map(([packageName, files]) => {
+      const sources = [...files].slice(0, 2);
+      const sourceSummary =
+        sources.length === 1
+          ? sources[0]
+          : `${sources.join(', ')}${files.size > 2 ? ', ...' : ''}`;
+      return `package.json is missing dependency "${packageName}" imported by ${sourceSummary}`;
+    });
+  }
+
+  private isApplicationSourceFile(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/');
+    if (!/\.(ts|tsx|js|jsx)$/.test(normalized)) {
+      return false;
+    }
+    return (
+      normalized.startsWith('src/') ||
+      normalized.startsWith('app/') ||
+      normalized.startsWith('pages/') ||
+      normalized.startsWith('components/') ||
+      normalized.startsWith('lib/')
+    );
+  }
+
+  private extractBareImports(content: string): string[] {
+    const matches = [
+      ...content.matchAll(/import\s+[^'"]*['"]([^'"]+)['"]/g),
+      ...content.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g),
+      ...content.matchAll(/export\s+[^'"]*from\s+['"]([^'"]+)['"]/g),
+      ...content.matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ];
+
+    return matches
+      .map((match) => match[1])
+      .filter((value): value is string => Boolean(value))
+      .filter((value) => !value.startsWith('.') && !value.startsWith('/'))
+      .filter((value) => !value.startsWith('node:'))
+      .filter((value) => !value.startsWith('virtual:'))
+      .filter((value) => !value.startsWith('#'));
+  }
+
+  private normalizePackageImport(specifier: string): string | null {
+    const cleanSpecifier = specifier.split('?')[0].split('#')[0];
+    if (!cleanSpecifier) {
+      return null;
+    }
+
+    if (cleanSpecifier.startsWith('@')) {
+      const [scope, name] = cleanSpecifier.split('/');
+      return scope && name ? `${scope}/${name}` : cleanSpecifier;
+    }
+
+    const [name] = cleanSpecifier.split('/');
+    return name || null;
   }
 
   private normalizeImportTarget(sourceFile: string, importPath: string): string | null {

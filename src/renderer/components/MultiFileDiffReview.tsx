@@ -235,36 +235,139 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     );
   };
 
+  const sectionCardStyle: React.CSSProperties = {
+    border: '1px solid var(--prime-border)',
+    borderRadius: '14px',
+    background: 'linear-gradient(180deg, var(--prime-surface-elevated) 0%, var(--prime-surface) 100%)',
+    boxShadow: 'var(--prime-shadow-sm)',
+  };
+
+  const getButtonStyle = (
+    variant: 'primary' | 'secondary' | 'danger' | 'warning' | 'success',
+    emphasis: 'solid' | 'soft' = 'soft'
+  ): React.CSSProperties => {
+    if (variant === 'primary') {
+      return {
+        padding: '9px 14px',
+        borderRadius: '10px',
+        border: emphasis === 'solid' ? '1px solid var(--prime-accent)' : '1px solid rgba(59, 130, 246, 0.16)',
+        background: emphasis === 'solid' ? 'var(--prime-accent)' : 'var(--prime-accent-light)',
+        color: emphasis === 'solid' ? '#fff' : 'var(--prime-accent)',
+        fontSize: '11px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        boxShadow: emphasis === 'solid' ? '0 10px 24px var(--prime-accent-glow)' : 'none',
+      };
+    }
+    if (variant === 'success') {
+      return {
+        padding: '9px 14px',
+        borderRadius: '10px',
+        border: emphasis === 'solid' ? '1px solid var(--prime-success)' : '1px solid rgba(16, 185, 129, 0.20)',
+        background: emphasis === 'solid' ? 'var(--prime-success)' : 'rgba(16, 185, 129, 0.10)',
+        color: emphasis === 'solid' ? '#fff' : 'var(--prime-success)',
+        fontSize: '11px',
+        fontWeight: 800,
+        cursor: 'pointer',
+        boxShadow: emphasis === 'solid' ? '0 10px 24px rgba(16, 185, 129, 0.22)' : 'none',
+      };
+    }
+    if (variant === 'warning') {
+      return {
+        padding: '9px 14px',
+        borderRadius: '10px',
+        border: emphasis === 'solid' ? '1px solid var(--prime-amber)' : '1px solid rgba(245, 158, 11, 0.20)',
+        background: emphasis === 'solid' ? 'var(--prime-amber)' : 'rgba(245, 158, 11, 0.10)',
+        color: emphasis === 'solid' ? '#111827' : 'var(--prime-amber)',
+        fontSize: '11px',
+        fontWeight: 800,
+        cursor: 'pointer',
+      };
+    }
+    if (variant === 'danger') {
+      return {
+        padding: '9px 14px',
+        borderRadius: '10px',
+        border: '1px solid rgba(239, 68, 68, 0.20)',
+        background: emphasis === 'solid' ? 'var(--prime-error)' : 'rgba(239, 68, 68, 0.08)',
+        color: emphasis === 'solid' ? '#fff' : 'var(--prime-error)',
+        fontSize: '11px',
+        fontWeight: 800,
+        cursor: 'pointer',
+      };
+    }
+    return {
+      padding: '9px 14px',
+      borderRadius: '10px',
+      border: '1px solid var(--prime-border)',
+      background: 'var(--prime-surface-hover)',
+      color: 'var(--prime-text-secondary)',
+      fontSize: '11px',
+      fontWeight: 800,
+      cursor: 'pointer',
+    };
+  };
+
+  const getReviewStatusMeta = (status: FileChange['status']) => {
+    if (status === 'accepted') {
+      return {
+        label: 'Accepted',
+        icon: '✓',
+        color: '#3fb950',
+        background: 'rgba(63, 185, 80, 0.10)',
+        border: 'rgba(63, 185, 80, 0.22)',
+      };
+    }
+    if (status === 'rejected') {
+      return {
+        label: isStaged ? 'Rejected' : 'Reverted',
+        icon: '−',
+        color: '#ff7b72',
+        background: 'rgba(255, 123, 114, 0.08)',
+        border: 'rgba(255, 123, 114, 0.20)',
+      };
+    }
+    return {
+      label: 'Pending Review',
+      icon: '•',
+      color: '#58a6ff',
+      background: 'rgba(88, 166, 255, 0.08)',
+      border: 'rgba(88, 166, 255, 0.18)',
+    };
+  };
+
   return (
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      background: 'var(--prime-surface)',
+      background: 'linear-gradient(180deg, var(--prime-surface-elevated) 0%, var(--prime-surface) 100%)',
       border: '1px solid var(--prime-border)',
-      borderRadius: '12px',
+      borderRadius: '18px',
       overflow: 'hidden',
       maxHeight: '70vh',
-      boxShadow: '0 24px 80px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255,255,255,0.04)',
+      boxShadow: 'var(--prime-shadow-xl), 0 0 0 1px rgba(255,255,255,0.04)',
     }}>
       {/* Header */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
-        padding: '16px 18px 14px',
+        gap: '14px',
+        padding: '18px 18px 16px',
         background: 'linear-gradient(180deg, var(--prime-bg) 0%, var(--prime-surface) 100%)',
         borderBottom: '1px solid var(--prime-border)',
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 700, fontSize: '14px', color: 'var(--prime-text)' }}>Review Agent Changes</span>
+              <span style={{ fontWeight: 800, fontSize: '16px', color: 'var(--prime-text)', letterSpacing: '-0.01em' }}>Review Agent Changes</span>
               <span style={{
-                fontSize: '11px',
-                color: 'var(--prime-text-muted)',
+                fontSize: '10px',
+                color: 'var(--prime-text-secondary)',
                 background: 'var(--prime-surface-hover)',
-                padding: '3px 8px',
-                borderRadius: '10px',
+                padding: '5px 9px',
+                borderRadius: '999px',
+                border: '1px solid var(--prime-border)',
+                fontWeight: 700,
               }}>
                 {stats.total} file{stats.total !== 1 ? 's' : ''}
               </span>
@@ -298,159 +401,79 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             )}
           </div>
           <button onClick={onClose} style={{
-            background: 'transparent',
-            border: '1px solid var(--prime-border)',
-            color: 'var(--prime-text-secondary)',
-            cursor: 'pointer',
-            fontSize: '12px',
-            fontWeight: 600,
-            padding: '8px 14px',
-            borderRadius: '8px',
+            ...getButtonStyle('secondary'),
             flexShrink: 0,
-            transition: 'background 0.15s ease',
-          }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--prime-surface-hover)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
+          }}>
             {isStaged && !applied ? 'Discard Review' : reviewComplete ? 'Done' : 'Hide Review'}
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {renderStatPill('Pending', stats.pending, '#f59e0b', 'rgba(245, 158, 11, 0.10)')}
-          {renderStatPill('Accepted', stats.accepted, '#3fb950', 'rgba(63, 185, 80, 0.10)')}
-          {renderStatPill(isStaged ? 'Rejected' : 'Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.10)')}
-          {verification?.status === 'verifying' && renderStatPill('Verifying', 1, '#58a6ff', 'rgba(88, 166, 255, 0.10)')}
-          {verification?.status === 'passed' && renderStatPill('Verified', 1, '#3fb950', 'rgba(63, 185, 80, 0.10)')}
-          {verification?.status === 'failed' && renderStatPill('Repair Needed', (verification.findings?.length || verification.issues.length) || 1, '#ff7b72', 'rgba(255, 123, 114, 0.10)')}
-          <span style={{ width: '1px', height: '16px', background: 'var(--prime-border)', margin: '0 2px', flexShrink: 0 }} />
-          {stats.pending > 0 && (
-            <>
-              <button onClick={onAcceptAll} style={{
-                padding: '7px 12px',
-                borderRadius: '8px',
-                border: 'none',
-                background: '#238636',
-                color: '#fff',
-                fontSize: '11px',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}>
-                Accept Pending ({stats.pending})
+        <div style={{
+          ...sectionCardStyle,
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+        }}>
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {renderStatPill('Pending', stats.pending, '#f59e0b', 'rgba(245, 158, 11, 0.10)')}
+            {renderStatPill('Accepted', stats.accepted, '#3fb950', 'rgba(63, 185, 80, 0.10)')}
+            {renderStatPill(isStaged ? 'Rejected' : 'Reverted', stats.rejected, '#ff7b72', 'rgba(255, 123, 114, 0.10)')}
+            {verification?.status === 'verifying' && renderStatPill('Verifying', 1, '#58a6ff', 'rgba(88, 166, 255, 0.10)')}
+            {verification?.status === 'passed' && renderStatPill('Verified', 1, '#3fb950', 'rgba(63, 185, 80, 0.10)')}
+            {verification?.status === 'failed' && renderStatPill('Repair Needed', (verification.findings?.length || verification.issues.length) || 1, '#ff7b72', 'rgba(255, 123, 114, 0.10)')}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {stats.pending > 0 && (
+              <>
+                <button onClick={onAcceptAll} style={getButtonStyle('success', 'solid')}>
+                  Accept Pending ({stats.pending})
+                </button>
+                <button onClick={onRejectAll} style={getButtonStyle('danger')}>
+                  {isStaged ? 'Reject Pending' : 'Revert Pending'}
+                </button>
+              </>
+            )}
+            {showApplyAction && onApplyAccepted && (
+              <button onClick={onApplyAccepted} style={getButtonStyle('primary', 'solid')}>
+                Apply Accepted Changes
               </button>
-              <button onClick={onRejectAll} style={{
-                padding: '7px 12px',
-                borderRadius: '8px',
-                border: '1px solid var(--prime-border)',
-                background: 'transparent',
-                color: '#ff7b72',
-                fontSize: '11px',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}>
-                {isStaged ? 'Reject Pending' : 'Revert Pending'}
+            )}
+            {showVerificationActions && verification?.status === 'idle' && onVerifyAccepted && (
+              <button onClick={onVerifyAccepted} style={getButtonStyle('primary')}>
+                Verify Accepted Changes
               </button>
-            </>
-          )}
-          {showApplyAction && onApplyAccepted && (
-            <button onClick={onApplyAccepted} style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#238636',
-              color: '#fff',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
-              Apply Accepted Changes
-            </button>
-          )}
-          {showVerificationActions && verification?.status === 'idle' && onVerifyAccepted && (
-            <button onClick={onVerifyAccepted} style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: '1px solid var(--prime-border)',
-              background: 'rgba(88, 166, 255, 0.12)',
-              color: '#58a6ff',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
-              Verify Accepted Changes
-            </button>
-          )}
-          {showVerificationActions && verification?.status === 'verifying' && (
-            <button disabled style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: '1px solid var(--prime-border)',
-              background: 'rgba(88, 166, 255, 0.12)',
-              color: '#58a6ff',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'wait',
-              opacity: 0.8,
-            }}>
-              Verifying...
-            </button>
-          )}
-          {showVerificationActions && verification?.status === 'passed' && onRunProject && (
-            <button onClick={onRunProject} style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#238636',
-              color: '#fff',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
-              Run Project
-            </button>
-          )}
-          {showVerificationActions && verification?.status === 'failed' && onVerifyAccepted && (
-            <button onClick={onVerifyAccepted} style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: '1px solid var(--prime-border)',
-              background: 'transparent',
-              color: '#58a6ff',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
-              Retry Verification
-            </button>
-          )}
-          {showVerificationActions && verification?.status === 'failed' && onRepair && (
-            <button onClick={onRepair} style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: 'none',
-              background: '#f59e0b',
-              color: '#111',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
-              Repair With Agent
-            </button>
-          )}
-          {applied && canRevertSession && onRevertSession && (
-            <button onClick={onRevertSession} style={{
-              padding: '7px 12px',
-              borderRadius: '8px',
-              border: '1px solid var(--prime-border)',
-              background: 'transparent',
-              color: '#ff7b72',
-              fontSize: '11px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}>
-              Revert Last Session
-            </button>
-          )}
+            )}
+            {showVerificationActions && verification?.status === 'verifying' && (
+              <button disabled style={{
+                ...getButtonStyle('primary'),
+                cursor: 'wait',
+                opacity: 0.82,
+              }}>
+                Verifying...
+              </button>
+            )}
+            {showVerificationActions && verification?.status === 'passed' && onRunProject && (
+              <button onClick={onRunProject} style={getButtonStyle('success', 'solid')}>
+                Run Project
+              </button>
+            )}
+            {showVerificationActions && verification?.status === 'failed' && onVerifyAccepted && (
+              <button onClick={onVerifyAccepted} style={getButtonStyle('secondary')}>
+                Retry Verification
+              </button>
+            )}
+            {showVerificationActions && verification?.status === 'failed' && onRepair && (
+              <button onClick={onRepair} style={getButtonStyle('warning', 'solid')}>
+                Repair With Agent
+              </button>
+            )}
+            {applied && canRevertSession && onRevertSession && (
+              <button onClick={onRevertSession} style={getButtonStyle('danger')}>
+                Revert Last Session
+              </button>
+            )}
+          </div>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {checkpoints.map((checkpoint) => (
@@ -543,7 +566,14 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             )}
           </div>
         )}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{
+          ...sectionCardStyle,
+          padding: '12px',
+          display: 'flex',
+          gap: '8px',
+          alignItems: 'center',
+          flexWrap: 'wrap'
+        }}>
           <input
             type="text"
             value={fileQuery}
@@ -582,13 +612,9 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             onClick={toggleExpandVisible}
             disabled={visibleChanges.length === 0}
             style={{
+              ...getButtonStyle('secondary'),
               padding: '7px 12px',
-              borderRadius: '8px',
-              border: '1px solid var(--prime-border)',
-              background: 'transparent',
-              color: 'var(--prime-text-secondary)',
               fontSize: '11px',
-              fontWeight: 700,
               cursor: visibleChanges.length === 0 ? 'not-allowed' : 'pointer',
               opacity: visibleChanges.length === 0 ? 0.6 : 1,
             }}
@@ -607,32 +633,50 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
       </div>
 
       {/* File list */}
-      <div style={{ overflow: 'auto', flex: 1 }}>
+      <div style={{ overflow: 'auto', flex: 1, padding: '12px', background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.02) 0%, transparent 100%)' }}>
         {visibleChanges.length === 0 ? (
           <div style={{
             padding: '20px',
             fontSize: '12px',
             color: 'var(--prime-text-muted)',
             textAlign: 'center',
-            borderTop: '1px solid var(--prime-border)',
+            border: '1px solid var(--prime-border)',
+            borderRadius: '14px',
+            background: 'var(--prime-surface)',
           }}>
             No files match the current filter.
           </div>
         ) : visibleChanges.map((change) => {
           const diffStats = diffStatsByFile.get(change.filePath) || { added: 0, removed: 0 };
+          const statusMeta = getReviewStatusMeta(change.status);
+          const totalChanges = diffStats.added + diffStats.removed;
+          const densityLabel =
+            totalChanges >= 30 ? 'Large change' :
+            totalChanges >= 10 ? 'Medium change' :
+            'Small change';
           return (
             <div key={change.filePath} style={{
-              borderBottom: '1px solid var(--prime-border)',
-              opacity: change.status === 'rejected' ? 0.4 : 1,
+              border: '1px solid var(--prime-border)',
+              borderRadius: '16px',
+              opacity: change.status === 'rejected' ? 0.52 : 1,
+              marginBottom: '12px',
+              overflow: 'hidden',
+              boxShadow: 'var(--prime-shadow-sm)',
+              background:
+                change.status === 'accepted'
+                  ? 'linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, var(--prime-surface) 100%)'
+                  : change.status === 'rejected'
+                    ? 'linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, var(--prime-surface) 100%)'
+                    : 'linear-gradient(180deg, rgba(88, 166, 255, 0.03) 0%, var(--prime-surface) 100%)',
             }}>
               {/* File header */}
               <div
                 onClick={() => toggleFile(change.filePath)}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 16px',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  padding: '14px 16px',
                   cursor: 'pointer',
                   fontSize: '12px',
                   background:
@@ -640,74 +684,116 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                       ? 'rgba(63, 185, 80, 0.06)'
                       : change.status === 'rejected'
                         ? 'rgba(255, 123, 114, 0.04)'
-                        : 'transparent',
+                        : 'rgba(88, 166, 255, 0.02)',
+                  transition: 'background 0.18s var(--ease-out-expo)',
                 }}
               >
-                <span style={{ color: 'var(--prime-text-muted)', fontSize: '10px' }}>
-                  {expandedFiles.has(change.filePath) ? '▼' : '▶'}
-                </span>
-                {getActionBadge(change.action)}
-                <span style={{
-                  fontFamily: '"JetBrains Mono", monospace',
-                  fontSize: '12px',
-                  color: 'var(--prime-text)',
-                  flex: 1,
-                }}>
-                  {change.filePath}
-                </span>
-                <span style={{
-                  padding: '2px 8px',
-                  borderRadius: '999px',
-                  fontSize: '10px',
-                  fontWeight: 700,
-                  background: 'rgba(88, 166, 255, 0.12)',
-                  color: '#58a6ff',
-                  fontFamily: '"JetBrains Mono", monospace',
-                }}>
-                  +{diffStats.added} / -{diffStats.removed}
-                </span>
-
-                {change.status === 'pending' && (
-                  <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-                    <button onClick={() => onAcceptFile(change.filePath)} style={{
-                      padding: '2px 10px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      background: 'rgba(63, 185, 80, 0.15)',
-                      color: '#3fb950',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>
-                      Accept
-                    </button>
-                    <button onClick={() => onRejectFile(change.filePath)} style={{
-                      padding: '2px 10px',
-                      borderRadius: '4px',
-                      border: 'none',
-                      background: 'rgba(255, 123, 114, 0.15)',
-                      color: '#ff7b72',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>
-                      Reject
-                    </button>
-                  </div>
-                )}
-
-                {change.status !== 'pending' && (
-                  <span style={{
-                    padding: '2px 8px',
-                    borderRadius: '10px',
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}>
+                  <div style={{
+                    width: '24px',
+                    height: '24px',
+                    borderRadius: '8px',
+                    background: 'var(--prime-surface-hover)',
+                    border: '1px solid var(--prime-border)',
+                    color: 'var(--prime-text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    marginTop: '1px',
                     fontSize: '10px',
-                    fontWeight: 700,
-                    background: change.status === 'accepted' ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255, 123, 114, 0.15)',
-                    color: change.status === 'accepted' ? '#3fb950' : '#ff7b72',
                   }}>
-                    {change.status === 'accepted' ? 'Accepted' : 'Reverted'}
-                  </span>
-                )}
+                    {expandedFiles.has(change.filePath) ? '▼' : '▶'}
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      {getActionBadge(change.action)}
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 9px',
+                        borderRadius: '999px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        color: statusMeta.color,
+                        background: statusMeta.background,
+                        border: `1px solid ${statusMeta.border}`,
+                      }}>
+                        <span>{statusMeta.icon}</span>
+                        {statusMeta.label}
+                      </span>
+                      <span style={{
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        background: 'rgba(88, 166, 255, 0.10)',
+                        color: '#58a6ff',
+                        fontFamily: '"JetBrains Mono", monospace',
+                      }}>
+                        +{diffStats.added} / -{diffStats.removed}
+                      </span>
+                      <span style={{
+                        fontSize: '10px',
+                        color: 'var(--prime-text-muted)',
+                        fontWeight: 700,
+                        padding: '4px 8px',
+                        borderRadius: '999px',
+                        background: 'var(--prime-surface-hover)',
+                        border: '1px solid var(--prime-border)',
+                      }}>
+                        {densityLabel}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: '12px',
+                      color: 'var(--prime-text)',
+                      lineHeight: 1.5,
+                      wordBreak: 'break-word',
+                    }}>
+                      {change.filePath}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%', flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: '10px', color: 'var(--prime-text-muted)', fontWeight: 700 }}>
+                    {expandedFiles.has(change.filePath) ? 'Expanded diff preview' : 'Click to inspect full diff'}
+                  </div>
+
+                  {change.status === 'pending' && (
+                    <div style={{ display: 'flex', gap: '6px' }} onClick={e => e.stopPropagation()}>
+                      <button onClick={() => onAcceptFile(change.filePath)} style={{
+                        ...getButtonStyle('success'),
+                        padding: '6px 11px',
+                      }}>
+                        Accept
+                      </button>
+                      <button onClick={() => onRejectFile(change.filePath)} style={{
+                        ...getButtonStyle('danger'),
+                        padding: '6px 11px',
+                      }}>
+                        Reject
+                      </button>
+                    </div>
+                  )}
+
+                  {change.status !== 'pending' && (
+                    <span style={{
+                      padding: '5px 10px',
+                      borderRadius: '999px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      background: statusMeta.background,
+                      color: statusMeta.color,
+                      border: `1px solid ${statusMeta.border}`,
+                    }}>
+                      {statusMeta.label}
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* File diff */}
@@ -715,7 +801,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                 <div style={{
                   background: '#0d1117',
                   borderTop: '1px solid var(--prime-border)',
-                  maxHeight: '240px',
+                  maxHeight: '280px',
                   overflow: 'auto',
                 }}>
                   <FileDiff oldContent={change.oldContent} newContent={change.newContent} />
