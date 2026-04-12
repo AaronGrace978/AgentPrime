@@ -24,6 +24,7 @@ export interface Settings {
   activeProvider: string;
   activeModel: string;
   dualOllamaEnabled: boolean;
+  assistantBehaviorProfile?: 'default' | 'vibecoder';
   useSpecializedAgents?: boolean; // Enable specialized agent architecture
   agentAutonomyLevel?: 1 | 2 | 3 | 4 | 5; // How aggressively the agent can act end-to-end
   /** When true, standard (non-specialized) agent writes go straight to disk; when false/undefined, writes stay staged for review/apply first. */

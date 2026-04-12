@@ -284,6 +284,15 @@ interface MessageBubbleProps {
 const MessageBubble = memo(({ message, onApplyCode }: MessageBubbleProps) => {
   // Check if message contains completion marker
   const isCompletion = message.content.includes("Job's Done");
+  const footerMetadata =
+    message.role === 'assistant'
+      ? [
+          message.metadata?.assistantBehaviorProfile === 'vibecoder' ? 'VibeCoder' : null,
+          message.metadata?.providerLabel || null,
+          message.metadata?.modelLabel || null,
+          message.metadata?.viaFallback ? 'Fallback' : null,
+        ].filter(Boolean).join(' · ')
+      : '';
   
   // Extract code blocks from assistant messages
   const { blocks, text } = message.role === 'assistant' 
@@ -361,6 +370,19 @@ const MessageBubble = memo(({ message, onApplyCode }: MessageBubbleProps) => {
           : message.role === 'user' ? 'none' : '1px solid var(--prime-border)'
       }}>
         {renderContent()}
+        {footerMetadata && (
+          <div style={{
+            marginTop: '10px',
+            paddingTop: '10px',
+            borderTop: '1px solid rgba(148, 163, 184, 0.18)',
+            fontSize: '11px',
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            color: 'var(--prime-text-muted)'
+          }}>
+            {footerMetadata}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -7544,6 +7544,11 @@ button:active:not(:disabled) {
   background: var(--prime-purple);
 }
 
+.badge-vibecoder {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(14, 165, 233, 0.95));
+  color: #f8fafc;
+}
+
 .badge-brain-offline {
   background: rgba(255, 80, 80, 0.25);
   color: #ff6b6b;

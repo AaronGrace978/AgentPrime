@@ -48,6 +48,11 @@ import {
   type SpecialistId,
 } from './specialist-contracts';
 import { resolveAgentAutonomyPolicy } from './autonomy-policy';
+import {
+  injectBehaviorProfilePrompt,
+  type AssistantBehaviorProfile,
+  type VibeCoderIntent,
+} from './behavior-profile';
 
 const log = createLogger('MirrorAgents');
 
@@ -294,9 +299,11 @@ async function buildMirrorEnhancedPrompt(
   basePrompt: string,
   options: {
     reflectionQuestionLimit?: number;
+    assistantBehaviorProfile?: AssistantBehaviorProfile;
+    vibeCoderIntent?: VibeCoderIntent;
   } = {}
 ): Promise<string> {
-  let enhancedPrompt = `You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
+  let enhancedPrompt = injectBehaviorProfilePrompt(`You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
 
 Claude Opus is known for:
 - Deep, thorough analysis before coding
@@ -310,7 +317,7 @@ Claude Opus is known for:
 
 ---
 
-${basePrompt}`;
+${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
   
   try {
     const mirror = await getMirrorContext(task);
@@ -2452,7 +2459,11 @@ export async function executeWithSpecialists(
       task,
       'tool_orchestrator',
       planningOrchestrator.systemPrompt,
-      { reflectionQuestionLimit }
+      {
+        reflectionQuestionLimit,
+        assistantBehaviorProfile: context.assistantBehaviorProfile,
+        vibeCoderIntent: context.vibeCoderIntent,
+      }
     ));
     const planningRequest =
       planningMode === 'compact'
@@ -2593,6 +2604,8 @@ Output as a structured list. Be specific and comprehensive.`;
     applyBudgetPrompt(
       await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt, {
         reflectionQuestionLimit,
+        assistantBehaviorProfile: context.assistantBehaviorProfile,
+        vibeCoderIntent: context.vibeCoderIntent,
       })
     ),
     scaffoldApplied,
@@ -2825,6 +2838,8 @@ Output as a structured list. Be specific and comprehensive.`;
     const enhancedPrompt = appendScaffoldCustomizationInstructions(
       applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, role, config.systemPrompt, {
         reflectionQuestionLimit,
+        assistantBehaviorProfile: context.assistantBehaviorProfile,
+        vibeCoderIntent: context.vibeCoderIntent,
       })),
       scaffoldApplied,
       scaffoldTemplateId
@@ -3037,6 +3052,8 @@ ${buildSharedContext(sharedContext)}`
       applyBudgetPrompt(
         await buildMirrorEnhancedPrompt(task, 'integration_analyst', analyst.systemPrompt, {
           reflectionQuestionLimit,
+          assistantBehaviorProfile: context.assistantBehaviorProfile,
+          vibeCoderIntent: context.vibeCoderIntent,
         })
       ),
       scaffoldApplied,

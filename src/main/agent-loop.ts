@@ -995,6 +995,11 @@ interface Tool {
   execute: (params: any, context: AgentContext) => Promise<any>;
 }
 
+import {
+  injectBehaviorProfilePrompt,
+  type AssistantBehaviorProfile,
+  type VibeCoderIntent,
+} from './agent/behavior-profile';
 import { PromptSanitizer } from './security/prompt-sanitizer';
 
 export interface AgentContext {
@@ -1005,6 +1010,8 @@ export interface AgentContext {
   gitStatus?: string;
   model?: string;
   runtimeBudget?: 'instant' | 'standard' | 'deep';
+  assistantBehaviorProfile?: AssistantBehaviorProfile;
+  vibeCoderIntent?: VibeCoderIntent;
   autonomyLevel?: 1 | 2 | 3 | 4 | 5;
   deterministicScaffoldOnly?: boolean;
   /** When true, skip staged review and commit monolithic agent file writes immediately (settings-driven). */
@@ -3334,6 +3341,19 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     this.consecutiveModelFailures = 0;
   }
 
+  private syncBehaviorProfilePrompt(): void {
+    const systemMessage = this.messages.find((message) => message.role === 'system');
+    if (!systemMessage) {
+      return;
+    }
+
+    systemMessage.content = injectBehaviorProfilePrompt(
+      systemMessage.content,
+      this.context.assistantBehaviorProfile,
+      this.context.vibeCoderIntent
+    );
+  }
+
   /**
    * Sync message to state manager for persistence
    */
@@ -3350,6 +3370,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     const runId = createOperationId('agentrun');
     const sanitization = PromptSanitizer.sanitize(rawUserMessage);
     const userMessage = sanitization.sanitizedText;
+    this.syncBehaviorProfilePrompt();
     log.info(`[${runId}] Starting agent loop run`, {
       sessionId: this.sessionId,
       workspacePath: this.context.workspacePath,
@@ -7035,6 +7056,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
   // Update context (called by Electron frontend)
   updateContext(updates: Partial<AgentContext>) {
     this.context = { ...this.context, ...updates };
+    this.syncBehaviorProfilePrompt();
   }
 }
 

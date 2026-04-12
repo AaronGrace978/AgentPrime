@@ -284,7 +284,16 @@ let workspacePath: string | null = null;
 let focusedFolderPath: string | null = null;
 let activeFilePath: string | null = null; // Track currently active file for completion context
 type ConversationMode = 'agent' | 'chat' | 'dino';
-type ConversationMessage = { role: 'user' | 'assistant'; content: string };
+type ConversationMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  metadata?: {
+    assistantBehaviorProfile?: 'vibecoder';
+    providerLabel?: string;
+    modelLabel?: string;
+    viaFallback?: boolean;
+  };
+};
 let conversationHistory: Record<ConversationMode, ConversationMessage[]> = {
   agent: [],
   chat: [],
@@ -328,6 +337,7 @@ let settings: Settings = {
   activeProvider: 'ollama',
   activeModel: OLLAMA_MODEL,
   dualOllamaEnabled: false,
+  assistantBehaviorProfile: 'default',
   agentAutonomyLevel: 3,
   agentMonolithicApplyImmediately: false,
   pythonBrainEnabled: false,
@@ -1240,9 +1250,14 @@ app.whenReady().then(async () => {
     getCurrentFile: () => activeFilePath,
     getCurrentFolder: () => focusedFolderPath,
     getConversationHistory: (mode: ConversationMode = 'agent') => conversationHistory[mode] || [],
-    addToConversationHistory: (mode: ConversationMode, role: 'user' | 'assistant', content: string) => {
+    addToConversationHistory: (
+      mode: ConversationMode,
+      role: 'user' | 'assistant',
+      content: string,
+      metadata?: ConversationMessage['metadata']
+    ) => {
       const history = conversationHistory[mode] || [];
-      history.push({ role, content });
+      history.push({ role, content, metadata });
       // Keep last 20 messages
       if (history.length > 20) {
         conversationHistory[mode] = history.slice(-20);

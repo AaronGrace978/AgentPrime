@@ -93,6 +93,12 @@ export interface AgentAPI {
   chat: (message: string, context: any) => Promise<{
     success: boolean;
     response?: string;
+    responseMetadata?: {
+      assistantBehaviorProfile?: 'vibecoder';
+      providerLabel?: string;
+      modelLabel?: string;
+      viaFallback?: boolean;
+    };
     error?: string;
     requestId?: string;
     reviewSessionId?: string;

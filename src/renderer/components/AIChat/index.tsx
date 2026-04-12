@@ -11,7 +11,7 @@ import type { AIRuntimeSnapshot, ModelInfo } from '../../../types/ai-providers';
 import type { Settings } from '../../../types';
 
 // Types and constants
-import { Message, AIChatProps, ChatMode, AgentFileChange } from './types';
+import { Message, MessageMetadata, AIChatProps, ChatMode, AgentFileChange } from './types';
 import {
   WELCOME_MESSAGE,
   CHAT_WELCOME_MESSAGE,
@@ -84,10 +84,43 @@ type ProviderModelCatalogNotice = {
 };
 
 const DEFAULT_AGENT_MODEL = 'qwen3-coder:480b-cloud';
+const DEFAULT_ASSISTANT_BEHAVIOR_PROFILE: NonNullable<Settings['assistantBehaviorProfile']> = 'default';
 const DEFAULT_NON_AGENT_SELECTIONS: Record<NonAgentMode, NonAgentSelection> = {
   chat: { provider: 'openai', model: 'gpt-5.4' },
   dino: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
 };
+
+function normalizeMessageMetadata(metadata: unknown): MessageMetadata | undefined {
+  if (metadata && typeof metadata === 'object') {
+    const raw = metadata as {
+      assistantBehaviorProfile?: string;
+      providerLabel?: string;
+      modelLabel?: string;
+      viaFallback?: boolean;
+    };
+
+    const normalized: MessageMetadata = {};
+
+    if (raw.assistantBehaviorProfile === 'vibecoder') {
+      normalized.assistantBehaviorProfile = 'vibecoder';
+    }
+    if (typeof raw.providerLabel === 'string' && raw.providerLabel.trim()) {
+      normalized.providerLabel = raw.providerLabel;
+    }
+    if (typeof raw.modelLabel === 'string' && raw.modelLabel.trim()) {
+      normalized.modelLabel = raw.modelLabel;
+    }
+    if (raw.viaFallback === true) {
+      normalized.viaFallback = true;
+    }
+
+    if (Object.keys(normalized).length > 0) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
 
 function isNonAgentMode(mode: ChatMode): mode is NonAgentMode {
   return mode === 'chat' || mode === 'dino';
@@ -189,6 +222,8 @@ const AIChat: React.FC<AIChatProps> = ({
   const [providerModelCatalogNotices, setProviderModelCatalogNotices] = useState<Record<string, ProviderModelCatalogNotice>>({});
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [agentAutonomyLevel, setAgentAutonomyLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
+  const [assistantBehaviorProfile, setAssistantBehaviorProfile] =
+    useState<NonNullable<Settings['assistantBehaviorProfile']>>(DEFAULT_ASSISTANT_BEHAVIOR_PROFILE);
   const [agentPrefsHydrated, setAgentPrefsHydrated] = useState(false);
   const [createFolderDialogOpen, setCreateFolderDialogOpen] = useState(false);
   const [lastError, setLastError] = useState<AIError | null>(null);
@@ -304,7 +339,8 @@ const AIChat: React.FC<AIChatProps> = ({
         const historyMessages: Message[] = result.history.map((msg: any) => ({
           role: msg.role,
           content: msg.content,
-          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+          metadata: normalizeMessageMetadata(msg.metadata),
         }));
         setMessages(historyMessages);
         return;
@@ -338,6 +374,9 @@ const AIChat: React.FC<AIChatProps> = ({
           chat: resolveNonAgentSelection('chat', settings, DEFAULT_NON_AGENT_SELECTIONS.chat),
           dino: resolveNonAgentSelection('dino', settings, DEFAULT_NON_AGENT_SELECTIONS.dino),
         });
+        setAssistantBehaviorProfile(
+          settings?.assistantBehaviorProfile === 'vibecoder' ? 'vibecoder' : DEFAULT_ASSISTANT_BEHAVIOR_PROFILE
+        );
 
         const providersToPrime = new Set<string>([
           settings?.activeProvider || 'ollama',
@@ -443,12 +482,15 @@ const AIChat: React.FC<AIChatProps> = ({
             ? settings.useSpecializedAgents
             : true;
         const nextAutonomyLevel = clampAgentAutonomyLevel(settings?.agentAutonomyLevel);
+        const nextBehaviorProfile =
+          settings?.assistantBehaviorProfile === 'vibecoder' ? 'vibecoder' : DEFAULT_ASSISTANT_BEHAVIOR_PROFILE;
 
         hydratedUseSpecializedAgentsRef.current = nextUseSpecializedAgents;
         hydratedAutonomyLevelRef.current = nextAutonomyLevel;
 
         setUseSpecializedAgents(nextUseSpecializedAgents);
         setAgentAutonomyLevel(nextAutonomyLevel);
+        setAssistantBehaviorProfile(nextBehaviorProfile);
       } catch (error) {
         console.error('Failed to load specialized agents setting:', error);
       } finally {
@@ -456,6 +498,22 @@ const AIChat: React.FC<AIChatProps> = ({
       }
     };
     loadAgentPreferences();
+  }, []);
+
+  useEffect(() => {
+    const handleSettingsChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<Settings>;
+      const nextProfile =
+        customEvent.detail?.assistantBehaviorProfile === 'vibecoder'
+          ? 'vibecoder'
+          : DEFAULT_ASSISTANT_BEHAVIOR_PROFILE;
+      setAssistantBehaviorProfile(nextProfile);
+    };
+
+    window.addEventListener('agentprime-settings-changed', handleSettingsChanged as EventListener);
+    return () => {
+      window.removeEventListener('agentprime-settings-changed', handleSettingsChanged as EventListener);
+    };
   }, []);
 
   // Save specialized agents preference when changed
@@ -888,7 +946,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
     setMessages(prev => [...prev, {
       role: 'assistant',
-      content: `Working on your request using **${agentModel}** with the **${dualModel.mode}** runtime budget and **${AUTONOMY_LABELS[agentAutonomyLevel]}** autonomy...`,
+      content: `Working on your request using **${agentModel}** with the **${dualModel.mode}** runtime budget, **${AUTONOMY_LABELS[agentAutonomyLevel]}** autonomy${assistantBehaviorProfile === 'vibecoder' ? ', and **VibeCoder** behavior' : ''}...`,
       timestamp: new Date()
     }]);
 
@@ -934,7 +992,8 @@ const AIChat: React.FC<AIChatProps> = ({
         return [...filtered, {
           role: 'assistant',
           content: result.success ? (result.response || '') : failMsg,
-          timestamp: new Date()
+          timestamp: new Date(),
+          metadata: result.success ? normalizeMessageMetadata(result.responseMetadata) : undefined,
         }];
       });
 
@@ -997,7 +1056,7 @@ const AIChat: React.FC<AIChatProps> = ({
         return [...filtered, {
           role: 'assistant',
           content: classified.message,
-          timestamp: new Date()
+          timestamp: new Date(),
         }];
       });
 
@@ -1077,6 +1136,7 @@ const AIChat: React.FC<AIChatProps> = ({
           <ChatHeader
             chatMode={chatMode}
             pythonBrainStatus={pythonBrainStatus}
+            assistantBehaviorProfile={assistantBehaviorProfile}
             onClose={onClose}
           />
 

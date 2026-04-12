@@ -49,6 +49,7 @@ Current status:
 - Agent execution now uses bounded discipline specialists with file ownership, validation, explicit review sessions, and structured repair passes.
 - Provider setup is safer: API keys stay out of plain settings files, with secure storage and renderer-safe IPC.
 - Chat modes are now treated as distinct experiences instead of a single blended prompt surface.
+- Agent behavior profiles now support an Aaron Grace `VibeCoder` mode with stricter intent discipline and leaner planning/review behavior.
 - The core target loop is `create -> review -> apply -> install -> run -> repair`.
 
 Recently verified:
@@ -78,12 +79,14 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 - Open a project and work inside a full desktop IDE shell with Monaco, tabs, file tree, terminal, search, and settings
 - Use Agent Mode for workspace-aware implementation, edits, commands, and repair loops
+- Switch Agent Mode into `VibeCoder` when you want Aaron-style intent discipline, tighter scope control, and more practical plan/review responses
 - Use Just Chat or Dino Buddy without needing an open workspace
 - Pick providers and models across OpenAI, Anthropic, Ollama, and OpenRouter
 - Route work through fast, deep, or auto runtime budgets
 - Run bounded specialized agents for more structured multi-step tasks
 - Review staged multi-file changes behind explicit `plan -> review -> apply -> verify/repair` checkpoints
 - See which reflection budget (`instant`, `standard`, or `deep`) the agent used before a patch set is applied
+- See when `VibeCoder` is active from the chat header, in-progress status copy, and the compact footer on completed assistant replies
 - Apply inline AI edits directly from the editor
 - Use ghost text completions and contextual coding assistance
 - Run natural-language file operations with confirmation before risky bulk actions
@@ -92,6 +95,14 @@ This is still an active build, but it now behaves much more like an actual AI ID
 - Work with Git actions and repository workflows without leaving the desktop shell
 
 ## Recent Upgrades
+
+### Aaron Grace VibeCoder profile (April 2026)
+
+- **Behavior profile setting:** AgentPrime now exposes an `Aaron Grace VibeCoder` assistant behavior profile in Settings so the doctrine is a product feature, not just a hidden prompt tweak.
+- **Intent-shaped routing:** In Agent Mode, `plan-only` and `review-only` asks can short-circuit into a direct response path so strategic questions do not accidentally fall into build/scaffold loops.
+- **Shared doctrine across agent paths:** Both the monolithic agent loop and specialized-agent stack now receive the same VibeCoder doctrine, which keeps planning, building, and repair behavior more consistent.
+- **Visible activation state:** When VibeCoder is active, the UI now shows it in the chat header, the active run status line, and the completed-response metadata footer so you can tell which behavior profile produced the answer.
+- **Secure provider-key workflow:** Provider API keys can now be pasted into settings while still using secure storage/keychain handling rather than leaking secrets into plain renderer settings state.
 
 ### Review checkpoints, reflection budgets, and discipline routing (April 2026)
 

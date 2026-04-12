@@ -9,6 +9,7 @@ import { ChatMode, PythonBrainStatus } from '../types';
 interface ChatHeaderProps {
   chatMode: ChatMode;
   pythonBrainStatus: PythonBrainStatus;
+  assistantBehaviorProfile?: 'default' | 'vibecoder';
   onClose: () => void;
 }
 
@@ -21,9 +22,11 @@ const MODE_META: Record<ChatMode, { icon: string; title: string; subtitle: strin
 export const ChatHeader: React.FC<ChatHeaderProps> = ({
   chatMode,
   pythonBrainStatus,
+  assistantBehaviorProfile = 'default',
   onClose
 }) => {
   const meta = MODE_META[chatMode];
+  const vibeCoderActive = chatMode === 'agent' && assistantBehaviorProfile === 'vibecoder';
 
   return (
     <div className="chat-header">
@@ -39,6 +42,14 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             </span>
             {chatMode === 'dino' && (
               <span className="badge badge-rawr">Calm</span>
+            )}
+            {vibeCoderActive && (
+              <span
+                title="Aaron Grace VibeCoder behavior profile is active for Agent Mode"
+                className="badge badge-vibecoder"
+              >
+                VibeCoder
+              </span>
             )}
             {!pythonBrainStatus.enabled ? (
               <span

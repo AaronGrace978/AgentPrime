@@ -89,6 +89,17 @@ const PROVIDER_CREDENTIAL_COPY: Record<string, string> = {
   openrouter: 'Paste your OpenRouter key for multi-provider routing.',
 };
 
+const ASSISTANT_BEHAVIOR_PROFILE_COPY: Record<'default' | 'vibecoder', { label: string; description: string }> = {
+  default: {
+    label: 'Default AgentPrime',
+    description: 'Current stock behavior: broad, completion-focused agent execution.',
+  },
+  vibecoder: {
+    label: 'Aaron Grace VibeCoder',
+    description: 'Intent-first mode: plan before building, tighter scope, smaller viable fixes, and less architecture sprawl.',
+  },
+};
+
 function clampAgentAutonomyLevel(value: unknown): 1 | 2 | 3 | 4 | 5 {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return 3;
@@ -212,6 +223,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       activeProvider: 'ollama',
       activeModel: 'qwen3-coder:480b-cloud',
       dualOllamaEnabled: false,
+      assistantBehaviorProfile: 'default',
       agentAutonomyLevel: 3,
       pythonBrainEnabled: false,
       dualModelEnabled: true,
@@ -766,6 +778,32 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                       </div>
                     );
                   })}
+                </div>
+
+                <div className="setting-group">
+                  <label className="setting-label">
+                    <span className="setting-name">Agent Behavior Profile</span>
+                    <span className="setting-description">
+                      Choose how Agent Mode thinks through requests before it plans, builds, reviews, and repairs.
+                    </span>
+                  </label>
+                  <div className="setting-input-group setting-input-group--stack">
+                    <select
+                      value={localSettings.assistantBehaviorProfile || 'default'}
+                      onChange={(e) => updateSetting('assistantBehaviorProfile', e.target.value as Settings['assistantBehaviorProfile'])}
+                      className="setting-select"
+                    >
+                      <option value="default">{ASSISTANT_BEHAVIOR_PROFILE_COPY.default.label}</option>
+                      <option value="vibecoder">{ASSISTANT_BEHAVIOR_PROFILE_COPY.vibecoder.label}</option>
+                    </select>
+                    <div className="setting-model-meta" style={{ justifyContent: 'flex-end' }}>
+                      <span className="setting-model-current">
+                        {ASSISTANT_BEHAVIOR_PROFILE_COPY[
+                          (localSettings.assistantBehaviorProfile || 'default') as 'default' | 'vibecoder'
+                        ].description}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="setting-group">
@@ -1439,6 +1477,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
           .setting-input-group--wide {
             width: min(100%, 360px);
+          }
+
+          .setting-input-group--stack {
+            width: min(100%, 420px);
+            flex-direction: column;
+            align-items: stretch;
           }
 
           .setting-range {

@@ -25,11 +25,19 @@ export interface OpenFile {
   isDirty: boolean;
 }
 
+export interface MessageMetadata {
+  assistantBehaviorProfile?: 'vibecoder';
+  providerLabel?: string;
+  modelLabel?: string;
+  viaFallback?: boolean;
+}
+
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
   type?: 'system' | 'action' | 'result' | 'chat';
+  metadata?: MessageMetadata;
 }
 
 export type AgentFileChange = AgentReviewChange;

@@ -27,6 +27,11 @@ import { buildReviewCheckpointSummary } from '../agent/reflection-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
 import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
+import {
+  buildVibeCoderDirectResponseSystemPrompt,
+  classifyVibeCoderIntent,
+  normalizeAssistantBehaviorProfile,
+} from '../agent/behavior-profile';
 
 /**
  * Recommended models for AgentPrime (fast and capable)
@@ -152,6 +157,33 @@ function emitRuntimeInfo(sender: WebContents, requestId: string, runtime: AIRunt
 import { conversationSummarizer } from '../agent/conversation-summarizer';
 
 type ConversationMode = 'agent' | 'chat' | 'dino';
+type AssistantResponseMetadata = {
+  assistantBehaviorProfile?: 'vibecoder';
+  providerLabel?: string;
+  modelLabel?: string;
+  viaFallback?: boolean;
+};
+
+function buildAssistantResponseMetadata(
+  assistantBehaviorProfile: ReturnType<typeof normalizeAssistantBehaviorProfile>,
+  runtime?: AIRuntimeSnapshot,
+  fallbackSelection?: { provider?: string; model?: string }
+): AssistantResponseMetadata | undefined {
+  const providerLabel = runtime?.displayProvider || fallbackSelection?.provider;
+  const modelLabel = runtime?.displayModel || fallbackSelection?.model;
+  const viaFallback = Boolean(runtime?.viaFallback);
+
+  if (assistantBehaviorProfile !== 'vibecoder' && !providerLabel && !modelLabel && !viaFallback) {
+    return undefined;
+  }
+
+  return {
+    assistantBehaviorProfile: assistantBehaviorProfile === 'vibecoder' ? 'vibecoder' : undefined,
+    providerLabel,
+    modelLabel,
+    viaFallback,
+  };
+}
 
 function resolveConversationMode(context?: { just_chat_mode?: boolean; dino_buddy_mode?: boolean }): ConversationMode {
   if (context?.dino_buddy_mode) {
@@ -168,8 +200,15 @@ interface ChatHandlerDeps {
   getWorkspacePath: () => string | null;
   getCurrentFile: () => string | null;
   getCurrentFolder: () => string | null;
-  getConversationHistory: (mode?: ConversationMode) => Array<{ role: 'user' | 'assistant'; content: string }>;
-  addToConversationHistory: (mode: ConversationMode, role: 'user' | 'assistant', content: string) => void;
+  getConversationHistory: (
+    mode?: ConversationMode
+  ) => Array<{ role: 'user' | 'assistant'; content: string; metadata?: AssistantResponseMetadata }>;
+  addToConversationHistory: (
+    mode: ConversationMode,
+    role: 'user' | 'assistant',
+    content: string,
+    metadata?: AssistantResponseMetadata
+  ) => void;
   getSettings: () => any;
 }
 
@@ -446,6 +485,9 @@ export function register(deps: ChatHandlerDeps): void {
           activeProvider,
           runtime: requestedRuntime,
         } = resolveConfiguredModel(agentSettings, context.model, runtimeBudget, context.provider);
+        const assistantBehaviorProfile = normalizeAssistantBehaviorProfile(agentSettings?.assistantBehaviorProfile);
+        const vibeCoderIntent =
+          assistantBehaviorProfile === 'vibecoder' ? classifyVibeCoderIntent(message) : undefined;
         const autonomyLevel = clampAgentAutonomyLevel(context.agent_autonomy ?? agentSettings?.agentAutonomyLevel);
         const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
@@ -509,12 +551,96 @@ export function register(deps: ChatHandlerDeps): void {
           return {
             success: true,
             response: 'Prepared a staged static-site fixture for review. Accept the files, apply them, then verify and run the project.',
+            responseMetadata: buildAssistantResponseMetadata(assistantBehaviorProfile, undefined, {
+              provider: activeProvider,
+              model: selectedModel,
+            }),
             requestId,
             agent_mode: true,
             specialized_mode: useSpecializedAgents,
             reviewSessionId: reviewSession?.sessionId,
             reviewChanges: reviewSession?.changes,
             reviewCheckpoint: reviewSession?.checkpoint,
+          };
+        }
+
+        if (
+          assistantBehaviorProfile === 'vibecoder' &&
+          (vibeCoderIntent === 'plan-only' || vibeCoderIntent === 'review-only')
+        ) {
+          const telemetry = getTelemetryService();
+          telemetry.track('ai_request', {
+            mode: 'agent_vibecoder_direct',
+            intent: vibeCoderIntent,
+            model: selectedModel,
+            provider: activeProvider,
+            autonomyLevel,
+            autonomyLabel: autonomyPolicy.label,
+            ...flattenRuntimeForTelemetry(requestedRuntime),
+            workspacePath,
+          });
+
+          aiRouter.setActiveProvider(activeProvider, selectedModel);
+          const directResponse = await aiRouter.chat(
+            [
+              { role: 'system', content: buildVibeCoderDirectResponseSystemPrompt(vibeCoderIntent) },
+              { role: 'user', content: message },
+            ],
+            {
+              model: selectedModel,
+            }
+          );
+          const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+          const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
+          emitRuntimeInfo(event.sender, requestId, responseRuntime);
+
+          if (!directResponse.success) {
+            telemetry.track('ai_response', {
+              mode: 'agent_vibecoder_direct',
+              success: false,
+              intent: vibeCoderIntent,
+              model: selectedModel,
+              provider: activeProvider,
+              autonomyLevel,
+              autonomyLabel: autonomyPolicy.label,
+              ...flattenRuntimeForTelemetry(responseRuntime),
+              workspacePath,
+              error: directResponse.error || 'VibeCoder direct response failed',
+            });
+
+            return {
+              success: false,
+              error: directResponse.error || 'VibeCoder direct response failed',
+              requestId,
+              agent_mode: true,
+              specialized_mode: useSpecializedAgents,
+              runtime: responseRuntime,
+            };
+          }
+
+          const response = directResponse.content || '';
+          addToConversationHistory(conversationMode, 'user', message);
+          addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);
+          telemetry.track('ai_response', {
+            mode: 'agent_vibecoder_direct',
+            success: true,
+            intent: vibeCoderIntent,
+            model: selectedModel,
+            provider: activeProvider,
+            autonomyLevel,
+            autonomyLabel: autonomyPolicy.label,
+            ...flattenRuntimeForTelemetry(responseRuntime),
+            workspacePath,
+          });
+
+          return {
+            success: true,
+            response,
+            responseMetadata,
+            requestId,
+            agent_mode: true,
+            specialized_mode: useSpecializedAgents,
+            runtime: responseRuntime,
           };
         }
         
@@ -563,6 +689,8 @@ export function register(deps: ChatHandlerDeps): void {
             terminalHistory: context.terminal_history || [],
             model: selectedModel,
             runtimeBudget,
+            assistantBehaviorProfile,
+            vibeCoderIntent,
             autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly,
@@ -605,12 +733,13 @@ export function register(deps: ChatHandlerDeps): void {
             });
             const response = await specializedAgentLoop.run(message);
             const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+            const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
             emitRuntimeInfo(event.sender, requestId, responseRuntime);
             const reviewSession = specializedAgentLoop.consumePendingReviewSession();
 
             // Store in history
             addToConversationHistory(conversationMode, 'user', message);
-            addToConversationHistory(conversationMode, 'assistant', response);
+            addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);
             telemetry.track('ai_response', {
               mode: 'specialized_dispatch',
               success: true,
@@ -632,6 +761,7 @@ export function register(deps: ChatHandlerDeps): void {
             return {
               success: true,
               response,
+              responseMetadata,
               requestId,
               agent_mode: true,
               specialized_mode: true,
@@ -691,6 +821,8 @@ export function register(deps: ChatHandlerDeps): void {
             terminalHistory: context.terminal_history || [],
             model: selectedModel,
             runtimeBudget,
+            assistantBehaviorProfile,
+            vibeCoderIntent,
             autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly: Boolean((context as any).deterministic_scaffold_only),
@@ -725,6 +857,7 @@ export function register(deps: ChatHandlerDeps): void {
             });
             const response = pipelineResult.response;
             const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
+            const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
             emitRuntimeInfo(event.sender, requestId, responseRuntime);
 
             if (!pipelineResult.success) {
@@ -744,7 +877,7 @@ export function register(deps: ChatHandlerDeps): void {
 
             // Store in history
             addToConversationHistory(conversationMode, 'user', message);
-            addToConversationHistory(conversationMode, 'assistant', response);
+            addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);
 
             // Send success reaction to Dino Buddy
             event.sender.send('dino:reaction', {
@@ -755,6 +888,7 @@ export function register(deps: ChatHandlerDeps): void {
             return {
               success: true,
               response,
+              responseMetadata,
               requestId,
               agent_mode: true,
               specialized_mode: false,
