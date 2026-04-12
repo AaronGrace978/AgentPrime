@@ -106,9 +106,21 @@ const SystemStatusPanel: React.FC<SystemStatusPanelProps> = ({
               <span style={badgeStyle(status?.ai.connected ? '#3fb950' : '#ff7b72', status?.ai.connected ? 'rgba(63, 185, 80, 0.12)' : 'rgba(255, 123, 114, 0.12)')}>
                 {status?.ai.connected ? 'Connected' : 'Disconnected'}
               </span>
+              {status?.ai.availableModels !== undefined && (
+                <span style={badgeStyle('#58a6ff', 'rgba(88, 166, 255, 0.12)')}>
+                  {status.ai.availableModels} model{status.ai.availableModels === 1 ? '' : 's'}
+                </span>
+              )}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--prime-text-secondary)', lineHeight: 1.5 }}>
               {status?.ai.provider || 'AI'} / {status?.ai.model || 'loading...'}
+            </div>
+            <div style={{ fontSize: '12px', color: status?.ai.connected ? 'var(--prime-text-secondary)' : '#ff7b72', lineHeight: 1.5 }}>
+              {status?.ai.connectionError
+                || status?.ai.reason
+                || (status?.ai.connected
+                  ? 'Provider connection check completed successfully.'
+                  : 'Provider connection details are unavailable.')}
             </div>
           </div>
 

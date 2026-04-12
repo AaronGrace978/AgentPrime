@@ -24,6 +24,7 @@ import {
   normalizeOllamaCloudOutputLimits,
   setOllamaCloudOutputLimits
 } from './core/model-output-limits';
+import { buildAIHealthSummary } from './core/provider-health';
 
 const log = createLogger('Main');
 
@@ -413,12 +414,7 @@ async function buildSystemStatusSummary(): Promise<SystemStatusSummary> {
   const brainConnected = featureFlags.pythonBrain ? await isBrainAvailable().catch(() => false) : false;
 
   return {
-    ai: {
-      provider: runtime.displayProvider,
-      model: runtime.displayModel,
-      connected: providerStatus?.success || false,
-      reason: runtime.reason,
-    },
+    ai: buildAIHealthSummary(runtime, providerStatus),
     brain: {
       enabled: featureFlags.pythonBrain,
       connected: brainConnected,
@@ -1662,9 +1658,7 @@ ipcMain.handle('ai-status', async () => {
     }));
     return {
       success: true,
-      provider: runtime.displayProvider,
-      model: runtime.displayModel,
-      connected: providerStatus?.success || false,
+      ...buildAIHealthSummary(runtime, providerStatus),
       dualModelEnabled: !!settings.dualModelEnabled,
       runtime
     };

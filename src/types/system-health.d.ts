@@ -38,6 +38,8 @@ export interface SystemStatusSummary {
     model: string;
     connected: boolean;
     reason?: string;
+    connectionError?: string;
+    availableModels?: number;
   };
   brain: {
     enabled: boolean;

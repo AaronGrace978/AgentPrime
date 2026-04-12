@@ -8,6 +8,26 @@ import type { ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, S
 import axios from 'axios';
 import { Readable } from 'stream';
 
+const OPENROUTER_FALLBACK_MODELS: Array<{ id: string; name: string }> = [
+  { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
+  { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' },
+  { id: 'openai/gpt-4o', name: 'GPT-4o' },
+  { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
+  { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5' },
+  { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B' },
+  { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat' },
+  { id: 'mistralai/mistral-large', name: 'Mistral Large' },
+];
+
+function buildFallbackModels(warning: string): ModelInfo[] {
+  return OPENROUTER_FALLBACK_MODELS.map((model) => ({
+    ...model,
+    provider: 'openrouter',
+    catalogSource: 'fallback',
+    catalogWarning: warning,
+  }));
+}
+
 export class OpenRouterProvider extends BaseProvider {
   private siteUrl: string;
   private siteName: string;
@@ -31,6 +51,10 @@ export class OpenRouterProvider extends BaseProvider {
   }
 
   async getModels(): Promise<ModelInfo[]> {
+    if (!this.apiKey) {
+      throw new Error('OpenRouter API key not configured');
+    }
+
     try {
       const response = await axios.get(`${this.baseUrl}/models`, {
         headers: this.getHeaders(),
@@ -46,18 +70,20 @@ export class OpenRouterProvider extends BaseProvider {
         description: m.description
       })).sort((a: ModelInfo, b: ModelInfo) => (a.name || '').localeCompare(b.name || '')) || [];
     } catch (e: any) {
-      console.error('OpenRouter getModels error:', e.message);
-      // Return popular models as fallback
-      return [
-        { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'openrouter' },
-        { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', provider: 'openrouter' },
-        { id: 'openai/gpt-4o', name: 'GPT-4o', provider: 'openrouter' },
-        { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openrouter' },
-        { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', provider: 'openrouter' },
-        { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', provider: 'openrouter' },
-        { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', provider: 'openrouter' },
-        { id: 'mistralai/mistral-large', name: 'Mistral Large', provider: 'openrouter' }
-      ];
+      const providerMessage =
+        e.response?.data?.error?.message ||
+        e.response?.data?.message ||
+        e.message ||
+        'Unknown OpenRouter error';
+      console.error('OpenRouter getModels error:', providerMessage);
+
+      if (e.response?.status === 401 || e.response?.status === 403) {
+        throw new Error(`OpenRouter authentication failed: ${providerMessage}`);
+      }
+
+      return buildFallbackModels(
+        `OpenRouter live model lookup is unavailable right now. Showing the built-in model list instead. ${providerMessage}`
+      );
     }
   }
 
@@ -73,7 +99,7 @@ export class OpenRouterProvider extends BaseProvider {
       });
       return { success: true, models: response.data?.data?.length || 0 };
     } catch (e: any) {
-      if (e.response?.status === 401) {
+      if (e.response?.status === 401 || e.response?.status === 403) {
         return { success: false, error: 'Invalid API key' };
       }
       return { success: false, error: e.message };

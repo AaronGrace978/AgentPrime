@@ -131,11 +131,7 @@ declare class AIProviderRouter {
     /**
      * Test connection to a specific provider
      */
-    testProvider(providerName: string): Promise<{
-        success: boolean;
-        error?: string;
-        models?: number;
-    }>;
+    testProvider(providerName: string): Promise<import("../../types/ai-providers").ProviderConnectionStatus>;
     /**
      * Get models from a specific provider
      */

@@ -51,6 +51,12 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, sy
   const ai = systemStatus?.ai;
   const brain = systemStatus?.brain;
   const startup = systemStatus?.startup;
+  const aiConnectionDetails = ai?.connectionError || ai?.reason || (ai?.connected ? 'AI Connected' : 'AI Disconnected');
+  const modelDetails = [
+    `Model: ${ai?.model || 'loading...'}`,
+    ai?.availableModels !== undefined ? `Provider reported ${ai.availableModels} model${ai.availableModels === 1 ? '' : 's'}` : null,
+    ai?.connectionError || ai?.reason || null,
+  ].filter(Boolean).join('\n');
   const doctorLabel = startup
     ? startup.warningCount > 0
       ? `${startup.warningCount} warning${startup.warningCount === 1 ? '' : 's'}`
@@ -74,14 +80,14 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, sy
         {/* Connection Status */}
         <div 
           className={`status-item connection ${ai?.connected ? 'connected' : 'disconnected'}`}
-          title={ai?.reason || (ai?.connected ? 'AI Connected' : 'AI Disconnected')}
+          title={aiConnectionDetails}
         >
           <span className="status-dot"></span>
           <span className="status-text">{ai?.provider || 'AI'}</span>
         </div>
 
         {/* Current Model */}
-        <div className="status-item model" title={ai?.reason ? `Model: ${ai.model}\n${ai.reason}` : `Model: ${ai?.model || 'loading...'}`}>
+        <div className="status-item model" title={modelDetails}>
           <span className="status-icon">AI</span>
           <span className="status-text">{formatModel(ai?.model || 'loading...')}</span>
         </div>

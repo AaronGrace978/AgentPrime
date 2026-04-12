@@ -78,6 +78,10 @@ function getErrorMessage(error: unknown): string {
 
 type NonAgentMode = Extract<ChatMode, 'chat' | 'dino'>;
 type NonAgentSelection = { provider: string; model: string };
+type ProviderModelCatalogNotice = {
+  kind: 'error' | 'fallback';
+  message: string;
+};
 
 const DEFAULT_AGENT_MODEL = 'qwen3-coder:480b-cloud';
 const DEFAULT_NON_AGENT_SELECTIONS: Record<NonAgentMode, NonAgentSelection> = {
@@ -132,6 +136,28 @@ function normalizeFetchedModelOptions(models: ModelInfo[] | undefined): Array<{ 
     }));
 }
 
+function extractProviderModelCatalogNotice(
+  provider: string,
+  models: ModelInfo[] | undefined
+): ProviderModelCatalogNotice | null {
+  const catalogWarning = models?.find((model) => typeof model?.catalogWarning === 'string')?.catalogWarning;
+  if (catalogWarning) {
+    return {
+      kind: 'fallback',
+      message: catalogWarning,
+    };
+  }
+
+  if ((models || []).length === 0) {
+    return {
+      kind: 'fallback',
+      message: `${getProviderLabel(provider)} did not return any live models. Using the built-in model list instead.`,
+    };
+  }
+
+  return null;
+}
+
 const AIChat: React.FC<AIChatProps> = ({
   isVisible = true,
   onClose,
@@ -160,7 +186,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [agentSelectedModel, setAgentSelectedModel] = useState(DEFAULT_AGENT_MODEL);
   const [nonAgentSelections, setNonAgentSelections] = useState<Record<NonAgentMode, NonAgentSelection>>(DEFAULT_NON_AGENT_SELECTIONS);
   const [availableProviderModels, setAvailableProviderModels] = useState<Record<string, Array<{ value: string; label: string }>>>({});
-  const [providerModelLoadErrors, setProviderModelLoadErrors] = useState<Record<string, string>>({});
+  const [providerModelCatalogNotices, setProviderModelCatalogNotices] = useState<Record<string, ProviderModelCatalogNotice>>({});
   const [useSpecializedAgents, setUseSpecializedAgents] = useState(true);
   const [agentAutonomyLevel, setAgentAutonomyLevel] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [agentPrefsHydrated, setAgentPrefsHydrated] = useState(false);
@@ -216,8 +242,8 @@ const AIChat: React.FC<AIChatProps> = ({
     getCursorPosition
   });
 
-  const clearProviderModelLoadError = (provider: string) => {
-    setProviderModelLoadErrors((prev) => {
+  const clearProviderModelCatalogNotice = (provider: string) => {
+    setProviderModelCatalogNotices((prev) => {
       if (!(provider in prev)) {
         return prev;
       }
@@ -243,14 +269,25 @@ const AIChat: React.FC<AIChatProps> = ({
     try {
       const models = await window.agentAPI.getProviderModels(provider);
       const normalized = normalizeFetchedModelOptions(models);
-      clearProviderModelLoadError(provider);
+      const notice = extractProviderModelCatalogNotice(provider, models);
+      if (notice) {
+        setProviderModelCatalogNotices((prev) => ({ ...prev, [provider]: notice }));
+      } else {
+        clearProviderModelCatalogNotice(provider);
+      }
       if (normalized.length > 0) {
         setAvailableProviderModels((prev) => ({ ...prev, [provider]: normalized }));
         return normalized;
       }
     } catch (error) {
       const message = getErrorMessage(error);
-      setProviderModelLoadErrors((prev) => ({ ...prev, [provider]: message }));
+      setProviderModelCatalogNotices((prev) => ({
+        ...prev,
+        [provider]: {
+          kind: 'error',
+          message,
+        }
+      }));
       console.warn(`Failed to load live models for ${provider}:`, message);
     }
 
@@ -364,8 +401,8 @@ const AIChat: React.FC<AIChatProps> = ({
     () => getResolvedModelOptions(currentNonAgentSelection?.provider || DEFAULT_NON_AGENT_SELECTIONS.chat.provider),
     [availableProviderModels, currentNonAgentSelection?.provider]
   );
-  const currentProviderModelLoadError = currentNonAgentSelection
-    ? providerModelLoadErrors[currentNonAgentSelection.provider] || null
+  const currentProviderModelCatalogNotice = currentNonAgentSelection
+    ? providerModelCatalogNotices[currentNonAgentSelection.provider] || null
     : null;
 
   useEffect(() => {
@@ -1210,17 +1247,21 @@ const AIChat: React.FC<AIChatProps> = ({
                   </select>
                 </div>
 
-                {currentProviderModelLoadError && (
+                {currentProviderModelCatalogNotice && (
                   <div
-                    title={currentProviderModelLoadError}
+                    title={currentProviderModelCatalogNotice.message}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
                       padding: '5px 8px',
                       borderRadius: '8px',
-                      border: '1px solid rgba(245, 158, 11, 0.4)',
-                      background: 'rgba(245, 158, 11, 0.12)',
-                      color: '#fbbf24',
+                      border: currentProviderModelCatalogNotice.kind === 'error'
+                        ? '1px solid rgba(255, 123, 114, 0.4)'
+                        : '1px solid rgba(245, 158, 11, 0.4)',
+                      background: currentProviderModelCatalogNotice.kind === 'error'
+                        ? 'rgba(255, 123, 114, 0.12)'
+                        : 'rgba(245, 158, 11, 0.12)',
+                      color: currentProviderModelCatalogNotice.kind === 'error' ? '#ff7b72' : '#fbbf24',
                       fontSize: '11px',
                       fontWeight: 600,
                       maxWidth: '320px',
@@ -1229,7 +1270,10 @@ const AIChat: React.FC<AIChatProps> = ({
                       textOverflow: 'ellipsis'
                     }}
                   >
-                    Live model lookup failed: {currentProviderModelLoadError}
+                    {currentProviderModelCatalogNotice.kind === 'error'
+                      ? 'Live model lookup failed'
+                      : 'Using fallback model list'}
+                    : {currentProviderModelCatalogNotice.message}
                   </div>
                 )}
               </>

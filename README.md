@@ -112,6 +112,14 @@ This is still an active build, but it now behaves much more like an actual AI ID
 - **Controlled dependency backfill:** Inferred runtime dependencies now resolve through npm metadata instead of writing raw `'latest'` into generated `package.json` files. When a version cannot be resolved safely, the auto-fixer skips it and records the issue instead of guessing.
 - **Focused regression coverage:** Added/extended tests around auto-fixer compiler-option cleanup and OpenAI model loading so these hardening changes are covered by the normal regression path.
 
+### Provider health reliability (April 2026)
+
+- **Honest provider status:** `src/main/main.ts` now carries provider probe details through the system status payload instead of flattening everything to a generic connected/disconnected flag. The status bar and system status panel can now show real reasons like invalid credentials, missing keys, or provider reachability failures.
+- **Fallback model lists are labeled as fallback:** `src/renderer/components/AIChat/index.tsx` now distinguishes between a live model lookup failure and a deliberate built-in fallback catalog, so the selector remains usable without pretending the provider catalog loaded successfully.
+- **OpenRouter auth failures are no longer masked:** `src/main/ai-providers/openrouter-provider.ts` now throws on authentication failures during model lookup, while transient network/runtime failures return an explicitly annotated fallback model list instead of silently looking healthy.
+- **Immediate key validation in settings:** `src/renderer/components/SettingsPanel.tsx` now tests the provider right after saving a key and reports whether the connection was actually verified, so bad credentials are discovered before the next chat or agent run.
+- **Focused regression coverage:** Added tests for provider health payload shaping and OpenRouter degraded-model-list behavior so the new status and fallback semantics stay stable.
+
 ### Three.js scaffold hardening (April 2026)
 
 - Added a new deterministic `threejs-platformer` template under `templates/threejs-platformer` for side-scroller/platformer prompts with stable WASD movement, jump physics, collectibles, a handcrafted course, and a buildable Vite + React + Three.js baseline.
@@ -475,6 +483,8 @@ After `npm run dist:win` succeeds:
 ### Provider Issues
 
 - Verify API keys in Settings
+- Check the status bar or System Status panel for the exact provider failure reason
+- If the model selector says it is using a fallback list, treat that as degraded provider health rather than a successful live catalog fetch
 - Confirm Ollama is running if you are using local models
 - Recheck the selected model and routing mode
 

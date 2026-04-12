@@ -339,14 +339,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
     try {
       const status = await window.agentAPI.setProviderApiKey(provider, apiKey);
+      const connectionCheck = await window.agentAPI.testProvider(provider).catch((error: any) => ({
+        success: false,
+        error: error?.message || 'Provider check failed after saving.',
+      }));
+      const storageLabel = status.storageBackend === 'keychain' ? 'your OS keychain' : 'encrypted local storage';
+
       setProviderApiKeyStatuses((prev) => ({ ...prev, [provider]: status }));
       setProviderApiKeyDrafts((prev) => ({ ...prev, [provider]: '' }));
       setProviderApiKeyMessages((prev) => ({
         ...prev,
-        [provider]: {
-          type: 'success',
-          text: `Saved to ${status.storageBackend === 'keychain' ? 'your OS keychain' : 'encrypted local storage'}.`
-        }
+        [provider]: connectionCheck?.success
+          ? {
+              type: 'success',
+              text: `Saved to ${storageLabel}. ${getProviderLabel(provider)} connection verified${typeof connectionCheck.models === 'number' ? ` (${connectionCheck.models} model${connectionCheck.models === 1 ? '' : 's'} visible).` : '.'}`
+            }
+          : {
+              type: 'error',
+              text: `Saved to ${storageLabel}, but the provider check failed: ${connectionCheck?.error || 'Unable to verify the connection.'}`
+            }
       }));
     } catch (error: any) {
       setProviderApiKeyMessages((prev) => ({

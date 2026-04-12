@@ -36,8 +36,19 @@ export interface AIRuntimeSnapshot {
   lastExecutionAt?: number;
 }
 
+export interface ProviderConnectionStatus {
+  success: boolean;
+  error?: string;
+  models?: number;
+}
+
 export interface AIStatusSnapshot {
+  provider: string;
+  model: string;
   connected: boolean;
+  reason?: string;
+  connectionError?: string;
+  availableModels?: number;
   dualModelEnabled: boolean;
   runtime: AIRuntimeSnapshot;
 }
@@ -179,7 +190,7 @@ export interface IBaseProvider {
   baseUrl: string | null;
 
   getModels(): Promise<ModelInfo[]>;
-  testConnection(): Promise<{ success: boolean; error?: string }>;
+  testConnection(): Promise<ProviderConnectionStatus>;
   chat(messages: ChatMessage[], options?: ChatOptions): Promise<ChatResult>;
   stream(messages: ChatMessage[], onChunk: StreamCallback, options?: ChatOptions): Promise<void>;
   complete(prompt: string, options?: ChatOptions): Promise<ChatResult>;
