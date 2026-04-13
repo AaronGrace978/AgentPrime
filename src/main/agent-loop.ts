@@ -996,8 +996,10 @@ interface Tool {
 }
 
 import {
+  getVibeCoderToolPolicyError,
   injectBehaviorProfilePrompt,
   type AssistantBehaviorProfile,
+  type VibeCoderExecutionPolicy,
   type VibeCoderIntent,
 } from './agent/behavior-profile';
 import { PromptSanitizer } from './security/prompt-sanitizer';
@@ -1012,6 +1014,7 @@ export interface AgentContext {
   runtimeBudget?: 'instant' | 'standard' | 'deep';
   assistantBehaviorProfile?: AssistantBehaviorProfile;
   vibeCoderIntent?: VibeCoderIntent;
+  vibeCoderExecutionPolicy?: VibeCoderExecutionPolicy;
   autonomyLevel?: 1 | 2 | 3 | 4 | 5;
   deterministicScaffoldOnly?: boolean;
   /** When true, skip staged review and commit monolithic agent file writes immediately (settings-driven). */
@@ -4250,6 +4253,22 @@ We'll add more features after this core version works.`;
                 throw new Error(`Invalid tool arguments JSON: ${toolCall.function.arguments}`);
               }
 
+              const vibeCoderBlock = getVibeCoderToolPolicyError(
+                this.context.vibeCoderExecutionPolicy,
+                toolCall.function.name,
+                args
+              );
+              if (vibeCoderBlock) {
+                log.info(`[Agent] 🧭 VibeCoder policy blocked ${toolCall.function.name}: ${vibeCoderBlock}`);
+                toolResults.push(`❌ ${toolCall.function.name}: BLOCKED - ${vibeCoderBlock}`);
+                this.messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: `🧭 VIBECODER POLICY ACTIVE\n\n${vibeCoderBlock}\n\nStay inside the current request shape instead of mutating the workspace.`
+                });
+                continue;
+              }
+
               // === SMART TIMEOUT DETECTION ===
               // Automatically increase timeout for commands that typically take longer
               if (toolCall.function.name === 'run_command' && args.command) {
@@ -4701,6 +4720,17 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
               }
               // === END REPETITIVE FILE WRITE DETECTION ===
 
+              if (toolCall.function.name === 'scaffold_project' && this.taskMode === TaskMode.REVIEW) {
+                log.info('[Agent] 🛡️ REVIEW MODE: Blocking scaffold_project - no project creation allowed');
+                toolResults.push('❌ scaffold_project: BLOCKED - You are in REVIEW mode. Cannot scaffold projects.');
+                this.messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: `🛡️ REVIEW MODE ACTIVE: You cannot scaffold or create projects in review mode.\n\nDescribe the issues and let the user decide whether to switch into a mutating mode.`
+                });
+                continue;
+              }
+
               // 👔 BOSS REVIEW: Task Master reviews work BEFORE writing
               if (toolCall.function.name === 'write_file' && args.path && args.content && this.taskMaster) {
                 // Check if file already exists
@@ -4754,7 +4784,13 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
               // 🛡️ PRE-WRITE VALIDATION: Additional technical validation
               if (toolCall.function.name === 'write_file' && args.path && args.content) {
                 const normalizedForValidation = { name: toolCall.function.name, arguments: args };
-                const validation = validateToolCall(normalizedForValidation, this.context.workspacePath, this.currentTask);
+                const validation = validateToolCall(
+                  normalizedForValidation,
+                  this.context.workspacePath,
+                  this.currentTask,
+                  undefined,
+                  this.context.vibeCoderExecutionPolicy
+                );
                 
                 if (!validation.valid) {
                   log.error(`[Agent] 🚨 PRE-WRITE VALIDATION FAILED: ${validation.error}`);

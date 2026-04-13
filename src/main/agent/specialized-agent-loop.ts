@@ -42,7 +42,7 @@ import {
 import { ProjectRunner } from './tools/projectRunner';
 import { getPluginManager } from '../core/plugin-singleton';
 import { reviewSessionManager } from './review-session-manager';
-import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from './autonomy-policy';
+import { clampAgentAutonomyLevel, resolveEffectiveAutonomyPolicy } from './autonomy-policy';
 import {
   buildReviewCheckpointSummary,
   resolveReflectionBudget,
@@ -600,7 +600,8 @@ export class SpecializedAgentLoop extends EventEmitter {
     const taskStartedAt = Date.now();
     const requestedRuntimeBudget = this.context.runtimeBudget || 'standard';
     const autonomyLevel = clampAgentAutonomyLevel(this.context.autonomyLevel);
-    const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
+    const executionPolicy = this.context.vibeCoderExecutionPolicy;
+    const autonomyPolicy = resolveEffectiveAutonomyPolicy(autonomyLevel, executionPolicy);
     const applyImmediately = shouldApplyAgentChangesImmediately(this.context.monolithicApplyImmediately);
     telemetry.track('agent_task_start', {
       mode: 'specialized',
@@ -615,7 +616,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     const transaction = transactionManager.startTransaction(this.context.workspacePath);
 
     try {
-      if (this.context.deterministicScaffoldOnly) {
+      if (this.context.deterministicScaffoldOnly && executionPolicy?.allowScaffold !== false) {
         return await this.runDeterministicScaffoldReview(
           userMessage,
           transaction,
@@ -799,7 +800,9 @@ export class SpecializedAgentLoop extends EventEmitter {
               planningMode: reflectionPlan.planningMode,
               reflectionSummary: reflectionPlan.summary,
               autonomyLevel,
-              deterministicScaffoldOnly: this.context.deterministicScaffoldOnly,
+              deterministicScaffoldOnly:
+                this.context.deterministicScaffoldOnly && executionPolicy?.allowScaffold !== false,
+              vibeCoderExecutionPolicy: executionPolicy,
               blackboard,
             },
             trackerMode,
@@ -860,7 +863,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       if (lastVerification.isComplete) {
         log.info('[SpecializedAgent] ✅ Structural verification passed (pre-install/build/runtime checks)');
 
-        if (this.context.deterministicScaffoldOnly) {
+        if (this.context.deterministicScaffoldOnly && executionPolicy?.allowScaffold !== false) {
           log.info('[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply');
           verificationSucceeded = true;
           if (blackboard) {
@@ -969,7 +972,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     const fallbackTemplateId =
-      !verificationSucceeded && !isUpdate
+      !verificationSucceeded && !isUpdate && executionPolicy?.allowScaffold !== false
         ? detectCanonicalTemplateId(userMessage)
         : null;
 
@@ -1529,6 +1532,14 @@ export class SpecializedAgentLoop extends EventEmitter {
     taskStartedAt: number,
     requestedRuntimeBudget: AgentContext['runtimeBudget']
   ): Promise<string> {
+    if (this.context.vibeCoderExecutionPolicy && !this.context.vibeCoderExecutionPolicy.allowScaffold) {
+      log.info(
+        `[SpecializedAgent] 🧭 Skipping deterministic scaffold review because VibeCoder ${this.context.vibeCoderExecutionPolicy.intent} blocks scaffold/create actions`
+      );
+      await transactionManager.rollbackTransaction();
+      return `VibeCoder ${this.context.vibeCoderExecutionPolicy.intent} policy blocked deterministic scaffold fallback.`;
+    }
+
     const telemetry = getTelemetryService();
     const reflectionPlan = resolveReflectionBudget({
       requestedBudget: requestedRuntimeBudget || 'standard',

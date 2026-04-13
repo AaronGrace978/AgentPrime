@@ -9,6 +9,7 @@ import * as telemetry from '../src/main/core/telemetry-service';
 import * as projectTester from '../src/main/agent/tools/projectTester';
 import { ProjectRunner } from '../src/main/agent/tools/projectRunner';
 import { TimeoutError } from '../src/main/core/timeout-utils';
+import { resolveVibeCoderExecutionPolicy } from '../src/main/agent/behavior-profile';
 
 describe('SpecializedAgentLoop orchestration retry', () => {
   const tempRoots: string[] = [];
@@ -281,5 +282,54 @@ describe('SpecializedAgentLoop orchestration retry', () => {
     expect(executeSpy).toHaveBeenCalled();
     expect(rollbackSpy).toHaveBeenCalled();
     expect(fallbackReviewSpy).toHaveBeenCalled();
+  });
+
+  it('does not fall back to deterministic scaffold review when VibeCoder repair policy blocks scaffold/create work', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-vibecoder-no-fallback-');
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      model: 'qwen-test',
+      vibeCoderExecutionPolicy: resolveVibeCoderExecutionPolicy('vibecoder', 'Fix the broken three.js platformer build'),
+    } as any);
+
+    jest.spyOn(specializedAgents, 'routeToSpecialists').mockReturnValue(['javascript_specialist'] as any);
+    jest.spyOn(specializedAgents, 'executeWithSpecialists').mockResolvedValue({
+      results: [],
+      finalAnalysis: '',
+      executedTools: [],
+      scaffoldApplied: false,
+      scaffoldTemplateId: undefined,
+      skippedGenerativePass: false,
+    } as any);
+
+    jest.spyOn(loop as any, 'getProjectFiles').mockReturnValue([]);
+    jest.spyOn(loop as any, 'detectLanguage').mockReturnValue('typescript');
+    jest.spyOn(loop as any, 'detectProjectType').mockReturnValue('threejs');
+    jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: false,
+      missingFiles: [],
+      errors: ['[Build] src/game/Game.ts failed to compile'],
+      createdFiles: [],
+    });
+    jest.spyOn(loop as any, 'buildResponse').mockReturnValue('repair response without scaffold fallback');
+    const fallbackReviewSpy = jest
+      .spyOn(loop as any, 'runDeterministicScaffoldReview')
+      .mockResolvedValue('fallback scaffold review');
+
+    jest.spyOn(transactionManager, 'startTransaction').mockReturnValue({
+      getOperationCount: () => 1,
+      getOperations: () => [],
+    } as any);
+    jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    jest.spyOn(reviewSessionManager, 'createSessionFromOperations').mockReturnValue(null);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run('Fix the broken three.js platformer build');
+
+    expect(result).toBe('repair response without scaffold fallback');
+    expect(fallbackReviewSpy).not.toHaveBeenCalled();
   });
 });

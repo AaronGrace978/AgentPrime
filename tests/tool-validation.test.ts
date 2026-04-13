@@ -9,6 +9,7 @@ import {
   validateIndexHtml,
   validateToolCall,
 } from '../src/main/agent/tool-validation';
+import { resolveVibeCoderExecutionPolicy } from '../src/main/agent/behavior-profile';
 import { extractTaskKeywords } from '../src/main/mirror/opus-example-loader';
 
 describe('tool validation project typing', () => {
@@ -180,6 +181,43 @@ describe('scaffold_project validation', () => {
     );
 
     expect(validation).toEqual({ valid: true });
+  });
+});
+
+describe('VibeCoder execution policy validation', () => {
+  const workspacePath = 'G:/AgentPrime';
+
+  it('blocks write_file during plan-only VibeCoder runs', () => {
+    const validation = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/App.tsx', content: 'export default function App() { return null; }' },
+      },
+      workspacePath,
+      'Analyze the app structure',
+      undefined,
+      resolveVibeCoderExecutionPolicy('vibecoder', 'Analyze the app structure')
+    );
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toContain('plan-only');
+  });
+
+  it('blocks scaffold_project during repair-only VibeCoder runs', () => {
+    const validation = validateToolCall(
+      {
+        name: 'scaffold_project',
+        arguments: { project_type: 'threejs_viewer', project_name: 'Space Demo' },
+      },
+      workspacePath,
+      'Fix the broken three.js build',
+      undefined,
+      resolveVibeCoderExecutionPolicy('vibecoder', 'Fix the broken three.js build')
+    );
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toContain('repair-only');
+    expect(validation.error).toContain('scaffold_project');
   });
 });
 

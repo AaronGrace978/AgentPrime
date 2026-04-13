@@ -1,8 +1,21 @@
 export type AssistantBehaviorProfile = 'default' | 'vibecoder';
 export type VibeCoderIntent = 'plan-only' | 'build-now' | 'repair-only' | 'review-only';
+export type VibeCoderResponseMode = 'direct' | 'agent';
+
+export interface VibeCoderExecutionPolicy {
+  intent: VibeCoderIntent;
+  responseMode: VibeCoderResponseMode;
+  allowWrites: boolean;
+  allowCommands: boolean;
+  allowScaffold: boolean;
+  allowInstalls: boolean;
+}
 
 const PROFILE_MARKER_START = '## VIBECODER PROFILE START';
 const PROFILE_MARKER_END = '## VIBECODER PROFILE END';
+const VIBE_CODER_WRITE_TOOLS = new Set(['write_file', 'create_file', 'patch_file', 'str_replace']);
+const INSTALL_COMMAND_PATTERN =
+  /\b(?:npm|pnpm|yarn|bun|pip|pip3|poetry|uv|cargo|go|get|composer)\b[\w\s:@./-]*\b(?:install|add|sync|restore|download|get)\b/i;
 
 export function normalizeAssistantBehaviorProfile(value?: string | null): AssistantBehaviorProfile {
   return value === 'vibecoder' ? 'vibecoder' : 'default';
@@ -28,6 +41,86 @@ export function classifyVibeCoderIntent(message: string): VibeCoderIntent {
   }
 
   return 'build-now';
+}
+
+function isVibeCoderIntent(value: string): value is VibeCoderIntent {
+  return value === 'plan-only' || value === 'build-now' || value === 'repair-only' || value === 'review-only';
+}
+
+export function resolveVibeCoderExecutionPolicy(
+  profile?: AssistantBehaviorProfile | null,
+  messageOrIntent?: string | VibeCoderIntent | null
+): VibeCoderExecutionPolicy | undefined {
+  if (normalizeAssistantBehaviorProfile(profile) !== 'vibecoder') {
+    return undefined;
+  }
+
+  const intent =
+    typeof messageOrIntent === 'string' && isVibeCoderIntent(messageOrIntent)
+      ? messageOrIntent
+      : typeof messageOrIntent === 'string' && messageOrIntent.trim().length > 0
+        ? classifyVibeCoderIntent(messageOrIntent)
+        : 'build-now';
+
+  if (intent === 'plan-only' || intent === 'review-only') {
+    return {
+      intent,
+      responseMode: 'direct',
+      allowWrites: false,
+      allowCommands: false,
+      allowScaffold: false,
+      allowInstalls: false,
+    };
+  }
+
+  if (intent === 'repair-only') {
+    return {
+      intent,
+      responseMode: 'agent',
+      allowWrites: true,
+      allowCommands: true,
+      allowScaffold: false,
+      allowInstalls: true,
+    };
+  }
+
+  return {
+    intent,
+    responseMode: 'agent',
+    allowWrites: true,
+    allowCommands: true,
+    allowScaffold: true,
+    allowInstalls: true,
+  };
+}
+
+export function getVibeCoderToolPolicyError(
+  policy: VibeCoderExecutionPolicy | undefined,
+  toolName: string,
+  toolArgs?: Record<string, any>
+): string | undefined {
+  if (!policy) {
+    return undefined;
+  }
+
+  if (!policy.allowWrites && VIBE_CODER_WRITE_TOOLS.has(toolName)) {
+    return `VibeCoder ${policy.intent} policy blocks ${toolName}. Keep the response read-only.`;
+  }
+
+  if (!policy.allowScaffold && toolName === 'scaffold_project') {
+    return `VibeCoder ${policy.intent} policy blocks scaffold_project. Do not scaffold or create a new project for this request.`;
+  }
+
+  if (toolName === 'run_command') {
+    if (!policy.allowCommands) {
+      return `VibeCoder ${policy.intent} policy blocks shell commands. Keep the response read-only.`;
+    }
+    if (!policy.allowInstalls && INSTALL_COMMAND_PATTERN.test(String(toolArgs?.command || ''))) {
+      return `VibeCoder ${policy.intent} policy blocks install commands. Keep this run focused on analysis or bounded edits.`;
+    }
+  }
+
+  return undefined;
 }
 
 function stripBehaviorProfilePrompt(prompt: string): string {

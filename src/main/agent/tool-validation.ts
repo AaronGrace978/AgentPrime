@@ -20,6 +20,10 @@ import {
   type SpecialistBlackboard,
   type SpecialistId,
 } from './specialist-contracts';
+import {
+  getVibeCoderToolPolicyError,
+  type VibeCoderExecutionPolicy,
+} from './behavior-profile';
 
 export interface ValidationResult {
   valid: boolean;
@@ -641,10 +645,16 @@ export function validateToolCall(
   toolCall: any,
   workspacePath: string,
   taskContext?: string,
-  specialistContext?: SpecialistValidationContext
+  specialistContext?: SpecialistValidationContext,
+  executionPolicy?: VibeCoderExecutionPolicy
 ): ValidationResult {
   if (!toolCall || !toolCall.name) {
     return { valid: false, error: 'Invalid tool call: missing name' };
+  }
+
+  const policyBlock = getVibeCoderToolPolicyError(executionPolicy, toolCall.name, toolCall.arguments);
+  if (policyBlock) {
+    return { valid: false, error: policyBlock };
   }
 
   const toolBoundary = validateSpecialistToolBoundary(specialistContext, toolCall.name);

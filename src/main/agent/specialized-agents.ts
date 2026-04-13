@@ -47,10 +47,12 @@ import {
   type SpecialistBlackboard,
   type SpecialistId,
 } from './specialist-contracts';
-import { resolveAgentAutonomyPolicy } from './autonomy-policy';
+import { resolveEffectiveAutonomyPolicy } from './autonomy-policy';
 import {
+  getVibeCoderToolPolicyError,
   injectBehaviorProfilePrompt,
   type AssistantBehaviorProfile,
+  type VibeCoderExecutionPolicy,
   type VibeCoderIntent,
 } from './behavior-profile';
 
@@ -82,8 +84,13 @@ function getAllProjectFiles(workspacePath: string, _maxDepth: number = 4): strin
 export async function bootstrapDeterministicScaffold(
   workspacePath: string,
   task: string,
-  callbacks?: SpecialistExecutionCallbacks
+  callbacks?: SpecialistExecutionCallbacks,
+  executionPolicy?: VibeCoderExecutionPolicy
 ): Promise<Array<{ toolCall: any; result: any; specialist: string }>> {
+  if (executionPolicy && !executionPolicy.allowScaffold) {
+    log.info(`[MirrorAgents] Deterministic bootstrap skipped by VibeCoder ${executionPolicy.intent} policy`);
+    return [];
+  }
   const templateId = detectCanonicalTemplateId(task);
   if (!templateId || !workspaceNeedsDeterministicScaffold(workspacePath)) {
     return [];
@@ -2250,11 +2257,12 @@ export async function executeWithSpecialists(
     context.planningMode === 'skip' || context.planningMode === 'full'
       ? context.planningMode
       : 'compact';
+  const executionPolicy: VibeCoderExecutionPolicy | undefined = context.vibeCoderExecutionPolicy;
   const reflectionSummary =
     typeof context.reflectionSummary === 'string' && context.reflectionSummary.trim().length > 0
       ? context.reflectionSummary.trim()
       : '';
-  const autonomyPolicy = resolveAgentAutonomyPolicy(context.autonomyLevel);
+  const autonomyPolicy = resolveEffectiveAutonomyPolicy(context.autonomyLevel, executionPolicy);
   const autonomyUsage = {
     toolCalls: 0,
     commandCalls: 0,
@@ -2291,6 +2299,11 @@ export async function executeWithSpecialists(
     }
   };
   const getAutonomyBlockReason = (toolName: string, toolArgs: Record<string, any>): string | null => {
+    const executionPolicyBlock = getVibeCoderToolPolicyError(executionPolicy, toolName, toolArgs);
+    if (executionPolicyBlock) {
+      return executionPolicyBlock;
+    }
+
     if (autonomyUsage.toolCalls + 1 > autonomyPolicy.maxToolCalls) {
       return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) reached its tool-call limit (${autonomyPolicy.maxToolCalls}).`;
     }
@@ -2546,7 +2559,8 @@ Output as a structured list. Be specific and comprehensive.`;
   const bootstrappedTools = await bootstrapDeterministicScaffold(
     context.workspacePath,
     task,
-    callbacks
+    callbacks,
+    executionPolicy
   );
   if (bootstrappedTools.length > 0) {
     scaffoldApplied = true;
@@ -2720,7 +2734,7 @@ Output as a structured list. Be specific and comprehensive.`;
         specialist: 'tool_orchestrator',
         claimedFiles: getClaimedFilesForRole(blackboard, 'tool_orchestrator'),
         blackboard,
-      });
+      }, executionPolicy);
       if (!validation.valid) {
         log.error(`[ToolValidation] Orchestrator tool validation failed: ${validation.error}`);
         mistakes.push(`Tool validation failed: ${validation.error}`);
@@ -2917,7 +2931,7 @@ ${buildSharedContext(sharedContext)}`
               specialist: role,
               claimedFiles: getClaimedFilesForRole(blackboard, role),
               blackboard,
-            });
+            }, executionPolicy);
             if (!validation.valid) {
               log.error(`[ToolValidation] ${role} tool validation failed: ${validation.error}`);
               mistakes.push(`${role} tool validation failed: ${validation.error}`);
@@ -3133,7 +3147,7 @@ ${buildSharedContext(sharedContext)}`
             specialist: 'integration_analyst',
             claimedFiles: getClaimedFilesForRole(blackboard, 'integration_analyst'),
             blackboard,
-          });
+          }, executionPolicy);
           if (!validation.valid) {
             log.error(`[ToolValidation] Analyst tool validation failed: ${validation.error}`);
             mistakes.push(`Analyst tool validation failed: ${validation.error}`);

@@ -1,3 +1,5 @@
+import type { VibeCoderExecutionPolicy } from './behavior-profile';
+
 export type AgentAutonomyLevel = 1 | 2 | 3 | 4 | 5;
 
 export interface AgentAutonomyPolicy {
@@ -80,5 +82,28 @@ export function resolveAgentAutonomyPolicy(
 ): AgentAutonomyPolicy {
   const safeLevel = clampAgentAutonomyLevel(level, fallback);
   return AUTONOMY_POLICIES[safeLevel];
+}
+
+export function resolveEffectiveAutonomyPolicy(
+  level: unknown,
+  executionPolicy?: VibeCoderExecutionPolicy,
+  fallback: AgentAutonomyLevel = DEFAULT_AUTONOMY_LEVEL
+): AgentAutonomyPolicy {
+  const basePolicy = resolveAgentAutonomyPolicy(level, fallback);
+  if (!executionPolicy) {
+    return basePolicy;
+  }
+
+  return {
+    ...basePolicy,
+    description: executionPolicy.responseMode === 'direct'
+      ? `${basePolicy.description} VibeCoder ${executionPolicy.intent} keeps this run read-only.`
+      : executionPolicy.allowScaffold
+        ? basePolicy.description
+        : `${basePolicy.description} VibeCoder ${executionPolicy.intent} blocks scaffold/create actions.`,
+    maxCommandCalls: executionPolicy.allowCommands ? basePolicy.maxCommandCalls : 0,
+    maxWriteFiles: executionPolicy.allowWrites ? basePolicy.maxWriteFiles : 0,
+    allowRunCommands: executionPolicy.allowCommands && basePolicy.allowRunCommands,
+  };
 }
 

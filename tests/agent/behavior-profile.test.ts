@@ -1,8 +1,10 @@
 import {
   buildVibeCoderDirectResponseSystemPrompt,
   classifyVibeCoderIntent,
+  getVibeCoderToolPolicyError,
   injectBehaviorProfilePrompt,
   normalizeAssistantBehaviorProfile,
+  resolveVibeCoderExecutionPolicy,
 } from '../../src/main/agent/behavior-profile';
 
 describe('behavior-profile', () => {
@@ -45,5 +47,37 @@ describe('behavior-profile', () => {
     expect(buildVibeCoderDirectResponseSystemPrompt('plan-only')).toContain('avoid absolute claims');
     expect(buildVibeCoderDirectResponseSystemPrompt('review-only')).toContain('Return findings first');
     expect(buildVibeCoderDirectResponseSystemPrompt('review-only')).toContain('do not turn the answer into a formal essay');
+  });
+
+  it('derives a direct read-only policy for planning requests', () => {
+    expect(resolveVibeCoderExecutionPolicy('vibecoder', 'Analyze the auth architecture')).toEqual({
+      intent: 'plan-only',
+      responseMode: 'direct',
+      allowWrites: false,
+      allowCommands: false,
+      allowScaffold: false,
+      allowInstalls: false,
+    });
+  });
+
+  it('derives a repair policy that still blocks scaffold/create work', () => {
+    expect(resolveVibeCoderExecutionPolicy('vibecoder', 'Fix the broken build')).toEqual({
+      intent: 'repair-only',
+      responseMode: 'agent',
+      allowWrites: true,
+      allowCommands: true,
+      allowScaffold: false,
+      allowInstalls: true,
+    });
+  });
+
+  it('leaves default profile without an execution policy', () => {
+    expect(resolveVibeCoderExecutionPolicy('default', 'Analyze the auth architecture')).toBeUndefined();
+  });
+
+  it('reports tool-level policy violations for non-mutating intents', () => {
+    const policy = resolveVibeCoderExecutionPolicy('vibecoder', 'Review this implementation');
+    expect(getVibeCoderToolPolicyError(policy, 'write_file', { path: 'src/App.tsx' })).toContain('review-only');
+    expect(getVibeCoderToolPolicyError(policy, 'run_command', { command: 'npm install' })).toContain('review-only');
   });
 });

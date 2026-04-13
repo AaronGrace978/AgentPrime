@@ -13,10 +13,18 @@ export interface SpecialistValidationContext {
     claimedFiles?: string[];
     blackboard?: any;
 }
+export interface VibeCoderExecutionPolicy {
+    intent: 'plan-only' | 'build-now' | 'repair-only' | 'review-only';
+    responseMode: 'direct' | 'agent';
+    allowWrites: boolean;
+    allowCommands: boolean;
+    allowScaffold: boolean;
+    allowInstalls: boolean;
+}
 /**
  * Validate a tool call before execution
  */
-export declare function validateToolCall(toolCall: any, workspacePath: string, taskContext?: string, specialistContext?: SpecialistValidationContext): ValidationResult;
+export declare function validateToolCall(toolCall: any, workspacePath: string, taskContext?: string, specialistContext?: SpecialistValidationContext, executionPolicy?: VibeCoderExecutionPolicy): ValidationResult;
 /**
  * Fix a tool call based on validation result
  */

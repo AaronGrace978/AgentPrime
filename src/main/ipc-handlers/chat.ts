@@ -22,15 +22,15 @@ import { getTelemetryService } from '../core/telemetry-service';
 import axios from 'axios';
 import { reviewSessionManager } from '../agent/review-session-manager';
 import { detectCanonicalTemplateId, workspaceNeedsDeterministicScaffold } from '../agent/scaffold-resolver';
-import { clampAgentAutonomyLevel, resolveAgentAutonomyPolicy } from '../agent/autonomy-policy';
+import { clampAgentAutonomyLevel, resolveEffectiveAutonomyPolicy } from '../agent/autonomy-policy';
 import { buildReviewCheckpointSummary } from '../agent/reflection-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
 import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
 import {
   buildVibeCoderDirectResponseSystemPrompt,
-  classifyVibeCoderIntent,
   normalizeAssistantBehaviorProfile,
+  resolveVibeCoderExecutionPolicy,
 } from '../agent/behavior-profile';
 
 /**
@@ -486,10 +486,10 @@ export function register(deps: ChatHandlerDeps): void {
           runtime: requestedRuntime,
         } = resolveConfiguredModel(agentSettings, context.model, runtimeBudget, context.provider);
         const assistantBehaviorProfile = normalizeAssistantBehaviorProfile(agentSettings?.assistantBehaviorProfile);
-        const vibeCoderIntent =
-          assistantBehaviorProfile === 'vibecoder' ? classifyVibeCoderIntent(message) : undefined;
+        const vibeCoderExecutionPolicy = resolveVibeCoderExecutionPolicy(assistantBehaviorProfile, message);
+        const vibeCoderIntent = vibeCoderExecutionPolicy?.intent;
         const autonomyLevel = clampAgentAutonomyLevel(context.agent_autonomy ?? agentSettings?.agentAutonomyLevel);
-        const autonomyPolicy = resolveAgentAutonomyPolicy(autonomyLevel);
+        const autonomyPolicy = resolveEffectiveAutonomyPolicy(autonomyLevel, vibeCoderExecutionPolicy);
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
         
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
@@ -564,14 +564,16 @@ export function register(deps: ChatHandlerDeps): void {
           };
         }
 
-        if (
-          assistantBehaviorProfile === 'vibecoder' &&
-          (vibeCoderIntent === 'plan-only' || vibeCoderIntent === 'review-only')
-        ) {
+        const vibeCoderDirectIntent =
+          vibeCoderIntent === 'plan-only' || vibeCoderIntent === 'review-only'
+            ? vibeCoderIntent
+            : undefined;
+
+        if (vibeCoderExecutionPolicy?.responseMode === 'direct' && vibeCoderDirectIntent) {
           const telemetry = getTelemetryService();
           telemetry.track('ai_request', {
             mode: 'agent_vibecoder_direct',
-            intent: vibeCoderIntent,
+            intent: vibeCoderDirectIntent,
             model: selectedModel,
             provider: activeProvider,
             autonomyLevel,
@@ -583,7 +585,7 @@ export function register(deps: ChatHandlerDeps): void {
           aiRouter.setActiveProvider(activeProvider, selectedModel);
           const directResponse = await aiRouter.chat(
             [
-              { role: 'system', content: buildVibeCoderDirectResponseSystemPrompt(vibeCoderIntent) },
+              { role: 'system', content: buildVibeCoderDirectResponseSystemPrompt(vibeCoderDirectIntent) },
               { role: 'user', content: message },
             ],
             {
@@ -598,7 +600,7 @@ export function register(deps: ChatHandlerDeps): void {
             telemetry.track('ai_response', {
               mode: 'agent_vibecoder_direct',
               success: false,
-              intent: vibeCoderIntent,
+              intent: vibeCoderDirectIntent,
               model: selectedModel,
               provider: activeProvider,
               autonomyLevel,
@@ -624,7 +626,7 @@ export function register(deps: ChatHandlerDeps): void {
           telemetry.track('ai_response', {
             mode: 'agent_vibecoder_direct',
             success: true,
-            intent: vibeCoderIntent,
+            intent: vibeCoderDirectIntent,
             model: selectedModel,
             provider: activeProvider,
             autonomyLevel,
@@ -651,12 +653,14 @@ export function register(deps: ChatHandlerDeps): void {
             `[Chat] Specialized agent mode enabled, provider: ${activeProvider}, model: ${selectedModel}, cloud: ${isOllamaCloud}, autonomy: L${autonomyPolicy.level} (${autonomyPolicy.label})`
           );
           const deterministicScaffoldOnly =
-            Boolean((context as any).deterministic_scaffold_only) ||
-            (
-              process.env.NODE_ENV === 'test' &&
-              workspaceNeedsDeterministicScaffold(workspacePath) &&
-              Boolean(detectCanonicalTemplateId(message))
-            );
+            vibeCoderExecutionPolicy?.allowScaffold === false
+              ? false
+              : Boolean((context as any).deterministic_scaffold_only) ||
+                (
+                  process.env.NODE_ENV === 'test' &&
+                  workspaceNeedsDeterministicScaffold(workspacePath) &&
+                  Boolean(detectCanonicalTemplateId(message))
+                );
           
           // Pre-flight health check - only for LOCAL Ollama (skip for Ollama Cloud!)
           if (!deterministicScaffoldOnly && activeProvider === 'ollama' && !isOllamaCloud) {
@@ -691,6 +695,7 @@ export function register(deps: ChatHandlerDeps): void {
             runtimeBudget,
             assistantBehaviorProfile,
             vibeCoderIntent,
+            vibeCoderExecutionPolicy,
             autonomyLevel,
             repairScope: context.repair_scope,
             deterministicScaffoldOnly,
@@ -823,9 +828,13 @@ export function register(deps: ChatHandlerDeps): void {
             runtimeBudget,
             assistantBehaviorProfile,
             vibeCoderIntent,
+            vibeCoderExecutionPolicy,
             autonomyLevel,
             repairScope: context.repair_scope,
-            deterministicScaffoldOnly: Boolean((context as any).deterministic_scaffold_only),
+            deterministicScaffoldOnly:
+              vibeCoderExecutionPolicy?.allowScaffold === false
+                ? false
+                : Boolean((context as any).deterministic_scaffold_only),
             monolithicApplyImmediately: agentSettings?.agentMonolithicApplyImmediately === true,
           };
 

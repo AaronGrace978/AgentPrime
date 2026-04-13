@@ -1,4 +1,5 @@
 import { validateToolCall, resetFileTracker, populateFileTracker } from '../../src/main/agent/tool-validation';
+import { resolveVibeCoderExecutionPolicy } from '../../src/main/agent/behavior-profile';
 
 describe('specialist-aware tool validation', () => {
   const workspacePath = 'G:/AgentPrime';
@@ -234,5 +235,37 @@ describe('specialist-aware tool validation', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('DUPLICATE GAME MODULE DETECTED');
+  });
+
+  it('blocks specialist writes when VibeCoder plan-only policy is active', () => {
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'src/App.tsx', content: 'export default function App() { return null; }' },
+      },
+      workspacePath,
+      'Analyze the current app shell',
+      { specialist: 'javascript_specialist' },
+      resolveVibeCoderExecutionPolicy('vibecoder', 'Analyze the current app shell')
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('plan-only');
+  });
+
+  it('blocks specialist scaffold calls during VibeCoder repair-only runs', () => {
+    const result = validateToolCall(
+      {
+        name: 'scaffold_project',
+        arguments: { project_type: 'threejs_viewer', project_name: 'demo' },
+      },
+      workspacePath,
+      'Fix the broken viewer runtime',
+      { specialist: 'tool_orchestrator' },
+      resolveVibeCoderExecutionPolicy('vibecoder', 'Fix the broken viewer runtime')
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('repair-only');
   });
 });

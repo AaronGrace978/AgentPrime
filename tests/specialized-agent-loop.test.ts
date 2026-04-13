@@ -2,9 +2,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { SpecializedAgentLoop } from '../src/main/agent/specialized-agent-loop';
-import { TransactionManager } from '../src/main/core/transaction-manager';
+import { TransactionManager, transactionManager } from '../src/main/core/transaction-manager';
 import { ProjectDocumenter } from '../src/main/agent/project-documenter';
 import { ProjectRunner } from '../src/main/agent/tools/projectRunner';
+import { resolveVibeCoderExecutionPolicy } from '../src/main/agent/behavior-profile';
 
 describe('SpecializedAgentLoop verification', () => {
   const tempRoots: string[] = [];
@@ -134,6 +135,26 @@ describe('SpecializedAgentLoop verification', () => {
     ]);
 
     expect(createdFiles).toEqual(expect.arrayContaining(['src/main.tsx', 'src/App.tsx', 'package.json', 'index.html']));
+  });
+
+  it('refuses deterministic scaffold review when VibeCoder policy blocks scaffold/create work', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-vibecoder-scaffold-block-');
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      vibeCoderExecutionPolicy: resolveVibeCoderExecutionPolicy('vibecoder', 'Fix the broken viewer runtime'),
+    } as any);
+
+    const rollbackSpy = jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+
+    const response = await (loop as any).runDeterministicScaffoldReview(
+      'Fix the broken viewer runtime',
+      { getOperations: () => [] },
+      Date.now(),
+      'standard'
+    );
+
+    expect(response).toContain('policy blocked deterministic scaffold fallback');
+    expect(rollbackSpy).toHaveBeenCalled();
   });
 
   it('drops orchestrator and analyst on build-heavy retries', () => {
