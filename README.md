@@ -79,7 +79,7 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 - Open a project and work inside a full desktop IDE shell with Monaco, tabs, file tree, terminal, search, and settings
 - Use Agent Mode for workspace-aware implementation, edits, commands, and repair loops
-- Switch Agent Mode into `VibeCoder` when you want Aaron-style intent discipline, tighter scope control, and more practical plan/review responses
+- Switch Agent Mode into `VibeCoder` when you want Aaron-style intent discipline, tighter scope control, hard non-mutating plan/review enforcement, and more practical responses
 - Use Just Chat or Dino Buddy without needing an open workspace
 - Pick providers and models across OpenAI, Anthropic, Ollama, and OpenRouter
 - Route work through fast, deep, or auto runtime budgets
@@ -100,7 +100,9 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 - **Behavior profile setting:** AgentPrime now exposes an `Aaron Grace VibeCoder` assistant behavior profile in Settings so the doctrine is a product feature, not just a hidden prompt tweak.
 - **Intent-shaped routing:** In Agent Mode, `plan-only` and `review-only` asks can short-circuit into a direct response path so strategic questions do not accidentally fall into build/scaffold loops.
+- **Hard runtime enforcement:** VibeCoder now resolves into an execution policy, not just a prompt layer. Plan/review requests are structurally read-only, and repair runs are blocked from falling back into scaffold/create behavior.
 - **Shared doctrine across agent paths:** Both the monolithic agent loop and specialized-agent stack now receive the same VibeCoder doctrine, which keeps planning, building, and repair behavior more consistent.
+- **Grounded direct responses:** The direct plan/review path was tightened to stay anchored to the real AgentPrime codebase, avoid invented doctrine or fake middleware, and default to shorter practical recommendations.
 - **Visible activation state:** When VibeCoder is active, the UI now shows it in the chat header, the active run status line, and the completed-response metadata footer so you can tell which behavior profile produced the answer.
 - **Secure provider-key workflow:** Provider API keys can now be pasted into settings while still using secure storage/keychain handling rather than leaking secrets into plain renderer settings state.
 
