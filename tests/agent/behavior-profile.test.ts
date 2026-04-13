@@ -45,8 +45,12 @@ describe('behavior-profile', () => {
     expect(buildVibeCoderDirectResponseSystemPrompt('plan-only')).toContain('This request is plan-only');
     expect(buildVibeCoderDirectResponseSystemPrompt('plan-only')).toContain('lead with the cleanest recommendation first');
     expect(buildVibeCoderDirectResponseSystemPrompt('plan-only')).toContain('avoid absolute claims');
+    expect(buildVibeCoderDirectResponseSystemPrompt('plan-only')).toContain('actual AgentPrime codebase');
+    expect(buildVibeCoderDirectResponseSystemPrompt('plan-only')).toContain('do not invent named creeds');
     expect(buildVibeCoderDirectResponseSystemPrompt('review-only')).toContain('Return findings first');
     expect(buildVibeCoderDirectResponseSystemPrompt('review-only')).toContain('do not turn the answer into a formal essay');
+    expect(buildVibeCoderDirectResponseSystemPrompt('review-only')).toContain('actual AgentPrime codebase');
+    expect(buildVibeCoderDirectResponseSystemPrompt('review-only')).toContain('do not invent named creeds');
   });
 
   it('derives a direct read-only policy for planning requests', () => {

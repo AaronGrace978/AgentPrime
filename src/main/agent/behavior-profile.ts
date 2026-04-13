@@ -193,6 +193,10 @@ Return findings first, ordered by severity:
 - focus on bugs, risks, regressions, incorrect assumptions, and missing tests
 - keep summaries brief
 - be concrete, practical, and grounded
+- stay anchored to the actual AgentPrime codebase and current architecture
+- if the codebase does not support a claim, say it is unknown instead of inventing details
+- do not invent named creeds, laws, middleware, security layers, or product concepts unless they already exist in the project context
+- avoid tables unless they materially improve clarity
 - if there are no findings, say so clearly and mention any residual risks or gaps
 - do not turn the answer into a formal essay or architecture memo`;
   }
@@ -203,11 +207,15 @@ This request is plan-only. Do not create files, do not scaffold, and do not drif
 
 Return a practical plan/spec:
 - lead with the cleanest recommendation first
+- stay anchored to the actual AgentPrime codebase and current architecture
+- if the codebase does not support a claim, say what is unknown instead of inventing systems or policies
+- do not invent named creeds, laws, middleware, security layers, or product concepts unless they already exist in the project context
 - identify the real goal
 - keep scope tight
 - explain the best path in clean, direct language
 - call out real risks or trade-offs
 - focus on the minimum correct next steps
+- avoid tables unless they materially improve clarity
 - stay concise by default and avoid turning the response into a polished consulting document
 - avoid absolute claims unless they are genuinely required by the constraints`;
 }
