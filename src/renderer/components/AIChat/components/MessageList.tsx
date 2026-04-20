@@ -369,7 +369,54 @@ const MessageBubble = memo(({ message, onApplyCode }: MessageBubbleProps) => {
           ? `2px solid var(--prime-success)`
           : message.role === 'user' ? 'none' : '1px solid var(--prime-border)'
       }}>
-        {renderContent()}
+        {message.aborted && !message.content?.trim() ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            color: 'var(--prime-text-muted)',
+            fontStyle: 'italic',
+            fontSize: '13px'
+          }}>
+            <span aria-hidden style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '2px',
+              background: 'var(--prime-text-muted)',
+              opacity: 0.7,
+              display: 'inline-block'
+            }} />
+            Stopped before any response.
+          </div>
+        ) : (
+          renderContent()
+        )}
+        {message.aborted && !!message.content?.trim() && (
+          <div style={{
+            marginTop: '10px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '3px 9px',
+            borderRadius: '999px',
+            background: 'rgba(148, 163, 184, 0.16)',
+            border: '1px solid rgba(148, 163, 184, 0.32)',
+            color: 'var(--prime-text-muted)',
+            fontSize: '11px',
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+            textTransform: 'uppercase'
+          }}>
+            <span aria-hidden style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '2px',
+              background: 'var(--prime-text-muted)',
+              display: 'inline-block'
+            }} />
+            Stopped
+          </div>
+        )}
         {footerMetadata && (
           <div style={{
             marginTop: '10px',

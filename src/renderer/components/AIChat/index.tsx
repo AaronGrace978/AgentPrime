@@ -836,6 +836,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
       // Listen for streamed chunks
       let streamed = '';
+      let streamAborted = false;
       const handleChunk = (data: any) => {
         if (data.chunk) {
           streamed += data.chunk;
@@ -848,6 +849,27 @@ const AIChat: React.FC<AIChatProps> = ({
             };
             return updated;
           });
+        }
+        // User-initiated cancellation: render as a calm "Stopped" pill,
+        // not an error toast. The IPC handler emits aborted: true on the
+        // final chunk when the request was cancelled by the user.
+        if (data.done && data.aborted) {
+          streamAborted = true;
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = {
+                ...last,
+                content: streamed,
+                aborted: true,
+                timestamp: new Date()
+              };
+            }
+            return updated;
+          });
+          setLastError(null);
+          return;
         }
         if (data.done && data.error) {
           const errText = String(data.error);
@@ -874,21 +896,77 @@ const AIChat: React.FC<AIChatProps> = ({
           setRuntimeStatus(result.runtime);
         }
 
-        // Streaming may have filled it; fall back to full response if nothing streamed
-        if (!streamed && result.success) {
+        // User-initiated abort travels back as { success: true, aborted: true }.
+        // Skip error classification entirely and let the streamed content + the
+        // "Stopped" pill carry the UX.
+        const wasAborted = streamAborted || (result as any)?.aborted === true;
+        if (wasAborted) {
           setMessages(prev => {
             const updated = [...prev];
-            updated[updated.length - 1] = {
-              role: 'assistant',
-              content: result.response || '',
-              timestamp: new Date()
-            };
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = {
+                ...last,
+                content: streamed || last.content || '',
+                aborted: true,
+                timestamp: new Date()
+              };
+            }
             return updated;
           });
-        }
+          setLastError(null);
+        } else {
+          // Streaming may have filled it; fall back to full response if nothing streamed
+          if (!streamed && result.success) {
+            setMessages(prev => {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                role: 'assistant',
+                content: result.response || '',
+                timestamp: new Date()
+              };
+              return updated;
+            });
+          }
 
-        if (!result.success && result.error) {
-          const classified = classifyAIError(result.error);
+          if (!result.success && result.error) {
+            const classified = classifyAIError(result.error);
+            setLastError(classified);
+            setLastFailedInput(currentInput);
+            setMessages(prev => {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                role: 'assistant',
+                content: classified.message,
+                timestamp: new Date()
+              };
+              return updated;
+            });
+          } else {
+            setLastError(null);
+          }
+        }
+      } catch (error: any) {
+        // Treat user-initiated cancellation as a clean stop, not an error.
+        const raw = error?.message || 'Unknown error';
+        const looksAborted = streamAborted || /aborted|cancell?ed/i.test(raw);
+        if (looksAborted) {
+          setMessages(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = {
+                ...last,
+                content: streamed || last.content || '',
+                aborted: true,
+                timestamp: new Date()
+              };
+            }
+            return updated;
+          });
+          setLastError(null);
+        } else {
+          const classified = classifyAIError(raw);
           setLastError(classified);
           setLastFailedInput(currentInput);
           setMessages(prev => {
@@ -900,23 +978,7 @@ const AIChat: React.FC<AIChatProps> = ({
             };
             return updated;
           });
-        } else {
-          setLastError(null);
         }
-      } catch (error: any) {
-        const raw = error?.message || 'Unknown error';
-        const classified = classifyAIError(raw);
-        setLastError(classified);
-        setLastFailedInput(currentInput);
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: 'assistant',
-            content: classified.message,
-            timestamp: new Date()
-          };
-          return updated;
-        });
       } finally {
         window.agentAPI.removeChatStream();
         setIsLoading(false);
@@ -1092,12 +1154,19 @@ const AIChat: React.FC<AIChatProps> = ({
     }
     setAgentRunning(false);
     setIsLoading(false);
-    setMessages(prev => [...prev, {
-      role: 'assistant',
-      content: 'Stop requested. Agent is shutting down...',
-      timestamp: new Date(),
-      type: 'system'
-    }]);
+    // In chat/dino mode the in-flight assistant bubble will receive the
+    // chat-stream { aborted: true } event and render a calm "Stopped" pill,
+    // so don't tack on a redundant system message. Reserve that breadcrumb
+    // for agent mode where there isn't a single bubble to attach the pill to.
+    if (chatMode === 'agent') {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Stop requested. Agent is shutting down...',
+        timestamp: new Date(),
+        type: 'system',
+        aborted: true
+      }]);
+    }
   };
 
   const busy = agentRunning || isLoading || isRetrying;

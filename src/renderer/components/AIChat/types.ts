@@ -38,6 +38,12 @@ export interface Message {
   timestamp: Date;
   type?: 'system' | 'action' | 'result' | 'chat';
   metadata?: MessageMetadata;
+  /**
+   * True when the request was cancelled by the user mid-stream.
+   * The renderer uses this to swap the bubble for a calm "Stopped" pill
+   * instead of treating it as an error.
+   */
+  aborted?: boolean;
 }
 
 export type AgentFileChange = AgentReviewChange;
