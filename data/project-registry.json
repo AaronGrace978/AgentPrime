@@ -1650,6 +1650,124 @@
           "prompt": "Repair the verifier-failed project changes so verification passes.\nOriginal task: Can you build me a website so for BostonAi.io I want something I can have  so people can chat with my ActivatePrime - Dino Buddy \nDetected project: Vite App\nReadiness rule: Ready only after npm run build succeeds and npm run dev starts successfully.\nInstall command: npm install\nBuild command: npm run build\nRun command: npm run dev\nVerification failures:\n- [build] Build failed: \u001b[31mEPERM: operation not permitted, mkdir 'G:\\DinoTest\\dist\\assets'\u001b[39m\n\u001b[31merror during build:\nError: EPERM: operation not permitted, mkdir 'G:\\DinoTest\\dist\\assets'\n    at async mkdir (node:internal/fs/promises:860:10)\n    at async writeOutputFile (file:///G:/DinoTest/node_modules/rollup/dist/es/shared/node-entry.js:26872:5)\n    at async Queue.work (file:///G:/DinoTest/node_modules/rollup/dist/es/shared/node-entry.js:25683:32)\u001b[39m\n [files: /DinoTest/node_modules/rollup/dist/es/shared/node-entry.js]\nFocus only on the verifier-failed accepted files and the concrete failures above. Do not add new features."
         }
       ]
+    },
+    {
+      "id": "proj_1775841756839_mvfy0r2de",
+      "name": "Build Test",
+      "path": "G:\\Build Test",
+      "type": "web",
+      "description": "Can you build me a three",
+      "createdAt": "2026-04-10T17:22:36.839Z",
+      "updatedAt": "2026-04-10T17:22:36.839Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat",
+        "src/main.ts"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-10T17:22:36.839Z",
+          "action": "create",
+          "description": "Can you build me a three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat",
+            "src/main.ts"
+          ],
+          "prompt": "Can you build me a three.js space game where I can fly around :D  "
+        }
+      ]
+    },
+    {
+      "id": "proj_1775859766507_pcj9oarjh",
+      "name": "TestLive",
+      "path": "G:\\TestLive",
+      "type": "web",
+      "description": "Can you build me something cool, anything you could think of please<3 we are gonna do it live",
+      "createdAt": "2026-04-10T22:22:46.507Z",
+      "updatedAt": "2026-04-10T22:22:46.507Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "src/style.css",
+        "README.md",
+        "src/Simulation.ts",
+        "src/ParticleSystem.ts",
+        "vite.config.js",
+        "tsconfig.json",
+        "src/styles.css",
+        "vite.config.ts",
+        "src/main.ts"
+      ],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-10T22:22:46.507Z",
+          "action": "create",
+          "description": "Can you build me something cool, anything you could think of please<3 we are gonna do it live",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "src/style.css",
+            "README.md",
+            "src/Simulation.ts",
+            "src/ParticleSystem.ts",
+            "vite.config.js",
+            "tsconfig.json",
+            "src/styles.css",
+            "vite.config.ts",
+            "src/main.ts"
+          ],
+          "prompt": "Can you build me something cool, anything you could think of please<3 we are gonna do it live"
+        }
+      ]
     }
   ]
 }
