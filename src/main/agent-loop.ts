@@ -22,6 +22,7 @@ import { TaskMaster } from './agent/task-master';
 import { getBudgetManager } from './core/budget-manager';
 import { getOpusReasoningEngine } from './mirror/opus-reasoning-engine';
 import { scaffoldProjectFromTemplate } from './agent/scaffold-resolver';
+import { organizeFolder, undoOrganize, type OrganizeStrategy } from './agent/tools/folder-organizer';
 import {
   validateWorkspaceNotSelf,
   validateFileExists,
@@ -2778,6 +2779,89 @@ ${instructions.length > 0 ? instructions.map(i => `- ${i}`).join('\n') : 'Start 
         ]
       };
     }
+  },
+
+  organize_folder: {
+    name: 'organize_folder',
+    description: 'Organize the files in a folder by moving them into categorized subfolders (Videos/Images/Documents/etc. or by date). This is the correct tool for requests like "organize my folder", "sort these files", "clean up this directory". It only MOVES files — never deletes — and writes an undo log so the change can be fully reversed. Use this instead of scaffold_project when the user wants file management rather than code creation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to the folder to organize. Defaults to the workspace root if omitted.'
+        },
+        strategy: {
+          type: 'string',
+          enum: ['by-type', 'by-date'],
+          description: "'by-type' groups by file category (default); 'by-date' groups by the file's modification year/month."
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'If true, return the planned moves without touching the filesystem. Use this to preview what the user will see.',
+          default: false
+        }
+      },
+      required: []
+    },
+    execute: async ({ path: targetPath, strategy, dry_run }, context) => {
+      const folder = (typeof targetPath === 'string' && targetPath.trim().length > 0)
+        ? targetPath
+        : context.workspacePath;
+      const effectiveStrategy: OrganizeStrategy = strategy === 'by-date' ? 'by-date' : 'by-type';
+      const result = await organizeFolder(folder, {
+        strategy: effectiveStrategy,
+        dryRun: !!dry_run,
+      });
+
+      const byCategory: Record<string, number> = {};
+      for (const move of result.moves) {
+        byCategory[move.category] = (byCategory[move.category] || 0) + 1;
+      }
+
+      return {
+        success: true,
+        folderPath: result.folderPath,
+        strategy: result.strategy,
+        dryRun: result.dryRun,
+        movedCount: result.moves.length,
+        totalFiles: result.totalFiles,
+        skippedCount: result.skipped.length,
+        categories: byCategory,
+        logPath: result.logPath,
+        undoHint: result.logPath
+          ? 'Run undo_organize_folder with the same path to reverse these moves.'
+          : undefined,
+      };
+    }
+  },
+
+  undo_organize_folder: {
+    name: 'undo_organize_folder',
+    description: 'Reverse the most recent organize_folder operation in a given folder by reading its .agentprime-organize-log.json and moving every file back to its original location. Use when the user says "undo", "revert", or "put it back".',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path to the folder whose last organize operation should be undone. Defaults to the workspace root.'
+        }
+      },
+      required: []
+    },
+    execute: async ({ path: targetPath }, context) => {
+      const folder = (typeof targetPath === 'string' && targetPath.trim().length > 0)
+        ? targetPath
+        : context.workspacePath;
+      const result = await undoOrganize(folder);
+      return {
+        success: true,
+        folderPath: result.folderPath,
+        restoredCount: result.restored.length,
+        missingCount: result.missing.length,
+        missing: result.missing.map((m) => m.to),
+      };
+    }
   }
 };
 
@@ -3900,6 +3984,15 @@ ${this.taskMode === TaskMode.ENHANCE ? `
 2. Add new features without breaking existing code
 3. Create backups before major changes
 ` : ''}
+${this.taskMode === TaskMode.ORGANIZE ? `
+🗂️ ORGANIZE MODE RULES:
+1. The user wants their FILES sorted — not a new project.
+2. Call organize_folder({ path, strategy: "by-type" | "by-date", dry_run: true }) FIRST to show a plan.
+3. After the user confirms (or if they were explicit), call organize_folder with dry_run: false.
+4. Never call scaffold_project, write_file, or run_command in this mode.
+5. If the target folder is ambiguous, ASK the user which folder they want organized before doing anything.
+6. To reverse, call undo_organize_folder with the same path.
+` : ''}
 `;
         
         const sysMsg = this.messages.find(m => m.role === 'system');
@@ -4760,6 +4853,27 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   role: 'tool',
                   tool_call_id: toolCall.id,
                   content: `🛡️ REVIEW MODE ACTIVE: You cannot scaffold or create projects in review mode.\n\nDescribe the issues and let the user decide whether to switch into a mutating mode.`
+                });
+                continue;
+              }
+
+              if (toolCall.function.name === 'scaffold_project' && this.taskMode === TaskMode.ORGANIZE) {
+                log.info('[Agent] 🛡️ ORGANIZE MODE: Blocking scaffold_project - user asked for file organization, not a new project');
+                toolResults.push('❌ scaffold_project: BLOCKED - You are in ORGANIZE mode. Use organize_folder instead of scaffolding a project.');
+                this.messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: `🛡️ ORGANIZE MODE ACTIVE: The user asked to organize files, not create a project.\n\nCall organize_folder({ path, strategy: "by-type" }) instead. If the target is unclear, ask the user for the folder path before taking any action.`
+                });
+                continue;
+              }
+              if (toolCall.function.name === 'write_file' && this.taskMode === TaskMode.ORGANIZE) {
+                log.info('[Agent] 🛡️ ORGANIZE MODE: Blocking write_file - no new files should be created during an organize task');
+                toolResults.push('❌ write_file: BLOCKED - You are in ORGANIZE mode. Do not create new files; use organize_folder to move existing ones.');
+                this.messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: `🛡️ ORGANIZE MODE ACTIVE: Do not create new files. Use organize_folder to sort existing files into subfolders, or undo_organize_folder to reverse a previous organize.`
                 });
                 continue;
               }

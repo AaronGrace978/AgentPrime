@@ -1768,6 +1768,57 @@
           "prompt": "Can you build me something cool, anything you could think of please<3 we are gonna do it live"
         }
       ]
+    },
+    {
+      "id": "proj_1776651226260_btxizv7cu",
+      "name": "Screen Recordings",
+      "path": "C:\\Users\\AGrac\\Videos\\Screen Recordings",
+      "type": "web",
+      "description": "organize please",
+      "createdAt": "2026-04-20T02:13:46.260Z",
+      "updatedAt": "2026-04-20T02:13:46.260Z",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "vite.config.js",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/index.css",
+        "index.html",
+        "src/main.jsx",
+        "src/App.jsx",
+        "src/styles.css",
+        "README.md"
+      ],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-20T02:13:46.260Z",
+          "action": "create",
+          "description": "organize please",
+          "filesChanged": [
+            "package.json",
+            "tsconfig.json",
+            "vite.config.js",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/index.css",
+            "index.html",
+            "src/main.jsx",
+            "src/App.jsx",
+            "src/styles.css",
+            "README.md"
+          ],
+          "prompt": "organize please"
+        }
+      ]
     }
   ]
 }

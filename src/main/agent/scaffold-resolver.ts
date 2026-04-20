@@ -114,7 +114,52 @@ export function detectCanonicalTemplateId(task: string, projectType?: string): s
   return null;
 }
 
+// File extensions that indicate the folder is a user media/document library,
+// NOT a code workspace. If these dominate the target folder, we must refuse
+// to scaffold — that's how a Vite app ended up inside a Screen Recordings
+// folder.
+const MEDIA_DUMP_EXTENSIONS = new Set([
+  '.mp4', '.mov', '.avi', '.mkv', '.webm', '.wmv', '.flv', '.m4v',
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff',
+  '.mp3', '.wav', '.flac', '.m4a', '.aac', '.ogg',
+  '.pdf', '.docx', '.xlsx', '.pptx',
+  '.zip', '.rar', '.7z',
+]);
+
+function looksLikeMediaDumpSync(workspacePath: string): boolean {
+  try {
+    const entries = fs.readdirSync(workspacePath, { withFileTypes: true });
+    const projectMarkers = new Set([
+      'package.json', 'pyproject.toml', 'cargo.toml', 'go.mod',
+      'pom.xml', 'build.gradle', 'gemfile', '.git',
+      'tsconfig.json', 'composer.json', 'requirements.txt',
+    ]);
+    let mediaCount = 0;
+    let fileCount = 0;
+    for (const entry of entries) {
+      const lowerName = entry.name.toLowerCase();
+      if (projectMarkers.has(lowerName)) return false;
+      if (!entry.isFile()) continue;
+      fileCount++;
+      const ext = path.extname(lowerName);
+      if (MEDIA_DUMP_EXTENSIONS.has(ext)) mediaCount++;
+    }
+    // Refuse scaffold in any folder that's overwhelmingly media — even 5 files
+    // is enough signal that this isn't meant to be a code workspace.
+    return fileCount >= 5 && mediaCount / fileCount >= 0.6;
+  } catch {
+    return false;
+  }
+}
+
 export function workspaceNeedsDeterministicScaffold(workspacePath: string): boolean {
+  // Safety guard first: if the target is clearly a user's media/document
+  // library, scaffolding is ALWAYS wrong regardless of how "empty" the source
+  // listing looks.
+  if (looksLikeMediaDumpSync(workspacePath)) {
+    return false;
+  }
+
   const existingFiles = listWorkspaceSourceFilesSync(workspacePath, 4000).filter((file) => {
     const normalized = file.replace(/\\/g, '/');
     return !normalized.includes('/node_modules/') && !normalized.startsWith('node_modules/');
