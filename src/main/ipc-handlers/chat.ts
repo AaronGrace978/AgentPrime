@@ -214,6 +214,14 @@ interface ChatHandlerDeps {
 
 let commandExecutor: CommandExecutor | null = null;
 let agentPipeline: AgentPipeline | null = null;
+
+/**
+ * Active in-flight chat stream AbortControllers, keyed by requestId.
+ * The UI Stop button (`agent:stop` IPC) aborts all of these in addition
+ * to telling the agent loop to stop, so cancellation works in chat mode
+ * too — not just inside agent runs.
+ */
+const activeChatControllers = new Map<string, AbortController>();
 let specializedAgentLoop: SpecializedAgentLoop | null = null;
 let activeAgentMode: 'monolithic' | 'specialized' | null = null;
 
@@ -322,22 +330,35 @@ export function register(deps: ChatHandlerDeps): void {
     }
   });
 
-  // Stop currently running agent execution
+  // Stop currently running agent execution AND any in-flight chat streams.
+  // The same UI button is wired to both so cancellation works in chat mode
+  // and agent mode alike.
   ipcMain.handle('agent:stop', async () => {
     try {
+      let stoppedSomething = false;
+
+      // Abort all active chat streams first — this drops the underlying
+      // HTTP socket so the model billing stops immediately.
+      for (const [, controller] of activeChatControllers) {
+        try { controller.abort(); } catch { /* ignore */ }
+        stoppedSomething = true;
+      }
+      activeChatControllers.clear();
+
       if (activeAgentMode === 'monolithic' && agentPipeline) {
         agentPipeline.getAgent().requestStop('Stopped by user');
-        return { success: true };
-      }
-
-      if (activeAgentMode === 'specialized' && specializedAgentLoop) {
+        stoppedSomething = true;
+      } else if (activeAgentMode === 'specialized' && specializedAgentLoop) {
         (specializedAgentLoop as any).requestStop?.('Stopped by user');
-        return { success: true };
+        stoppedSomething = true;
       }
 
-      return { success: false, error: 'No active agent run.' };
+      if (stoppedSomething) {
+        return { success: true };
+      }
+      return { success: false, error: 'No active agent run or chat stream.' };
     } catch (error: any) {
-      return { success: false, error: error.message || 'Failed to stop agent.' };
+      return { success: false, error: error.message || 'Failed to stop.' };
     }
   });
 
@@ -433,6 +454,8 @@ export function register(deps: ChatHandlerDeps): void {
 
   ipcMain.handle('chat', async (event: any, message: string, contextRaw: unknown) => {
     const requestId = Date.now().toString();
+    const chatAbortController = new AbortController();
+    activeChatControllers.set(requestId, chatAbortController);
 
     // === SECURITY: Rate limiting ===
     const rateCheck = ipcRateLimiter.check('chat', 30); // 30 messages per minute max
@@ -1229,6 +1252,7 @@ Separate files with blank lines.
           maxTokens: maxTokens,
           dualMode: dualMode,
           runtimeBudget,
+          signal: chatAbortController.signal,
           context: {
             codeLines: context.file_content?.split('\n').length || 0,
             hasErrors: context.has_errors || false,
@@ -1263,6 +1287,7 @@ Separate files with blank lines.
           await aiRouter.stream(messagesWithSystem, processStreamChunk, {
             model: activeModel,
             maxTokens: maxTokens,
+            signal: chatAbortController.signal,
             onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
               latestRuntime = runtime;
               emitRuntimeInfo(event.sender, requestId, runtime);
@@ -1402,6 +1427,8 @@ Separate files with blank lines.
         provider: runtime.displayProvider,
         runtime,
       };
+    } finally {
+      activeChatControllers.delete(requestId);
     }
   });
 }

@@ -259,12 +259,20 @@ export class InferenceServer {
     const requestId = `chatcmpl-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const model = body.model || 'agentprime-default';
 
+    // Tie the upstream model request lifetime to the inbound HTTP socket:
+    // if the client disconnects, abort the in-flight provider call so we
+    // don't keep generating tokens nobody will read.
+    const abortController = new AbortController();
+    req.on('close', () => {
+      try { abortController.abort(); } catch { /* ignore */ }
+    });
+
     if (body.stream) {
       // Streaming response
-      await this.handleStreamingChat(res, messages, body, requestId, model);
+      await this.handleStreamingChat(res, messages, body, requestId, model, abortController.signal);
     } else {
       // Non-streaming response
-      await this.handleNonStreamingChat(res, messages, body, requestId, model);
+      await this.handleNonStreamingChat(res, messages, body, requestId, model, abortController.signal);
     }
   }
 
@@ -276,12 +284,14 @@ export class InferenceServer {
     messages: ChatMessage[],
     options: OpenAIChatRequest,
     requestId: string,
-    model: string
+    model: string,
+    signal?: AbortSignal
   ): Promise<void> {
     try {
       const result = await aiRouter.chat(messages, {
         temperature: options.temperature,
-        maxTokens: options.max_tokens
+        maxTokens: options.max_tokens,
+        signal
       });
 
       if (!result.success) {
@@ -325,7 +335,8 @@ export class InferenceServer {
     messages: ChatMessage[],
     options: OpenAIChatRequest,
     requestId: string,
-    model: string
+    model: string,
+    signal?: AbortSignal
   ): Promise<void> {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -364,7 +375,8 @@ export class InferenceServer {
         res.write(`data: ${JSON.stringify(streamChunk)}\n\n`);
       }, {
         temperature: options.temperature,
-        maxTokens: options.max_tokens
+        maxTokens: options.max_tokens,
+        signal
       });
 
       // Send final chunk
@@ -469,6 +481,9 @@ export class InferenceServer {
 
     const model = body.model || 'agentprime-default';
 
+    const abortController = new AbortController();
+    req.on('close', () => { try { abortController.abort(); } catch { /* ignore */ } });
+
     if (body.stream !== false) {
       // Streaming response (Ollama default)
       res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
@@ -485,7 +500,8 @@ export class InferenceServer {
           res.write(JSON.stringify(ollamaChunk) + '\n');
         }, {
           temperature: body.options?.temperature,
-          maxTokens: body.options?.num_predict
+          maxTokens: body.options?.num_predict,
+          signal: abortController.signal
         });
 
         // Final chunk
@@ -508,7 +524,8 @@ export class InferenceServer {
       try {
         const result = await aiRouter.chat(messages, {
           temperature: body.options?.temperature,
-          maxTokens: body.options?.num_predict
+          maxTokens: body.options?.num_predict,
+          signal: abortController.signal
         });
 
         if (!result.success) {
@@ -552,6 +569,9 @@ export class InferenceServer {
     const messages: ChatMessage[] = [{ role: 'user', content: body.prompt }];
     const model = body.model || 'agentprime-default';
 
+    const abortController = new AbortController();
+    req.on('close', () => { try { abortController.abort(); } catch { /* ignore */ } });
+
     if (body.stream !== false) {
       res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
 
@@ -567,7 +587,8 @@ export class InferenceServer {
           res.write(JSON.stringify(ollamaChunk) + '\n');
         }, {
           temperature: body.options?.temperature,
-          maxTokens: body.options?.num_predict
+          maxTokens: body.options?.num_predict,
+          signal: abortController.signal
         });
 
         const finalChunk = {
@@ -588,7 +609,8 @@ export class InferenceServer {
       try {
         const result = await aiRouter.chat(messages, {
           temperature: body.options?.temperature,
-          maxTokens: body.options?.num_predict
+          maxTokens: body.options?.num_predict,
+          signal: abortController.signal
         });
 
         if (!result.success) {
