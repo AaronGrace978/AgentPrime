@@ -3,7 +3,18 @@
  */
 
 import { BaseProvider } from './base-provider';
-import type { ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback } from '../../types/ai-providers';
+import type {
+  ProviderConfig,
+  ChatMessage,
+  ChatOptions,
+  ChatResult,
+  ModelInfo,
+  StreamCallback,
+  Tool,
+  ToolUseBlock,
+  ContentBlock,
+  ChatWithToolsResult
+} from '../../types/ai-providers';
 import axios from 'axios';
 import { Readable } from 'stream';
 
@@ -246,6 +257,140 @@ export class AnthropicProvider extends BaseProvider {
     } catch (e: any) {
       throw new Error(e.response?.data?.error?.message || e.message);
     }
+  }
+
+  /**
+   * Native tool-calling via Anthropic's `tools` parameter.
+   * The agent loop's canonical format IS Anthropic-style, so this is a
+   * mostly straight passthrough with response-block extraction.
+   */
+  async chatWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult> {
+    if (!this.apiKey) {
+      return { success: false, error: 'API key not configured' };
+    }
+
+    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
+
+    // Translate canonical messages → Anthropic wire format.
+    // Strings stay strings; arrays of blocks (tool_use / tool_result) pass through.
+    const { systemMessage, anthropicMessages } = this.toAnthropicMessages(messages);
+
+    if (anthropicMessages.length === 0) {
+      return { success: false, error: 'No user messages provided' };
+    }
+
+    let maxTokens = options.maxTokens;
+    if (!maxTokens) {
+      maxTokens = (model.includes('sonnet') || model.includes('opus')) ? 16384 : 8192;
+    }
+
+    try {
+      const response = await axios.post(`${this.baseUrl}/v1/messages`, {
+        model,
+        max_tokens: maxTokens,
+        system: systemMessage || undefined,
+        messages: anthropicMessages,
+        tools,
+        temperature: options.temperature ?? 0.7
+      }, {
+        headers: this.getHeaders(),
+        timeout: 300000
+      });
+
+      const rawBlocks: any[] = response.data?.content || [];
+      const contentBlocks: ContentBlock[] = [];
+      const toolCalls: ToolUseBlock[] = [];
+      let textContent = '';
+
+      for (const block of rawBlocks) {
+        if (block?.type === 'text') {
+          contentBlocks.push({ type: 'text', text: block.text || '' });
+          textContent += block.text || '';
+        } else if (block?.type === 'tool_use') {
+          const tu: ToolUseBlock = {
+            type: 'tool_use',
+            id: block.id,
+            name: block.name,
+            input: block.input || {}
+          };
+          contentBlocks.push(tu);
+          toolCalls.push(tu);
+        }
+      }
+
+      const stopReason = response.data?.stop_reason === 'tool_use'
+        ? 'tool_use'
+        : (response.data?.stop_reason === 'max_tokens' ? 'max_tokens' : 'end_turn');
+
+      return {
+        success: true,
+        content: textContent,
+        stopReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        contentBlocks,
+        usage: {
+          promptTokens: response.data?.usage?.input_tokens,
+          completionTokens: response.data?.usage?.output_tokens
+        }
+      };
+    } catch (e: any) {
+      const errorMsg = e.response?.data?.error?.message || e.message;
+      console.error(`[Anthropic/Tools] API Error: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Translate canonical messages (which may contain Anthropic-style content
+   * blocks for tool_use / tool_result) into the exact wire format Anthropic
+   * expects: extracts system, drops empty content, merges adjacent same-role
+   * string messages, and preserves block-array content as-is.
+   */
+  private toAnthropicMessages(messages: ChatMessage[]): {
+    systemMessage: string;
+    anthropicMessages: Array<{ role: 'user' | 'assistant'; content: any }>;
+  } {
+    let systemMessage = '';
+    const out: Array<{ role: 'user' | 'assistant'; content: any }> = [];
+
+    for (const msg of messages) {
+      const content = (msg as any).content;
+
+      if (msg.role === 'system') {
+        const text = typeof content === 'string' ? content.trim() : '';
+        if (text) systemMessage += (systemMessage ? '\n' : '') + text;
+        continue;
+      }
+
+      const role: 'user' | 'assistant' = msg.role === 'assistant' ? 'assistant' : 'user';
+
+      if (Array.isArray(content)) {
+        if (content.length === 0) continue;
+        out.push({ role, content });
+        continue;
+      }
+
+      const text = typeof content === 'string' ? content.trim() : '';
+      if (!text) continue;
+
+      // Merge with previous if same-role string content (Anthropic disallows consecutive same-role).
+      const prev = out[out.length - 1];
+      if (prev && prev.role === role && typeof prev.content === 'string') {
+        prev.content = `${prev.content}\n\n${text}`;
+      } else {
+        out.push({ role, content: text });
+      }
+    }
+
+    if (out.length > 0 && out[0].role !== 'user') {
+      out.unshift({ role: 'user', content: 'Continue with the task.' });
+    }
+
+    return { systemMessage, anthropicMessages: out };
   }
 
   formatMessages(messages: ChatMessage[]): AnthropicFormattedMessages {

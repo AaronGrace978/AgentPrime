@@ -4,7 +4,23 @@
  */
 
 import { BaseProvider } from './base-provider';
-import type { ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback } from '../../types/ai-providers';
+import type {
+  ProviderConfig,
+  ChatMessage,
+  ChatOptions,
+  ChatResult,
+  ModelInfo,
+  StreamCallback,
+  Tool,
+  ChatWithToolsResult,
+  ContentBlock,
+  ToolUseBlock
+} from '../../types/ai-providers';
+import {
+  toOpenAIChatTools,
+  toOpenAIChatMessages,
+  fromOpenAIToolCalls
+} from './tool-format';
 import axios from 'axios';
 import { Readable } from 'stream';
 
@@ -201,5 +217,67 @@ export class OpenRouterProvider extends BaseProvider {
       role: m.role,
       content: m.content
     }));
+  }
+
+  /**
+   * Native tool-calling via OpenRouter.
+   * OpenRouter exposes an OpenAI-compatible chat completions surface and
+   * forwards tools to whichever underlying model supports them (Claude,
+   * GPT-4, Mistral, etc.). Result is normalized to the canonical Anthropic-
+   * style ChatWithToolsResult.
+   */
+  async chatWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult> {
+    if (!this.apiKey) {
+      return { success: false, error: 'API key not configured' };
+    }
+
+    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4') as string;
+
+    try {
+      const response = await axios.post(`${this.baseUrl}/chat/completions`, {
+        model,
+        messages: toOpenAIChatMessages(messages),
+        tools: toOpenAIChatTools(tools),
+        max_tokens: options.maxTokens || 4096,
+        temperature: options.temperature ?? 0.7
+      }, {
+        headers: this.getHeaders(),
+        timeout: 300000
+      });
+
+      const choice = response.data?.choices?.[0];
+      const message = choice?.message || {};
+      const text: string = message.content || '';
+      const toolCalls: ToolUseBlock[] = fromOpenAIToolCalls(message.tool_calls);
+
+      const contentBlocks: ContentBlock[] = [];
+      if (text) contentBlocks.push({ type: 'text', text });
+      for (const tc of toolCalls) contentBlocks.push(tc);
+
+      const finishReason: string | undefined = choice?.finish_reason;
+      const stopReason: 'tool_use' | 'end_turn' | 'max_tokens' =
+        finishReason === 'tool_calls' || toolCalls.length > 0 ? 'tool_use'
+        : (finishReason === 'length' ? 'max_tokens' : 'end_turn');
+
+      return {
+        success: true,
+        content: text,
+        stopReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        contentBlocks,
+        usage: {
+          promptTokens: response.data?.usage?.prompt_tokens,
+          completionTokens: response.data?.usage?.completion_tokens
+        }
+      };
+    } catch (e: any) {
+      const errorMsg = e.response?.data?.error?.message || e.message;
+      console.error(`[OpenRouter/Tools] API Error: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
   }
 }

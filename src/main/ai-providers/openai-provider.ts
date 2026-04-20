@@ -3,7 +3,25 @@
  */
 
 import { BaseProvider } from './base-provider';
-import type { ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback } from '../../types/ai-providers';
+import type {
+  ProviderConfig,
+  ChatMessage,
+  ChatOptions,
+  ChatResult,
+  ModelInfo,
+  StreamCallback,
+  Tool,
+  ChatWithToolsResult,
+  ContentBlock,
+  ToolUseBlock
+} from '../../types/ai-providers';
+import {
+  toOpenAIChatTools,
+  toOpenAIResponsesTools,
+  toOpenAIChatMessages,
+  fromOpenAIToolCalls,
+  fromResponsesOutput
+} from './tool-format';
 import axios from 'axios';
 import { Readable } from 'stream';
 
@@ -344,5 +362,105 @@ export class OpenAIProvider extends BaseProvider {
       role: m.role,
       content: m.content
     }));
+  }
+
+  /**
+   * Native tool-calling for OpenAI.
+   * - GPT-5.x routes through the Responses API (`tools` are flat function specs,
+   *   tool calls appear as `function_call` items in `output[]`).
+   * - GPT-4.x routes through Chat Completions (`tools` are `{type:'function', function:...}`,
+   *   tool calls come back as `message.tool_calls`).
+   *
+   * Returns the canonical ChatWithToolsResult so the agent loop sees a single
+   * shape regardless of which OpenAI surface served the request.
+   */
+  async chatWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult> {
+    if (!this.apiKey) {
+      return { success: false, error: 'API key not configured' };
+    }
+
+    const model = (options.model || this.config.model || 'gpt-5.4') as string;
+    const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
+
+    try {
+      if (isGPT5) {
+        const response = await axios.post(`${this.baseUrl}/responses`, {
+          model,
+          input: toOpenAIChatMessages(messages),
+          tools: toOpenAIResponsesTools(tools),
+          max_output_tokens: options.maxTokens || 4096,
+          reasoning: { effort: (options as any).reasoningEffort || 'medium' }
+        }, {
+          headers: this.getHeaders(),
+          timeout: 300000
+        });
+
+        const { text, toolCalls } = fromResponsesOutput(response.data?.output);
+        const contentBlocks: ContentBlock[] = [];
+        if (text) contentBlocks.push({ type: 'text', text });
+        for (const tc of toolCalls) contentBlocks.push(tc);
+
+        const stopReason: 'tool_use' | 'end_turn' | 'max_tokens' =
+          toolCalls.length > 0 ? 'tool_use'
+          : (response.data?.status === 'incomplete' ? 'max_tokens' : 'end_turn');
+
+        return {
+          success: true,
+          content: text,
+          stopReason,
+          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          contentBlocks,
+          usage: {
+            promptTokens: response.data?.usage?.input_tokens,
+            completionTokens: response.data?.usage?.output_tokens
+          }
+        };
+      }
+
+      const response = await axios.post(`${this.baseUrl}/chat/completions`, {
+        model,
+        messages: toOpenAIChatMessages(messages),
+        tools: toOpenAIChatTools(tools),
+        max_tokens: options.maxTokens || 4096,
+        temperature: options.temperature ?? 0.7
+      }, {
+        headers: this.getHeaders(),
+        timeout: 300000
+      });
+
+      const choice = response.data?.choices?.[0];
+      const message = choice?.message || {};
+      const text: string = message.content || '';
+      const toolCalls: ToolUseBlock[] = fromOpenAIToolCalls(message.tool_calls);
+
+      const contentBlocks: ContentBlock[] = [];
+      if (text) contentBlocks.push({ type: 'text', text });
+      for (const tc of toolCalls) contentBlocks.push(tc);
+
+      const finishReason: string | undefined = choice?.finish_reason;
+      const stopReason: 'tool_use' | 'end_turn' | 'max_tokens' =
+        finishReason === 'tool_calls' || toolCalls.length > 0 ? 'tool_use'
+        : (finishReason === 'length' ? 'max_tokens' : 'end_turn');
+
+      return {
+        success: true,
+        content: text,
+        stopReason,
+        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        contentBlocks,
+        usage: {
+          promptTokens: response.data?.usage?.prompt_tokens,
+          completionTokens: response.data?.usage?.completion_tokens
+        }
+      };
+    } catch (e: any) {
+      const errorMsg = e.response?.data?.error?.message || e.message;
+      console.error(`[OpenAI/Tools] API Error: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
   }
 }

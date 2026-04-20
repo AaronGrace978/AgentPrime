@@ -80,25 +80,25 @@ class AIProviderRouter {
       nativeToolCalling: true,
       streaming: true,
       contextWindowHint: 128000,
-      notes: 'Supports native tool loop adapter.'
+      notes: 'Native tool-calling via Ollama /api/chat tools parameter.'
     },
     anthropic: {
-      nativeToolCalling: false,
+      nativeToolCalling: true,
       streaming: true,
       contextWindowHint: 200000,
-      notes: 'Uses provider-agnostic JSON tool-call fallback.'
+      notes: 'Native tool-calling via Anthropic Messages API tools parameter.'
     },
     openai: {
-      nativeToolCalling: false,
+      nativeToolCalling: true,
       streaming: true,
       contextWindowHint: 128000,
-      notes: 'Uses provider-agnostic JSON tool-call fallback.'
+      notes: 'Native tool-calling via Chat Completions tool_calls (GPT-4) and Responses API function_call (GPT-5).'
     },
     openrouter: {
-      nativeToolCalling: false,
+      nativeToolCalling: true,
       streaming: true,
       contextWindowHint: 128000,
-      notes: 'Uses provider-agnostic JSON tool-call fallback.'
+      notes: 'Native tool-calling via OpenAI-compatible tool_calls forwarded to underlying model.'
     }
   };
 
