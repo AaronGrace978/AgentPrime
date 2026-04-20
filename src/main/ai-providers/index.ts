@@ -28,6 +28,7 @@ import type {
 import type { DualModelConfig } from '../../types';
 import { injectCreed } from '../core/dino-buddy-creed';
 import { recordAIRuntimeExecution } from '../core/ai-runtime-state';
+import { isAbortError } from '../core/timeout-utils';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget, runtimeBudgetToDualMode } from '../../types/runtime-budget';
 
 interface ProviderEntry {
@@ -856,6 +857,9 @@ class AIProviderRouter {
   }
 
   private shouldFallbackFromError(error: any): boolean {
+    // Never fall back on a user-initiated abort. Stop means stop —
+    // not "try every other model in the chain".
+    if (isAbortError(error)) return false;
     return this.isRateLimitError(error) || this.isTransientProviderError(error);
   }
 

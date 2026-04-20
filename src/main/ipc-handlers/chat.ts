@@ -15,7 +15,7 @@ import type { AgentContext } from '../agent-loop';
 import { createPipeline, type AgentPipeline } from '../agent-pipeline';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
 import { parseChatIpcContext } from '../security/chat-ipc-context';
-import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN } from '../core/timeout-utils';
+import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN, isAbortError } from '../core/timeout-utils';
 import { stateManager } from '../core/state-manager';
 import { getBudgetAdjustedMaxTokens, isOllamaCloudModel } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
@@ -1199,7 +1199,15 @@ Separate files with blank lines.
       });
 
       const processStreamChunk = (chunk: { content?: string; done?: boolean; error?: unknown }) => {
-        if (chunk.error != null && chunk.error !== '') {
+        // If the user clicked Stop, the provider emits a final chunk with
+        // error: 'Request aborted'. Treat that as a clean termination — not
+        // a real failure — so the UI doesn't show a scary error toast.
+        const userAborted = chatAbortController.signal.aborted;
+        const isAbortChunk =
+          userAborted ||
+          (typeof chunk.error === 'string' && chunk.error === 'Request aborted');
+
+        if (chunk.error != null && chunk.error !== '' && !isAbortChunk) {
           const e = chunk.error;
           streamTerminalError =
             typeof e === 'string' ? e : e instanceof Error ? e.message : String(e);
@@ -1218,7 +1226,8 @@ Separate files with blank lines.
             requestId,
             chunk: '',
             done: true,
-            error: chunk.error
+            error: isAbortChunk ? undefined : chunk.error,
+            aborted: isAbortChunk || undefined
           });
         }
       };
@@ -1383,6 +1392,21 @@ Separate files with blank lines.
       };
       
     } catch (error: unknown) {
+      // User-initiated abort: render as a clean stopped state, not an error.
+      if (isAbortError(error) || chatAbortController.signal.aborted) {
+        event.sender.send('chat-stream', {
+          requestId,
+          chunk: '',
+          done: true,
+          aborted: true
+        });
+        return {
+          success: true,
+          aborted: true,
+          requestId,
+        };
+      }
+
       console.error('Chat error:', error);
 
       const errorMessage =

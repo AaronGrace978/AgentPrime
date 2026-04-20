@@ -23,6 +23,7 @@ import {
 } from './tool-format';
 import axios from 'axios';
 import { Readable } from 'stream';
+import { AbortError } from '../core/timeout-utils';
 
 const OPENROUTER_FALLBACK_MODELS: Array<{ id: string; name: string }> = [
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
@@ -152,6 +153,9 @@ export class OpenRouterProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       return {
         success: false,
         error: e.response?.data?.error?.message || e.message
@@ -226,7 +230,7 @@ export class OpenRouterProvider extends BaseProvider {
       });
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
-        throw new Error('Request aborted');
+        throw new AbortError();
       }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
@@ -296,6 +300,9 @@ export class OpenRouterProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       const errorMsg = e.response?.data?.error?.message || e.message;
       console.error(`[OpenRouter/Tools] API Error: ${errorMsg}`);
       return { success: false, error: errorMsg };

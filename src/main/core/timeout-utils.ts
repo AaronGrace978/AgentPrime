@@ -19,6 +19,37 @@ export class TimeoutError extends Error {
   }
 }
 
+/**
+ * Thrown by every provider when the caller's AbortSignal fires (or the
+ * underlying transport reports a CanceledError). This is a HARD STOP:
+ * - withRetry must not retry on it
+ * - withSmartFallback must not run the fallback chain on it
+ * - UI should render a friendly "Stopped" state, not an error toast
+ *
+ * Use `isAbortError(err)` for safe duck-typing across module boundaries.
+ */
+export class AbortError extends Error {
+  public readonly isAbortError = true;
+
+  constructor(message: string = 'Request aborted') {
+    super(message);
+    this.name = 'AbortError';
+  }
+}
+
+export function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof AbortError) return true;
+  if (err instanceof Error && err.name === 'AbortError') return true;
+  if (typeof err === 'object' && err !== null) {
+    const anyErr = err as any;
+    if (anyErr.isAbortError === true) return true;
+    if (anyErr.code === 'ERR_CANCELED') return true;
+    if (anyErr.name === 'CanceledError') return true;
+  }
+  return false;
+}
+
 export type RuntimeBudgetMode = 'instant' | 'standard' | 'deep';
 
 /**
@@ -280,6 +311,11 @@ export async function withRetry<T>(
     } catch (error) {
       lastError = error as Error;
 
+      // User-initiated abort is a hard stop — never retry.
+      if (isAbortError(error)) {
+        throw error;
+      }
+
       // Only retry on TimeoutError
       if (!(error instanceof TimeoutError)) {
         throw error;
@@ -376,8 +412,15 @@ export async function withSmartFallback<T>(
       attempts
     };
   } catch (primaryError) {
+    // User-initiated abort: do NOT walk the fallback chain. The whole
+    // point of Stop is to stop, not to silently retry against every other
+    // model in the lineup.
+    if (isAbortError(primaryError)) {
+      throw primaryError;
+    }
+
     console.log(`[SmartFallback] Primary model failed: ${(primaryError as Error).message}`);
-    
+
     recordProviderFailure(primaryProvider);
 
     // Try fallback models
@@ -409,6 +452,10 @@ export async function withSmartFallback<T>(
           attempts
         };
       } catch (fallbackError) {
+        if (isAbortError(fallbackError)) {
+          // User aborted mid-fallback — bail out of the whole chain.
+          throw fallbackError;
+        }
         const errMsg = (fallbackError as Error).message || String(fallbackError);
         console.log(`[SmartFallback] Fallback ${fallback.model} failed: ${errMsg.substring(0, 200)}`);
         recordProviderFailure(fallback.provider);

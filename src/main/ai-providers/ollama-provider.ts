@@ -6,6 +6,7 @@
  */
 
 import { BaseProvider } from './base-provider';
+import { AbortError } from '../core/timeout-utils';
 import type { 
   ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback,
   Tool, ToolUseBlock, ContentBlock, ChatWithToolsResult
@@ -385,6 +386,9 @@ export class OllamaProvider extends BaseProvider {
         }
       }, apiModel);
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       // Log detailed error info for debugging
       console.error(`[Ollama] Request failed:`, {
         url: requestUrl,
@@ -540,6 +544,9 @@ export class OllamaProvider extends BaseProvider {
         (response.data as Readable).on('error', reject);
       });
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       // Log detailed error info for debugging
       console.error(`[Ollama] Stream request failed:`, {
         url: requestUrl,
@@ -642,6 +649,9 @@ export class OllamaProvider extends BaseProvider {
         content: response.data?.response || ''
       }, apiModel);
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       if (e.code === 'ECONNREFUSED') {
         return {
           success: false,
@@ -743,6 +753,9 @@ export class OllamaProvider extends BaseProvider {
         });
       });
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       return {
         success: false,
         error: e.code === 'ECONNREFUSED' 
@@ -851,6 +864,9 @@ export class OllamaProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       if (e.response?.status === 404) {
         return {
           success: false,
@@ -931,6 +947,9 @@ export class OllamaProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       if (e.response?.status === 404) {
         return {
           success: false,
@@ -1022,6 +1041,9 @@ export class OllamaProvider extends BaseProvider {
         (response.data as Readable).on('error', reject);
       });
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
   }

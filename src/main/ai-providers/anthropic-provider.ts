@@ -17,6 +17,7 @@ import type {
 } from '../../types/ai-providers';
 import axios from 'axios';
 import { Readable } from 'stream';
+import { AbortError } from '../core/timeout-utils';
 
 interface AnthropicFormattedMessages {
   systemMessage: string;
@@ -179,6 +180,9 @@ export class AnthropicProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       const errorMsg = e.response?.data?.error?.message || e.message;
       console.error(`[Anthropic] API Error: ${errorMsg}`);
       console.error(`[Anthropic] Status: ${e.response?.status}, Model: ${model}`);
@@ -295,7 +299,7 @@ export class AnthropicProvider extends BaseProvider {
       });
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
-        throw new Error('Request aborted');
+        throw new AbortError();
       }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
@@ -381,6 +385,9 @@ export class AnthropicProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       const errorMsg = e.response?.data?.error?.message || e.message;
       console.error(`[Anthropic/Tools] API Error: ${errorMsg}`);
       return { success: false, error: errorMsg };

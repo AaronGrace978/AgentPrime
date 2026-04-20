@@ -23,6 +23,7 @@ import {
   fromResponsesOutput
 } from './tool-format';
 import axios from 'axios';
+import { AbortError } from '../core/timeout-utils';
 import { Readable } from 'stream';
 
 export class OpenAIProvider extends BaseProvider {
@@ -210,6 +211,9 @@ export class OpenAIProvider extends BaseProvider {
         };
       }
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       return {
         success: false,
         error: e.response?.data?.error?.message || e.message
@@ -366,7 +370,7 @@ export class OpenAIProvider extends BaseProvider {
       });
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
-        throw new Error('Request aborted');
+        throw new AbortError();
       }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
@@ -475,6 +479,9 @@ export class OpenAIProvider extends BaseProvider {
         }
       };
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
       const errorMsg = e.response?.data?.error?.message || e.message;
       console.error(`[OpenAI/Tools] API Error: ${errorMsg}`);
       return { success: false, error: errorMsg };
