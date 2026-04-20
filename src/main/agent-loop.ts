@@ -43,6 +43,7 @@ import { searchWithRipgrep } from './core/ripgrep-runner';
 import { getRecommendedMaxTokens, isOllamaCloudModel } from './core/model-output-limits';
 import { TaskMode, detectTaskMode } from './agent/task-mode';
 import { parseToolCallsContent } from './agent/tool-call-parser';
+import { toCanonicalTools, toolUseBlocksToParsedCalls } from './agent/canonical-tools';
 import { finalizeAgentTransactionForReview } from './agent/transaction-finalization';
 import { buildReviewCheckpointSummary } from './agent/reflection-policy';
 
@@ -4041,8 +4042,16 @@ ${this.taskMode === TaskMode.ENHANCE ? `
           );
         }
         
+        // === NATIVE TOOL-CALLING ===
+        // Prefer native function-calling over JSON-in-text parsing. Every
+        // provider in the router now supports chatWithTools (Anthropic,
+        // OpenAI, OpenRouter, Ollama). If the model returns native toolCalls
+        // we skip the regex/repair pipeline entirely. If it doesn't, we still
+        // get plain text in `content` and fall through to the legacy parser.
+        const canonicalToolCatalog = toCanonicalTools(tools as any);
+
         const response = await withAITimeoutAndRetry(
-          () => aiRouter.chat(messagesForModel, {
+          () => aiRouter.chatWithTools(messagesForModel, canonicalToolCatalog, {
             model: modelToUse,
             temperature: 0.3, // Increased from 0.1: Better balance between determinism and thoroughness
             maxTokens
@@ -4154,8 +4163,16 @@ We'll add more features after this core version works.`;
         }
         // === END HALLUCINATION DETECTION ===
 
-        // Parse tool calls from response
-        const toolCalls = this.parseToolCalls(response.content);
+        // Prefer native tool calls returned by chatWithTools. Fall back to
+        // JSON-in-text parsing only when the model didn't emit any (some
+        // models still answer purely in text, e.g. for `done` signals).
+        const nativeToolCalls = toolUseBlocksToParsedCalls(
+          (response as any).toolCalls,
+          Object.keys(tools)
+        );
+        const toolCalls = nativeToolCalls.length > 0
+          ? nativeToolCalls
+          : this.parseToolCalls(response.content);
         
         // Check for plan in response
         const planMatch = response.content.match(/"plan"\s*:\s*\[([\s\S]*?)\]/);
@@ -4176,8 +4193,13 @@ We'll add more features after this core version works.`;
           this.noToolCallStreak = 0;
           this.parseErrorStreak = 0;
           
-          // Add assistant message - preserve content for Claude (don't strip to empty)
-          let assistantContent = response.content.replace(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, '').trim();
+          // Add assistant message - preserve content for Claude (don't strip to empty).
+          // When tool calls came from the native channel, response.content is already
+          // clean prose with no tool JSON to strip. Only run the legacy JSON-stripper
+          // for the text-parse fallback path.
+          let assistantContent = nativeToolCalls.length > 0
+            ? (response.content || '').trim()
+            : response.content.replace(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, '').trim();
           if (!assistantContent) {
             // If stripping JSON leaves empty content, use a placeholder
             assistantContent = `Executing tool: ${toolCalls[0]?.function?.name || 'unknown'}`;
