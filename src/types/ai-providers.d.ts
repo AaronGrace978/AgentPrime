@@ -63,6 +63,13 @@ export interface ChatOptions {
   tools?: Tool[];
   useAnthropicCompat?: boolean;
   disableRouterFallback?: boolean;
+  /**
+   * Optional AbortSignal to cancel the in-flight HTTP request.
+   * Wired through to every provider's underlying transport so that calling
+   * `controller.abort()` instantly tears down the request instead of waiting
+   * for the next iteration boundary.
+   */
+  signal?: AbortSignal;
   [key: string]: any;
 }
 

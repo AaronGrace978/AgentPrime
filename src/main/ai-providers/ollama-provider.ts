@@ -372,7 +372,8 @@ export class OllamaProvider extends BaseProvider {
         }
       }, {
         headers: this.getHeaders(),
-        timeout: timeout
+        timeout: timeout,
+        signal: options.signal
       });
 
       return this.annotateServedBy({
@@ -489,7 +490,8 @@ export class OllamaProvider extends BaseProvider {
         }
       }, {
         ...this.getAxiosConfig(timeout),
-        responseType: 'stream'
+        responseType: 'stream',
+        signal: options.signal
       });
 
       let fullContent = '';
@@ -631,7 +633,8 @@ export class OllamaProvider extends BaseProvider {
         }
       }, {
         headers: this.getHeaders(),
-        timeout: timeout
+        timeout: timeout,
+        signal: options.signal
       });
 
       return this.annotateServedBy({
@@ -685,7 +688,8 @@ export class OllamaProvider extends BaseProvider {
       }, {
         headers: this.getHeaders(),
         timeout,
-        responseType: 'stream'
+        responseType: 'stream',
+        signal: options.signal
       });
 
       let fullContent = '';
@@ -832,7 +836,8 @@ export class OllamaProvider extends BaseProvider {
 
       const response = await axios.post(`${baseUrl}/v1/messages`, requestBody, {
         headers: this.getAnthropicHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const content = response.data?.content?.[0]?.text || '';
@@ -900,7 +905,8 @@ export class OllamaProvider extends BaseProvider {
 
       const response = await axios.post(`${baseUrl}/v1/messages`, requestBody, {
         headers: this.getAnthropicHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const data = response.data;
@@ -980,7 +986,8 @@ export class OllamaProvider extends BaseProvider {
       const response = await axios.post(`${baseUrl}/v1/messages`, requestBody, {
         headers: this.getAnthropicHeaders(),
         timeout: 600000,
-        responseType: 'stream'
+        responseType: 'stream',
+        signal: options.signal
       });
 
       let sseBuf = '';

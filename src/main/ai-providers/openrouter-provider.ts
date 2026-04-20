@@ -137,7 +137,8 @@ export class OpenRouterProvider extends BaseProvider {
         temperature: options.temperature ?? 0.7
       }, {
         headers: this.getHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const content = response.data?.choices?.[0]?.message?.content || '';
@@ -175,39 +176,58 @@ export class OpenRouterProvider extends BaseProvider {
       }, {
         headers: this.getHeaders(),
         timeout: 300000,
-        responseType: 'stream'
+        responseType: 'stream',
+        signal: options.signal
       });
 
       return new Promise((resolve, reject) => {
-        (response.data as Readable).on('data', (chunk: Buffer) => {
+        let settled = false;
+        const finishSuccess = () => {
+          if (settled) return;
+          settled = true;
+          onChunk({ content: '', done: true });
+          resolve();
+        };
+        const finishError = (msg: string) => {
+          if (settled) return;
+          settled = true;
+          onChunk({ content: '', done: true, error: msg });
+          reject(new Error(msg));
+        };
+
+        const dataStream = response.data as Readable;
+
+        dataStream.on('data', (chunk: Buffer) => {
           const lines = chunk.toString().split('\n');
           for (const line of lines) {
             if (line.startsWith('data: ') && !line.includes('[DONE]')) {
               try {
                 const data = JSON.parse(line.slice(6));
                 const content = data.choices?.[0]?.delta?.content || '';
-                if (content) {
-                  onChunk({
-                    content,
-                    done: false
-                  });
-                }
-              } catch (e) {
+                if (content) onChunk({ content, done: false });
+              } catch {
                 // Skip invalid JSON
               }
             } else if (line.includes('[DONE]')) {
-              onChunk({ content: '', done: true });
+              finishSuccess();
             }
           }
         });
 
-        (response.data as Readable).on('end', () => {
-          resolve();
-        });
+        dataStream.on('end', () => finishSuccess());
+        dataStream.on('error', (err: any) => finishError(err?.message || 'Stream error'));
 
-        (response.data as Readable).on('error', reject);
+        if (options.signal) {
+          options.signal.addEventListener('abort', () => {
+            try { dataStream.destroy(); } catch { /* ignore */ }
+            finishError('Request aborted');
+          }, { once: true });
+        }
       });
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new Error('Request aborted');
+      }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
   }
@@ -246,7 +266,8 @@ export class OpenRouterProvider extends BaseProvider {
         temperature: options.temperature ?? 0.7
       }, {
         headers: this.getHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const choice = response.data?.choices?.[0];

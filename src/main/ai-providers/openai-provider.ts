@@ -171,7 +171,8 @@ export class OpenAIProvider extends BaseProvider {
           // temperature is NOT supported for reasoning models like GPT-5.x
         }, {
           headers: this.getHeaders(),
-          timeout: 300000
+          timeout: 300000,
+          signal: options.signal
         });
 
         const content = this.extractOutputText(response.data);
@@ -193,7 +194,8 @@ export class OpenAIProvider extends BaseProvider {
           temperature: options.temperature ?? 0.7
         }, {
           headers: this.getHeaders(),
-          timeout: 300000
+          timeout: 300000,
+          signal: options.signal
         });
 
         const content = response.data?.choices?.[0]?.message?.content || '';
@@ -239,7 +241,8 @@ export class OpenAIProvider extends BaseProvider {
         }, {
           headers: this.getHeaders(),
           timeout: 300000,
-          responseType: 'stream'
+          responseType: 'stream',
+          signal: options.signal
         });
       } else {
         // GPT-4.x and older use chat completions API
@@ -252,7 +255,8 @@ export class OpenAIProvider extends BaseProvider {
         }, {
           headers: this.getHeaders(),
           timeout: 300000,
-          responseType: 'stream'
+          responseType: 'stream',
+          signal: options.signal
         });
       }
 
@@ -351,8 +355,19 @@ export class OpenAIProvider extends BaseProvider {
           }
           reject(err);
         });
+
+        // If caller aborts, drop the connection promptly.
+        if (options.signal) {
+          options.signal.addEventListener('abort', () => {
+            try { (response.data as Readable).destroy(); } catch { /* ignore */ }
+            finishError('Request aborted');
+          }, { once: true });
+        }
       });
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new Error('Request aborted');
+      }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
   }
@@ -396,7 +411,8 @@ export class OpenAIProvider extends BaseProvider {
           reasoning: { effort: (options as any).reasoningEffort || 'medium' }
         }, {
           headers: this.getHeaders(),
-          timeout: 300000
+          timeout: 300000,
+          signal: options.signal
         });
 
         const { text, toolCalls } = fromResponsesOutput(response.data?.output);
@@ -429,7 +445,8 @@ export class OpenAIProvider extends BaseProvider {
         temperature: options.temperature ?? 0.7
       }, {
         headers: this.getHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const choice = response.data?.choices?.[0];

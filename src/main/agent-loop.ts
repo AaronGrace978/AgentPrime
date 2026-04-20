@@ -2804,6 +2804,12 @@ export class AgentLoop extends EventEmitter {
   private maxIterations = 100;
   private stopRequested = false;
   private stopReason: string | null = null;
+  /**
+   * Per-task AbortController. Wired through to every provider's HTTP layer
+   * via ChatOptions.signal so requestStop() can tear down an in-flight
+   * model request immediately instead of waiting for the next iteration.
+   */
+  private abortController: AbortController | null = null;
   private fileChangesThisTask = new Map<string, {
     path: string;
     oldContent: string;
@@ -2832,6 +2838,8 @@ export class AgentLoop extends EventEmitter {
   requestStop(reason: string = 'Stopped by user'): void {
     this.stopRequested = true;
     this.stopReason = reason;
+    // Tear down any in-flight model HTTP request immediately.
+    try { this.abortController?.abort(); } catch { /* ignore */ }
   }
 
   private buildStopMessage(): string {
@@ -3453,6 +3461,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     this.currentTask = userMessage;
     this.stopRequested = false;
     this.stopReason = null;
+    this.abortController = new AbortController();
     this.fileChangesThisTask.clear();
     this.pendingReviewSession = null;
 
@@ -4054,7 +4063,8 @@ ${this.taskMode === TaskMode.ENHANCE ? `
           () => aiRouter.chatWithTools(messagesForModel, canonicalToolCatalog, {
             model: modelToUse,
             temperature: 0.3, // Increased from 0.1: Better balance between determinism and thoroughness
-            maxTokens
+            maxTokens,
+            signal: this.abortController?.signal
           }),
           'complex', // Agent operations are complex multi-step tasks
           modelToUse, // Model name for adaptive timeout

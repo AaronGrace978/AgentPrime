@@ -160,7 +160,8 @@ export class AnthropicProvider extends BaseProvider {
         temperature: options.temperature ?? 0.7
       }, {
         headers: this.getHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const content = response.data?.content?.[0]?.text || '';
@@ -190,71 +191,112 @@ export class AnthropicProvider extends BaseProvider {
 
   async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
     if (!this.apiKey) {
-      throw new Error('API key not configured')
+      throw new Error('API key not configured');
     }
 
     const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
-    const { systemMessage, userMessages } = this.formatMessages(messages);
 
-    // Claude models can output much more - use model-specific limits
-    // You're paying for premium models, let's use their full power!
+    // Use the shared canonical translator (handles system joining,
+    // empty filtering, consecutive same-role merging, role priming) so
+    // streaming gets the same message hygiene as chat() and chatWithTools().
+    const { systemMessage, anthropicMessages } = this.toAnthropicMessages(messages);
+
+    if (anthropicMessages.length === 0) {
+      onChunk({ content: '', done: true, error: 'No user messages provided' });
+      return;
+    }
+
     let maxTokens = options.maxTokens;
     if (!maxTokens) {
-      // Sonnet 4 and Opus 4 / 4.5 / 4.6 - premium models, use maximum output capacity
-      if (model.includes('sonnet-4') || model.includes('opus-4')) {
-        maxTokens = 16384; // 16k tokens output - let it generate full projects!
-      } else if (model.includes('sonnet') || model.includes('opus')) {
-        maxTokens = 16384; // Premium models get full power
-      } else {
-        // Haiku models - still good but more limited
-        maxTokens = 8192;
-      }
+      maxTokens = (model.includes('sonnet') || model.includes('opus')) ? 16384 : 8192;
     }
 
     try {
       const response = await axios.post(`${this.baseUrl}/v1/messages`, {
         model,
         max_tokens: maxTokens,
-        system: systemMessage,
-        messages: userMessages,
+        system: systemMessage || undefined,
+        messages: anthropicMessages,
         temperature: options.temperature ?? 0.7,
         stream: true
       }, {
         headers: this.getHeaders(),
         timeout: 300000,
-        responseType: 'stream'
+        responseType: 'stream',
+        signal: options.signal
       });
 
       return new Promise((resolve, reject) => {
-        (response.data as Readable).on('data', (chunk: Buffer) => {
-          const lines = chunk.toString().split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.type === 'content_block_delta') {
-                  const text = data.delta?.text || '';
-                  onChunk({
-                    content: text,
-                    done: false
-                  });
-                } else if (data.type === 'message_stop') {
-                  onChunk({ content: '', done: true });
-                }
-              } catch (e) {
-                // Skip invalid JSON
+        let buffer = '';
+        let settled = false;
+
+        const finishSuccess = () => {
+          if (settled) return;
+          settled = true;
+          onChunk({ content: '', done: true });
+          resolve();
+        };
+
+        const finishError = (error: string) => {
+          if (settled) return;
+          settled = true;
+          onChunk({ content: '', done: true, error });
+          reject(new Error(error));
+        };
+
+        const handleEvent = (eventBlock: string) => {
+          for (const line of eventBlock.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(line.startsWith('data: ') ? 6 : 5).trim();
+            if (!payload) continue;
+            try {
+              const data = JSON.parse(payload);
+              if (data.type === 'content_block_delta') {
+                const text = data.delta?.text || '';
+                if (text) onChunk({ content: text, done: false });
+              } else if (data.type === 'message_stop') {
+                finishSuccess();
+              } else if (data.type === 'error') {
+                const message = data.error?.message || 'Anthropic streaming error';
+                finishError(message);
               }
+            } catch {
+              // Ignore malformed JSON within a single SSE event
             }
           }
+        };
+
+        const dataStream = response.data as Readable;
+
+        dataStream.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+          // SSE events are terminated by a blank line
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
+          for (const part of parts) handleEvent(part);
         });
 
-        (response.data as Readable).on('end', () => {
-          resolve();
+        dataStream.on('end', () => {
+          if (buffer.trim()) handleEvent(buffer);
+          finishSuccess();
         });
 
-        (response.data as Readable).on('error', reject);
+        dataStream.on('error', (err: any) => {
+          finishError(err?.message || 'Stream error');
+        });
+
+        // If caller aborts, drop the connection promptly.
+        if (options.signal) {
+          options.signal.addEventListener('abort', () => {
+            try { dataStream.destroy(); } catch { /* ignore */ }
+            finishError('Request aborted');
+          }, { once: true });
+        }
       });
     } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new Error('Request aborted');
+      }
       throw new Error(e.response?.data?.error?.message || e.message);
     }
   }
@@ -298,7 +340,8 @@ export class AnthropicProvider extends BaseProvider {
         temperature: options.temperature ?? 0.7
       }, {
         headers: this.getHeaders(),
-        timeout: 300000
+        timeout: 300000,
+        signal: options.signal
       });
 
       const rawBlocks: any[] = response.data?.content || [];
