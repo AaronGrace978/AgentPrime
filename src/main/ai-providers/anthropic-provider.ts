@@ -13,7 +13,8 @@ import type {
   Tool,
   ToolUseBlock,
   ContentBlock,
-  ChatWithToolsResult
+  ChatWithToolsResult,
+  ToolStreamCallback
 } from '../../types/ai-providers';
 import axios from 'axios';
 import { Readable } from 'stream';
@@ -392,6 +393,255 @@ export class AnthropicProvider extends BaseProvider {
       console.error(`[Anthropic/Tools] API Error: ${errorMsg}`);
       return { success: false, error: errorMsg };
     }
+  }
+
+  /**
+   * Native streaming with tools via Anthropic's SSE API.
+   *
+   * Anthropic emits a rich event stream during a tool-using turn:
+   *   - `content_block_start` with `tool_use` carries the tool id + name
+   *   - `content_block_delta` with `input_json_delta` streams JSON args
+   *   - `content_block_stop` signals the tool call is fully assembled
+   *   - `content_block_delta` with `text_delta` streams assistant prose
+   *   - `message_delta` carries `stop_reason`
+   *   - `message_stop` ends the turn
+   *
+   * We translate that into the canonical `ToolStreamChunk` events:
+   *   - `{ type: 'text', text }` for prose deltas
+   *   - `{ type: 'tool_use', toolCall }` once each tool's args parse cleanly
+   *   - `{ type: 'done', result }` with the final aggregated ChatWithToolsResult
+   *
+   * The promise resolves with the same `ChatWithToolsResult` shape `chatWithTools`
+   * returns, so call sites can drop in streaming without changing their post-turn
+   * handling.
+   */
+  async streamWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    onChunk: ToolStreamCallback,
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult> {
+    if (!this.apiKey) {
+      const result: ChatWithToolsResult = { success: false, error: 'API key not configured' };
+      onChunk({ type: 'error', error: result.error, result });
+      return result;
+    }
+
+    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
+    const { systemMessage, anthropicMessages } = this.toAnthropicMessages(messages);
+
+    if (anthropicMessages.length === 0) {
+      const result: ChatWithToolsResult = { success: false, error: 'No user messages provided' };
+      onChunk({ type: 'error', error: result.error, result });
+      return result;
+    }
+
+    let maxTokens = options.maxTokens;
+    if (!maxTokens) {
+      maxTokens = (model.includes('sonnet') || model.includes('opus')) ? 16384 : 8192;
+    }
+
+    try {
+      const response = await axios.post(`${this.baseUrl}/v1/messages`, {
+        model,
+        max_tokens: maxTokens,
+        system: systemMessage || undefined,
+        messages: anthropicMessages,
+        tools,
+        temperature: options.temperature ?? 0.7,
+        stream: true
+      }, {
+        headers: this.getHeaders(),
+        timeout: 300000,
+        responseType: 'stream',
+        signal: options.signal
+      });
+
+      return await new Promise<ChatWithToolsResult>((resolve, reject) => {
+        let buffer = '';
+        let settled = false;
+
+        // Per-block accumulators keyed by Anthropic's block index.
+        type BlockState =
+          | { kind: 'text'; text: string }
+          | { kind: 'tool'; id: string; name: string; argsRaw: string; emitted: boolean };
+        const blocks = new Map<number, BlockState>();
+
+        let textContent = '';
+        const toolCalls: ToolUseBlock[] = [];
+        const contentBlocks: ContentBlock[] = [];
+        let stopReason: 'end_turn' | 'tool_use' | 'max_tokens' = 'end_turn';
+        let inputTokens: number | undefined;
+        let outputTokens: number | undefined;
+
+        const finishSuccess = () => {
+          if (settled) return;
+          settled = true;
+          // Flush any tool blocks whose args never JSON-parsed mid-stream.
+          for (const [, state] of blocks) {
+            if (state.kind === 'tool' && !state.emitted) {
+              const tu = this.assembleToolCall(state.id, state.name, state.argsRaw);
+              state.emitted = true;
+              toolCalls.push(tu);
+              contentBlocks.push(tu);
+              try { onChunk({ type: 'tool_use', toolCall: tu }); } catch { /* ignore */ }
+            }
+          }
+          if (toolCalls.length > 0 && stopReason === 'end_turn') stopReason = 'tool_use';
+          const result: ChatWithToolsResult = {
+            success: true,
+            content: textContent,
+            stopReason,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            contentBlocks,
+            usage: { promptTokens: inputTokens, completionTokens: outputTokens }
+          };
+          try { onChunk({ type: 'done', result }); } catch { /* ignore */ }
+          resolve(result);
+        };
+
+        const finishError = (errorMessage: string) => {
+          if (settled) return;
+          settled = true;
+          const result: ChatWithToolsResult = { success: false, error: errorMessage };
+          try { onChunk({ type: 'error', error: errorMessage, result }); } catch { /* ignore */ }
+          reject(new Error(errorMessage));
+        };
+
+        const handleEvent = (eventBlock: string) => {
+          for (const line of eventBlock.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(line.startsWith('data: ') ? 6 : 5).trim();
+            if (!payload) continue;
+            let data: any;
+            try { data = JSON.parse(payload); } catch { continue; }
+
+            const type = data.type;
+
+            if (type === 'content_block_start') {
+              const idx = data.index;
+              const block = data.content_block || {};
+              if (block.type === 'text') {
+                blocks.set(idx, { kind: 'text', text: '' });
+                contentBlocks.push({ type: 'text', text: '' });
+              } else if (block.type === 'tool_use') {
+                blocks.set(idx, {
+                  kind: 'tool',
+                  id: block.id || `call_${Date.now()}_${idx}`,
+                  name: block.name || '',
+                  argsRaw: '',
+                  emitted: false
+                });
+              }
+              continue;
+            }
+
+            if (type === 'content_block_delta') {
+              const idx = data.index;
+              const state = blocks.get(idx);
+              const delta = data.delta || {};
+              if (!state) continue;
+
+              if (state.kind === 'text' && delta.type === 'text_delta') {
+                const t = delta.text || '';
+                if (t) {
+                  state.text += t;
+                  textContent += t;
+                  try { onChunk({ type: 'text', text: t }); } catch { /* ignore */ }
+                }
+              } else if (state.kind === 'tool' && delta.type === 'input_json_delta') {
+                state.argsRaw += delta.partial_json || '';
+              }
+              continue;
+            }
+
+            if (type === 'content_block_stop') {
+              const idx = data.index;
+              const state = blocks.get(idx);
+              if (state && state.kind === 'tool' && !state.emitted) {
+                const tu = this.assembleToolCall(state.id, state.name, state.argsRaw);
+                state.emitted = true;
+                toolCalls.push(tu);
+                contentBlocks.push(tu);
+                try { onChunk({ type: 'tool_use', toolCall: tu }); } catch { /* ignore */ }
+              }
+              continue;
+            }
+
+            if (type === 'message_delta') {
+              const sr = data.delta?.stop_reason;
+              if (sr === 'tool_use') stopReason = 'tool_use';
+              else if (sr === 'max_tokens') stopReason = 'max_tokens';
+              else if (sr === 'end_turn') stopReason = 'end_turn';
+              if (data.usage?.output_tokens != null) outputTokens = data.usage.output_tokens;
+              continue;
+            }
+
+            if (type === 'message_start' && data.message?.usage?.input_tokens != null) {
+              inputTokens = data.message.usage.input_tokens;
+              continue;
+            }
+
+            if (type === 'message_stop') {
+              finishSuccess();
+              return;
+            }
+
+            if (type === 'error') {
+              finishError(data.error?.message || 'Anthropic streaming error');
+              return;
+            }
+          }
+        };
+
+        const dataStream = response.data as Readable;
+
+        dataStream.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
+          for (const part of parts) handleEvent(part);
+        });
+
+        dataStream.on('end', () => {
+          if (buffer.trim()) handleEvent(buffer);
+          finishSuccess();
+        });
+
+        dataStream.on('error', (err: any) => {
+          finishError(err?.message || 'Stream error');
+        });
+
+        if (options.signal) {
+          options.signal.addEventListener('abort', () => {
+            try { dataStream.destroy(); } catch { /* ignore */ }
+            finishError('Request aborted');
+          }, { once: true });
+        }
+      });
+    } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
+      const errorMessage = e.response?.data?.error?.message || e.message;
+      const result: ChatWithToolsResult = { success: false, error: errorMessage };
+      try { onChunk({ type: 'error', error: errorMessage, result }); } catch { /* ignore */ }
+      return result;
+    }
+  }
+
+  /**
+   * Best-effort parse of streamed tool arguments. Models occasionally finish
+   * with malformed JSON (truncated, trailing commas, etc.) — fall back to a
+   * `_raw` field so the caller can still see what was attempted.
+   */
+  private assembleToolCall(id: string, name: string, argsRaw: string): ToolUseBlock {
+    let input: Record<string, any> = {};
+    if (argsRaw) {
+      try { input = JSON.parse(argsRaw); }
+      catch { input = { _raw: argsRaw }; }
+    }
+    return { type: 'tool_use', id, name, input };
   }
 
   /**

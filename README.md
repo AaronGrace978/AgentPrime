@@ -96,6 +96,20 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 ## Recent Upgrades
 
+### Live tool-call streaming across every provider (April 2026)
+
+Closes the streaming gap left by the previous round: every provider in the lineup now exposes a real `streamWithTools(...)` surface so agentic UIs can render tokens AND tool calls live, instead of waiting for the full turn to finish.
+
+- **New canonical streaming surface:** `src/types/ai-providers.d.ts` introduces `ToolStreamChunk` and `ToolStreamCallback`, plus an optional `streamWithTools(messages, tools, onChunk, options)` on `IBaseProvider`. Every chunk is one of `text` (token delta), `tool_use` (a fully assembled tool call the moment its arguments parse), `done` (terminal, with the same `ChatWithToolsResult` shape `chatWithTools` returns), or `error`.
+- **Native streaming where the API supports it:**
+  - **Anthropic** (`src/main/ai-providers/anthropic-provider.ts`): SSE parser handles `content_block_start` / `_delta` (`input_json_delta` for tool args, `text_delta` for prose) / `_stop`, plus `message_delta` (stop reason) and `message_stop` — the gold-standard implementation.
+  - **OpenAI** (`src/main/ai-providers/openai-provider.ts`): Both surfaces. Chat Completions assembles `delta.tool_calls[]` keyed by `index` and finalizes on parse success or `finish_reason: tool_calls`. Responses API (GPT-5.x / o-series) handles `response.output_item.added` for `function_call` items, `response.function_call_arguments.delta`, and seals on `response.function_call_arguments.done` / `response.completed`.
+  - **OpenRouter** (`src/main/ai-providers/openrouter-provider.ts`): OpenAI-compatible delta assembly, works for any underlying model in the OpenRouter catalog (Claude, GPT, Mistral, Llama, etc.).
+- **Graceful Ollama shim** (`src/main/ai-providers/ollama-provider.ts`): Ollama's tool-stream support is build-dependent, so its `streamWithTools` delegates to non-streaming `chatWithTools` and replays the result as a canonical `text` → `tool_use` → `done` sequence. Same surface, same callback contract — no consumer special-casing required.
+- **Router dispatch with adapter telemetry:** `AIProviderRouter.streamWithTools(...)` resolves the active provider, dispatches to its native implementation when present, and synthesizes the chunk sequence from `chatWithTools` for any provider that doesn't have one. The result is decorated with `adapter: 'native' | 'shim' | 'fallback'` so observability can tell whether the stream was real or synthesized.
+- **Capability matrix updated:** `ProviderCapabilityProfile` gains a `streamingTools` flag. Anthropic, OpenAI, and OpenRouter ship with `streamingTools: true`; Ollama is `false` (uses the shim).
+- **AbortSignal honored throughout:** Every native streaming path adds an `signal.addEventListener('abort', ...)` that destroys the underlying axios stream and emits a clean error chunk, so the universal cancellation work from the previous round just keeps working.
+
 ### Native tool-calling + universal request cancellation (April 2026)
 
 This batch upgrades the provider layer so every model in the lineup uses its native function-calling API end-to-end, and so the Stop button is finally a real, instant stop instead of a hint.

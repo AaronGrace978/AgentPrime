@@ -14,7 +14,8 @@ import type {
   Tool,
   ChatWithToolsResult,
   ContentBlock,
-  ToolUseBlock
+  ToolUseBlock,
+  ToolStreamCallback
 } from '../../types/ai-providers';
 import {
   toOpenAIChatTools,
@@ -306,6 +307,220 @@ export class OpenRouterProvider extends BaseProvider {
       const errorMsg = e.response?.data?.error?.message || e.message;
       console.error(`[OpenRouter/Tools] API Error: ${errorMsg}`);
       return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Native streaming with tools via OpenRouter's chat completions SSE.
+   *
+   * OpenRouter forwards tool calls in the standard OpenAI delta shape
+   * (`choices[0].delta.tool_calls[].function.{name,arguments}`, indexed by
+   * `index`), regardless of whether the underlying model is Claude, GPT,
+   * Mistral, etc. We reassemble each tool's arguments incrementally and
+   * emit a `ToolStreamChunk` the moment its JSON parses cleanly (or at
+   * the end of the stream if it never quite parses).
+   */
+  async streamWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    onChunk: ToolStreamCallback,
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult> {
+    if (!this.apiKey) {
+      const result: ChatWithToolsResult = { success: false, error: 'API key not configured' };
+      onChunk({ type: 'error', error: result.error, result });
+      return result;
+    }
+
+    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4') as string;
+
+    try {
+      const response = await axios.post(`${this.baseUrl}/chat/completions`, {
+        model,
+        messages: toOpenAIChatMessages(messages),
+        tools: toOpenAIChatTools(tools),
+        max_tokens: options.maxTokens || 4096,
+        temperature: options.temperature ?? 0.7,
+        stream: true
+      }, {
+        headers: this.getHeaders(),
+        timeout: 300000,
+        responseType: 'stream',
+        signal: options.signal
+      });
+
+      return await new Promise<ChatWithToolsResult>((resolve, reject) => {
+        let buffer = '';
+        let settled = false;
+
+        let textContent = '';
+        const finalToolCalls: ToolUseBlock[] = [];
+        const contentBlocks: ContentBlock[] = [];
+        let stopReason: 'end_turn' | 'tool_use' | 'max_tokens' = 'end_turn';
+        let promptTokens: number | undefined;
+        let completionTokens: number | undefined;
+
+        type ToolBuf = { id: string; name: string; argsRaw: string; emitted: boolean };
+        const toolBufs = new Map<number, ToolBuf>();
+
+        const tryEmit = (idx: number) => {
+          const buf = toolBufs.get(idx);
+          if (!buf || buf.emitted || !buf.name) return;
+          let parsed: Record<string, any> | undefined;
+          try { parsed = buf.argsRaw ? JSON.parse(buf.argsRaw) : {}; } catch { return; }
+          if (parsed === undefined) return;
+          const tu: ToolUseBlock = {
+            type: 'tool_use',
+            id: buf.id || `call_${Date.now()}_${idx}`,
+            name: buf.name,
+            input: parsed
+          };
+          buf.emitted = true;
+          finalToolCalls.push(tu);
+          contentBlocks.push(tu);
+          try { onChunk({ type: 'tool_use', toolCall: tu }); } catch { /* ignore */ }
+        };
+
+        const flushForce = () => {
+          for (const [idx, buf] of toolBufs) {
+            if (buf.emitted || !buf.name) continue;
+            let input: Record<string, any> = {};
+            if (buf.argsRaw) {
+              try { input = JSON.parse(buf.argsRaw); } catch { input = { _raw: buf.argsRaw }; }
+            }
+            const tu: ToolUseBlock = {
+              type: 'tool_use',
+              id: buf.id || `call_${Date.now()}_${idx}`,
+              name: buf.name,
+              input
+            };
+            buf.emitted = true;
+            finalToolCalls.push(tu);
+            contentBlocks.push(tu);
+            try { onChunk({ type: 'tool_use', toolCall: tu }); } catch { /* ignore */ }
+          }
+        };
+
+        const finishSuccess = () => {
+          if (settled) return;
+          settled = true;
+          flushForce();
+          if (finalToolCalls.length > 0 && stopReason === 'end_turn') stopReason = 'tool_use';
+          if (textContent && !contentBlocks.some(b => b.type === 'text')) {
+            contentBlocks.unshift({ type: 'text', text: textContent });
+          }
+          const result: ChatWithToolsResult = {
+            success: true,
+            content: textContent,
+            stopReason,
+            toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+            contentBlocks,
+            usage: { promptTokens, completionTokens }
+          };
+          try { onChunk({ type: 'done', result }); } catch { /* ignore */ }
+          resolve(result);
+        };
+
+        const finishError = (errorMessage: string) => {
+          if (settled) return;
+          settled = true;
+          const result: ChatWithToolsResult = { success: false, error: errorMessage };
+          try { onChunk({ type: 'error', error: errorMessage, result }); } catch { /* ignore */ }
+          reject(new Error(errorMessage));
+        };
+
+        const handleDataLine = (raw: string) => {
+          const trimmed = raw.trim();
+          if (!trimmed) return;
+          if (trimmed === '[DONE]') { finishSuccess(); return; }
+          let data: any;
+          try { data = JSON.parse(trimmed); } catch { return; }
+          const choice = data.choices?.[0];
+          if (!choice) {
+            if (data.usage) {
+              promptTokens = data.usage.prompt_tokens ?? promptTokens;
+              completionTokens = data.usage.completion_tokens ?? completionTokens;
+            }
+            return;
+          }
+          const delta = choice.delta || {};
+          if (typeof delta.content === 'string' && delta.content) {
+            textContent += delta.content;
+            try { onChunk({ type: 'text', text: delta.content }); } catch { /* ignore */ }
+          }
+          const tcDeltas = delta.tool_calls;
+          if (Array.isArray(tcDeltas)) {
+            for (const tcd of tcDeltas) {
+              const idx = typeof tcd.index === 'number' ? tcd.index : 0;
+              let buf = toolBufs.get(idx);
+              if (!buf) {
+                buf = { id: '', name: '', argsRaw: '', emitted: false };
+                toolBufs.set(idx, buf);
+              }
+              if (tcd.id) buf.id = tcd.id;
+              if (tcd.function?.name) buf.name = tcd.function.name;
+              if (typeof tcd.function?.arguments === 'string') buf.argsRaw += tcd.function.arguments;
+              tryEmit(idx);
+            }
+          }
+          const finishReason = choice.finish_reason;
+          if (finishReason === 'tool_calls') {
+            stopReason = 'tool_use';
+            flushForce();
+          } else if (finishReason === 'length') {
+            stopReason = 'max_tokens';
+          } else if (finishReason === 'stop') {
+            stopReason = 'end_turn';
+          }
+          if (data.usage) {
+            promptTokens = data.usage.prompt_tokens ?? promptTokens;
+            completionTokens = data.usage.completion_tokens ?? completionTokens;
+          }
+        };
+
+        const dataStream = response.data as Readable;
+
+        dataStream.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+          const parts = buffer.split('\n\n');
+          buffer = parts.pop() || '';
+          for (const eventBlock of parts) {
+            for (const line of eventBlock.split('\n')) {
+              if (line.startsWith('data: ')) handleDataLine(line.slice(6));
+              else if (line.startsWith('data:')) handleDataLine(line.slice(5));
+            }
+          }
+        });
+
+        dataStream.on('end', () => {
+          if (buffer.trim()) {
+            for (const line of buffer.split('\n')) {
+              if (line.startsWith('data: ')) handleDataLine(line.slice(6));
+              else if (line.startsWith('data:')) handleDataLine(line.slice(5));
+            }
+          }
+          finishSuccess();
+        });
+
+        dataStream.on('error', (err: any) => {
+          finishError(err?.message || 'Stream error');
+        });
+
+        if (options.signal) {
+          options.signal.addEventListener('abort', () => {
+            try { dataStream.destroy(); } catch { /* ignore */ }
+            finishError('Request aborted');
+          }, { once: true });
+        }
+      });
+    } catch (e: any) {
+      if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
+        throw new AbortError();
+      }
+      const errorMessage = e.response?.data?.error?.message || e.message;
+      const result: ChatWithToolsResult = { success: false, error: errorMessage };
+      try { onChunk({ type: 'error', error: errorMessage, result }); } catch { /* ignore */ }
+      return result;
     }
   }
 }

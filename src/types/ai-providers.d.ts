@@ -187,6 +187,30 @@ export interface StreamChunk {
 export type StreamCallback = (chunk: StreamChunk) => void;
 
 /**
+ * Streaming chunk shape for tool-aware streaming (`streamWithTools`).
+ *
+ * Fired in roughly this order during a tool-using turn:
+ *   1. Zero or more `{ type: 'text' }` chunks as tokens arrive.
+ *   2. Zero or more `{ type: 'tool_use' }` chunks, one per fully assembled
+ *      tool call, the moment the model finishes streaming its arguments.
+ *   3. Exactly one terminal `{ type: 'done', result }` with the aggregated
+ *      ChatWithToolsResult, OR `{ type: 'error', error }` on failure.
+ *
+ * Consumers can drive a live "thinking" UI off `text`, render tool-call
+ * pills as soon as `tool_use` fires, and rely on the `done` event for the
+ * canonical final shape (same one `chatWithTools` would have returned).
+ */
+export interface ToolStreamChunk {
+  type: 'text' | 'tool_use' | 'done' | 'error';
+  text?: string;
+  toolCall?: ToolUseBlock;
+  result?: ChatWithToolsResult;
+  error?: string;
+}
+
+export type ToolStreamCallback = (chunk: ToolStreamChunk) => void;
+
+/**
  * Base provider interface that all providers must implement
  */
 export interface IBaseProvider {
@@ -204,4 +228,16 @@ export interface IBaseProvider {
   formatMessages(messages: ChatMessage[]): ChatMessage[];
   isConfigured(): boolean;
   getInfo(): ProviderInfo;
+  /**
+   * Optional: stream a tool-using turn with live text deltas and tool-call
+   * events. Providers that don't implement this can be wrapped at the router
+   * layer to fall back to non-streaming `chatWithTools` + a single batch
+   * emission, so callers can always treat the surface as available.
+   */
+  streamWithTools?(
+    messages: ChatMessage[],
+    tools: Tool[],
+    onChunk: ToolStreamCallback,
+    options?: ChatOptions
+  ): Promise<ChatWithToolsResult>;
 }

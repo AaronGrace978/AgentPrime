@@ -23,7 +23,8 @@ import type {
   StreamCallback,
   Tool,
   ToolUseBlock,
-  ChatWithToolsResult
+  ChatWithToolsResult,
+  ToolStreamCallback
 } from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
 import { injectCreed } from '../core/dino-buddy-creed';
@@ -63,6 +64,13 @@ interface LegacyRouterSettings {
 interface ProviderCapabilityProfile {
   nativeToolCalling: boolean;
   streaming: boolean;
+  /**
+   * True when the provider implements native streaming WITH tool calls
+   * (live text deltas + incremental tool argument assembly). Providers
+   * without it can still serve `streamWithTools` via a non-streaming shim
+   * at the router/provider layer.
+   */
+  streamingTools?: boolean;
   contextWindowHint?: number;
   notes?: string;
 }
@@ -80,26 +88,30 @@ class AIProviderRouter {
     ollama: {
       nativeToolCalling: true,
       streaming: true,
+      streamingTools: false,
       contextWindowHint: 128000,
-      notes: 'Native tool-calling via Ollama /api/chat tools parameter.'
+      notes: 'Native tool-calling via Ollama /api/chat tools parameter. streamWithTools uses a non-streaming shim (Ollama tool-stream support is build-dependent).'
     },
     anthropic: {
       nativeToolCalling: true,
       streaming: true,
+      streamingTools: true,
       contextWindowHint: 200000,
-      notes: 'Native tool-calling via Anthropic Messages API tools parameter.'
+      notes: 'Native tool-calling + native tool-streaming via Anthropic SSE (input_json_delta).'
     },
     openai: {
       nativeToolCalling: true,
       streaming: true,
+      streamingTools: true,
       contextWindowHint: 128000,
-      notes: 'Native tool-calling via Chat Completions tool_calls (GPT-4) and Responses API function_call (GPT-5).'
+      notes: 'Native tool-calling + native tool-streaming via Chat Completions deltas and Responses function_call_arguments.delta.'
     },
     openrouter: {
       nativeToolCalling: true,
       streaming: true,
+      streamingTools: true,
       contextWindowHint: 128000,
-      notes: 'Native tool-calling via OpenAI-compatible tool_calls forwarded to underlying model.'
+      notes: 'Native tool-calling + native tool-streaming via OpenAI-compatible deltas forwarded to underlying model.'
     }
   };
 
@@ -742,6 +754,65 @@ class AIProviderRouter {
       adapter: 'fallback',
       provider: providerName
     };
+  }
+
+  /**
+   * Provider-agnostic streaming tool-calling adapter.
+   *
+   * Resolves the active provider, dispatches to its native `streamWithTools`
+   * when available (Anthropic / OpenAI / OpenRouter), and falls back to a
+   * non-streaming shim that replays `chatWithTools` as canonical
+   * `ToolStreamChunk` events for providers that don't implement it.
+   *
+   * Either way the caller sees:
+   *   - live `text` chunks (when supported)
+   *   - one `tool_use` chunk per assembled tool call
+   *   - terminal `done` (or `error`) with the full ChatWithToolsResult
+   *
+   * The promise resolves with the same `ChatWithToolsResult` shape
+   * `chatWithTools` returns, decorated with the chosen adapter so callers
+   * can log/observe whether the stream was native or shimmed.
+   */
+  async streamWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    onChunk: ToolStreamCallback,
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult & { adapter: 'native' | 'shim' | 'fallback'; provider: string }> {
+    const providerName = this.activeProvider || 'ollama';
+    const provider = this.getActiveProvider() as any;
+    const model = (options.model || this.activeModel) as string | undefined;
+    const profile = this.getProviderCapabilities(providerName) as ProviderCapabilityProfile;
+
+    if (typeof provider?.streamWithTools === 'function') {
+      const result: ChatWithToolsResult = await provider.streamWithTools(messages, tools, onChunk, {
+        ...options,
+        model
+      });
+      return {
+        ...result,
+        adapter: profile.streamingTools ? 'native' : 'shim',
+        provider: providerName
+      };
+    }
+
+    // No streamWithTools on the provider at all — synthesize one from
+    // `chatWithTools` so every router caller can rely on the surface.
+    const result = await this.chatWithTools(messages, tools, options);
+    if (!result.success) {
+      try { onChunk({ type: 'error', error: result.error || 'chatWithTools failed', result }); } catch { /* ignore */ }
+      return { ...result, adapter: 'fallback', provider: providerName };
+    }
+    if (result.content) {
+      try { onChunk({ type: 'text', text: result.content }); } catch { /* ignore */ }
+    }
+    if (Array.isArray(result.toolCalls)) {
+      for (const tc of result.toolCalls) {
+        try { onChunk({ type: 'tool_use', toolCall: tc }); } catch { /* ignore */ }
+      }
+    }
+    try { onChunk({ type: 'done', result }); } catch { /* ignore */ }
+    return { ...result, adapter: 'fallback', provider: providerName };
   }
 
   /**

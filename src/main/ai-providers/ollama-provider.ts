@@ -9,7 +9,7 @@ import { BaseProvider } from './base-provider';
 import { AbortError } from '../core/timeout-utils';
 import type { 
   ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback,
-  Tool, ToolUseBlock, ContentBlock, ChatWithToolsResult
+  Tool, ToolUseBlock, ContentBlock, ChatWithToolsResult, ToolStreamCallback
 } from '../../types/ai-providers';
 import axios from 'axios';
 import { Readable } from 'stream';
@@ -966,6 +966,57 @@ export class OllamaProvider extends BaseProvider {
         success: false,
         error: e.response?.data?.error?.message || e.message
       };
+    }
+  }
+
+  /**
+   * Streaming-with-tools shim.
+   *
+   * Ollama's Anthropic-compatible endpoint doesn't reliably stream tool_use
+   * blocks (different builds handle SSE for tools inconsistently), so we
+   * delegate to the non-streaming `chatWithTools` and replay the result as a
+   * canonical `ToolStreamChunk` sequence:
+   *
+   *   - emit one `text` chunk with the full assistant prose (if any)
+   *   - emit one `tool_use` chunk per tool call returned
+   *   - emit `done` with the aggregated result
+   *
+   * This keeps every consumer's surface identical regardless of provider —
+   * the agent loop and UI don't need to special-case Ollama, and we get a
+   * graceful upgrade path when Ollama's tool streaming stabilizes.
+   */
+  async streamWithTools(
+    messages: ChatMessage[],
+    tools: Tool[],
+    onChunk: ToolStreamCallback,
+    options: ChatOptions = {}
+  ): Promise<ChatWithToolsResult> {
+    try {
+      const result = await this.chatWithTools(messages, tools, options);
+
+      if (!result.success) {
+        try { onChunk({ type: 'error', error: result.error || 'Ollama tool call failed', result }); } catch { /* ignore */ }
+        return result;
+      }
+
+      if (result.content) {
+        try { onChunk({ type: 'text', text: result.content }); } catch { /* ignore */ }
+      }
+      if (Array.isArray(result.toolCalls)) {
+        for (const tc of result.toolCalls) {
+          try { onChunk({ type: 'tool_use', toolCall: tc }); } catch { /* ignore */ }
+        }
+      }
+      try { onChunk({ type: 'done', result }); } catch { /* ignore */ }
+      return result;
+    } catch (e: any) {
+      // chatWithTools already converts axios cancels to AbortError; let
+      // those bubble so the router/agent loop can short-circuit cleanly.
+      if (e instanceof AbortError) throw e;
+      const errorMessage = e?.message || String(e);
+      const result: ChatWithToolsResult = { success: false, error: errorMessage };
+      try { onChunk({ type: 'error', error: errorMessage, result }); } catch { /* ignore */ }
+      return result;
     }
   }
 
