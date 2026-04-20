@@ -3215,15 +3215,16 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     const isOpenAIModel = currentModel.includes('gpt-');
     
     if (isAnthropicModel) {
-      // Anthropic escalation chain: Haiku → Sonnet → Opus 4.6 → Opus 4.5 → Opus 4 → Sonnet (incremental) → Ollama fallback
+      // Anthropic escalation chain: Haiku → Sonnet 4.6 → Opus 4.7 → Opus 4.6 → Opus 4.5 → Opus 4 → Sonnet (incremental) → Ollama fallback
       this.modelChain = [
         { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },
-        { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
+        { name: 'Claude Sonnet 4.6', provider: 'anthropic', model: 'claude-sonnet-4-6', tier: 'deep' },
+        { name: 'Claude Opus 4.7', provider: 'anthropic', model: 'claude-opus-4-7', tier: 'premium' },
         { name: 'Claude Opus 4.6', provider: 'anthropic', model: 'claude-opus-4-6', tier: 'premium' },
         { name: 'Claude Opus 4.5', provider: 'anthropic', model: 'claude-opus-4-5-20251101', tier: 'premium' },
         { name: 'Claude Opus 4', provider: 'anthropic', model: 'claude-opus-4-20250514', tier: 'premium' },
         // Retry with Sonnet + incremental approach instead of looping on Opus
-        { name: 'Claude Sonnet (Incremental)', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'fallback' }
+        { name: 'Claude Sonnet (Incremental)', provider: 'anthropic', model: 'claude-sonnet-4-6', tier: 'fallback' }
       ];
       log.info('[Agent] 📋 Configured Anthropic model escalation chain (with incremental fallback)');
     } else if (isOpenAIModel) {

@@ -32,10 +32,11 @@ export class AnthropicProvider extends BaseProvider {
 
   async getModels(): Promise<ModelInfo[]> {
     // Anthropic doesn't have a models endpoint, return known models
-    // Current lineup: Opus 4.6 / Sonnet 4.6 / Haiku 4.5 plus older still-supported models
+    // Current lineup: Opus 4.7 / Opus 4.6 / Sonnet 4.6 / Haiku 4.5 plus older still-supported models
     return [
-      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 (Flagship)', provider: 'anthropic', contextLength: 200000 },
-      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (Best Default)', provider: 'anthropic', contextLength: 200000 },
+      { id: 'claude-opus-4-7', name: 'Claude Opus 4.7 (Flagship)', provider: 'anthropic', contextLength: 1000000 },
+      { id: 'claude-opus-4-6', name: 'Claude Opus 4.6', provider: 'anthropic', contextLength: 1000000 },
+      { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (Best Default)', provider: 'anthropic', contextLength: 1000000 },
       { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5 (Fastest)', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5 (Alias)', provider: 'anthropic', contextLength: 200000 },
       { id: 'claude-opus-4-5-20251101', name: 'Claude Opus 4.5 (Frontier)', provider: 'anthropic', contextLength: 200000 },

@@ -216,8 +216,9 @@ export const FALLBACK_MODEL_CHAIN = [
   { provider: 'openai', model: 'gpt-4o-mini', size: 'fast' as ModelSize },
   { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },
   { provider: 'ollama', model: 'qwen3-coder:480b-cloud', size: 'cloud' as ModelSize },
-  { provider: 'anthropic', model: 'claude-sonnet-4-20250514', size: 'cloud' as ModelSize },
+  { provider: 'anthropic', model: 'claude-sonnet-4-6', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-4o', size: 'cloud' as ModelSize },
+  { provider: 'anthropic', model: 'claude-opus-4-7', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-opus-4-6', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-5.2-2025-12-11', size: 'cloud' as ModelSize },
 ];

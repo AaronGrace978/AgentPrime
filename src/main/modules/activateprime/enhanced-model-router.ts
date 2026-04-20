@@ -172,6 +172,21 @@ export class EnhancedModelRouter {
 
       // Anthropic models (excellent reasoning) - Claude 4 Opus & Sonnet
       {
+        name: 'claude-opus-4-7',
+        provider: 'anthropic',
+        strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
+        speed: 'medium',
+        contextWindow: 1000000,
+        cost: 'high',
+        supportedTasks: ['coding', 'analysis', 'creative', 'debugging', 'complex_reasoning', 'agentic'],
+        performanceMetrics: {
+          avgResponseTime: 1500,
+          successRate: 0.98,
+          costPerToken: 0.0012,
+          totalRequests: 0
+        }
+      },
+      {
         name: 'claude-opus-4-6',
         provider: 'anthropic',
         strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
@@ -183,6 +198,21 @@ export class EnhancedModelRouter {
           avgResponseTime: 1400,
           successRate: 0.98,
           costPerToken: 0.0012,
+          totalRequests: 0
+        }
+      },
+      {
+        name: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
+        speed: 'medium',
+        contextWindow: 1000000,
+        cost: 'high',
+        supportedTasks: ['coding', 'analysis', 'creative', 'debugging', 'complex_reasoning', 'agentic'],
+        performanceMetrics: {
+          avgResponseTime: 1200,
+          successRate: 0.97,
+          costPerToken: 0.0009,
           totalRequests: 0
         }
       },
@@ -338,7 +368,7 @@ export class EnhancedModelRouter {
   private initializeRoutingRules(): void {
     this.routingRules.set('coding_tasks', {
       preferred: 'local_first',
-      models: ['qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud', 'glm-4.6:cloud', 'qwen2.5-coder:32b', 'claude-sonnet-4-20250514', 'claude-opus-4-6', 'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-4o'],
+      models: ['qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud', 'glm-4.6:cloud', 'qwen2.5-coder:32b', 'claude-sonnet-4-6', 'claude-opus-4-7', 'claude-opus-4-6', 'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-4o'],
       speedPriority: 0.7,
       costPriority: 0.3
     });
@@ -352,21 +382,21 @@ export class EnhancedModelRouter {
 
     this.routingRules.set('complex_reasoning', {
       preferred: 'best_quality',
-      models: ['claude-opus-4-6', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-4o', 'qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud'],
+      models: ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-4o', 'qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud'],
       speedPriority: 0.4,
       costPriority: 0.6
     });
 
     this.routingRules.set('creative_tasks', {
       preferred: 'best_quality',
-      models: ['claude-opus-4-6', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-4o', 'deepseek-v3.1:671b-cloud'],
+      models: ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-4o', 'deepseek-v3.1:671b-cloud'],
       speedPriority: 0.5,
       costPriority: 0.5
     });
 
     this.routingRules.set('debugging', {
       preferred: 'local_first',
-      models: ['qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud', 'qwen2.5-coder:32b', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-4o'],
+      models: ['qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud', 'qwen2.5-coder:32b', 'claude-sonnet-4-6', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-4o'],
       speedPriority: 0.6,
       costPriority: 0.4
     });

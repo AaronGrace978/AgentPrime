@@ -1271,11 +1271,23 @@ class AIProviderRouter {
       },
       // Anthropic models (excellent reasoning, expensive)
       'anthropic': {
+        'claude-opus-4-7': {
+          strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
+          speed: 'medium',
+          context: 1000000,
+          cost: 'premium'
+        },
         'claude-opus-4-6': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
           speed: 'medium',
           context: 1000000,
           cost: 'premium'
+        },
+        'claude-sonnet-4-6': {
+          strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
+          speed: 'medium',
+          context: 1000000,
+          cost: 'high'
         },
         'claude-opus-4-5-20251101': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],

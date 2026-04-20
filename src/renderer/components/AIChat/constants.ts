@@ -56,6 +56,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: 'qwen2.5-coder:7b', label: 'Qwen 2.5 Coder 7B - Local' },
   ],
   anthropic: [
+    { value: 'claude-opus-4-7', label: 'Claude Opus 4.7 - Flagship (1M ctx)' },
     { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 - Frontier' },
     { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 - Best Default' },
     { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 - Fastest' },

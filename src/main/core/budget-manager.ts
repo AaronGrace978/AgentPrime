@@ -51,6 +51,7 @@ const MODEL_COSTS: Record<string, ModelCost> = {
   'openai/gpt-5.2-2025-12-11': { provider: 'openai', model: 'gpt-5.2-2025-12-11', costPer1kTokens: 4, outputCostPer1kTokens: 16, tier: 'high' },
   
   // Premium (Opus / flagship tier)
+  'anthropic/claude-opus-4-7': { provider: 'anthropic', model: 'claude-opus-4-7', costPer1kTokens: 5, outputCostPer1kTokens: 25, tier: 'premium' },
   'anthropic/claude-opus-4-6': { provider: 'anthropic', model: 'claude-opus-4-6', costPer1kTokens: 5, outputCostPer1kTokens: 25, tier: 'premium' },
   'anthropic/claude-opus-4-5-20251101': { provider: 'anthropic', model: 'claude-opus-4-5-20251101', costPer1kTokens: 5, outputCostPer1kTokens: 25, tier: 'premium' },
   'anthropic/claude-opus-4-20250514': { provider: 'anthropic', model: 'claude-opus-4-20250514', costPer1kTokens: 15, outputCostPer1kTokens: 75, tier: 'premium' },
