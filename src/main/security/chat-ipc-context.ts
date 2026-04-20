@@ -21,6 +21,50 @@ const repairScopeSchema = z.object({
   })).max(200)
 });
 
+const agentRunContextSchema = z
+  .object({
+    workspace_path_relay: z.string().max(16384).optional(),
+    open_tabs: z
+      .array(
+        z.object({
+          path: z.string().max(16384),
+          language: z.string().max(64).optional(),
+          is_dirty: z.boolean().optional(),
+        })
+      )
+      .max(500)
+      .optional(),
+    active_file: z
+      .object({
+        path: z.string().max(16384),
+        content: z.string().max(600000).optional(),
+        cursor_line: z.number().int().optional(),
+        cursor_column: z.number().int().optional(),
+        selected_text: z.string().max(100000).optional(),
+      })
+      .optional(),
+    folder_tree: z.any().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.folder_tree === undefined) return;
+    try {
+      const serialized = JSON.stringify(val.folder_tree);
+      if (serialized.length > 400_000) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'folder_tree exceeds maximum serialized size',
+          path: ['folder_tree'],
+        });
+      }
+    } catch {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'folder_tree must be JSON-serializable',
+        path: ['folder_tree'],
+      });
+    }
+  });
+
 export const chatIpcContextSchema = z
   .object({
     use_agent_loop: z.boolean().optional(),
@@ -45,7 +89,9 @@ export const chatIpcContextSchema = z
     file_content: z.string().max(600000).optional(),
     has_errors: z.boolean().optional(),
     mentioned_files: z.array(z.string().max(4096)).max(1000).optional(),
-    focused_folder: z.string().max(16384).optional()
+    focused_folder: z.string().max(16384).optional(),
+    /** Unified IDE snapshot from renderer (tabs, active buffer, tree). */
+    agent_run_context: agentRunContextSchema.optional(),
   });
 
 export type ChatIpcContext = z.infer<typeof chatIpcContextSchema>;

@@ -15,6 +15,7 @@ import type {
 } from './agent-review';
 import type { AIStatusSnapshot, AIRuntimeSnapshot } from './ai-providers';
 import type { StartupPreflightReport, SystemDoctorReport, SystemStatusSummary } from './system-health';
+import type { ChatIpcContext } from '../main/security/chat-ipc-context';
 
 export interface TelemetryStats {
   totalEvents: number;
@@ -90,7 +91,7 @@ export interface AgentAPI {
   getFolderContext: (folderPath: string) => Promise<any>;
 
   // AI chat and completions
-  chat: (message: string, context: any) => Promise<{
+  chat: (message: string, context: ChatIpcContext) => Promise<{
     success: boolean;
     response?: string;
     responseMetadata?: {

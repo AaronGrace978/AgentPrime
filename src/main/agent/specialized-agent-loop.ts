@@ -11,7 +11,9 @@
  */
 
 import { routeToSpecialists, executeWithSpecialists, AgentRole, type SpecialistExecutionCallbacks } from './specialized-agents';
-import { AgentContext } from '../agent-loop';
+import { AgentContext, AgentLoop } from '../agent-loop';
+import { appendIdeContextToUserTask } from './ide-context-format';
+import { TaskMode, detectTaskMode } from './task-mode';
 import { getProjectRegistry, ProjectRegistry } from './project-registry';
 import { ProjectDocumenter } from './project-documenter';
 import { testProjectInBrowser, formatBrowserTestResults } from './tools/projectTester';
@@ -595,6 +597,22 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
     this.stopRequested = false;
     this.pendingReviewSession = null;
+
+    // File organization (sort/move/tidy) must use AgentLoop ORGANIZE mode — not the specialist
+    // scaffold pipeline, which is tuned for coding projects and will invent Vite/React scaffolds.
+    const earlyTaskMode = detectTaskMode(userMessage);
+    if (earlyTaskMode.mode === TaskMode.ORGANIZE) {
+      log.info(`[${runId}] 🗂️ ORGANIZE intent — delegating to AgentLoop (not specialist pipeline)`);
+      const delegate = new AgentLoop(this.context);
+      delegate.on('task-start', (d: unknown) => this.emit('task-start', d as any));
+      delegate.on('file-modified', (d: unknown) => this.emit('file-modified', d as any));
+      delegate.on('step-complete', (d: unknown) => this.emit('step-complete', d as any));
+      delegate.on('critique-complete', (d: unknown) => this.emit('critique-complete', d as any));
+      delegate.on('budget-warning', (d: unknown) => this.emit('budget-warning', d as any));
+      delegate.on('message', (d: unknown) => this.emit('message', d as any));
+      return delegate.run(userMessage);
+    }
+
     this.emit('task-start', { task: userMessage });
     const telemetry = getTelemetryService();
     const taskStartedAt = Date.now();
@@ -786,9 +804,10 @@ export class SpecializedAgentLoop extends EventEmitter {
       let specialistRun: Awaited<ReturnType<typeof executeWithSpecialists>>;
       try {
         const specialistRetryLimit = reflectionPlan.specialistRecoveryRetries;
+        const taskMessageForLlm = appendIdeContextToUserTask(taskMessage, this.context.ideContext);
         specialistRun = await retryWithRecovery(
           () => executeWithSpecialists(
-            taskMessage,
+            taskMessageForLlm,
             roles,
             {
               workspacePath: this.context.workspacePath,
@@ -812,7 +831,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             operation: 'specialized_orchestration',
             model: this.context.model,
             maxRetries: specialistRetryLimit,
-            userMessage: taskMessage,
+            userMessage: taskMessageForLlm,
             timestamp: Date.now(),
           },
           specialistRetryLimit

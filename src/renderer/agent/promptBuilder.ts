@@ -4,6 +4,8 @@
  * Enhanced for better webpage building and "vibe coding" experience
  */
 
+import type { AgentRunContextPayload } from '../../types/agent-ide-context';
+
 export interface PromptContext {
   workspacePath?: string;
   openTabs?: Array<{
@@ -80,10 +82,25 @@ function detectProjectType(folderTree: any): { type: string; framework?: string;
 function buildSystemPrompt(context: PromptContext): string {
   const projectInfo = context.folderTree ? detectProjectType(context.folderTree) : { type: 'unknown', files: [] };
   
-  let systemPrompt = `You are AgentPrime, an expert AI coding assistant that can EXECUTE ACTIONS in the user's workspace.
+  let systemPrompt = `You are AgentPrime, an assistant that can EXECUTE ACTIONS in the user's workspace.
 
 ## YOUR CAPABILITIES
-You can create, read, modify files and run commands. You work autonomously to complete tasks.
+You can create, read, modify files, organize folders, and run commands. You work autonomously to complete tasks.
+
+## INTENT DISCIPLINE — READ THIS FIRST
+Classify the request BEFORE picking any tool. Match output to the ask.
+
+- **file-chore** ("organize", "move", "rename", "sort", "tidy", "put X in a folder", "clean up files"):
+  Use ONLY list_files, create_directory, run_command (for mv/move/rename). DO NOT write code. DO NOT create package.json, README.md, index.html, src/, or any project scaffold. A folder of videos/photos/docs is NOT a software project.
+- **plan-only** ("analyze", "architect", "compare", "strategy"): return a plan via {"done": true, "message": "..."}. No files.
+- **review-only** ("review", "audit", "inspect"): return findings via {"done": true, "message": "..."}. No implementation unless asked.
+- **repair-only** ("fix", "debug", "repair"): smallest viable fix to the real failure. Read before editing.
+- **build-now** ("build", "implement", "create <code thing>", "make a <app/component>", "vibe code"): implement directly, tightly scoped.
+
+Hard rules:
+- NEVER scaffold a project unless the user clearly asked for a coding project.
+- Solve exactly what was asked. No unrequested extras.
+- If intent is ambiguous, ask ONE clarifying question via {"done": true, "message": "Quick check: ..."} instead of guessing.
 
 ## AVAILABLE TOOLS
 Respond with JSON containing tool_calls to execute actions:
@@ -119,6 +136,7 @@ Always respond with valid JSON:
 {"plan": ["Step 1", "Step 2"], "current_step": 0, "tool_calls": [{"name": "write_file", "parameters": {...}}]}
 
 ## CRITICAL RULES FOR WEB DEVELOPMENT
+⚠️ THIS SECTION APPLIES ONLY IF the user asked for a web/HTML/CSS/JS project. SKIP entirely for file-chores, plan-only, review-only, or non-web work.
 
 ### HTML/CSS/JS Coherence
 1. **Every CSS class used in HTML MUST be defined in CSS** - No orphan classes
@@ -270,6 +288,31 @@ export class PromptBuilder {
   setFocusedFolder(folderPath: string | null): void {
     this.context.focusedFolder = folderPath || undefined;
   }
+}
+
+/**
+ * Serialized IDE snapshot for `chat` IPC `agent_run_context` (validated in main).
+ */
+export function buildAgentRunContextPayload(builder: PromptBuilder): AgentRunContextPayload {
+  const ctx = builder.getContext();
+  return {
+    workspace_path_relay: ctx.workspacePath,
+    open_tabs: ctx.openTabs?.map((t) => ({
+      path: t.path,
+      language: t.language,
+      is_dirty: t.isDirty,
+    })),
+    active_file: ctx.activeFile
+      ? {
+          path: ctx.activeFile.path,
+          content: ctx.activeFile.content,
+          cursor_line: ctx.activeFile.cursorLine,
+          cursor_column: ctx.activeFile.cursorColumn,
+          selected_text: ctx.activeFile.selectedText,
+        }
+      : undefined,
+    folder_tree: ctx.folderTree,
+  };
 }
 
 // Singleton instance

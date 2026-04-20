@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { promptBuilder } from '../../agent';
+import { promptBuilder, buildAgentRunContextPayload } from '../../agent';
 import type { AIRuntimeSnapshot, ModelInfo } from '../../../types/ai-providers';
 import type { Settings } from '../../../types';
 
@@ -1040,7 +1040,8 @@ const AIChat: React.FC<AIChatProps> = ({
         dino_buddy_mode: false,
         file_path: activeFilePath,
         open_files: openFiles.map(file => file.file.path),
-        terminal_history: terminalHistory
+        terminal_history: terminalHistory,
+        agent_run_context: buildAgentRunContextPayload(promptBuilder),
       });
 
       if (result.runtime) {

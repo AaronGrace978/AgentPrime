@@ -188,6 +188,22 @@ const TASK_TYPE_PATTERNS: Record<TaskType, Array<{ pattern: string | RegExp; wei
     { pattern: 'find info', weight: 1.0 },
     { pattern: /what('s| is) the/i, weight: 1.0 }
   ],
+  'file-organization': [
+    { pattern: 'organize', weight: 1.4 },
+    { pattern: 'tidy', weight: 1.2 },
+    { pattern: 'sort', weight: 1.0 },
+    { pattern: 'group', weight: 0.8 },
+    { pattern: 'rename', weight: 0.9 },
+    { pattern: 'move', weight: 0.9 },
+    { pattern: 'folder', weight: 0.9 },
+    { pattern: 'directory', weight: 0.8 },
+    { pattern: 'clean up', weight: 1.1 },
+    { pattern: 'put them in', weight: 1.4 },
+    { pattern: 'into a folder', weight: 1.4 },
+    { pattern: /move\s+.+\s+(to|into)\s+/i, weight: 1.5 },
+    { pattern: /put\s+.+\s+(in|into)\s+.*(folder|directory)/i, weight: 1.6 },
+    { pattern: /organize\s+(the\s+|my\s+)?(files|videos|photos|images|docs|documents|music|downloads)/i, weight: 1.8 }
+  ],
   'general': []
 };
 
@@ -243,6 +259,7 @@ const TASK_ENHANCEMENTS: Record<TaskType, Enhancement[]> = {
     { type: 'error-handling', description: 'Handle action failures gracefully', priority: 'high', autoApply: true }
   ],
   'web-search': [],
+  'file-organization': [],
   'general': []
 };
 

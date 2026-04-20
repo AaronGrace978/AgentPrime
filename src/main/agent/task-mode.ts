@@ -37,7 +37,8 @@ export function detectTaskMode(userMessage: string): TaskModeResult {
   const message = userMessage.toLowerCase();
 
   const organizePatterns = /\b(organize|organise|tidy|sort|categorize|categorise|clean\s?up|declutter|rename\s+files?|move\s+files?|group\s+files?)\b/i;
-  const isOrganizing = organizePatterns.test(message);
+  const putInFolderPatterns = /(put|place|move)\s+.+\s+(in|into)\s+(a\s+)?(folder|directory)\b/i;
+  const isOrganizing = organizePatterns.test(message) || putInFolderPatterns.test(message);
 
   const createPatterns = /\b(create|build|make|generate|new|start|scaffold|bootstrap|initialize|init)\b.*\b(project|app|application|website|game|api|server)\b/i;
   const explicitCreate = createPatterns.test(message);

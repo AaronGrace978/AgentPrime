@@ -43,7 +43,7 @@
 - [x] AgentProgressTracker, ErrorBoundary, InlineDiff
 - [x] GitPanel, GitStatus, CommitDialog
 - [x] CompletionService, GhostTextManager
-- [x] Client-side agent (enhancedAgentLoop, promptBuilder, contextManager, smartRouter)
+- [x] Client-side context helpers (promptBuilder, contextManager, smartRouter); execution is main-process only
 - [x] Theme system (themes.ts, ThemeSelector)
 
 ### CLI

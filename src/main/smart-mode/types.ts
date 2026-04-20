@@ -100,6 +100,7 @@ export type TaskType =
   | 'api-design'        // API/backend work
   | 'system-action'     // System control actions
   | 'web-search'        // Information lookup
+  | 'file-organization' // Move/rename/sort files, not coding
   | 'general';          // General chat/questions
 
 /**

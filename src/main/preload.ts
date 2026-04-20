@@ -5,6 +5,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AgentAPI } from '../types/ipc';
+import type { ChatIpcContext } from './security/chat-ipc-context';
 
 const agentAPI: AgentAPI = {
   // Workspace and files
@@ -34,7 +35,7 @@ const agentAPI: AgentAPI = {
   getFolderContext: (folderPath: string) => ipcRenderer.invoke('folder:get-context', folderPath),
 
   // AI chat and completions
-  chat: (message: string, context: any) => ipcRenderer.invoke('chat', message, context),
+  chat: (message: string, context: ChatIpcContext) => ipcRenderer.invoke('chat', message, context),
   quickAction: (action: string, code: string, language?: string) =>
     ipcRenderer.invoke('quick-action', action, code, language),
   aiStatus: () => ipcRenderer.invoke('ai-status'),

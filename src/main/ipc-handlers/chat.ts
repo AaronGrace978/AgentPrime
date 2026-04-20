@@ -10,21 +10,19 @@
 import { IpcMain, WebContents } from 'electron';
 import aiRouter from '../ai-providers';
 import { CommandExecutor } from '../core/command-executor';
-import { SpecializedAgentLoop } from '../agent/specialized-agent-loop';
-import type { AgentContext } from '../agent-loop';
-import { createPipeline, type AgentPipeline } from '../agent-pipeline';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
 import { parseChatIpcContext } from '../security/chat-ipc-context';
 import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN, isAbortError } from '../core/timeout-utils';
 import { stateManager } from '../core/state-manager';
 import { getBudgetAdjustedMaxTokens, isOllamaCloudModel } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
-import axios from 'axios';
+import { checkOllamaHealth } from '../core/ollama-probe';
+import { getAgentChatRuntime } from '../agent/agent-chat-runtime';
 import { reviewSessionManager } from '../agent/review-session-manager';
-import { detectCanonicalTemplateId, workspaceNeedsDeterministicScaffold } from '../agent/scaffold-resolver';
 import { clampAgentAutonomyLevel, resolveEffectiveAutonomyPolicy } from '../agent/autonomy-policy';
 import { buildReviewCheckpointSummary } from '../agent/reflection-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
+import { flattenRuntimeForTelemetry } from '../core/ai-runtime-telemetry';
 import type { AIRuntimeSnapshot } from '../../types/ai-providers';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
 import {
@@ -32,73 +30,6 @@ import {
   normalizeAssistantBehaviorProfile,
   resolveVibeCoderExecutionPolicy,
 } from '../agent/behavior-profile';
-
-/**
- * Recommended models for AgentPrime (fast and capable)
- */
-const RECOMMENDED_MODELS = [
-  { name: 'qwen2.5:14b', description: 'Best balance of speed and quality for coding', required: true },
-  { name: 'qwen2.5:7b', description: 'Fast model for quick tasks', required: false },
-  { name: 'deepseek-coder:6.7b', description: 'Specialized for code generation', required: false },
-  { name: 'llama3.2:8b', description: 'Good general-purpose model', required: false },
-];
-
-/**
- * Check Ollama health and available models
- * Uses the configured baseUrl from aiRouter (supports local and cloud)
- */
-async function checkOllamaHealth(): Promise<{
-  running: boolean;
-  models: string[];
-  recommended: { name: string; installed: boolean; description: string }[];
-  error?: string;
-}> {
-  try {
-    // Get the configured Ollama provider to use its baseUrl
-    const ollamaProvider = aiRouter.getProvider('ollama') as any;
-    const baseUrl = ollamaProvider?.baseUrl || 'http://127.0.0.1:11434';
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    
-    // Add API key for cloud endpoints
-    if (ollamaProvider?.apiKey) {
-      headers['Authorization'] = `Bearer ${ollamaProvider.apiKey}`;
-    }
-    
-    const response = await axios.get(`${baseUrl}/api/tags`, { 
-      headers,
-      timeout: 5000 // Slightly longer timeout for cloud
-    });
-    const installedModels = response.data?.models?.map((m: any) => m.name) || [];
-    
-    // Check which recommended models are installed
-    const recommended = RECOMMENDED_MODELS.map(rec => ({
-      name: rec.name,
-      description: rec.description,
-      installed: installedModels.some((m: string) => 
-        m === rec.name || m.startsWith(rec.name.split(':')[0] + ':')
-      )
-    }));
-    
-    return {
-      running: true,
-      models: installedModels,
-      recommended
-    };
-  } catch (e: any) {
-    return {
-      running: false,
-      models: [],
-      recommended: RECOMMENDED_MODELS.map(rec => ({
-        name: rec.name,
-        description: rec.description,
-        installed: false
-      })),
-      error: e.code === 'ECONNREFUSED' 
-        ? 'Ollama is not running. Start it with: ollama serve'
-        : e.message
-    };
-  }
-}
 
 function resolveProviderForModel(model: string | undefined, preferredProvider: string | undefined): string {
   return aiRouter.inferProviderForModel(model, preferredProvider || 'ollama') || preferredProvider || 'ollama';
@@ -131,19 +62,6 @@ function resolveConfiguredModel(
   const activeProvider = runtime.effectiveProvider || resolveProviderForModel(activeModel, requestedProviderForRun);
 
   return { activeModel, activeProvider, localOllamaModel, runtime };
-}
-
-function flattenRuntimeForTelemetry(runtime: AIRuntimeSnapshot): Record<string, any> {
-  return {
-    requestedProvider: runtime.requestedProvider,
-    requestedModel: runtime.requestedModel,
-    effectiveProvider: runtime.effectiveProvider,
-    effectiveModel: runtime.effectiveModel,
-    executionProvider: runtime.executionProvider || runtime.displayProvider,
-    executionModel: runtime.executionModel || runtime.displayModel,
-    runtimeResolution: runtime.resolution,
-    runtimeViaFallback: runtime.viaFallback,
-  };
 }
 
 function emitRuntimeInfo(sender: WebContents, requestId: string, runtime: AIRuntimeSnapshot): void {
@@ -213,7 +131,6 @@ interface ChatHandlerDeps {
 }
 
 let commandExecutor: CommandExecutor | null = null;
-let agentPipeline: AgentPipeline | null = null;
 
 /**
  * Active in-flight chat stream AbortControllers, keyed by requestId.
@@ -222,8 +139,6 @@ let agentPipeline: AgentPipeline | null = null;
  * too — not just inside agent runs.
  */
 const activeChatControllers = new Map<string, AbortController>();
-let specializedAgentLoop: SpecializedAgentLoop | null = null;
-let activeAgentMode: 'monolithic' | 'specialized' | null = null;
 
 function getExecutor(): CommandExecutor {
   if (!commandExecutor) {
@@ -323,7 +238,7 @@ export function register(deps: ChatHandlerDeps): void {
   // Current agent (composer) session ID
   ipcMain.handle('get-current-agent-session-id', async () => {
     try {
-      const id = agentPipeline?.getAgent()?.getSessionId?.() ?? null;
+      const id = getAgentChatRuntime().getPipeline()?.getAgent()?.getSessionId?.() ?? null;
       return { success: true, sessionId: id };
     } catch {
       return { success: true, sessionId: null };
@@ -345,11 +260,12 @@ export function register(deps: ChatHandlerDeps): void {
       }
       activeChatControllers.clear();
 
-      if (activeAgentMode === 'monolithic' && agentPipeline) {
-        agentPipeline.getAgent().requestStop('Stopped by user');
+      const agentRuntime = getAgentChatRuntime();
+      if (agentRuntime.activeAgentMode === 'monolithic' && agentRuntime.getPipeline()) {
+        agentRuntime.getPipeline()!.getAgent().requestStop('Stopped by user');
         stoppedSomething = true;
-      } else if (activeAgentMode === 'specialized' && specializedAgentLoop) {
-        (specializedAgentLoop as any).requestStop?.('Stopped by user');
+      } else if (agentRuntime.activeAgentMode === 'specialized' && agentRuntime.getSpecializedLoop()) {
+        (agentRuntime.getSpecializedLoop() as any).requestStop?.('Stopped by user');
         stoppedSomething = true;
       }
 
@@ -668,295 +584,32 @@ export function register(deps: ChatHandlerDeps): void {
             runtime: responseRuntime,
           };
         }
-        
-        // Choose between specialized and monolithic agents
-        if (useSpecializedAgents) {
-          // Use specialized agent architecture
-          console.log(
-            `[Chat] Specialized agent mode enabled, provider: ${activeProvider}, model: ${selectedModel}, cloud: ${isOllamaCloud}, autonomy: L${autonomyPolicy.level} (${autonomyPolicy.label})`
-          );
-          const deterministicScaffoldOnly =
-            vibeCoderExecutionPolicy?.allowScaffold === false
-              ? false
-              : Boolean((context as any).deterministic_scaffold_only) ||
-                (
-                  process.env.NODE_ENV === 'test' &&
-                  workspaceNeedsDeterministicScaffold(workspacePath) &&
-                  Boolean(detectCanonicalTemplateId(message))
-                );
-          
-          // Pre-flight health check - only for LOCAL Ollama (skip for Ollama Cloud!)
-          if (!deterministicScaffoldOnly && activeProvider === 'ollama' && !isOllamaCloud) {
-            const health = await checkOllamaHealth();
-            if (!health.running) {
-              return {
-                success: false,
-                error: `❌ Ollama is not running!\n\nStart Ollama first:\n  ollama serve\n\nThen pull a model:\n  ollama pull qwen2.5:14b\n\n💡 Or use Ollama Cloud models (ending in :cloud) for cloud AI!`,
-                requestId,
-                agent_mode: true,
-                specialized_mode: true
-              };
-            }
-            
-            if (health.models.length === 0) {
-              return {
-                success: false,
-                error: `⚠️ No models installed!\n\nPull a recommended model:\n  ollama pull qwen2.5:14b\n\n💡 Or use Ollama Cloud models (ending in :cloud) for cloud AI!`,
-                requestId,
-                agent_mode: true,
-                specialized_mode: true
-              };
-            }
-          }
-          
-          const agentContext: AgentContext = {
-            workspacePath,
-            currentFile: context.file_path || getCurrentFile() || undefined,
-            openFiles: context.open_files || [],
-            terminalHistory: context.terminal_history || [],
-            model: selectedModel,
-            runtimeBudget,
-            assistantBehaviorProfile,
-            vibeCoderIntent,
-            vibeCoderExecutionPolicy,
-            autonomyLevel,
-            repairScope: context.repair_scope,
-            deterministicScaffoldOnly,
-            monolithicApplyImmediately: agentSettings?.agentMonolithicApplyImmediately === true,
-          };
 
-          // Recreate specialized loop per run so we always bind fresh sender listeners.
-          specializedAgentLoop = new SpecializedAgentLoop(agentContext);
-          specializedAgentLoop.on('task-start', (data: any) => {
-            event.sender.send('agent:task-start', data);
-          });
-          specializedAgentLoop.on('step-start', (data: any) => {
-            event.sender.send('agent:step-start', data);
-          });
-          specializedAgentLoop.on('step-complete', (data: any) => {
-            event.sender.send('agent:step-complete', data);
-          });
-          specializedAgentLoop.on('file-modified', (data: any) => {
-            event.sender.send('agent:file-modified', data);
-          });
-          specializedAgentLoop.on('critique-complete', (data: any) => {
-            event.sender.send('agent:critique-complete', data);
-          });
-          specializedAgentLoop.on('command-output', (data: any) => {
-            event.sender.send('agent:command-output', data);
-          });
-
-          const agentStartedAt = Date.now();
-          try {
-            activeAgentMode = 'specialized';
-            const telemetry = getTelemetryService();
-            telemetry.track('ai_request', {
-              mode: 'specialized_dispatch',
-              model: selectedModel,
-              provider: activeProvider,
-              autonomyLevel,
-              autonomyLabel: autonomyPolicy.label,
-              ...flattenRuntimeForTelemetry(requestedRuntime),
-              workspacePath,
-            });
-            const response = await specializedAgentLoop.run(message);
-            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
-            const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
-            emitRuntimeInfo(event.sender, requestId, responseRuntime);
-            const reviewSession = specializedAgentLoop.consumePendingReviewSession();
-
-            // Store in history
-            addToConversationHistory(conversationMode, 'user', message);
-            addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);
-            telemetry.track('ai_response', {
-              mode: 'specialized_dispatch',
-              success: true,
-              model: selectedModel,
-              provider: activeProvider,
-              autonomyLevel,
-              autonomyLabel: autonomyPolicy.label,
-              ...flattenRuntimeForTelemetry(responseRuntime),
-              workspacePath,
-              durationMs: Date.now() - agentStartedAt,
-            });
-
-            // Send success reaction to Dino Buddy
-            event.sender.send('dino:reaction', {
-              expression: 'success',
-              message: 'ROAAAAR! We did it!! 🦖💥✨'
-            });
-
-            return {
-              success: true,
-              response,
-              responseMetadata,
-              requestId,
-              agent_mode: true,
-              specialized_mode: true,
-              reviewSessionId: reviewSession?.sessionId,
-              reviewChanges: reviewSession?.changes,
-              reviewVerification: reviewSession?.initialVerification,
-              reviewPlan: reviewSession?.plan,
-              reviewCheckpoint: reviewSession?.checkpoint,
-              runtime: responseRuntime,
-            };
-          } catch (agentError: any) {
-            console.error('[Chat] Specialized agent error:', agentError);
-            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
-            emitRuntimeInfo(event.sender, requestId, responseRuntime);
-            getTelemetryService().track('ai_response', {
-              mode: 'specialized_dispatch',
-              success: false,
-              model: selectedModel,
-              provider: activeProvider,
-              autonomyLevel,
-              autonomyLabel: autonomyPolicy.label,
-              ...flattenRuntimeForTelemetry(responseRuntime),
-              workspacePath,
-              durationMs: Date.now() - agentStartedAt,
-              error: agentError.message || 'Agent execution failed',
-            });
-            
-            // Send error reaction to Dino Buddy
-            event.sender.send('dino:reaction', {
-              expression: 'error',
-              message: 'Oof! My dino brain tripped — let me try again! 🦕💪'
-            });
-            
-            return {
-              success: false,
-              error: agentError.message || 'Agent execution failed',
-              requestId,
-              agent_mode: true,
-              specialized_mode: true,
-              suggestion: 'Try running: ollama pull qwen2.5:14b',
-              runtime: responseRuntime,
-            };
-          } finally {
-            activeAgentMode = null;
-          }
-        } else {
-          // Monolithic path: plan → execute → validate via AgentPipeline (wraps AgentLoop)
-          console.log(
-            `[Chat] Monolithic agent mode enabled, model: ${selectedModel}, autonomy: L${autonomyPolicy.level} (${autonomyPolicy.label})`
-          );
-          emitRuntimeInfo(event.sender, requestId, requestedRuntime);
-
-          const agentContext: AgentContext = {
-            workspacePath,
-            currentFile: context.file_path || getCurrentFile() || undefined,
-            openFiles: context.open_files || [],
-            terminalHistory: context.terminal_history || [],
-            model: selectedModel,
-            runtimeBudget,
-            assistantBehaviorProfile,
-            vibeCoderIntent,
-            vibeCoderExecutionPolicy,
-            autonomyLevel,
-            repairScope: context.repair_scope,
-            deterministicScaffoldOnly:
-              vibeCoderExecutionPolicy?.allowScaffold === false
-                ? false
-                : Boolean((context as any).deterministic_scaffold_only),
-            monolithicApplyImmediately: agentSettings?.agentMonolithicApplyImmediately === true,
-          };
-
-          if (!agentPipeline) {
-            agentPipeline = createPipeline(agentContext);
-
-            const loop = agentPipeline.getAgent();
-            loop.on('task-start', (data) => {
-              event.sender.send('agent:task-start', data);
-            });
-            loop.on('step-complete', (data) => {
-              event.sender.send('agent:step-complete', data);
-            });
-            loop.on('file-modified', (data) => {
-              event.sender.send('agent:file-modified', data);
-            });
-            loop.on('critique-complete', (data) => {
-              event.sender.send('agent:critique-complete', data);
-            });
-          } else {
-            agentPipeline.updateContext(agentContext);
-          }
-
-          try {
-            activeAgentMode = 'monolithic';
-            const pipelineResult = await agentPipeline.execute(message, {
-              model: selectedModel,
-              maxRetries: 1,
-            });
-            const response = pipelineResult.response;
-            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
-            const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
-            emitRuntimeInfo(event.sender, requestId, responseRuntime);
-
-            if (!pipelineResult.success) {
-              event.sender.send('dino:reaction', {
-                expression: 'error',
-                message: 'Oof! Something went sideways — want to try again? 🦕'
-              });
-              return {
-                success: false,
-                error: pipelineResult.error || pipelineResult.response,
-                requestId,
-                agent_mode: true,
-                specialized_mode: false,
-                runtime: responseRuntime,
-              };
-            }
-
-            // Store in history
-            addToConversationHistory(conversationMode, 'user', message);
-            addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);
-
-            // Send success reaction to Dino Buddy
-            event.sender.send('dino:reaction', {
-              expression: 'success',
-              message: 'BOOM! Nailed it, friend!! 🦖🎉💥'
-            });
-
-            return {
-              success: true,
-              response,
-              responseMetadata,
-              requestId,
-              agent_mode: true,
-              specialized_mode: false,
-              reviewSessionId: pipelineResult.reviewSessionId,
-              reviewChanges: pipelineResult.reviewChanges,
-              reviewVerification: pipelineResult.reviewVerification,
-              reviewPlan: pipelineResult.reviewPlan,
-              reviewCheckpoint: pipelineResult.reviewCheckpoint,
-              runtime: responseRuntime,
-            };
-          } catch (agentErr: unknown) {
-            const msg =
-              agentErr instanceof Error
-                ? agentErr.message
-                : typeof agentErr === 'string'
-                  ? agentErr
-                  : 'Agent execution failed';
-            console.error('[Chat] Monolithic agent error:', agentErr);
-            const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
-            emitRuntimeInfo(event.sender, requestId, responseRuntime);
-            event.sender.send('dino:reaction', {
-              expression: 'error',
-              message: 'Oof! Something went sideways — want to try again? 🦕'
-            });
-            return {
-              success: false,
-              error: msg,
-              requestId,
-              agent_mode: true,
-              specialized_mode: false,
-              runtime: responseRuntime,
-            };
-          } finally {
-            activeAgentMode = null;
-          }
-        }
+        const agentRuntime = getAgentChatRuntime();
+        return agentRuntime.executeAgentBranch({
+          event,
+          requestId,
+          message,
+          workspacePath,
+          context,
+          agentSettings,
+          selectedModel,
+          activeProvider,
+          requestedRuntime,
+          assistantBehaviorProfile,
+          vibeCoderExecutionPolicy,
+          vibeCoderIntent,
+          autonomyLevel,
+          autonomyPolicy,
+          useSpecializedAgents,
+          isOllamaCloud,
+          conversationMode,
+          runtimeBudget,
+          addToConversationHistory,
+          getCurrentFile,
+          emitRuntimeInfo,
+          buildAssistantResponseMetadata,
+        });
       }
       // Check if user wants to examine codebase
       // Skip this check if in words_to_code_mode - we want to GENERATE, not analyze

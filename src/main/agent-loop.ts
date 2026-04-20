@@ -1005,12 +1005,16 @@ import {
   type VibeCoderIntent,
 } from './agent/behavior-profile';
 import { PromptSanitizer } from './security/prompt-sanitizer';
+import type { IdeContextSnapshot } from '../types/agent-ide-context';
+import { formatIdeContextForModel } from './agent/ide-context-format';
 
 export interface AgentContext {
   workspacePath: string;
   currentFile?: string;
   openFiles: string[];
   terminalHistory: string[];
+  /** Rich IDE snapshot from renderer (tabs, buffer, tree) — injected into system prompt, not user text. */
+  ideContext?: IdeContextSnapshot;
   gitStatus?: string;
   model?: string;
   runtimeBudget?: 'instant' | 'standard' | 'deep';
@@ -3023,17 +3027,37 @@ export class AgentLoop extends EventEmitter {
     // Initialize with comprehensive system prompt
     this.messages.push({
       role: 'system',
-      content: `You are AgentPrime, an elite autonomous coding agent. You think step-by-step, plan before acting, and execute flawlessly.
+      content: `You are AgentPrime, an autonomous assistant for the user's workspace. You think step-by-step, plan before acting, and execute flawlessly.
 
 WORKSPACE: ${context.workspacePath}
+
+## INTENT DISCIPLINE — READ THIS FIRST
+Classify the user's request BEFORE picking any tool. Match output to the ask.
+
+- **file-chore**: "organize", "move", "rename", "sort", "tidy", "put X in a folder", "clean up files", "group these videos/photos/docs"
+  → Use ONLY list_dir, create_directory, run_command (for mv/move/rename). DO NOT write code. DO NOT create package.json, README.md, index.html, src/, configs, or any project scaffold. A folder of videos is NOT a software project.
+- **plan-only**: "analyze", "architect", "compare", "strategy", "best approach", "design"
+  → Return a plan in a {"done": true, "message": "..."} response. DO NOT create or write files.
+- **review-only**: "review", "audit", "inspect", "look for issues"
+  → Return findings in {"done": true, "message": "..."}. DO NOT implement unless asked.
+- **repair-only**: "fix", "debug", "repair", "unblock", "make it work"
+  → Smallest viable fix to the real failure. Read before editing. Don't rewrite app code to work around environment issues.
+- **build-now**: "build", "implement", "create <code thing>", "make a <app/component/script>", "wire up", "vibe code"
+  → Implement directly, tightly scoped.
+
+Hard rules:
+- NEVER scaffold a project, initialize a framework, or create package.json / vite.config.* / tailwind.config.* / index.html / src/App.* unless the user's words clearly request a coding project.
+- "Organize these videos" is a file-chore, not a code-generation task. The correct response is create_directory + move, then {"done": true}.
+- If the request's intent is ambiguous, ask ONE clarifying question via {"done": true, "message": "Quick check: ..."} instead of guessing.
+- Solve exactly what was asked. No unrequested extras, no "nice to haves", no widening scope.
 
 ## CORE RULES
 1. ALWAYS respond with valid JSON only - no text before or after
 2. PLAN FIRST for complex tasks, then execute step by step
 3. Handle errors gracefully - retry with fixes
-4. **PRODUCE PRODUCTION-READY CODE** - Complete, working, tested code - NO placeholders, NO TODOs, NO skeleton code
-5. **VALIDATE BEFORE COMPLETING** - Ensure all files are complete, dependencies are correct, and the project can actually run
-6. **TEST BEFORE MARKING DONE** - ALWAYS run the project with run_command to verify it works before saying "done"
+4. **PRODUCE PRODUCTION-READY CODE** - Complete, working, tested code - NO placeholders, NO TODOs, NO skeleton code (applies to build-now/repair-only tasks)
+5. **VALIDATE BEFORE COMPLETING** - Ensure output matches the ask. For code tasks: files complete, deps correct, project runs. For file-chores: files are in the right folders.
+6. **TEST BEFORE MARKING DONE** - For code tasks, run the project with run_command to verify. For file-chores, list_dir to confirm the moves happened.
 
 ## CODE QUALITY STANDARDS
 - ✅ Write COMPLETE, WORKING code - not placeholders or skeletons
@@ -3048,6 +3072,8 @@ WORKSPACE: ${context.workspacePath}
 - ❌ NEVER create files with just a comment or single line
 
 ## UI WIRING - CRITICAL FOR WEB PROJECTS
+⚠️ THIS ENTIRE SECTION APPLIES ONLY IF the user asked for a web/HTML/CSS/JS project or game. SKIP this whole block for file-chores, plan-only, review-only, python scripts, CLI tools, or anything non-web.
+
 When creating HTML/CSS/JS projects, you MUST wire everything up properly:
 
 **Buttons & Interactive Elements:**
@@ -3146,7 +3172,8 @@ pause
 - scaffold_project: {"name": "scaffold_project", "arguments": {"project_type": "phaser_game", "project_name": "MyGame"}}
   Types: phaser_game, html_game, pixi_game, threejs_viewer, threejs_platformer, express_api, python_fastapi, python_script
   
-🎮 FOR GAMES: ALWAYS use scaffold_project FIRST to set up proper structure and dependencies!
+🎮 FOR GAMES (only when the user explicitly asked to build a game): use scaffold_project FIRST.
+⚠️ NEVER use scaffold_project for file-chores, plan-only, review-only, or ambiguous requests. Scaffolding is for build-now coding tasks only.
 
 ## RESPONSE FORMATS
 
@@ -3188,6 +3215,7 @@ Response 4:
 {"done": true, "message": "✅ Express API created with GET /users, POST /users, GET /users/:id. Run: npm start"}
 
 ## CSS LAYOUT & VISUAL ALIGNMENT RULES (CRITICAL!)
+⚠️ APPLIES ONLY to build-now tasks that involve CSS/UI. Ignore this section entirely for file-chores, plan-only, review-only, CLI, scripting, or backend work.
 
 When creating visual UI components, ALWAYS ensure proper centering and alignment:
 
@@ -3463,11 +3491,34 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     }
   }
 
+  /**
+   * Tools exposed to the model. ORGANIZE mode strips codegen/scaffold tools so weak
+   * models cannot hallucinate package.json / Vite scaffolds for "sort my videos" tasks.
+   */
+  private getToolsForModel(): Record<string, Tool> {
+    if (this.taskMode === TaskMode.ORGANIZE) {
+      return {
+        list_dir: tools.list_dir,
+        run_command: tools.run_command,
+        organize_folder: tools.organize_folder,
+        undo_organize_folder: tools.undo_organize_folder
+      };
+    }
+    return tools;
+  }
+
   async run(rawUserMessage: string): Promise<string> {
     const runId = createOperationId('agentrun');
     const sanitization = PromptSanitizer.sanitize(rawUserMessage);
     const userMessage = sanitization.sanitizedText;
     this.syncBehaviorProfilePrompt();
+    const ideBlock = formatIdeContextForModel(this.context.ideContext);
+    if (ideBlock.trim()) {
+      const systemMessage = this.messages.find((m) => m.role === 'system');
+      if (systemMessage && !systemMessage.content.includes('IDE_CONTEXT (from UI)')) {
+        systemMessage.content += `\n\n## IDE_CONTEXT (from UI)\n${ideBlock}\n`;
+      }
+    }
     log.info(`[${runId}] Starting agent loop run`, {
       sessionId: this.sessionId,
       workspacePath: this.context.workspacePath,
@@ -3987,10 +4038,10 @@ ${this.taskMode === TaskMode.ENHANCE ? `
 ${this.taskMode === TaskMode.ORGANIZE ? `
 🗂️ ORGANIZE MODE RULES:
 1. The user wants their FILES sorted — not a new project.
-2. Call organize_folder({ path, strategy: "by-type" | "by-date", dry_run: true }) FIRST to show a plan.
-3. After the user confirms (or if they were explicit), call organize_folder with dry_run: false.
-4. Never call scaffold_project, write_file, or run_command in this mode.
-5. If the target folder is ambiguous, ASK the user which folder they want organized before doing anything.
+2. Prefer organize_folder({ path, strategy: "by-type" | "by-date", dry_run: true }) to preview, then dry_run: false to apply.
+3. Never call scaffold_project, write_file, patch_file, str_replace, or search_codebase for organizing.
+4. list_dir, organize_folder, undo_organize_folder, and run_command (only for move/rename/mkdir) are allowed.
+5. If the target folder is ambiguous, ASK which folder to organize before acting.
 6. To reverse, call undo_organize_folder with the same path.
 ` : ''}
 `;
@@ -4150,7 +4201,7 @@ ${this.taskMode === TaskMode.ORGANIZE ? `
         // OpenAI, OpenRouter, Ollama). If the model returns native toolCalls
         // we skip the regex/repair pipeline entirely. If it doesn't, we still
         // get plain text in `content` and fall through to the legacy parser.
-        const canonicalToolCatalog = toCanonicalTools(tools as any);
+        const canonicalToolCatalog = toCanonicalTools(this.getToolsForModel() as any);
 
         const response = await withAITimeoutAndRetry(
           () => aiRouter.chatWithTools(messagesForModel, canonicalToolCatalog, {
@@ -4874,6 +4925,20 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                   role: 'tool',
                   tool_call_id: toolCall.id,
                   content: `🛡️ ORGANIZE MODE ACTIVE: Do not create new files. Use organize_folder to sort existing files into subfolders, or undo_organize_folder to reverse a previous organize.`
+                });
+                continue;
+              }
+
+              if (
+                (toolCall.function.name === 'patch_file' || toolCall.function.name === 'str_replace') &&
+                this.taskMode === TaskMode.ORGANIZE
+              ) {
+                log.info(`[Agent] 🛡️ ORGANIZE MODE: Blocking ${toolCall.function.name} — file edits are not allowed`);
+                toolResults.push(`❌ ${toolCall.function.name}: BLOCKED - ORGANIZE mode: use organize_folder or run_command to move files only.`);
+                this.messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: `🛡️ ORGANIZE MODE: Do not edit source files. Use organize_folder({ path, strategy: "by-type" }) or run_command for moves.`
                 });
                 continue;
               }
