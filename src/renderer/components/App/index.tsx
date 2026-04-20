@@ -1480,7 +1480,15 @@ function App() {
               void refreshLatestAppliedReviewSession();
               void refreshSystemDoctorReport();
             }}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => {
+              // SystemStatusPanel sits at z-index 10020; SettingsPanel at 1500.
+              // Without closing the system panel first, Settings opens behind it
+              // and the user has to dismiss the system panel to reach Settings.
+              // Closing it here also matches intent: opening Settings from the
+              // status panel implies the user is done inspecting status.
+              setSystemPanelOpen(false);
+              setSettingsOpen(true);
+            }}
             onRevertLastSession={() => { void handleRevertLastAgentSession(); }}
           />
         </Suspense>
