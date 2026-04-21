@@ -1,4 +1,11 @@
-import { validateToolCall, resetFileTracker, populateFileTracker } from '../../src/main/agent/tool-validation';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import {
+  validateToolCall,
+  resetFileTracker,
+  populateFileTracker,
+} from '../../src/main/agent/tool-validation';
 import { resolveVibeCoderExecutionPolicy } from '../../src/main/agent/behavior-profile';
 
 describe('specialist-aware tool validation', () => {
@@ -12,7 +19,10 @@ describe('specialist-aware tool validation', () => {
     const result = validateToolCall(
       {
         name: 'write_file',
-        arguments: { path: 'src/App.tsx', content: 'export default function App() { return null; }' },
+        arguments: {
+          path: 'src/App.tsx',
+          content: 'export default function App() { return null; }',
+        },
       },
       workspacePath,
       'Verify the project',
@@ -106,7 +116,10 @@ describe('specialist-aware tool validation', () => {
     const result = validateToolCall(
       {
         name: 'write_file',
-        arguments: { path: 'src/App.tsx', content: 'export default function App() { return null; }' },
+        arguments: {
+          path: 'src/App.tsx',
+          content: 'export default function App() { return null; }',
+        },
       },
       workspacePath,
       'Polish the app shell',
@@ -241,7 +254,10 @@ describe('specialist-aware tool validation', () => {
     const result = validateToolCall(
       {
         name: 'write_file',
-        arguments: { path: 'src/App.tsx', content: 'export default function App() { return null; }' },
+        arguments: {
+          path: 'src/App.tsx',
+          content: 'export default function App() { return null; }',
+        },
       },
       workspacePath,
       'Analyze the current app shell',
@@ -267,5 +283,58 @@ describe('specialist-aware tool validation', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('repair-only');
+  });
+
+  it('enforces framework freeze during repair by blocking JS-to-TSX entrypoint pivots', () => {
+    const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-framework-freeze-'));
+    try {
+      fs.mkdirSync(path.join(tempWorkspace, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(tempWorkspace, 'src', 'main.js'), 'console.log("legacy entry");\n');
+
+      const result = validateToolCall(
+        {
+          name: 'write_file',
+          arguments: {
+            path: 'src/main.tsx',
+            content: 'import React from "react"; export default function App(){ return null; }',
+          },
+        },
+        tempWorkspace,
+        'CRITICAL FIX PASS REQUIRED: repair the current runtime issues',
+        { specialist: 'javascript_specialist' }
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('Framework freeze');
+    } finally {
+      fs.rmSync(tempWorkspace, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks repair writes that keep index.html on main.js while React entrypoint exists', () => {
+    const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-index-coherence-'));
+    try {
+      fs.mkdirSync(path.join(tempWorkspace, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(tempWorkspace, 'src', 'main.tsx'), 'console.log("react entry");\n');
+
+      const result = validateToolCall(
+        {
+          name: 'write_file',
+          arguments: {
+            path: 'index.html',
+            content:
+              '<!doctype html><html><body><div id="app"></div><script type="module" src="/src/main.js"></script></body></html>',
+          },
+        },
+        tempWorkspace,
+        'Repair-only: fix runtime errors without changing stack',
+        { specialist: 'javascript_specialist' }
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('Framework freeze');
+    } finally {
+      fs.rmSync(tempWorkspace, { recursive: true, force: true });
+    }
   });
 });

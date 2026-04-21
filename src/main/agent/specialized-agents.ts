@@ -1,13 +1,13 @@
 /**
  * Specialized Agent Architecture - WITH MIRROR INTELLIGENCE
- * 
+ *
  * Instead of one agent trying to do everything, we have specialists:
  * 1. Tool Orchestrator - Handles tool calls, parsing, execution
  * 2. JavaScript Specialist - Writes JS/TS/React code
  * 3. Python Specialist - Writes Python code
  * 4. Pipeline Specialist - Handles build/deploy/CI/CD
  * 5. Integration Analyst - Reviews work, wires things together, ensures coherence
- * 
+ *
  * NOW WITH MIRROR INTELLIGENCE:
  * - Each specialist learns from stored patterns
  * - Patterns are injected into prompts for better results
@@ -17,16 +17,37 @@
 
 import aiRouter from '../ai-providers';
 import type { ChatMessage, ChatOptions } from '../../types/ai-providers';
-import { getRelevantPatterns, getAntiPatterns, storeTaskLearning } from '../mirror/mirror-singleton';
+import {
+  getRelevantPatterns,
+  getAntiPatterns,
+  storeTaskLearning,
+} from '../mirror/mirror-singleton';
 import { loadOpusExamples } from '../mirror/opus-example-loader';
 import * as fs from 'fs';
 import * as path from 'path';
-import { withAITimeoutAndRetry, withSmartFallback, FALLBACK_MODEL_CHAIN, detectModelSize, type RuntimeBudgetMode } from '../core/timeout-utils';
+import {
+  withAITimeoutAndRetry,
+  withSmartFallback,
+  FALLBACK_MODEL_CHAIN,
+  detectModelSize,
+  type RuntimeBudgetMode,
+} from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
 import { getBudgetAdjustedMaxTokens, getRecommendedMaxTokens } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
 import { createLogger } from '../core/logger';
-import { validateToolCall, fixToolCall, resetFileTracker, populateFileTracker, validatePackageJson, validateIndexHtml, validateJavaScriptFile, detectOrphanedFiles, getFileTrackerState, FileTrackerMode } from './tool-validation';
+import {
+  validateToolCall,
+  fixToolCall,
+  resetFileTracker,
+  populateFileTracker,
+  validatePackageJson,
+  validateIndexHtml,
+  validateJavaScriptFile,
+  detectOrphanedFiles,
+  getFileTrackerState,
+  FileTrackerMode,
+} from './tool-validation';
 import { sanitizeFileName } from '../security/ipcValidation';
 import { spawn } from 'child_process';
 import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
@@ -38,7 +59,7 @@ import {
 } from './scaffold-resolver';
 import {
   getWorkspaceSymbolIndexForAgents,
-  scheduleWorkspaceSymbolIndexRebuildForAgents
+  scheduleWorkspaceSymbolIndexRebuildForAgents,
 } from '../search/symbol-index';
 import {
   LEGACY_SPECIALIST_ROLE_MAP,
@@ -88,7 +109,9 @@ export async function bootstrapDeterministicScaffold(
   executionPolicy?: VibeCoderExecutionPolicy
 ): Promise<Array<{ toolCall: any; result: any; specialist: string }>> {
   if (executionPolicy && !executionPolicy.allowScaffold) {
-    log.info(`[MirrorAgents] Deterministic bootstrap skipped by VibeCoder ${executionPolicy.intent} policy`);
+    log.info(
+      `[MirrorAgents] Deterministic bootstrap skipped by VibeCoder ${executionPolicy.intent} policy`
+    );
     return [];
   }
   const templateId = detectCanonicalTemplateId(task);
@@ -106,16 +129,23 @@ export async function bootstrapDeterministicScaffold(
 
   if (scaffolded.createdFiles.length > 0) {
     populateFileTracker(scaffolded.createdFiles);
-    log.info(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffolded file(s)`);
+    log.info(
+      `[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffolded file(s)`
+    );
   }
 
   return scaffolded.createdFiles.map((filePath) => ({
     toolCall: {
       name: 'write_file',
-      arguments: { path: filePath }
+      arguments: { path: filePath },
     },
-    result: { action: 'write_file', path: filePath, success: true, scaffolded: scaffolded.templateId },
-    specialist: 'deterministic_bootstrap'
+    result: {
+      action: 'write_file',
+      path: filePath,
+      success: true,
+      scaffolded: scaffolded.templateId,
+    },
+    specialist: 'deterministic_bootstrap',
   }));
 }
 
@@ -124,40 +154,44 @@ export async function bootstrapDeterministicScaffold(
  */
 const FAST_MODELS = [
   // Cloud providers - CONFIRMED WORKING!
-  { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' },  // Fast Claude
-  { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },   // Deep Claude
-  { provider: 'openai', model: 'gpt-4o-mini' },                   // Fast GPT
-  { provider: 'openai', model: 'gpt-4o' },                        // Deep GPT
+  { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' }, // Fast Claude
+  { provider: 'anthropic', model: 'claude-sonnet-4-20250514' }, // Deep Claude
+  { provider: 'openai', model: 'gpt-4o-mini' }, // Fast GPT
+  { provider: 'openai', model: 'gpt-4o' }, // Deep GPT
 ];
 
 /**
  * Check if Ollama is running and has models available
  * Uses the configured baseUrl from aiRouter (supports local and cloud)
  */
-async function checkOllamaHealth(): Promise<{ healthy: boolean; models: string[]; error?: string }> {
+async function checkOllamaHealth(): Promise<{
+  healthy: boolean;
+  models: string[];
+  error?: string;
+}> {
   try {
     const axios = require('axios');
     // Get the configured Ollama provider to use its baseUrl
     const ollamaProvider = aiRouter.getProvider('ollama') as any;
     const baseUrl = ollamaProvider?.baseUrl || 'http://127.0.0.1:11434';
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    
+
     // Add API key for cloud endpoints
     if (ollamaProvider?.apiKey) {
       headers['Authorization'] = `Bearer ${ollamaProvider.apiKey}`;
     }
-    
-    const response = await axios.get(`${baseUrl}/api/tags`, { 
+
+    const response = await axios.get(`${baseUrl}/api/tags`, {
       headers,
-      timeout: 5000 // Slightly longer timeout for cloud
+      timeout: 5000, // Slightly longer timeout for cloud
     });
     const models = response.data?.models?.map((m: any) => m.name) || [];
     return { healthy: true, models };
   } catch (error: any) {
-    return { 
-      healthy: false, 
-      models: [], 
-      error: error.code === 'ECONNREFUSED' ? 'Ollama not running' : error.message 
+    return {
+      healthy: false,
+      models: [],
+      error: error.code === 'ECONNREFUSED' ? 'Ollama not running' : error.message,
     };
   }
 }
@@ -194,7 +228,9 @@ function isCloudProvider(provider: string, model: string): boolean {
  * Get the best available model from preferences
  * UPDATED: Prioritizes cloud providers (Anthropic, OpenAI) that don't need local setup!
  */
-async function getBestAvailableModel(preferredModels: Array<{provider: string, model: string}>): Promise<{provider: string, model: string} | null> {
+async function getBestAvailableModel(
+  preferredModels: Array<{ provider: string; model: string }>
+): Promise<{ provider: string; model: string } | null> {
   // First, check for cloud providers - they don't need local checks!
   for (const pref of preferredModels) {
     if (isCloudProvider(pref.provider, pref.model)) {
@@ -202,45 +238,45 @@ async function getBestAvailableModel(preferredModels: Array<{provider: string, m
       return pref;
     }
   }
-  
+
   // For local Ollama models, check Ollama health
   const health = await checkOllamaHealth();
-  
+
   if (!health.healthy) {
     log.warn(`[ModelSelector] Local Ollama not available: ${health.error}`);
     // If local Ollama isn't running but we have cloud providers, use first one
-    const cloudModel = preferredModels.find(p => isCloudProvider(p.provider, p.model));
+    const cloudModel = preferredModels.find((p) => isCloudProvider(p.provider, p.model));
     if (cloudModel) {
-      log.info(`[ModelSelector] ☁️ Falling back to cloud provider: ${cloudModel.provider}/${cloudModel.model}`);
+      log.info(
+        `[ModelSelector] ☁️ Falling back to cloud provider: ${cloudModel.provider}/${cloudModel.model}`
+      );
       return cloudModel;
     }
     return null;
   }
-  
+
   // Find first preferred LOCAL model that's actually installed
   for (const pref of preferredModels) {
     if (pref.provider === 'ollama' && !isCloudProvider(pref.provider, pref.model)) {
       // Check if model is installed (handle tag variations)
       const modelBase = pref.model.split(':')[0];
-      const isInstalled = health.models.some(m => 
-        m === pref.model || 
-        m.startsWith(modelBase + ':') ||
-        m === modelBase
+      const isInstalled = health.models.some(
+        (m) => m === pref.model || m.startsWith(modelBase + ':') || m === modelBase
       );
-      
+
       if (isInstalled) {
         log.info(`[ModelSelector] Using available local model: ${pref.model}`);
         return pref;
       }
     }
   }
-  
+
   // Return first available model as last resort
   if (health.models.length > 0) {
     log.info(`[ModelSelector] Using first available model: ${health.models[0]}`);
     return { provider: 'ollama', model: health.models[0] };
   }
-  
+
   return null;
 }
 
@@ -301,8 +337,8 @@ async function getMirrorContext(task: string) {
  * per task and reused across all specialist calls.
  */
 async function buildMirrorEnhancedPrompt(
-  task: string, 
-  role: AgentRole, 
+  task: string,
+  role: AgentRole,
   basePrompt: string,
   options: {
     reflectionQuestionLimit?: number;
@@ -310,7 +346,8 @@ async function buildMirrorEnhancedPrompt(
     vibeCoderIntent?: VibeCoderIntent;
   } = {}
 ): Promise<string> {
-  let enhancedPrompt = injectBehaviorProfilePrompt(`You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
+  let enhancedPrompt = injectBehaviorProfilePrompt(
+    `You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
 
 Claude Opus is known for:
 - Deep, thorough analysis before coding
@@ -324,8 +361,11 @@ Claude Opus is known for:
 
 ---
 
-${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
-  
+${basePrompt}`,
+    options.assistantBehaviorProfile,
+    options.vibeCoderIntent
+  );
+
   try {
     const mirror = await getMirrorContext(task);
 
@@ -333,7 +373,9 @@ ${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
       enhancedPrompt += '\n\n## 🧠 LEARNED PATTERNS (Mirror these!)\n';
       enhancedPrompt += 'These patterns have worked well in the past. Apply them:\n';
       for (const pattern of mirror.patterns) {
-        const confidence = pattern.confidence ? ` (${(pattern.confidence * 100).toFixed(0)}% confident)` : '';
+        const confidence = pattern.confidence
+          ? ` (${(pattern.confidence * 100).toFixed(0)}% confident)`
+          : '';
         enhancedPrompt += `• ${pattern.type || 'pattern'}: ${pattern.description || 'N/A'}${confidence}\n`;
         if (pattern.examples && pattern.examples.length > 0) {
           const example = pattern.examples[0].substring(0, 200).replace(/\n/g, ' ');
@@ -341,26 +383,31 @@ ${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
         }
       }
     }
-    
+
     // Only inject full opus examples for the orchestrator (planning phase).
     // Specialists get a compact reference instead of the full examples.
     if (role === 'tool_orchestrator' && mirror.opusExamples.length > 0) {
       enhancedPrompt += '\n\n## 🎯 CRITICAL: ACT EXACTLY LIKE CLAUDE OPUS\n';
-      enhancedPrompt += 'You MUST mirror Claude Opus\'s behavior, thinking, and code quality.\n';
-      enhancedPrompt += 'These are REAL examples from Claude Opus. Study them carefully and REPLICATE this exact style:\n\n';
-      
+      enhancedPrompt += "You MUST mirror Claude Opus's behavior, thinking, and code quality.\n";
+      enhancedPrompt +=
+        'These are REAL examples from Claude Opus. Study them carefully and REPLICATE this exact style:\n\n';
+
       for (const example of mirror.opusExamples) {
         enhancedPrompt += `${example}\n\n`;
       }
-      
+
       enhancedPrompt += '\n## 🧬 OPUS BEHAVIOR PATTERNS (MANDATORY)\n';
-      enhancedPrompt += '1. Deep thinking before coding  2. Complete, working code  3. Proper error handling\n';
-      enhancedPrompt += '4. Clean, readable structure  5. Full project context awareness  6. Industry best practices\n';
-      enhancedPrompt += '\n**YOUR GOAL**: Generate code that is INDISTINGUISHABLE from Claude Opus output.\n';
+      enhancedPrompt +=
+        '1. Deep thinking before coding  2. Complete, working code  3. Proper error handling\n';
+      enhancedPrompt +=
+        '4. Clean, readable structure  5. Full project context awareness  6. Industry best practices\n';
+      enhancedPrompt +=
+        '\n**YOUR GOAL**: Generate code that is INDISTINGUISHABLE from Claude Opus output.\n';
     } else if (mirror.opusExamples.length > 0) {
-      enhancedPrompt += '\nProduce complete, production-ready code following Opus quality standards.\n';
+      enhancedPrompt +=
+        '\nProduce complete, production-ready code following Opus quality standards.\n';
     }
-    
+
     if (mirror.antiPatterns.length > 0) {
       enhancedPrompt += '\n\n## ⚠️ AVOID THESE MISTAKES\n';
       enhancedPrompt += 'These have caused failures before. DO NOT do these:\n';
@@ -368,7 +415,7 @@ ${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
         enhancedPrompt += `• DON'T: ${anti.description || 'Unknown mistake'}\n`;
       }
     }
-    
+
     // 🧠 MIRROR STEP 4: Add role-specific mirroring guidance
     enhancedPrompt += getRoleMirrorGuidance(role);
 
@@ -379,7 +426,10 @@ ${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
       if (specialistDefinition.reflectionFocus.length > 0) {
         const limitedQuestions = specialistDefinition.reflectionFocus.slice(
           0,
-          Math.max(1, options.reflectionQuestionLimit ?? specialistDefinition.reflectionFocus.length)
+          Math.max(
+            1,
+            options.reflectionQuestionLimit ?? specialistDefinition.reflectionFocus.length
+          )
         );
         enhancedPrompt += '\n\n## 🔁 DOMAIN REFLECTION LOOP\n';
         enhancedPrompt += `You are operating as a ${specialistDefinition.discipline} expert.\n`;
@@ -387,10 +437,11 @@ ${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
         for (const question of limitedQuestions) {
           enhancedPrompt += `- ${question}\n`;
         }
-        enhancedPrompt += 'If any answer reveals scope drift, weak evidence, or incomplete work, revise before responding.\n';
+        enhancedPrompt +=
+          'If any answer reveals scope drift, weak evidence, or incomplete work, revise before responding.\n';
       }
     }
-    
+
     // 🎯 FINAL OPUS REINFORCEMENT
     if (mirror.opusExamples.length > 0 && role === 'tool_orchestrator') {
       enhancedPrompt += '\n\n## 🔥 FINAL REMINDER: YOU ARE IN OPUS MODE\n';
@@ -401,12 +452,14 @@ ${basePrompt}`, options.assistantBehaviorProfile, options.vibeCoderIntent);
       enhancedPrompt += '\nIf the answer to ANY of these is "no", revise your approach.\n';
       enhancedPrompt += '**Your output should be INDISTINGUISHABLE from Claude Opus.**\n';
     }
-    
-    log.info(`[MirrorAgents] 🧠 Enhanced ${role} prompt with ${mirror.patterns.length} patterns, ${mirror.opusExamples.length} Opus examples, ${mirror.antiPatterns.length} anti-patterns`);
+
+    log.info(
+      `[MirrorAgents] 🧠 Enhanced ${role} prompt with ${mirror.patterns.length} patterns, ${mirror.opusExamples.length} Opus examples, ${mirror.antiPatterns.length} anti-patterns`
+    );
   } catch (error) {
     log.warn('[MirrorAgents] Could not enhance prompt with patterns:', error);
   }
-  
+
   return enhancedPrompt;
 }
 
@@ -520,25 +573,25 @@ This is the #1 cause of "unstyled page" bugs!`,
 - Mirror the smallest, safest fix that resolves the concrete failure
 - Touch only the files implicated by verification
 - Preserve working code and accepted scaffold structure
-- No feature creep, no rewrites, no unrelated cleanup`
+- No feature creep, no rewrites, no unrelated cleanup`,
   };
-  
+
   return guidance[role] || '';
 }
 
-export type AgentRole = 
-  | 'tool_orchestrator'  // Handles tool calls, parsing, execution flow
-  | 'javascript_specialist'  // JS/TS/React/Node code
-  | 'styling_ux_specialist'  // Styling, UX, and visual polish
-  | 'python_specialist'  // Python code
-  | 'tauri_specialist'  // Tauri v2 / Rust desktop apps
-  | 'pipeline_specialist'  // Build/deploy/CI/CD
-  | 'testing_specialist'  // Automated tests and browser checks
-  | 'security_specialist'  // Auth, trust boundaries, validation, and secrets
-  | 'performance_specialist'  // Runtime, bundle, and latency improvements
-  | 'data_contract_specialist'  // Schemas, DTOs, validation, and API contracts
-  | 'integration_analyst'  // Reviews, verifies, and ensures coherence
-  | 'repair_specialist';  // Applies narrow fixes after verification failures
+export type AgentRole =
+  | 'tool_orchestrator' // Handles tool calls, parsing, execution flow
+  | 'javascript_specialist' // JS/TS/React/Node code
+  | 'styling_ux_specialist' // Styling, UX, and visual polish
+  | 'python_specialist' // Python code
+  | 'tauri_specialist' // Tauri v2 / Rust desktop apps
+  | 'pipeline_specialist' // Build/deploy/CI/CD
+  | 'testing_specialist' // Automated tests and browser checks
+  | 'security_specialist' // Auth, trust boundaries, validation, and secrets
+  | 'performance_specialist' // Runtime, bundle, and latency improvements
+  | 'data_contract_specialist' // Schemas, DTOs, validation, and API contracts
+  | 'integration_analyst' // Reviews, verifies, and ensures coherence
+  | 'repair_specialist'; // Applies narrow fixes after verification failures
 
 function roleToSpecialistId(role: AgentRole): SpecialistId {
   if (
@@ -595,7 +648,7 @@ DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
 
 /**
  * Agent Specialization Configurations
- * 
+ *
  * ENHANCED: Now uses FAST LOCAL MODELS by default!
  * Cloud models are too slow and unreliable for interactive use.
  * Local 7B-14B models are plenty capable for code generation.
@@ -603,7 +656,7 @@ DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
 export const AGENT_CONFIGS: Record<AgentRole, AgentConfig> = {
   tool_orchestrator: {
     role: 'tool_orchestrator',
-    model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
+    model: 'qwen3-coder-next:cloud', // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.2, // Low temperature = more Opus-like deterministic thinking
     maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'words_to_code'),
@@ -693,12 +746,12 @@ This ONLY works with Vite/Webpack bundlers. If user opens index.html directly:
 ✅ Use <link rel="stylesheet"> in HTML instead
 ✅ If project REQUIRES bundler, README MUST say "Run npm run dev"
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   javascript_specialist: {
     role: 'javascript_specialist',
-    model: 'minimax-m2.7:cloud',  // Faster default for interactive code generation
+    model: 'minimax-m2.7:cloud', // Faster default for interactive code generation
     provider: 'ollama',
     temperature: 0.3, // Slightly higher for creativity, but still Opus-like
     maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
@@ -907,7 +960,7 @@ Then create: styles.css in root (NOT src/styles.css)
 If the project imports \`three\`, React, Vue, or any npm module in \`src/*.js\`:
 - Include \`vite.config.js\`, \`vite\` in devDependencies, and module entry in \`index.html\` using a **project-relative** URL: \`<script type="module" src="./src/main.tsx"></script>\` (or \`.js\` / \`.jsx\` as appropriate). Avoid root-absolute \`/src/...\` — it can break \`vite build\` on some systems (e.g. Windows paths with spaces).
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   styling_ux_specialist: {
@@ -931,12 +984,12 @@ ${TOOL_CALL_FORMAT}`
 - Do NOT edit gameplay/runtime logic in src/game/** (.ts/.tsx). If gameplay logic needs changes, leave it for javascript_specialist or repair_specialist.
 - Do NOT edit README.md from this role.
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   python_specialist: {
     role: 'python_specialist',
-    model: 'qwen3-coder-next:cloud',  // CLOUD MODEL - STRONG DEFAULT
+    model: 'qwen3-coder-next:cloud', // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.3,
     maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'specialist'),
@@ -949,12 +1002,12 @@ ${TOOL_CALL_FORMAT}`
 ✅ Docstrings for all public functions
 ✅ No TODOs or placeholders - complete code only
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   tauri_specialist: {
     role: 'tauri_specialist',
-    model: 'deepseek-v3.1:671b-cloud',  // CLOUD MODEL - BEST FOR COMPLEX TASKS
+    model: 'deepseek-v3.1:671b-cloud', // CLOUD MODEL - BEST FOR COMPLEX TASKS
     provider: 'ollama',
     temperature: 0.2,
     maxTokens: getRecommendedMaxTokens('deepseek-v3.1:671b-cloud', 'specialist'),
@@ -1053,12 +1106,12 @@ NEVER use .tsxx - always use .tsx for TypeScript React files!
 ✅ Comprehensive CSP policy
 ✅ Correct script src in index.html: ./src/main.tsx (NOT .tsxx; NOT root-absolute /src/...)
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   pipeline_specialist: {
     role: 'pipeline_specialist',
-    model: 'minimax-m2.7:cloud',  // Faster default for interactive config generation
+    model: 'minimax-m2.7:cloud', // Faster default for interactive config generation
     provider: 'ollama',
     temperature: 0.2,
     maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'pipeline'),
@@ -1105,7 +1158,7 @@ You may still run_command for npm install, npm run build, npm test, etc., to sur
 - Example: react-dom/client => dependency react-dom, zustand => dependency zustand.
 - NEVER leave package.json missing a package that src/** imports.
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   testing_specialist: {
@@ -1127,7 +1180,7 @@ ${TOOL_CALL_FORMAT}`
 - Do not broaden product scope while adding tests
 - If a bug can be proven with one focused test, do not add five
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   security_specialist: {
@@ -1148,7 +1201,7 @@ ${TOOL_CALL_FORMAT}`
 - Do not remove protections to make a test pass
 - If a security issue crosses files, touch only the minimum set needed to restore the boundary
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   performance_specialist: {
@@ -1169,7 +1222,7 @@ ${TOOL_CALL_FORMAT}`
 - Avoid premature micro-optimizations
 - If verification found a slow or flaky path, focus only on that path
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   data_contract_specialist: {
@@ -1190,12 +1243,12 @@ ${TOOL_CALL_FORMAT}`
 - Do not drift into unrelated UX or pipeline work
 - If a contract change affects multiple files, update the minimum full chain so types and runtime behavior agree
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   integration_analyst: {
     role: 'integration_analyst',
-    model: 'deepseek-v3.1:671b-cloud',  // CLOUD MODEL - SMART FOR ANALYSIS
+    model: 'deepseek-v3.1:671b-cloud', // CLOUD MODEL - SMART FOR ANALYSIS
     provider: 'ollama',
     temperature: 0.2,
     maxTokens: getRecommendedMaxTokens('deepseek-v3.1:671b-cloud', 'analysis'),
@@ -1277,7 +1330,7 @@ Check JavaScript files for CSS imports:
 
 Output a clear verification report. Only use read/search/run_command style tools when absolutely necessary.
 
-${TOOL_CALL_FORMAT}`
+${TOOL_CALL_FORMAT}`,
   },
 
   repair_specialist: {
@@ -1302,8 +1355,8 @@ ${TOOL_CALL_FORMAT}`
 - If verification reports TS7006 implicit-any errors, add explicit parameter types instead of weakening tsconfig
 - If verification reports TS2307 cannot find module, either remove the bad import or ensure the required dependency is declared in package.json
 
-${TOOL_CALL_FORMAT}`
-  }
+${TOOL_CALL_FORMAT}`,
+  },
 };
 
 /**
@@ -1324,7 +1377,7 @@ export function routeToSpecialists(
   roles.push('tool_orchestrator');
 
   // Detect language/project type
-  const isJavaScript = 
+  const isJavaScript =
     taskLower.includes('javascript') ||
     taskLower.includes('typescript') ||
     taskLower.includes('react') ||
@@ -1364,7 +1417,16 @@ export function routeToSpecialists(
     taskLower.includes('animation') ||
     context.language === 'javascript' ||
     context.language === 'typescript' ||
-    context.files?.some(f => f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.jsx') || f.endsWith('.tsx') || f.endsWith('.html') || f.endsWith('.vue') || f.endsWith('.svelte'));
+    context.files?.some(
+      (f) =>
+        f.endsWith('.js') ||
+        f.endsWith('.ts') ||
+        f.endsWith('.jsx') ||
+        f.endsWith('.tsx') ||
+        f.endsWith('.html') ||
+        f.endsWith('.vue') ||
+        f.endsWith('.svelte')
+    );
 
   const isPython =
     taskLower.includes('python') ||
@@ -1372,7 +1434,7 @@ export function routeToSpecialists(
     taskLower.includes('flask') ||
     taskLower.includes('django') ||
     context.language === 'python' ||
-    context.files?.some(f => f.endsWith('.py'));
+    context.files?.some((f) => f.endsWith('.py'));
 
   const needsPipeline =
     taskLower.includes('build') ||
@@ -1467,7 +1529,9 @@ export function routeToSpecialists(
   if (needsStylingUx && (!isGameHeavyTask || explicitStylingOnlyRequest)) {
     roles.push('styling_ux_specialist');
   } else if (needsStylingUx && isGameHeavyTask) {
-    log.info('[RouteToSpecialists] Deferring styling_ux_specialist for game-heavy implementation task');
+    log.info(
+      '[RouteToSpecialists] Deferring styling_ux_specialist for game-heavy implementation task'
+    );
   }
   if (isPython) {
     roles.push('python_specialist');
@@ -1494,7 +1558,7 @@ export function routeToSpecialists(
   }
 
   // Smart fallback: If no specialists detected but task looks like project creation, add javascript_specialist
-  const isCreationTask = 
+  const isCreationTask =
     taskLower.includes('create') ||
     taskLower.includes('build') ||
     taskLower.includes('make') ||
@@ -1506,7 +1570,9 @@ export function routeToSpecialists(
     taskLower.includes('new');
 
   if (roles.length === 1 && roles[0] === 'tool_orchestrator' && isCreationTask) {
-    log.info('[RouteToSpecialists] No specialist detected for creation task, defaulting to javascript_specialist');
+    log.info(
+      '[RouteToSpecialists] No specialist detected for creation task, defaulting to javascript_specialist'
+    );
     roles.push('javascript_specialist');
   }
 
@@ -1515,7 +1581,7 @@ export function routeToSpecialists(
 
 /**
  * Execute a task using specialized agents
- * 
+ *
  * This is a simplified version - in production, this would integrate
  * with the actual tool execution system from agent-loop.ts
  */
@@ -1530,7 +1596,10 @@ function extractRequirements(planContent: string): string[] {
   if (!raw) return [];
 
   const stripListPrefix = (s: string): string =>
-    s.replace(/^[-*•·▪]\s+/, '').replace(/^\d+[\).\s]+\s*/, '').trim();
+    s
+      .replace(/^[-*•·▪]\s+/, '')
+      .replace(/^\d+[\).\s]+\s*/, '')
+      .trim();
 
   const requirements: string[] = [];
   const lines = raw.split('\n');
@@ -1567,7 +1636,9 @@ function extractRequirements(planContent: string): string[] {
   return requirements;
 }
 
-function normalizeToolCallShape(toolCall: any): { name: string; arguments: Record<string, any> } | null {
+function normalizeToolCallShape(
+  toolCall: any
+): { name: string; arguments: Record<string, any> } | null {
   if (!toolCall || typeof toolCall !== 'object') {
     return null;
   }
@@ -1600,7 +1671,10 @@ function collectJsonCandidates(content: string): string[] {
   let codeBlockMatch: RegExpExecArray | null;
   while ((codeBlockMatch = codeBlockPattern.exec(content)) !== null) {
     const block = codeBlockMatch[1].trim();
-    if ((block.startsWith('{') && block.endsWith('}')) || (block.startsWith('[') && block.endsWith(']'))) {
+    if (
+      (block.startsWith('{') && block.endsWith('}')) ||
+      (block.startsWith('[') && block.endsWith(']'))
+    ) {
       candidates.add(block);
     }
   }
@@ -1711,7 +1785,9 @@ function parseToolCalls(content: string): any[] {
     }
   }
 
-  log.info(`[parseToolCalls] Extracted ${toolCalls.length} tool calls from response (${parseFailures} JSON candidate parse failures)`);
+  log.info(
+    `[parseToolCalls] Extracted ${toolCalls.length} tool calls from response (${parseFailures} JSON candidate parse failures)`
+  );
   return toolCalls;
 }
 
@@ -1721,7 +1797,13 @@ function parseToolCalls(content: string): any[] {
 export interface SpecialistExecutionCallbacks {
   shouldCancel?: () => boolean;
   onToolStart?: (event: { type: string; title: string; specialist?: string }) => void;
-  onToolComplete?: (event: { type: string; title: string; success: boolean; specialist?: string; error?: string }) => void;
+  onToolComplete?: (event: {
+    type: string;
+    title: string;
+    success: boolean;
+    specialist?: string;
+    error?: string;
+  }) => void;
   onFileChange?: (change: AgentPendingFileChange) => void;
   onCommandOutput?: (event: AgentCommandOutputEvent) => void;
 }
@@ -1730,7 +1812,10 @@ function resolveBlackboardSpecialistId(role: AgentRole): SpecialistId {
   return roleToSpecialistId(role);
 }
 
-function getClaimedFilesForRole(blackboard: SpecialistBlackboard | undefined, role: AgentRole): string[] {
+function getClaimedFilesForRole(
+  blackboard: SpecialistBlackboard | undefined,
+  role: AgentRole
+): string[] {
   if (!blackboard) {
     return [];
   }
@@ -1770,7 +1855,9 @@ function markBlackboardOwner(
   const specialistId = resolveBlackboardSpecialistId(role);
   blackboard.currentOwner = specialistId;
   blackboard.status = status;
-  const activeStep = blackboard.steps.find((step) => step.specialist === specialistId && step.status !== 'completed');
+  const activeStep = blackboard.steps.find(
+    (step) => step.specialist === specialistId && step.status !== 'completed'
+  );
   if (activeStep) {
     blackboard.activeStepId = activeStep.id;
     if (activeStep.status === 'pending') {
@@ -1789,7 +1876,9 @@ function completeBlackboardStep(
   }
 
   const specialistId = resolveBlackboardSpecialistId(role);
-  const activeStep = blackboard.steps.find((step) => step.specialist === specialistId && step.status === 'in_progress');
+  const activeStep = blackboard.steps.find(
+    (step) => step.specialist === specialistId && step.status === 'in_progress'
+  );
   if (activeStep) {
     activeStep.status = success ? 'completed' : 'failed';
   }
@@ -1826,7 +1915,9 @@ async function executeScaffoldProjectTool(
 
   if (scaffolded.createdFiles.length > 0) {
     populateFileTracker(scaffolded.createdFiles);
-    log.info(`[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffold tool file(s)`);
+    log.info(
+      `[MirrorAgents] 🛡️ Seeded file tracker with ${scaffolded.createdFiles.length} scaffold tool file(s)`
+    );
   }
 
   return {
@@ -1866,18 +1957,20 @@ async function executeTool(
         const originalFileName = pathParts[pathParts.length - 1];
         const sanitizedFileName = sanitizeFileName(originalFileName);
         if (sanitizedFileName !== originalFileName) {
-          log.info(`[ToolExecution] Sanitized filename: "${originalFileName}" -> "${sanitizedFileName}"`);
+          log.info(
+            `[ToolExecution] Sanitized filename: "${originalFileName}" -> "${sanitizedFileName}"`
+          );
           pathParts[pathParts.length - 1] = sanitizedFileName;
           sanitizedPath = pathParts.join('/');
         }
       }
-      
+
       const filePath = path.join(workspacePath, sanitizedPath);
       const dir = path.dirname(filePath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      
+
       // 🛡️ VALIDATE PACKAGE.JSON for cross-platform issues
       if (sanitizedPath.endsWith('package.json')) {
         const pkgValidation = validatePackageJson(args.content || '');
@@ -1886,27 +1979,41 @@ async function executeTool(
         }
         if (!pkgValidation.valid) {
           log.error(`[ToolExecution] ❌ package.json validation failed: ${pkgValidation.error}`);
-          return { action: 'write_file', path: sanitizedPath, error: pkgValidation.error, success: false };
+          return {
+            action: 'write_file',
+            path: sanitizedPath,
+            error: pkgValidation.error,
+            success: false,
+          };
         }
       }
-      
+
       // 🛡️ CHECK INDEX.HTML for CSS/JS links (warning only - full validation at end)
       if (sanitizedPath.endsWith('index.html') || sanitizedPath === 'index.html') {
         // Quick check if there's a stylesheet link at all
         const hasStylesheetLink = (args.content || '').toLowerCase().includes('rel="stylesheet"');
         if (!hasStylesheetLink) {
-          log.warn(`[ToolExecution] ⚠️ index.html has no <link rel="stylesheet"> tag - page may be unstyled!`);
+          log.warn(
+            `[ToolExecution] ⚠️ index.html has no <link rel="stylesheet"> tag - page may be unstyled!`
+          );
         }
       }
-      
+
       // 🛡️ CHECK JS FILES for bundler-only syntax (CSS imports)
-      if (sanitizedPath.endsWith('.js') || sanitizedPath.endsWith('.ts') || sanitizedPath.endsWith('.jsx') || sanitizedPath.endsWith('.tsx')) {
-        const jsValidation = validateJavaScriptFile(args.content || '', sanitizedPath, { workspacePath });
+      if (
+        sanitizedPath.endsWith('.js') ||
+        sanitizedPath.endsWith('.ts') ||
+        sanitizedPath.endsWith('.jsx') ||
+        sanitizedPath.endsWith('.tsx')
+      ) {
+        const jsValidation = validateJavaScriptFile(args.content || '', sanitizedPath, {
+          workspacePath,
+        });
         if (jsValidation.warning) {
           log.warn(`[ToolExecution] ⚠️ JavaScript validation warning:\n${jsValidation.warning}`);
         }
       }
-      
+
       const existedBefore = fs.existsSync(filePath);
       const oldContent = existedBefore ? fs.readFileSync(filePath, 'utf-8') : null;
       fs.writeFileSync(filePath, args.content || '', 'utf-8');
@@ -1916,7 +2023,7 @@ async function executeTool(
         oldContent: oldContent ?? '',
         newContent: args.content || '',
         action: existedBefore ? 'modified' : 'created',
-        status: 'pending'
+        status: 'pending',
       });
       return { action: 'write_file', path: sanitizedPath, success: true };
 
@@ -1944,13 +2051,15 @@ async function executeTool(
         try {
           const { getNodeEnv } = require('../core/tool-path-finder');
           spawnEnv = getNodeEnv();
-        } catch { /* fallback to process.env */ }
-        
+        } catch {
+          /* fallback to process.env */
+        }
+
         const child = spawn(command, {
           cwd: workDir,
           shell: true,
           stdio: ['pipe', 'pipe', 'pipe'],
-          env: spawnEnv
+          env: spawnEnv,
         });
 
         let stdout = '';
@@ -1979,7 +2088,7 @@ async function executeTool(
             command,
             stream: 'stdout',
             chunk,
-            timestamp: Date.now()
+            timestamp: Date.now(),
           });
         });
         child.stderr.on('data', (data) => {
@@ -1989,7 +2098,7 @@ async function executeTool(
             command,
             stream: 'stderr',
             chunk,
-            timestamp: Date.now()
+            timestamp: Date.now(),
           });
         });
 
@@ -2023,7 +2132,7 @@ async function executeTool(
             exit_code: code,
             stdout,
             stderr,
-            success: code === 0
+            success: code === 0,
           });
         });
 
@@ -2043,7 +2152,7 @@ async function executeTool(
         includePattern: include_pattern,
         excludePattern: exclude_pattern,
         maxResults: max_results,
-        timeoutMs: 25_000
+        timeoutMs: 25_000,
       });
       return {
         action: 'search_codebase',
@@ -2051,17 +2160,23 @@ async function executeTool(
         matches: rg.matches,
         total: rg.matches.length,
         message: rg.message,
-        usedBundledRg: rg.usedBundledRg
+        usedBundledRg: rg.usedBundledRg,
       };
     }
 
     case 'find_symbols': {
       const idx = getWorkspaceSymbolIndexForAgents();
       if (!idx) {
-        return { action: 'find_symbols', success: false, error: 'Symbol index not ready', symbols: [] };
+        return {
+          action: 'find_symbols',
+          success: false,
+          error: 'Symbol index not ready',
+          symbols: [],
+        };
       }
       await idx.whenReady();
-      const max = typeof args.max_results === 'number' && args.max_results > 0 ? args.max_results : 40;
+      const max =
+        typeof args.max_results === 'number' && args.max_results > 0 ? args.max_results : 40;
       const symbols = idx.search((args.query as string) || '', max);
       return { action: 'find_symbols', success: true, symbols };
     }
@@ -2090,18 +2205,19 @@ function buildProjectContext(context: any): string {
     contextStr += `These files already exist. Their contents are shown below:\n\n`;
 
     // Read and include contents of key files (package.json, main entry points, etc.)
-    const keyFiles = context.files.filter((f: string) =>
-      f.includes('package.json') ||
-      f.includes('index.html') ||
-      f.includes('src/main.tsx') ||
-      f.includes('src/App.tsx') ||
-      f.includes('Game.ts') ||
-      f.includes('World.ts') ||
-      f.includes('Controls.ts') ||
-      f.includes('InputManager.ts') ||
-      f.includes('Entity.ts') ||
-      f.includes('Player.ts') ||
-      f.includes('Enemy.ts')
+    const keyFiles = context.files.filter(
+      (f: string) =>
+        f.includes('package.json') ||
+        f.includes('index.html') ||
+        f.includes('src/main.tsx') ||
+        f.includes('src/App.tsx') ||
+        f.includes('Game.ts') ||
+        f.includes('World.ts') ||
+        f.includes('Controls.ts') ||
+        f.includes('InputManager.ts') ||
+        f.includes('Entity.ts') ||
+        f.includes('Player.ts') ||
+        f.includes('Enemy.ts')
     );
 
     if (keyFiles.length > 0) {
@@ -2111,7 +2227,8 @@ function buildProjectContext(context: any): string {
           const fullPath = path.join(context.workspacePath, file);
           if (fs.existsSync(fullPath)) {
             const content = fs.readFileSync(fullPath, 'utf-8');
-            const preview = content.length > 1000 ? content.substring(0, 1000) + '\n... (truncated)' : content;
+            const preview =
+              content.length > 1000 ? content.substring(0, 1000) + '\n... (truncated)' : content;
             contextStr += `**${file}:**\n\`\`\`\n${preview}\n\`\`\`\n\n`;
           }
         } catch (err) {
@@ -2159,16 +2276,21 @@ function buildScaffoldContractContext(context: any): string {
     }
   }
   if (hasNestedWorld && !hasFlatWorld) {
-    contextStr += '- World implementation already lives at `src/game/world/World.ts`; do not create `src/game/World.ts`.\n';
+    contextStr +=
+      '- World implementation already lives at `src/game/world/World.ts`; do not create `src/game/World.ts`.\n';
   }
   if (hasControls) {
-    contextStr += '- `src/game/utils/Controls.ts` is an existing call site. Preserve the Player API it uses, or update both files together in one pass.\n';
+    contextStr +=
+      '- `src/game/utils/Controls.ts` is an existing call site. Preserve the Player API it uses, or update both files together in one pass.\n';
   }
   if (hasInputManager && !hasControls) {
-    contextStr += '- `src/game/InputManager.ts` already exists; keep its imports and Player method calls consistent with Player.ts.\n';
+    contextStr +=
+      '- `src/game/InputManager.ts` already exists; keep its imports and Player method calls consistent with Player.ts.\n';
   }
-  contextStr += '- If a subclass overrides a base-class method, keep a TypeScript-compatible signature.\n';
-  contextStr += '- Do not change one file’s API without updating every importing/calling file in the same edit set.\n\n';
+  contextStr +=
+    '- If a subclass overrides a base-class method, keep a TypeScript-compatible signature.\n';
+  contextStr +=
+    '- Do not change one file’s API without updating every importing/calling file in the same edit set.\n\n';
 
   return contextStr;
 }
@@ -2223,7 +2345,11 @@ export async function executeWithSpecialists(
     phaseStarts.set(phase, Date.now());
     telemetry.track('generation_phase', { phase, status: 'start', runtimeBudget, ...data });
   };
-  const endPhase = (phase: string, status: 'success' | 'failure', data: Record<string, any> = {}) => {
+  const endPhase = (
+    phase: string,
+    status: 'success' | 'failure',
+    data: Record<string, any> = {}
+  ) => {
     const startedAt = phaseStarts.get(phase) || Date.now();
     telemetry.track('generation_phase', {
       phase,
@@ -2246,7 +2372,8 @@ export async function executeWithSpecialists(
       ? context.runtimeBudget
       : 'standard';
   const reflectionQuestionLimit =
-    typeof context.reflectionQuestionLimit === 'number' && Number.isFinite(context.reflectionQuestionLimit)
+    typeof context.reflectionQuestionLimit === 'number' &&
+    Number.isFinite(context.reflectionQuestionLimit)
       ? Math.max(1, Math.floor(context.reflectionQuestionLimit))
       : runtimeBudget === 'instant'
         ? 1
@@ -2280,7 +2407,11 @@ export async function executeWithSpecialists(
       autonomyUsage.commandCalls += 1;
     }
   };
-  const captureAutonomyWriteTargets = (toolName: string, toolArgs: Record<string, any>, result: any): void => {
+  const captureAutonomyWriteTargets = (
+    toolName: string,
+    toolArgs: Record<string, any>,
+    result: any
+  ): void => {
     if (toolName === 'write_file' || toolName === 'create_file') {
       const trackedPath = normalizeTrackedPath(result?.path ?? toolArgs.path);
       if (trackedPath) {
@@ -2298,7 +2429,10 @@ export async function executeWithSpecialists(
       }
     }
   };
-  const getAutonomyBlockReason = (toolName: string, toolArgs: Record<string, any>): string | null => {
+  const getAutonomyBlockReason = (
+    toolName: string,
+    toolArgs: Record<string, any>
+  ): string | null => {
     const executionPolicyBlock = getVibeCoderToolPolicyError(executionPolicy, toolName, toolArgs);
     if (executionPolicyBlock) {
       return executionPolicyBlock;
@@ -2328,7 +2462,10 @@ export async function executeWithSpecialists(
       }
     }
 
-    if (toolName === 'scaffold_project' && autonomyUsage.writtenFiles.size >= autonomyPolicy.maxWriteFiles) {
+    if (
+      toolName === 'scaffold_project' &&
+      autonomyUsage.writtenFiles.size >= autonomyPolicy.maxWriteFiles
+    ) {
       return `Autonomy level ${autonomyPolicy.level} (${autonomyPolicy.label}) blocked scaffold_project after reaching the file-write limit (${autonomyPolicy.maxWriteFiles}).`;
     }
 
@@ -2348,14 +2485,20 @@ export async function executeWithSpecialists(
     }
     return `${withReflectionPolicy}\n\n## RUNTIME BUDGET\nUse the standard budget. Stay balanced: complete the task with bounded reflection and no unnecessary detours.`;
   };
-  const budgetedTokens = (model: string | undefined, mode: 'analysis' | 'words_to_code' | 'specialist' | 'pipeline') =>
-    getBudgetAdjustedMaxTokens(model, mode, runtimeBudget);
+  const budgetedTokens = (
+    model: string | undefined,
+    mode: 'analysis' | 'words_to_code' | 'specialist' | 'pipeline'
+  ) => getBudgetAdjustedMaxTokens(model, mode, runtimeBudget);
   const orderBudgetChain = <T extends { tier?: string }>(entries: T[]): T[] => {
     if (runtimeBudget === 'instant') {
-      return [...entries].sort((left, right) => Number(right.tier === 'fast') - Number(left.tier === 'fast'));
+      return [...entries].sort(
+        (left, right) => Number(right.tier === 'fast') - Number(left.tier === 'fast')
+      );
     }
     if (runtimeBudget === 'deep') {
-      return [...entries].sort((left, right) => Number(right.tier === 'deep') - Number(left.tier === 'deep'));
+      return [...entries].sort(
+        (left, right) => Number(right.tier === 'deep') - Number(left.tier === 'deep')
+      );
     }
     return entries;
   };
@@ -2371,7 +2514,7 @@ export async function executeWithSpecialists(
   // - FIX/REVIEW/ENHANCE: Preserve existing files to prevent accidental overwrites
   resetFileTracker(taskMode);
   log.info(`[MirrorAgents] 🛡️ File tracker mode: ${taskMode.toUpperCase()}`);
-  
+
   // In FIX/ENHANCE mode, populate tracker with existing project files
   if ((taskMode === 'fix' || taskMode === 'enhance') && context.workspacePath) {
     try {
@@ -2389,7 +2532,9 @@ export async function executeWithSpecialists(
   if (health.healthy) {
     log.info(`[MirrorAgents] ✅ Ollama healthy with ${health.models.length} models available`);
   } else {
-    log.warn(`[MirrorAgents] ⚠️ Ollama not reachable (${health.error}). Will use cloud providers if available.`);
+    log.warn(
+      `[MirrorAgents] ⚠️ Ollama not reachable (${health.error}). Will use cloud providers if available.`
+    );
   }
 
   // Shared context for agent coordination
@@ -2406,7 +2551,7 @@ export async function executeWithSpecialists(
     filesCreated: new Map(),
     decisions: new Map(),
     requirements: [],
-    implementedFeatures: []
+    implementedFeatures: [],
   };
 
   const requestedModel =
@@ -2421,20 +2566,40 @@ export async function executeWithSpecialists(
   // Ollama cloud models listed first so the agent works out of the box
   // without requiring paid API credits.
   const defaultModelChain = orderBudgetChain([
-    { name: 'Qwen3-Coder-Next Cloud', provider: 'ollama', model: 'qwen3-coder-next:cloud', tier: 'deep' },
+    {
+      name: 'Qwen3-Coder-Next Cloud',
+      provider: 'ollama',
+      model: 'qwen3-coder-next:cloud',
+      tier: 'deep',
+    },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
     { name: 'GLM 5.1 Cloud', provider: 'ollama', model: 'glm-5.1:cloud', tier: 'deep' },
     { name: 'Gemma 4 31B Cloud', provider: 'ollama', model: 'gemma4:31b-cloud', tier: 'deep' },
-    { name: 'Claude Sonnet', provider: 'anthropic', model: 'claude-sonnet-4-20250514', tier: 'deep' },
+    {
+      name: 'Claude Sonnet',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+      tier: 'deep',
+    },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
-    { name: 'Claude Haiku', provider: 'anthropic', model: 'claude-3-5-haiku-20241022', tier: 'fast' },
+    {
+      name: 'Claude Haiku',
+      provider: 'anthropic',
+      model: 'claude-3-5-haiku-20241022',
+      tier: 'fast',
+    },
   ]);
 
   const planningModels = [
-    ...(requestedModel && requestedProvider ? [{ provider: requestedProvider, model: requestedModel }] : []),
-    ...defaultModelChain.map(m => ({ provider: m.provider, model: m.model }))
-  ].filter((entry, index, array) =>
-    array.findIndex((candidate) => candidate.provider === entry.provider && candidate.model === entry.model) === index
+    ...(requestedModel && requestedProvider
+      ? [{ provider: requestedProvider, model: requestedModel }]
+      : []),
+    ...defaultModelChain.map((m) => ({ provider: m.provider, model: m.model })),
+  ].filter(
+    (entry, index, array) =>
+      array.findIndex(
+        (candidate) => candidate.provider === entry.provider && candidate.model === entry.model
+      ) === index
   );
   const planningModel = await getBestAvailableModel(planningModels);
   assertNotCancelled();
@@ -2443,9 +2608,13 @@ export async function executeWithSpecialists(
     // Instead of failing, provide helpful guidance
     const health = await checkOllamaHealth();
     if (!health.healthy) {
-      throw new Error('❌ Ollama is not running!\n\nStart Ollama with:\n  ollama serve\n\nThen pull a model:\n  ollama pull deepseek-coder:6.7b');
+      throw new Error(
+        '❌ Ollama is not running!\n\nStart Ollama with:\n  ollama serve\n\nThen pull a model:\n  ollama pull deepseek-coder:6.7b'
+      );
     } else {
-      throw new Error(`❌ No suitable models found!\n\nAgentPrime prioritizes CLOUD models for power and reliability.\nYour cloud models should work without local installation.\n\nAvailable models: ${health.models.join(', ') || 'none'}\n\nIf you see connection errors, check your Ollama Cloud API keys in Settings.`);
+      throw new Error(
+        `❌ No suitable models found!\n\nAgentPrime prioritizes CLOUD models for power and reliability.\nYour cloud models should work without local installation.\n\nAvailable models: ${health.models.join(', ') || 'none'}\n\nIf you see connection errors, check your Ollama Cloud API keys in Settings.`
+      );
     }
   }
 
@@ -2464,20 +2633,25 @@ export async function executeWithSpecialists(
   } else {
     log.info(`[MirrorAgents] 📋 Step 0: Planning with ${planningModel.model}`);
     markBlackboardOwner(blackboard, 'tool_orchestrator', 'planning');
-    beginPhase('planning', { requestedProvider: planningModel.provider, requestedModel: planningModel.model });
+    beginPhase('planning', {
+      requestedProvider: planningModel.provider,
+      requestedModel: planningModel.model,
+    });
     aiRouter.setActiveProvider(planningModel.provider, planningModel.model);
-    
+
     const planningOrchestrator = AGENT_CONFIGS.tool_orchestrator;
-    const planningPrompt = applyBudgetPrompt(await buildMirrorEnhancedPrompt(
-      task,
-      'tool_orchestrator',
-      planningOrchestrator.systemPrompt,
-      {
-        reflectionQuestionLimit,
-        assistantBehaviorProfile: context.assistantBehaviorProfile,
-        vibeCoderIntent: context.vibeCoderIntent,
-      }
-    ));
+    const planningPrompt = applyBudgetPrompt(
+      await buildMirrorEnhancedPrompt(
+        task,
+        'tool_orchestrator',
+        planningOrchestrator.systemPrompt,
+        {
+          reflectionQuestionLimit,
+          assistantBehaviorProfile: context.assistantBehaviorProfile,
+          vibeCoderIntent: context.vibeCoderIntent,
+        }
+      )
+    );
     const planningRequest =
       planningMode === 'compact'
         ? `Task: ${task}
@@ -2502,15 +2676,19 @@ Output as a structured list. Be specific and comprehensive.`;
     let planningResponse;
     try {
       planningResponse = await withAITimeoutAndRetry(
-        () => aiRouter.chat([
-          { role: 'system', content: planningPrompt },
-          { role: 'user', content: planningRequest }
-        ], {
-          model: planningModel.model,
-          temperature: 0.3,
-          maxTokens: budgetedTokens(planningModel.model, 'analysis'),
-          disableRouterFallback: true
-        }),
+        () =>
+          aiRouter.chat(
+            [
+              { role: 'system', content: planningPrompt },
+              { role: 'user', content: planningRequest },
+            ],
+            {
+              model: planningModel.model,
+              temperature: 0.3,
+              maxTokens: budgetedTokens(planningModel.model, 'analysis'),
+              disableRouterFallback: true,
+            }
+          ),
         'analysis',
         planningModel.model,
         1,
@@ -2531,7 +2709,9 @@ Output as a structured list. Be specific and comprehensive.`;
         summary: `Planning extracted ${requirements.length} requirement(s).`,
         payload: { requirements, planContent },
       });
-      log.info(`[MirrorAgents] 📋 Planning complete: ${requirements.length} requirements identified`);
+      log.info(
+        `[MirrorAgents] 📋 Planning complete: ${requirements.length} requirements identified`
+      );
       endPhase('planning', 'success', {
         requestedProvider: planningModel.provider,
         requestedModel: planningModel.model,
@@ -2569,9 +2749,14 @@ Output as a structured list. Be specific and comprehensive.`;
       type: 'scaffold_result',
       author: 'template_scaffold_specialist',
       summary: `Deterministic scaffold applied with ${bootstrappedTools.length} file(s).`,
-      payload: { templateId: scaffoldTemplateId, files: bootstrappedTools.map((tool) => tool.result?.path).filter(Boolean) },
+      payload: {
+        templateId: scaffoldTemplateId,
+        files: bootstrappedTools.map((tool) => tool.result?.path).filter(Boolean),
+      },
     });
-    log.info(`[MirrorAgents] 🧱 Bootstrapped ${bootstrappedTools.length} template file(s) before specialist generation`);
+    log.info(
+      `[MirrorAgents] 🧱 Bootstrapped ${bootstrappedTools.length} template file(s) before specialist generation`
+    );
     executedTools.push(...bootstrappedTools);
     for (const bootstrapped of bootstrappedTools) {
       if (bootstrapped.result.action === 'write_file' && bootstrapped.result.path) {
@@ -2593,14 +2778,16 @@ Output as a structured list. Be specific and comprehensive.`;
   }
 
   if (scaffoldApplied && deterministicScaffoldOnly) {
-    log.info('[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists');
+    log.info(
+      '[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists'
+    );
     return {
       results,
       finalAnalysis,
       executedTools,
       scaffoldApplied,
       scaffoldTemplateId,
-      skippedGenerativePass: true
+      skippedGenerativePass: true,
     };
   }
 
@@ -2609,57 +2796,63 @@ Output as a structured list. Be specific and comprehensive.`;
 
   // Step 1: Orchestrator plans and executes initial tools
   // ENHANCED: Use smart fallback with fast local models
-  const orchestrator = AGENT_CONFIGS.tool_orchestrator;
-  const orchestratorProvider = requestedProvider || orchestrator.provider;
-  const orchestratorModel = requestedModel || orchestrator.model;
+  const shouldRunOrchestrator = roles.includes('tool_orchestrator');
+  if (!shouldRunOrchestrator) {
+    log.info(
+      '[MirrorAgents] ⏭️ Skipping tool_orchestrator execution for this targeted pass (roles excluded it)'
+    );
+  } else {
+    const orchestrator = AGENT_CONFIGS.tool_orchestrator;
+    const orchestratorProvider = requestedProvider || orchestrator.provider;
+    const orchestratorModel = requestedModel || orchestrator.model;
 
-  // 🧠 MIRROR: Build pattern-enhanced prompt for orchestrator
-  const enhancedOrchestratorPrompt = appendScaffoldCustomizationInstructions(
-    applyBudgetPrompt(
-      await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt, {
-        reflectionQuestionLimit,
-        assistantBehaviorProfile: context.assistantBehaviorProfile,
-        vibeCoderIntent: context.vibeCoderIntent,
-      })
-    ),
-    scaffoldApplied,
-    scaffoldTemplateId
-  );
+    // 🧠 MIRROR: Build pattern-enhanced prompt for orchestrator
+    const enhancedOrchestratorPrompt = appendScaffoldCustomizationInstructions(
+      applyBudgetPrompt(
+        await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt, {
+          reflectionQuestionLimit,
+          assistantBehaviorProfile: context.assistantBehaviorProfile,
+          vibeCoderIntent: context.vibeCoderIntent,
+        })
+      ),
+      scaffoldApplied,
+      scaffoldTemplateId
+    );
 
-  const orchestratorUserContent = scaffoldApplied
-    ? `${task}\n\nThe workspace already has a working scaffold. Output JSON tool calls (e.g. write_file) to implement the request above: replace generic template gameplay and align visuals/mechanics with the user's words. Do not re-scaffold the project.\n${buildProjectContext(context)}${buildScaffoldContractContext(context)}`
-    : `${task}\n\nCreate ALL necessary files for this project. Output each file as a JSON tool call on its own line.`;
+    const orchestratorUserContent = scaffoldApplied
+      ? `${task}\n\nThe workspace already has a working scaffold. Output JSON tool calls (e.g. write_file) to implement the request above: replace generic template gameplay and align visuals/mechanics with the user's words. Do not re-scaffold the project.\n${buildProjectContext(context)}${buildScaffoldContractContext(context)}`
+      : `${task}\n\nCreate ALL necessary files for this project. Output each file as a JSON tool call on its own line.`;
 
-  // Use SMART FALLBACK - tries fast models first, falls back gracefully
-  log.info('[MirrorAgents] 🚀 Starting orchestrator with smart fallback...');
-  markBlackboardOwner(blackboard, 'tool_orchestrator', 'executing');
-  beginPhase('orchestrator', {
-    requestedProvider: orchestratorProvider,
-    requestedModel: orchestratorModel,
-  });
-  
-  let orchestratorResponse;
-  let usedModel = orchestratorModel;
-  let usedProvider = orchestratorProvider;
-  
-  try {
-    const result = await withSmartFallback(
+    // Use SMART FALLBACK - tries fast models first, falls back gracefully
+    log.info('[MirrorAgents] 🚀 Starting orchestrator with smart fallback...');
+    markBlackboardOwner(blackboard, 'tool_orchestrator', 'executing');
+    beginPhase('orchestrator', {
+      requestedProvider: orchestratorProvider,
+      requestedModel: orchestratorModel,
+    });
+
+    let orchestratorResponse;
+    let usedModel = orchestratorModel;
+    let usedProvider = orchestratorProvider;
+
+    try {
+      const result = await withSmartFallback(
       async (provider, model) => {
         aiRouter.setActiveProvider(provider, model);
         usedModel = model;
         const response = await aiRouter.chat(
           [
             { role: 'system', content: enhancedOrchestratorPrompt },
-            { role: 'user', content: orchestratorUserContent }
+            { role: 'user', content: orchestratorUserContent },
           ],
           {
             model: model,
             temperature: orchestrator.temperature,
             maxTokens: budgetedTokens(model, 'words_to_code'),
-            disableRouterFallback: true
+            disableRouterFallback: true,
           }
         );
-        
+
         // Throw on failure so withSmartFallback can try next model
         if (!response.success) {
           throw new Error(response.error || 'Model returned unsuccessful response');
@@ -2671,11 +2864,13 @@ Output as a structured list. Be specific and comprehensive.`;
       scaffoldApplied ? 'project' : 'complex',
       runtimeBudget
     );
-    
+
     orchestratorResponse = result.result;
     usedProvider = result.finalProvider || usedProvider;
     if (result.usedFallback) {
-      log.info(`[MirrorAgents] ⚡ Used fallback model: ${result.finalProvider}/${result.finalModel} (${result.attempts} attempts)`);
+      log.info(
+        `[MirrorAgents] ⚡ Used fallback model: ${result.finalProvider}/${result.finalModel} (${result.attempts} attempts)`
+      );
       usedModel = result.finalModel || usedModel;
     }
     endPhase('orchestrator', 'success', {
@@ -2686,41 +2881,41 @@ Output as a structured list. Be specific and comprehensive.`;
       attempts: result.attempts,
       usedFallback: result.usedFallback,
     });
-  } catch (error: any) {
-    mistakes.push(`Orchestrator complete failure: ${error.message}`);
-    await storeTaskLearning(task, false, [], mistakes);
-    endPhase('orchestrator', 'failure', {
-      requestedProvider: orchestratorProvider,
-      requestedModel: orchestratorModel,
-      error: error.message,
-    });
+    } catch (error: any) {
+      mistakes.push(`Orchestrator complete failure: ${error.message}`);
+      await storeTaskLearning(task, false, [], mistakes);
+      endPhase('orchestrator', 'failure', {
+        requestedProvider: orchestratorProvider,
+        requestedModel: orchestratorModel,
+        error: error.message,
+      });
 
-    // Check what models are actually available for better error message
-    const health = await checkOllamaHealth();
-    let errorMessage = `❌ All models failed! Error: ${error.message}\n\n`;
+      // Check what models are actually available for better error message
+      const health = await checkOllamaHealth();
+      let errorMessage = `❌ All models failed! Error: ${error.message}\n\n`;
 
-    if (!health.healthy) {
-      errorMessage += `Ollama is not running!\n\nStart Ollama with:\n  ollama serve\n\nThen pull a model:\n  ollama pull deepseek-coder:6.7b`;
-    } else {
-      errorMessage += `Make sure Ollama has compatible models installed:\n\nAvailable: ${health.models.join(', ') || 'none'}\n\nRecommended models:\n  ollama pull deepseek-coder:6.7b  (fast & reliable)\n  ollama pull llama3.2:8b          (good balance)\n  ollama pull qwen2.5:7b            (smaller qwen)`;
+      if (!health.healthy) {
+        errorMessage += `Ollama is not running!\n\nStart Ollama with:\n  ollama serve\n\nThen pull a model:\n  ollama pull deepseek-coder:6.7b`;
+      } else {
+        errorMessage += `Make sure Ollama has compatible models installed:\n\nAvailable: ${health.models.join(', ') || 'none'}\n\nRecommended models:\n  ollama pull deepseek-coder:6.7b  (fast & reliable)\n  ollama pull llama3.2:8b          (good balance)\n  ollama pull qwen2.5:7b            (smaller qwen)`;
+      }
+
+      throw new Error(errorMessage);
     }
 
-    throw new Error(errorMessage);
-  }
+    if (!orchestratorResponse.success) {
+      mistakes.push(`Orchestrator failed: ${orchestratorResponse.error}`);
+      await storeTaskLearning(task, false, [], mistakes);
+      throw new Error(`Orchestrator failed: ${orchestratorResponse.error}`);
+    }
 
-  if (!orchestratorResponse.success) {
-    mistakes.push(`Orchestrator failed: ${orchestratorResponse.error}`);
-    await storeTaskLearning(task, false, [], mistakes);
-    throw new Error(`Orchestrator failed: ${orchestratorResponse.error}`);
-  }
-  
-  log.info(`[MirrorAgents] ✅ Orchestrator completed with ${usedModel}`);
+    log.info(`[MirrorAgents] ✅ Orchestrator completed with ${usedModel}`);
 
-  results.set('tool_orchestrator', orchestratorResponse.content || '');
+    results.set('tool_orchestrator', orchestratorResponse.content || '');
 
-  // Parse and execute tool calls from orchestrator
-  const orchestratorTools = parseToolCalls(orchestratorResponse.content || '');
-  for (const toolCall of orchestratorTools) {
+    // Parse and execute tool calls from orchestrator
+    const orchestratorTools = parseToolCalls(orchestratorResponse.content || '');
+    for (const toolCall of orchestratorTools) {
     assertNotCancelled();
     try {
       const normalizedToolCall = normalizeToolCallShape(toolCall);
@@ -2730,11 +2925,17 @@ Output as a structured list. Be specific and comprehensive.`;
       }
 
       // Validate tool call before execution
-      const validation = validateToolCall(normalizedToolCall, context.workspacePath, task, {
-        specialist: 'tool_orchestrator',
-        claimedFiles: getClaimedFilesForRole(blackboard, 'tool_orchestrator'),
-        blackboard,
-      }, executionPolicy);
+      const validation = validateToolCall(
+        normalizedToolCall,
+        context.workspacePath,
+        task,
+        {
+          specialist: 'tool_orchestrator',
+          claimedFiles: getClaimedFilesForRole(blackboard, 'tool_orchestrator'),
+          blackboard,
+        },
+        executionPolicy
+      );
       if (!validation.valid) {
         log.error(`[ToolValidation] Orchestrator tool validation failed: ${validation.error}`);
         mistakes.push(`Tool validation failed: ${validation.error}`);
@@ -2742,7 +2943,7 @@ Output as a structured list. Be specific and comprehensive.`;
       }
 
       // Fix tool call if needed
-      const fixedToolCall = validation.fixedPath 
+      const fixedToolCall = validation.fixedPath
         ? fixToolCall(normalizedToolCall, validation)
         : normalizedToolCall;
 
@@ -2758,7 +2959,7 @@ Output as a structured list. Be specific and comprehensive.`;
           title: toolTitle,
           success: false,
           specialist: 'tool_orchestrator',
-          error: autonomyBlockReason
+          error: autonomyBlockReason,
         });
         addBlackboardArtifact(blackboard, {
           type: 'verification_report',
@@ -2769,13 +2970,22 @@ Output as a structured list. Be specific and comprehensive.`;
         continue;
       }
       reserveAutonomyBudget(toolName);
-      callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: 'tool_orchestrator' });
+      callbacks?.onToolStart?.({
+        type: toolName,
+        title: toolTitle,
+        specialist: 'tool_orchestrator',
+      });
       const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
       captureAutonomyWriteTargets(toolName, toolArgs, result);
       const toolSuccess = result?.success !== false;
-      callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: toolSuccess, specialist: 'tool_orchestrator' });
+      callbacks?.onToolComplete?.({
+        type: toolName,
+        title: toolTitle,
+        success: toolSuccess,
+        specialist: 'tool_orchestrator',
+      });
       executedTools.push({ toolCall: normalized, result, specialist: 'tool_orchestrator' });
-      
+
       // Track created files in shared context
       if (result.action === 'write_file' && result.path) {
         sharedContext.filesCreated.set(result.path, 'orchestrator');
@@ -2806,7 +3016,10 @@ Output as a structured list. Be specific and comprehensive.`;
     } catch (error) {
       log.warn(`Orchestrator tool execution failed:`, error);
       mistakes.push(`Orchestrator tool execution: ${error}`);
-      const normalized = normalizeToolCallShape(toolCall) || { name: 'unknown_tool', arguments: {} };
+      const normalized = normalizeToolCallShape(toolCall) || {
+        name: 'unknown_tool',
+        arguments: {},
+      };
       const toolName = normalized.name || 'unknown_tool';
       const toolArgs = normalized.arguments || {};
       const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
@@ -2815,15 +3028,16 @@ Output as a structured list. Be specific and comprehensive.`;
         title: toolTitle,
         success: false,
         specialist: 'tool_orchestrator',
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
-  }
+    }
 
-  // Create checkpoint after orchestrator
-  const orchestratorCheckpoint = transactionManager.createCheckpoint('orchestrator_complete');
-  if (orchestratorCheckpoint) {
-    log.info(`[MirrorAgents] ✅ Checkpoint created: ${orchestratorCheckpoint}`);
+    // Create checkpoint after orchestrator
+    const orchestratorCheckpoint = transactionManager.createCheckpoint('orchestrator_complete');
+    if (orchestratorCheckpoint) {
+      log.info(`[MirrorAgents] ✅ Checkpoint created: ${orchestratorCheckpoint}`);
+    }
   }
 
   // Step 2: Execute specialists - they generate code that gets written to files
@@ -2838,7 +3052,11 @@ Output as a structured list. Be specific and comprehensive.`;
     markBlackboardOwner(
       blackboard,
       role,
-      role === 'integration_analyst' ? 'verifying' : role === 'repair_specialist' ? 'repairing' : 'executing'
+      role === 'integration_analyst'
+        ? 'verifying'
+        : role === 'repair_specialist'
+          ? 'repairing'
+          : 'executing'
     );
     const requestedRoleProvider = requestedProvider || config.provider;
     const requestedRoleModel = requestedModel || config.model;
@@ -2850,11 +3068,13 @@ Output as a structured list. Be specific and comprehensive.`;
 
     // 🧠 MIRROR: Build pattern-enhanced prompt for this specialist
     const enhancedPrompt = appendScaffoldCustomizationInstructions(
-      applyBudgetPrompt(await buildMirrorEnhancedPrompt(task, role, config.systemPrompt, {
-        reflectionQuestionLimit,
-        assistantBehaviorProfile: context.assistantBehaviorProfile,
-        vibeCoderIntent: context.vibeCoderIntent,
-      })),
+      applyBudgetPrompt(
+        await buildMirrorEnhancedPrompt(task, role, config.systemPrompt, {
+          reflectionQuestionLimit,
+          assistantBehaviorProfile: context.assistantBehaviorProfile,
+          vibeCoderIntent: context.vibeCoderIntent,
+        })
+      ),
       scaffoldApplied,
       scaffoldTemplateId
     );
@@ -2864,26 +3084,33 @@ Output as a structured list. Be specific and comprehensive.`;
       const specialistResult = await withSmartFallback(
         async (provider, model) => {
           aiRouter.setActiveProvider(provider, model);
-          const response = await aiRouter.chat([
-            { role: 'system', content: enhancedPrompt },
-            {
-              role: 'user',
-              content: `Task: ${task}
+          const response = await aiRouter.chat(
+            [
+              { role: 'system', content: enhancedPrompt },
+              {
+                role: 'user',
+                content: `Task: ${task}
 
 ${buildProjectContext(context)}
 ${buildScaffoldContractContext(context)}
-${buildSharedContext(sharedContext)}`
+${buildSharedContext(sharedContext)}`,
+              },
+            ],
+            {
+              model: model,
+              temperature: config.temperature,
+              maxTokens: budgetedTokens(
+                model,
+                role === 'integration_analyst'
+                  ? 'analysis'
+                  : role === 'pipeline_specialist'
+                    ? 'pipeline'
+                    : 'specialist'
+              ),
+              disableRouterFallback: true,
             }
-          ], {
-            model: model,
-            temperature: config.temperature,
-            maxTokens: budgetedTokens(
-              model,
-              role === 'integration_analyst' ? 'analysis' : role === 'pipeline_specialist' ? 'pipeline' : 'specialist'
-            ),
-            disableRouterFallback: true
-          });
-          
+          );
+
           // Throw on failure so withSmartFallback can try next model
           if (!response.success) {
             throw new Error(response.error || 'Model returned unsuccessful response');
@@ -2897,9 +3124,11 @@ ${buildSharedContext(sharedContext)}`
       );
 
       const response = specialistResult.result;
-      
+
       if (specialistResult.usedFallback) {
-        log.info(`[MirrorAgents] ⚡ ${role} used fallback: ${specialistResult.finalProvider}/${specialistResult.finalModel}`);
+        log.info(
+          `[MirrorAgents] ⚡ ${role} used fallback: ${specialistResult.finalProvider}/${specialistResult.finalModel}`
+        );
       }
 
       if (response.success) {
@@ -2907,16 +3136,18 @@ ${buildSharedContext(sharedContext)}`
         endPhase(phaseName, 'success', {
           requestedProvider: requestedRoleProvider,
           requestedModel: requestedRoleModel,
-          actualProvider: response.servedBy?.provider || specialistResult.finalProvider || requestedRoleProvider,
-          actualModel: response.servedBy?.model || specialistResult.finalModel || requestedRoleModel,
+          actualProvider:
+            response.servedBy?.provider || specialistResult.finalProvider || requestedRoleProvider,
+          actualModel:
+            response.servedBy?.model || specialistResult.finalModel || requestedRoleModel,
           attempts: specialistResult.attempts,
           usedFallback: specialistResult.usedFallback,
         });
-        
+
         // 🔧 CRITICAL FIX: Parse and execute tool calls from specialists too!
         const specialistTools = parseToolCalls(response.content || '');
         log.info(`[MirrorAgents] Specialist ${role} returned ${specialistTools.length} tool calls`);
-        
+
         for (const toolCall of specialistTools) {
           assertNotCancelled();
           try {
@@ -2927,11 +3158,17 @@ ${buildSharedContext(sharedContext)}`
             }
 
             // Validate tool call before execution
-            const validation = validateToolCall(normalizedToolCall, context.workspacePath, task, {
-              specialist: role,
-              claimedFiles: getClaimedFilesForRole(blackboard, role),
-              blackboard,
-            }, executionPolicy);
+            const validation = validateToolCall(
+              normalizedToolCall,
+              context.workspacePath,
+              task,
+              {
+                specialist: role,
+                claimedFiles: getClaimedFilesForRole(blackboard, role),
+                blackboard,
+              },
+              executionPolicy
+            );
             if (!validation.valid) {
               log.error(`[ToolValidation] ${role} tool validation failed: ${validation.error}`);
               mistakes.push(`${role} tool validation failed: ${validation.error}`);
@@ -2939,7 +3176,7 @@ ${buildSharedContext(sharedContext)}`
             }
 
             // Fix tool call if needed
-            const fixedToolCall = validation.fixedPath 
+            const fixedToolCall = validation.fixedPath
               ? fixToolCall(normalizedToolCall, validation)
               : normalizedToolCall;
 
@@ -2955,7 +3192,7 @@ ${buildSharedContext(sharedContext)}`
                 title: toolTitle,
                 success: false,
                 specialist: role,
-                error: autonomyBlockReason
+                error: autonomyBlockReason,
               });
               addBlackboardArtifact(blackboard, {
                 type: 'verification_report',
@@ -2970,9 +3207,14 @@ ${buildSharedContext(sharedContext)}`
             const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
             captureAutonomyWriteTargets(toolName, toolArgs, result);
             const toolSuccess = result?.success !== false;
-            callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: toolSuccess, specialist: role });
+            callbacks?.onToolComplete?.({
+              type: toolName,
+              title: toolTitle,
+              success: toolSuccess,
+              specialist: role,
+            });
             executedTools.push({ toolCall: normalized, result, specialist: role });
-            
+
             // Track created files in shared context
             if (result.action === 'write_file' && result.path) {
               sharedContext.filesCreated.set(result.path, role);
@@ -2992,7 +3234,10 @@ ${buildSharedContext(sharedContext)}`
                 type: 'scaffold_result',
                 author: 'template_scaffold_specialist',
                 summary: `${role} scaffolded ${result.files.length} file(s).`,
-                payload: { files: result.files, scaffolded: result.scaffolded || result.project_type },
+                payload: {
+                  files: result.files,
+                  scaffolded: result.scaffolded || result.project_type,
+                },
               });
             } else if (result.action === 'run_command') {
               addBlackboardArtifact(blackboard, {
@@ -3005,7 +3250,10 @@ ${buildSharedContext(sharedContext)}`
           } catch (error) {
             log.warn(`[MirrorAgents] ${role} tool execution failed:`, error);
             mistakes.push(`${role} tool execution: ${error}`);
-            const normalized = normalizeToolCallShape(toolCall) || { name: 'unknown_tool', arguments: {} };
+            const normalized = normalizeToolCallShape(toolCall) || {
+              name: 'unknown_tool',
+              arguments: {},
+            };
             const toolName = normalized.name || 'unknown_tool';
             const toolArgs = normalized.arguments || {};
             const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
@@ -3014,16 +3262,16 @@ ${buildSharedContext(sharedContext)}`
               title: toolTitle,
               success: false,
               specialist: role,
-              error: error instanceof Error ? error.message : String(error)
+              error: error instanceof Error ? error.message : String(error),
             });
           }
         }
-        
+
         successfulPatterns.push({
           type: 'successful_agent_response',
           description: `Agent ${role} completed task successfully`,
           category: 'communication',
-          confidence: 0.9
+          confidence: 0.9,
         });
         completeBlackboardStep(blackboard, role, true);
       } else {
@@ -3083,16 +3331,22 @@ ${buildSharedContext(sharedContext)}`
       const analysisResult = await withSmartFallback(
         async (provider, model) => {
           aiRouter.setActiveProvider(provider, model);
-          const response = await aiRouter.chat([
-            { role: 'system', content: enhancedAnalystPrompt },
-            { role: 'user', content: `Review the project:\n\n${allWork}\n\nTask: ${task}\n\nAnalyze for completeness and integration issues. If files are missing, CREATE them using tool calls.` }
-          ], {
-            model: model,
-            temperature: analyst.temperature,
-            maxTokens: budgetedTokens(model, 'analysis'),
-            disableRouterFallback: true
-          });
-          
+          const response = await aiRouter.chat(
+            [
+              { role: 'system', content: enhancedAnalystPrompt },
+              {
+                role: 'user',
+                content: `Review the project:\n\n${allWork}\n\nTask: ${task}\n\nAnalyze for completeness and integration issues. If files are missing, CREATE them using tool calls.`,
+              },
+            ],
+            {
+              model: model,
+              temperature: analyst.temperature,
+              maxTokens: budgetedTokens(model, 'analysis'),
+              disableRouterFallback: true,
+            }
+          );
+
           // Throw on failure so withSmartFallback can try next model
           if (!response.success) {
             throw new Error(response.error || 'Model returned unsuccessful response');
@@ -3104,15 +3358,18 @@ ${buildSharedContext(sharedContext)}`
         'analysis',
         runtimeBudget
       );
-      
+
       analysis = analysisResult.result;
       if (analysisResult.usedFallback) {
-        log.info(`[MirrorAgents] ⚡ Analyst used fallback: ${analysisResult.finalProvider}/${analysisResult.finalModel}`);
+        log.info(
+          `[MirrorAgents] ⚡ Analyst used fallback: ${analysisResult.finalProvider}/${analysisResult.finalModel}`
+        );
       }
       endPhase('integration_analysis', 'success', {
         requestedProvider: analyst.provider,
         requestedModel: analyst.model,
-        actualProvider: analysis.servedBy?.provider || analysisResult.finalProvider || analyst.provider,
+        actualProvider:
+          analysis.servedBy?.provider || analysisResult.finalProvider || analyst.provider,
         actualModel: analysis.servedBy?.model || analysisResult.finalModel || analyst.model,
         attempts: analysisResult.attempts,
         usedFallback: analysisResult.usedFallback,
@@ -3143,11 +3400,17 @@ ${buildSharedContext(sharedContext)}`
           }
 
           // Validate tool call
-          const validation = validateToolCall(normalizedToolCall, context.workspacePath, task, {
-            specialist: 'integration_analyst',
-            claimedFiles: getClaimedFilesForRole(blackboard, 'integration_analyst'),
-            blackboard,
-          }, executionPolicy);
+          const validation = validateToolCall(
+            normalizedToolCall,
+            context.workspacePath,
+            task,
+            {
+              specialist: 'integration_analyst',
+              claimedFiles: getClaimedFilesForRole(blackboard, 'integration_analyst'),
+              blackboard,
+            },
+            executionPolicy
+          );
           if (!validation.valid) {
             log.error(`[ToolValidation] Analyst tool validation failed: ${validation.error}`);
             mistakes.push(`Analyst tool validation failed: ${validation.error}`);
@@ -3170,7 +3433,7 @@ ${buildSharedContext(sharedContext)}`
               title: toolTitle,
               success: false,
               specialist: 'integration_analyst',
-              error: autonomyBlockReason
+              error: autonomyBlockReason,
             });
             addBlackboardArtifact(blackboard, {
               type: 'verification_report',
@@ -3181,11 +3444,20 @@ ${buildSharedContext(sharedContext)}`
             continue;
           }
           reserveAutonomyBudget(toolName);
-          callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: 'integration_analyst' });
+          callbacks?.onToolStart?.({
+            type: toolName,
+            title: toolTitle,
+            specialist: 'integration_analyst',
+          });
           const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
           captureAutonomyWriteTargets(toolName, toolArgs, result);
           const toolSuccess = result?.success !== false;
-          callbacks?.onToolComplete?.({ type: toolName, title: toolTitle, success: toolSuccess, specialist: 'integration_analyst' });
+          callbacks?.onToolComplete?.({
+            type: toolName,
+            title: toolTitle,
+            success: toolSuccess,
+            specialist: 'integration_analyst',
+          });
           executedTools.push({ toolCall: normalized, result, specialist: 'integration_analyst' });
 
           if (result.action === 'write_file' && result.path) {
@@ -3205,7 +3477,10 @@ ${buildSharedContext(sharedContext)}`
         } catch (error) {
           log.warn(`Analyst tool execution failed:`, error);
           mistakes.push(`Analyst tool execution: ${error}`);
-          const normalized = normalizeToolCallShape(toolCall) || { name: 'unknown_tool', arguments: {} };
+          const normalized = normalizeToolCallShape(toolCall) || {
+            name: 'unknown_tool',
+            arguments: {},
+          };
           const toolName = normalized.name || 'unknown_tool';
           const toolArgs = normalized.arguments || {};
           const toolTitle = `${toolName}(${toolArgs.path || toolArgs.command || '...'})`;
@@ -3214,24 +3489,25 @@ ${buildSharedContext(sharedContext)}`
             title: toolTitle,
             success: false,
             specialist: 'integration_analyst',
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
         }
       }
 
       // 🧠 MIRROR: Check if the project was successful based on analysis
       const analysisContentForSuccess = analysis.content?.toLowerCase() || '';
-      const wasSuccessful = !analysisContentForSuccess.includes('missing') &&
-                            !analysisContentForSuccess.includes('incomplete') &&
-                            !analysisContentForSuccess.includes('error') &&
-                            executedTools.length > 0;
+      const wasSuccessful =
+        !analysisContentForSuccess.includes('missing') &&
+        !analysisContentForSuccess.includes('incomplete') &&
+        !analysisContentForSuccess.includes('error') &&
+        executedTools.length > 0;
 
       if (wasSuccessful) {
         successfulPatterns.push({
           type: 'successful_project',
           description: `Successfully completed: ${task.substring(0, 100)}`,
           category: 'problemSolving',
-          confidence: 0.85
+          confidence: 0.85,
         });
         log.info('[MirrorAgents] ✅ Project appears successful - storing patterns');
       } else {
@@ -3248,18 +3524,18 @@ ${buildSharedContext(sharedContext)}`
     .flat()
     .map((filePath) => filePath.replace(/\\/g, '/'));
   const indexHtmlPaths = trackedPaths.filter((filePath) => filePath.endsWith('index.html'));
-  
+
   for (const indexPath of indexHtmlPaths) {
     try {
       const fullPath = path.join(context.workspacePath, indexPath);
       if (fs.existsSync(fullPath)) {
         const htmlContent = fs.readFileSync(fullPath, 'utf-8');
         const htmlValidation = validateIndexHtml(htmlContent, createdFiles, indexPath);
-        
+
         if (!htmlValidation.valid) {
           log.error(`[MirrorAgents] ❌ POST-VALIDATION FAILED: ${htmlValidation.error}`);
           mistakes.push(`Missing CSS/JS links in index.html: ${htmlValidation.error}`);
-          
+
           // Log which CSS files exist but aren't linked
           const cssFiles = trackedPaths.filter((filePath) => filePath.endsWith('.css'));
           if (cssFiles.length > 0) {
@@ -3267,7 +3543,8 @@ ${buildSharedContext(sharedContext)}`
             const suggestedCssHref = (() => {
               const cleanCssPath = cssFiles[0].replace(/^\/+/, '').replace(/\\/g, '/');
               const relativePath =
-                path.posix.relative(htmlDir === '.' ? '' : htmlDir, cleanCssPath) || path.posix.basename(cleanCssPath);
+                path.posix.relative(htmlDir === '.' ? '' : htmlDir, cleanCssPath) ||
+                path.posix.basename(cleanCssPath);
               return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
             })();
             log.error(`[MirrorAgents] 🔴 CSS files created but NOT linked: ${cssFiles.join(', ')}`);
@@ -3295,7 +3572,9 @@ ${buildSharedContext(sharedContext)}`
   await storeTaskLearning(task, overallSuccess, successfulPatterns, mistakes);
   blackboard && (blackboard.status = overallSuccess ? 'completed' : blackboard.status);
 
-  log.info(`[MirrorAgents] 🧠 Task completed. Tools executed: ${executedTools.length}, Mistakes: ${mistakes.length}`);
+  log.info(
+    `[MirrorAgents] 🧠 Task completed. Tools executed: ${executedTools.length}, Mistakes: ${mistakes.length}`
+  );
 
   return {
     results,
@@ -3303,6 +3582,6 @@ ${buildSharedContext(sharedContext)}`
     executedTools,
     scaffoldApplied,
     scaffoldTemplateId,
-    skippedGenerativePass: false
+    skippedGenerativePass: false,
   };
 }

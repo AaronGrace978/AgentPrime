@@ -30,13 +30,7 @@ export type SpecialistDiscipline =
   | 'verification'
   | 'repair';
 
-export type SpecialistPhase =
-  | 'route'
-  | 'plan'
-  | 'scaffold'
-  | 'implement'
-  | 'verify'
-  | 'repair';
+export type SpecialistPhase = 'route' | 'plan' | 'scaffold' | 'implement' | 'verify' | 'repair';
 
 export type BlackboardArtifactType =
   | 'user_intent'
@@ -97,7 +91,14 @@ export interface SpecialistBlackboard {
   userGoal: string;
   mode: 'talk' | 'create' | 'edit' | 'verify' | 'repair';
   currentOwner: SpecialistId;
-  status: 'planning' | 'executing' | 'awaiting_review' | 'verifying' | 'repairing' | 'completed' | 'failed';
+  status:
+    | 'planning'
+    | 'executing'
+    | 'awaiting_review'
+    | 'verifying'
+    | 'repairing'
+    | 'completed'
+    | 'failed';
   workspacePath: string;
   activeStepId?: string;
   claimedFiles: Record<SpecialistId, string[]>;
@@ -154,7 +155,8 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'planning',
     phase: 'plan',
     title: 'Task Master',
-    purpose: 'Break work into bounded steps, assign file ownership, and define acceptance criteria.',
+    purpose:
+      'Break work into bounded steps, assign file ownership, and define acceptance criteria.',
     reflectionFocus: [
       'Did I assign the right discipline experts?',
       'Are file claims and acceptance criteria explicit enough to prevent drift?',
@@ -213,10 +215,18 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       '*.config.ts',
       '*.config.mjs',
     ],
-    readableGlobs: ['templates/**', 'src/main/legacy/template-engine.ts', 'src/main/agent/scaffold-resolver.ts'],
+    readableGlobs: [
+      'templates/**',
+      'src/main/legacy/template-engine.ts',
+      'src/main/agent/scaffold-resolver.ts',
+    ],
     allowedToolNames: ['read_file', 'write_file', 'run_command'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['patch unrelated existing files', 'run browser tests', 'invent architecture outside chosen scaffold'],
+    forbiddenActions: [
+      'patch unrelated existing files',
+      'run browser tests',
+      'invent architecture outside chosen scaffold',
+    ],
     consumes: ['execution_plan'],
     produces: ['scaffold_result', 'file_patch_set'],
     escalatesTo: ['pipeline_specialist', 'integration_verifier', 'repair_specialist'],
@@ -227,13 +237,17 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'frontend_application',
     phase: 'implement',
     title: 'JavaScript Specialist',
-    purpose: 'Own frontend application behavior, TS/JS implementation, renderer logic, and app wiring within assigned files.',
+    purpose:
+      'Own frontend application behavior, TS/JS implementation, renderer logic, and app wiring within assigned files.',
     reflectionFocus: [
       'Did I solve the frontend/app behavior actually requested?',
       'Did I accidentally cross into styling, backend, or pipeline concerns?',
     ],
     writableGlobs: [
       'index.html',
+      'app.js',
+      'main.js',
+      'script.js',
       'src/**/*.js',
       'src/**/*.jsx',
       'src/**/*.ts',
@@ -248,10 +262,28 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'tests/**/*.tsx',
       'README.md',
     ],
-    readableGlobs: ['src/**', 'app/**', 'lib/**', 'pages/**', 'components/**', 'prisma/**', 'tests/**', 'package.json', 'tsconfig*.json', 'vite.config.*', 'next.config.*', 'index.html', 'README.md'],
+    readableGlobs: [
+      'src/**',
+      'app/**',
+      'lib/**',
+      'pages/**',
+      'components/**',
+      'prisma/**',
+      'tests/**',
+      'package.json',
+      'tsconfig*.json',
+      'vite.config.*',
+      'next.config.*',
+      'index.html',
+      'README.md',
+    ],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['edit Python files', 'change CI or packaging policy', 'run install/build commands directly'],
+    forbiddenActions: [
+      'edit Python files',
+      'change CI or packaging policy',
+      'run install/build commands directly',
+    ],
     consumes: ['execution_plan', 'scaffold_result', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['pipeline_specialist', 'integration_verifier', 'repair_specialist'],
@@ -262,16 +294,35 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'styling_and_ux',
     phase: 'implement',
     title: 'Styling / UX Specialist',
-    purpose: 'Own visual polish, CSS, layout, interaction feedback, and user-facing presentation details inside assigned files.',
+    purpose:
+      'Own visual polish, CSS, layout, interaction feedback, and user-facing presentation details inside assigned files.',
     reflectionFocus: [
       'Did I improve clarity, hierarchy, and interaction affordances instead of just adding decoration?',
       'Did I stay inside styling and UX concerns without rewriting unrelated application logic?',
     ],
-    writableGlobs: ['index.html', 'src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'app/**/*.css', 'app/**/*.tsx', 'components/**/*.css', 'components/**/*.tsx', 'public/**'],
+    writableGlobs: [
+      'index.html',
+      'styles.css',
+      'style.css',
+      'src/**/*.css',
+      'src/**/*.scss',
+      'src/**/*.html',
+      'src/**/*.tsx',
+      'src/**/*.jsx',
+      'app/**/*.css',
+      'app/**/*.tsx',
+      'components/**/*.css',
+      'components/**/*.tsx',
+      'public/**',
+    ],
     readableGlobs: ['src/**', 'app/**', 'components/**', 'public/**', 'tests/**', 'index.html'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['edit backend service files', 'change dependency or packaging policy', 'rewrite core business logic'],
+    forbiddenActions: [
+      'edit backend service files',
+      'change dependency or packaging policy',
+      'rewrite core business logic',
+    ],
     consumes: ['execution_plan', 'scaffold_result', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['javascript_specialist', 'integration_verifier', 'repair_specialist'],
@@ -291,7 +342,11 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     readableGlobs: ['backend/**', 'scripts/**', 'tests/**', 'requirements*.txt', 'pyproject.toml'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'run_command'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['edit renderer/frontend files', 'change JS build configs', 'run install/build commands directly'],
+    forbiddenActions: [
+      'edit renderer/frontend files',
+      'change JS build configs',
+      'run install/build commands directly',
+    ],
     consumes: ['execution_plan', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['pipeline_specialist', 'integration_verifier', 'repair_specialist'],
@@ -311,7 +366,11 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     readableGlobs: ['src-tauri/**', 'src/**', 'package.json'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'run_command'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['edit Python backend files', 'change unrelated web-only scaffolds', 'run install/build commands directly'],
+    forbiddenActions: [
+      'edit Python backend files',
+      'change unrelated web-only scaffolds',
+      'run install/build commands directly',
+    ],
     consumes: ['execution_plan', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['pipeline_specialist', 'integration_verifier', 'repair_specialist'],
@@ -355,8 +414,17 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     ],
     readableGlobs: ['package.json', 'backend/**', 'src/**', 'tests/**', '.github/**'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'run_command'],
-    allowedCommandPrefixes: ['npm run', 'npm test', 'npm install', 'python -m pytest', 'py -3 -m pytest'],
-    forbiddenActions: ['rewrite product code to fix logic bugs', 'claim ownership of feature files without handoff'],
+    allowedCommandPrefixes: [
+      'npm run',
+      'npm test',
+      'npm install',
+      'python -m pytest',
+      'py -3 -m pytest',
+    ],
+    forbiddenActions: [
+      'rewrite product code to fix logic bugs',
+      'claim ownership of feature files without handoff',
+    ],
     consumes: ['execution_plan', 'scaffold_result', 'repair_plan'],
     produces: ['file_patch_set', 'command_result'],
     escalatesTo: ['integration_verifier', 'repair_specialist'],
@@ -367,16 +435,33 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'test_engineering',
     phase: 'verify',
     title: 'Testing Specialist',
-    purpose: 'Own automated test coverage, browser checks, fixtures, and test harness updates inside bounded test files.',
+    purpose:
+      'Own automated test coverage, browser checks, fixtures, and test harness updates inside bounded test files.',
     reflectionFocus: [
       'Did I add the smallest useful test evidence for the requested behavior?',
       'Did I avoid test-only churn that restates the implementation without reducing risk?',
     ],
     writableGlobs: ['tests/**', 'playwright.config.*', 'package.json', 'scripts/**/*.ts'],
     readableGlobs: ['src/**', 'tests/**', 'playwright.config.*', 'package.json', 'scripts/**'],
-    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols', 'run_command'],
-    allowedCommandPrefixes: ['npm test', 'npm run test', 'npm run test:e2e', 'playwright test', 'npx playwright test'],
-    forbiddenActions: ['ship production feature code outside test scaffolding', 'modify backend service logic unless part of a dedicated repair plan'],
+    allowedToolNames: [
+      'read_file',
+      'write_file',
+      'patch_file',
+      'search_codebase',
+      'find_symbols',
+      'run_command',
+    ],
+    allowedCommandPrefixes: [
+      'npm test',
+      'npm run test',
+      'npm run test:e2e',
+      'playwright test',
+      'npx playwright test',
+    ],
+    forbiddenActions: [
+      'ship production feature code outside test scaffolding',
+      'modify backend service logic unless part of a dedicated repair plan',
+    ],
     consumes: ['execution_plan', 'verification_report', 'repair_plan'],
     produces: ['file_patch_set', 'command_result', 'verification_report'],
     escalatesTo: ['integration_verifier', 'repair_specialist'],
@@ -387,16 +472,30 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'security_review',
     phase: 'verify',
     title: 'Security Specialist',
-    purpose: 'Own auth, secrets handling, unsafe input paths, and security-sensitive hardening within assigned files.',
+    purpose:
+      'Own auth, secrets handling, unsafe input paths, and security-sensitive hardening within assigned files.',
     reflectionFocus: [
       'Did I reduce a concrete security risk instead of adding generic hardening?',
       'Did I avoid weakening existing trust boundaries, validation, or secret handling?',
     ],
-    writableGlobs: ['src/**', 'app/**', 'backend/**', 'lib/**', 'components/**', 'tests/**', 'package.json', '*.config.*', '.github/workflows/**'],
+    writableGlobs: [
+      'src/**',
+      'app/**',
+      'backend/**',
+      'lib/**',
+      'components/**',
+      'tests/**',
+      'package.json',
+      '*.config.*',
+      '.github/workflows/**',
+    ],
     readableGlobs: ['**/*'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['disable security controls for convenience', 'broaden feature scope while fixing a risk'],
+    forbiddenActions: [
+      'disable security controls for convenience',
+      'broaden feature scope while fixing a risk',
+    ],
     consumes: ['execution_plan', 'verification_report', 'repair_plan'],
     produces: ['file_patch_set', 'verification_report'],
     escalatesTo: ['integration_verifier', 'repair_specialist'],
@@ -407,16 +506,29 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'performance_optimization',
     phase: 'implement',
     title: 'Performance Specialist',
-    purpose: 'Own runtime hotspots, render/update pressure, bundle weight, and performance-sensitive workflow changes.',
+    purpose:
+      'Own runtime hotspots, render/update pressure, bundle weight, and performance-sensitive workflow changes.',
     reflectionFocus: [
       'Did I improve a measurable bottleneck or latency path instead of rewriting broadly?',
       'Did I preserve correctness while reducing unnecessary work?',
     ],
-    writableGlobs: ['src/**', 'app/**', 'components/**', 'backend/**', 'public/**', 'tests/**', 'package.json', '*.config.*'],
+    writableGlobs: [
+      'src/**',
+      'app/**',
+      'components/**',
+      'backend/**',
+      'public/**',
+      'tests/**',
+      'package.json',
+      '*.config.*',
+    ],
     readableGlobs: ['**/*'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['micro-optimize unrelated code', 'trade away correctness or accessibility for speed'],
+    forbiddenActions: [
+      'micro-optimize unrelated code',
+      'trade away correctness or accessibility for speed',
+    ],
     consumes: ['execution_plan', 'verification_report', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['testing_specialist', 'integration_verifier', 'repair_specialist'],
@@ -427,16 +539,28 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'data_contracts',
     phase: 'implement',
     title: 'Data Contract Specialist',
-    purpose: 'Own schemas, DTOs, API contracts, validation layers, and cross-boundary data shape consistency.',
+    purpose:
+      'Own schemas, DTOs, API contracts, validation layers, and cross-boundary data shape consistency.',
     reflectionFocus: [
       'Did I keep request/response or schema changes consistent across every touched boundary?',
       'Did I add or preserve validation where the contract enters the system?',
     ],
-    writableGlobs: ['src/**', 'app/**', 'lib/**', 'backend/**', 'prisma/**', 'tests/**', 'package.json'],
+    writableGlobs: [
+      'src/**',
+      'app/**',
+      'lib/**',
+      'backend/**',
+      'prisma/**',
+      'tests/**',
+      'package.json',
+    ],
     readableGlobs: ['**/*'],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols'],
     allowedCommandPrefixes: [],
-    forbiddenActions: ['change unrelated UI styling', 'hide contract mismatches by removing validation'],
+    forbiddenActions: [
+      'change unrelated UI styling',
+      'hide contract mismatches by removing validation',
+    ],
     consumes: ['execution_plan', 'verification_report', 'repair_plan'],
     produces: ['file_patch_set'],
     escalatesTo: ['testing_specialist', 'integration_verifier', 'repair_specialist'],
@@ -467,7 +591,8 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
     discipline: 'repair',
     phase: 'repair',
     title: 'Repair Specialist',
-    purpose: 'Apply the smallest viable fix for verifier findings inside explicitly assigned files.',
+    purpose:
+      'Apply the smallest viable fix for verifier findings inside explicitly assigned files.',
     reflectionFocus: [
       'What is the narrowest fix that resolves the verifier finding?',
       'Am I introducing new scope while trying to repair?',
@@ -498,9 +623,20 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'README.md',
     ],
     readableGlobs: ['**/*'],
-    allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'find_symbols', 'run_command'],
+    allowedToolNames: [
+      'read_file',
+      'write_file',
+      'patch_file',
+      'search_codebase',
+      'find_symbols',
+      'run_command',
+    ],
     allowedCommandPrefixes: ['npm install', 'npm run', 'npx', 'node'],
-    forbiddenActions: ['re-scaffold the project', 'expand scope beyond verifier findings', 'author new features during repair'],
+    forbiddenActions: [
+      're-scaffold the project',
+      'expand scope beyond verifier findings',
+      'author new features during repair',
+    ],
     consumes: ['verification_report', 'repair_plan'],
     produces: ['file_patch_set', 'final_summary'],
     escalatesTo: ['integration_verifier', 'task_master'],

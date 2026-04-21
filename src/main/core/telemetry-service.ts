@@ -1,6 +1,6 @@
 /**
  * AgentPrime - Telemetry Service
- * 
+ *
  * Collects anonymous usage data to help improve the application.
  * - Respects user's telemetry preference
  * - Queues events and batches them for efficiency
@@ -15,7 +15,7 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 
 // Event types that can be tracked
-export type TelemetryEventType = 
+export type TelemetryEventType =
   | 'app_start'
   | 'app_close'
   | 'session_duration'
@@ -44,10 +44,10 @@ export interface TelemetryEvent {
 
 export interface TelemetryConfig {
   enabled: boolean;
-  endpoint?: string;  // Optional remote endpoint
-  batchSize: number;  // Number of events before flushing
-  flushInterval: number;  // Ms between auto-flushes
-  maxStoredEvents: number;  // Max events to store locally
+  endpoint?: string; // Optional remote endpoint
+  batchSize: number; // Number of events before flushing
+  flushInterval: number; // Ms between auto-flushes
+  maxStoredEvents: number; // Max events to store locally
 }
 
 export interface TelemetryStats {
@@ -62,7 +62,7 @@ class TelemetryService {
   private config: TelemetryConfig = {
     enabled: false,
     batchSize: 50,
-    flushInterval: 60000,  // 1 minute
+    flushInterval: 60000, // 1 minute
     maxStoredEvents: 10000,
   };
 
@@ -79,7 +79,7 @@ class TelemetryService {
     this.sessionId = this.generateId();
     this.installId = '';
     this.sessionStartTime = Date.now();
-    this.dataPath = path.join(app.getPath('userData'), 'telemetry');
+    this.dataPath = path.join(this.resolveUserDataPath(), 'telemetry');
     this.eventsFilePath = path.join(this.dataPath, 'events.json');
     this.configFilePath = path.join(this.dataPath, 'config.json');
   }
@@ -109,14 +109,16 @@ class TelemetryService {
 
     // Track app start
     this.track('app_start', {
-      version: app.getVersion(),
+      version: typeof app?.getVersion === 'function' ? app.getVersion() : 'unknown',
       platform: process.platform,
       arch: process.arch,
       nodeVersion: process.version,
       electronVersion: process.versions.electron,
     });
 
-    console.log(`[Telemetry] Initialized (enabled: ${this.config.enabled}, installId: ${this.installId.substring(0, 8)}...)`);
+    console.log(
+      `[Telemetry] Initialized (enabled: ${this.config.enabled}, installId: ${this.installId.substring(0, 8)}...)`
+    );
   }
 
   /**
@@ -220,7 +222,7 @@ class TelemetryService {
    */
   getStats(): TelemetryStats {
     let storedEvents: TelemetryEvent[] = [];
-    
+
     try {
       if (fs.existsSync(this.eventsFilePath)) {
         const data = fs.readFileSync(this.eventsFilePath, 'utf-8');
@@ -236,7 +238,7 @@ class TelemetryService {
     // Calculate stats
     const eventsByType: Record<string, number> = {};
     const sessionIds = new Set<string>();
-    
+
     for (const event of allEvents) {
       eventsByType[event.type] = (eventsByType[event.type] || 0) + 1;
       sessionIds.add(event.sessionId);
@@ -256,7 +258,7 @@ class TelemetryService {
    */
   clearData(): void {
     this.eventQueue = [];
-    
+
     try {
       if (fs.existsSync(this.eventsFilePath)) {
         fs.unlinkSync(this.eventsFilePath);
@@ -299,7 +301,7 @@ class TelemetryService {
 
     this.stopFlushTimer();
     await this.flush();
-    
+
     console.log('[Telemetry] Shutdown complete');
   }
 
@@ -311,7 +313,7 @@ class TelemetryService {
 
   private async getOrCreateInstallId(): Promise<string> {
     const installIdPath = path.join(this.dataPath, 'install_id');
-    
+
     try {
       if (fs.existsSync(installIdPath)) {
         return fs.readFileSync(installIdPath, 'utf-8').trim();
@@ -327,7 +329,7 @@ class TelemetryService {
     } catch (e) {
       console.warn('[Telemetry] Could not save install ID:', e);
     }
-    
+
     return newId;
   }
 
@@ -360,7 +362,7 @@ class TelemetryService {
     if (this.flushTimer) {
       return;
     }
-    
+
     this.flushTimer = setInterval(() => {
       this.flush();
     }, this.config.flushInterval);
@@ -376,18 +378,32 @@ class TelemetryService {
   private sanitizeData(data: Record<string, any>): Record<string, any> {
     // Remove any potentially sensitive data
     const sanitized: Record<string, any> = {};
-    
+
     const sensitiveKeys = [
-      'apikey', 'api_key', 'key', 'token', 'secret', 'password', 
-      'credential', 'auth', 'code', 'content', 'source', 'body',
-      'email', 'username', 'user', 'name', 'path'
+      'apikey',
+      'api_key',
+      'key',
+      'token',
+      'secret',
+      'password',
+      'credential',
+      'auth',
+      'code',
+      'content',
+      'source',
+      'body',
+      'email',
+      'username',
+      'user',
+      'name',
+      'path',
     ];
 
     for (const [key, value] of Object.entries(data)) {
       const lowerKey = key.toLowerCase();
-      
+
       // Skip sensitive keys
-      if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
+      if (sensitiveKeys.some((sk) => lowerKey.includes(sk))) {
         continue;
       }
 
@@ -398,13 +414,27 @@ class TelemetryService {
       } else if (typeof value === 'number' || typeof value === 'boolean') {
         sanitized[key] = value;
       } else if (Array.isArray(value)) {
-        sanitized[key] = value.slice(0, 10).map(v => 
-          typeof v === 'string' ? (v.length > 50 ? v.substring(0, 50) + '...' : v) : v
-        );
+        sanitized[key] = value
+          .slice(0, 10)
+          .map((v) =>
+            typeof v === 'string' ? (v.length > 50 ? v.substring(0, 50) + '...' : v) : v
+          );
       }
     }
 
     return sanitized;
+  }
+
+  private resolveUserDataPath(): string {
+    try {
+      if (app && typeof app.getPath === 'function') {
+        return app.getPath('userData');
+      }
+    } catch {
+      // Fall through to CLI-safe default.
+    }
+
+    return path.join(os.homedir(), '.agentprime');
   }
 
   private async sendToEndpoint(events: TelemetryEvent[]): Promise<void> {

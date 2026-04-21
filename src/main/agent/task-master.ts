@@ -1,9 +1,9 @@
 /**
  * Task Master - The Boss Review System
- * 
+ *
  * Acts like a boss reviewing work before it's committed.
  * "Bro wtf? This doesn't match. Do it like this and remember it."
- * 
+ *
  * This is the quality control layer that:
  * 1. Reviews what the agent wants to write BEFORE writing
  * 2. Compares it to existing files and the task
@@ -58,12 +58,12 @@ export class TaskMaster {
   private workspacePath: string;
   private task: string;
   private existingFiles: Map<string, string> = new Map();
-  
+
   constructor(workspacePath: string, task: string) {
     this.workspacePath = workspacePath;
     this.task = task;
   }
-  
+
   /**
    * Load existing files so boss can review against them
    */
@@ -79,14 +79,21 @@ export class TaskMaster {
     specialists: SpecialistId[];
     retryContext?: TaskMasterRetryContext;
   }): TaskMasterPlan {
-    const orderedSpecialists = SPECIALIST_EXECUTION_ORDER.filter((id) => params.specialists.includes(id));
+    const orderedSpecialists = SPECIALIST_EXECUTION_ORDER.filter((id) =>
+      params.specialists.includes(id)
+    );
     const claimedFiles = this.createClaimMap();
     const steps: SpecialistStepAssignment[] = [];
     const projectType = detectProjectType(this.task);
     const retryFiles = this.extractRetryFiles(params.retryContext);
 
     for (const specialist of orderedSpecialists) {
-      const specialistClaims = this.claimsForSpecialist(specialist, params.mode, projectType, retryFiles);
+      const specialistClaims = this.claimsForSpecialist(
+        specialist,
+        params.mode,
+        projectType,
+        retryFiles
+      );
       claimedFiles[specialist] = specialistClaims;
 
       if (specialist === 'executive_router' || specialist === 'task_master') {
@@ -100,7 +107,11 @@ export class TaskMaster {
         goal: this.goalForSpecialist(specialist, params.mode, params.retryContext),
         status: 'pending',
         claimedFiles: specialistClaims,
-        acceptanceCriteria: this.acceptanceCriteriaForSpecialist(specialist, params.mode, retryFiles),
+        acceptanceCriteria: this.acceptanceCriteriaForSpecialist(
+          specialist,
+          params.mode,
+          retryFiles
+        ),
         dependsOn: this.dependenciesForSpecialist(specialist, steps),
       });
     }
@@ -112,7 +123,7 @@ export class TaskMaster {
       summary: `Planned ${steps.length} specialist step(s) for ${params.mode} mode${projectType ? ` (${projectType})` : ''}.`,
     };
   }
-  
+
   /**
    * THE BOSS REVIEW - Main entry point
    * Reviews what agent wants to write and says YES or NO
@@ -120,7 +131,7 @@ export class TaskMaster {
    */
   async reviewWork(file: FileToReview): Promise<BossReviewResult> {
     console.log(`[TaskMaster] 👔 BOSS REVIEW: Reviewing "${file.path}"`);
-    
+
     // 🧠 OPUS REASONING: Get Opus's reasoning patterns for this situation
     const opusEngine = getOpusReasoningEngine();
     // Convert string map to match expected type (it already is, but ensure type safety)
@@ -129,54 +140,56 @@ export class TaskMaster {
       task: this.task,
       filePath: file.path,
       content: file.content,
-      existingFiles: existingFilesMap
+      existingFiles: existingFilesMap,
     });
-    
-    console.log(`[TaskMaster] 🧠 Opus Reasoning: ${opusReasoning.recommendations.length} recommendations`);
-    
+
+    console.log(
+      `[TaskMaster] 🧠 Opus Reasoning: ${opusReasoning.recommendations.length} recommendations`
+    );
+
     const issues: string[] = [];
     const suggestions: string[] = [];
-    
+
     // Apply Opus recommendations
     for (const recommendation of opusReasoning.recommendations) {
       suggestions.push(`🧠 Opus Pattern: ${recommendation}`);
     }
-    
+
     // If Opus reasoning says don't proceed, add to issues
     if (!opusReasoning.shouldProceed) {
       issues.push(`🧠 Opus Reasoning: ${opusReasoning.reasoning}`);
     }
-    
+
     // ==========================================
     // CHECK 1: Does it match the task?
     // ==========================================
     const taskProjectType = detectProjectType(this.task);
     const contentProjectType = detectProjectTypeFromContent(file.content);
-    
+
     if (taskProjectType && contentProjectType && taskProjectType !== contentProjectType) {
       const issue = `🚨 PROJECT TYPE MISMATCH: Task is "${taskProjectType}" but you wrote "${contentProjectType}" code!`;
       issues.push(issue);
       console.error(`[TaskMaster] ${issue}`);
-      
+
       // Store this as a learning moment
       await this.storeMistake(
         `Wrote ${contentProjectType} code for ${taskProjectType} task`,
         `Task: ${this.task.substring(0, 100)}\nFile: ${file.path}\nWrong type: ${contentProjectType}`
       );
-      
+
       return {
         approved: false,
         reason: `Boss says NO: ${issue}`,
         mustFix: [
           `Read the task again: "${this.task.substring(0, 150)}..."`,
           `The task is about ${taskProjectType}, not ${contentProjectType}`,
-          `Generate code that matches ${taskProjectType} projects`
+          `Generate code that matches ${taskProjectType} projects`,
         ],
         suggestions: [`Look at examples of ${taskProjectType} projects`],
-        storedLearning: true
+        storedLearning: true,
       };
     }
-    
+
     // ==========================================
     // CHECK 2: Does it match existing files?
     // ==========================================
@@ -184,64 +197,64 @@ export class TaskMaster {
       // Check if this file is referenced by other files
       for (const [existingPath, existingContent] of this.existingFiles.entries()) {
         const fileName = path.basename(file.path);
-        
+
         // If HTML references this JS file, they MUST match
         if (existingPath.endsWith('.html') && existingContent.includes(fileName)) {
           const htmlProjectType = detectProjectTypeFromContent(existingContent);
           const jsProjectType = detectProjectTypeFromContent(file.content);
-          
+
           if (htmlProjectType && jsProjectType && htmlProjectType !== jsProjectType) {
             const issue = `🚨 FILE MISMATCH: "${existingPath}" expects ${htmlProjectType} but "${file.path}" is ${jsProjectType}!`;
             issues.push(issue);
             console.error(`[TaskMaster] ${issue}`);
-            
+
             // Store this mistake
             await this.storeMistake(
               `Created mismatched files: ${htmlProjectType} HTML with ${jsProjectType} JS`,
               `HTML: ${existingPath}\nJS: ${file.path}\nThey don't match!`
             );
-            
+
             return {
               approved: false,
               reason: `Boss says NO: ${issue}`,
               mustFix: [
                 `Read "${existingPath}" to see what project type it is`,
                 `The HTML file shows this is a ${htmlProjectType} project`,
-                `Rewrite "${file.path}" to match ${htmlProjectType}, not ${jsProjectType}`
+                `Rewrite "${file.path}" to match ${htmlProjectType}, not ${jsProjectType}`,
               ],
               suggestions: [
                 `Files in the same project MUST match each other`,
-                `If HTML says "game", JS must be game code, not debugger code`
+                `If HTML says "game", JS must be game code, not debugger code`,
               ],
-              storedLearning: true
+              storedLearning: true,
             };
           }
         }
       }
     }
-    
+
     // ==========================================
     // CHECK 3: Is it replacing good work with bad work?
     // ==========================================
     if (file.existingContent) {
       const existingType = detectProjectTypeFromContent(file.existingContent);
       const newType = detectProjectTypeFromContent(file.content);
-      
+
       // If existing file is correct type but new one is wrong
       if (existingType && newType && existingType !== newType) {
         const taskType = detectProjectType(this.task);
-        
+
         // If existing matches task but new doesn't, BLOCK IT
         if (taskType && existingType === taskType && newType !== taskType) {
           const issue = `🚨 REPLACING GOOD WORK: Existing file is correct (${existingType}) but you're replacing it with wrong type (${newType})!`;
           issues.push(issue);
           console.error(`[TaskMaster] ${issue}`);
-          
+
           await this.storeMistake(
             `Replaced correct ${existingType} code with wrong ${newType} code`,
             `File: ${file.path}\nWas: ${existingType} (correct)\nTrying to replace with: ${newType} (wrong)`
           );
-          
+
           return {
             approved: false,
             reason: `Boss says NO: ${issue}`,
@@ -249,58 +262,60 @@ export class TaskMaster {
               `STOP! The existing file is CORRECT (${existingType})`,
               `You're trying to replace it with WRONG type (${newType})`,
               `DO NOT replace correct work with wrong work`,
-              `If you need to fix something, use patch_file for surgical edits`
+              `If you need to fix something, use patch_file for surgical edits`,
             ],
             suggestions: [
               `Read the existing file first to understand what it does`,
-              `Only make changes that preserve the project type`
+              `Only make changes that preserve the project type`,
             ],
-            storedLearning: true
+            storedLearning: true,
           };
         }
       }
     }
-    
+
     // ==========================================
     // CHECK 4: Does it have the right structure?
     // ==========================================
     // Check for common mistakes
     const contentLower = file.content.toLowerCase();
     const taskLower = this.task.toLowerCase();
-    
+
     // If task says "game" but content has debugger/portfolio patterns
     if (taskLower.includes('game') || taskLower.includes('three.js')) {
-      if (contentLower.includes('code debugger') || 
-          contentLower.includes('analyze code') ||
-          contentLower.includes('error patterns') ||
-          (contentLower.includes('hamburger') && contentLower.includes('nav-menu'))) {
+      if (
+        contentLower.includes('code debugger') ||
+        contentLower.includes('analyze code') ||
+        contentLower.includes('error patterns') ||
+        (contentLower.includes('hamburger') && contentLower.includes('nav-menu'))
+      ) {
         const issue = `🚨 WRONG CONTENT TYPE: Task is about games but you wrote debugger/portfolio code!`;
         issues.push(issue);
         console.error(`[TaskMaster] ${issue}`);
-        
+
         await this.storeMistake(
           `Wrote debugger code for game task`,
           `Task: ${this.task.substring(0, 100)}\nFile: ${file.path}\nContent type: debugger (wrong)`
         );
-        
+
         return {
           approved: false,
           reason: `Boss says NO: ${issue}`,
           mustFix: [
             `The task is about creating a GAME`,
             `You wrote DEBUGGER/PORTFOLIO code instead`,
-            `Generate GAME code: Three.js, game loop, player, enemies, etc.`
+            `Generate GAME code: Three.js, game loop, player, enemies, etc.`,
           ],
           suggestions: [
             `Look at Three.js game examples`,
             `Game code has: game loop, player object, enemies, physics, etc.`,
-            `NOT: code analyzers, debuggers, or portfolio websites`
+            `NOT: code analyzers, debuggers, or portfolio websites`,
           ],
-          storedLearning: true
+          storedLearning: true,
         };
       }
     }
-    
+
     // ==========================================
     // ALL CHECKS PASSED - Boss approves
     // ==========================================
@@ -311,10 +326,10 @@ export class TaskMaster {
         reason: 'Boss says YES: Work looks good, matches task and existing files',
         mustFix: [],
         suggestions: [],
-        storedLearning: false
+        storedLearning: false,
       };
     }
-    
+
     // ==========================================
     // ISSUES FOUND - Boss says fix it
     // ==========================================
@@ -323,10 +338,10 @@ export class TaskMaster {
       reason: `Boss found ${issues.length} issue(s)`,
       mustFix: issues,
       suggestions,
-      storedLearning: true
+      storedLearning: true,
     };
   }
-  
+
   /**
    * Store mistakes in mirror system so agent learns
    */
@@ -344,18 +359,18 @@ export class TaskMaster {
       console.warn(`[TaskMaster] Failed to store mistake:`, e);
     }
   }
-  
+
   /**
    * Review multiple files at once (for batch operations)
    */
   async reviewBatch(files: FileToReview[]): Promise<Map<string, BossReviewResult>> {
     const results = new Map<string, BossReviewResult>();
-    
+
     for (const file of files) {
       const result = await this.reviewWork(file);
       results.set(file.path, result);
     }
-    
+
     return results;
   }
 
@@ -381,7 +396,8 @@ export class TaskMaster {
   private extractRetryFiles(retryContext?: TaskMasterRetryContext): string[] {
     const retryFiles = new Set<string>(retryContext?.missingFiles || []);
     for (const error of retryContext?.errors || []) {
-      const matches = error.match(/[A-Za-z0-9_./-]+\.(tsx?|jsx?|py|json|html|css|md|yml|yaml|toml|rs)/g) || [];
+      const matches =
+        error.match(/[A-Za-z0-9_./-]+\.(tsx?|jsx?|py|json|html|css|md|yml|yaml|toml|rs)/g) || [];
       for (const match of matches) {
         retryFiles.add(match.replace(/\\/g, '/'));
       }
@@ -396,22 +412,41 @@ export class TaskMaster {
     retryFiles: string[]
   ): string[] {
     if (specialist === 'repair_specialist') {
-      const baseline = ['index.html', 'src/**', 'backend/**', 'tests/**', 'package.json', 'vite.config.*', 'tsconfig*.json', 'tailwind.config.*', 'postcss.config.*', 'README.md'];
-      return retryFiles.length > 0
-        ? [...new Set([...retryFiles, ...baseline])]
-        : baseline;
+      const baseline = [
+        'index.html',
+        'src/**',
+        'backend/**',
+        'tests/**',
+        'package.json',
+        'vite.config.*',
+        'tsconfig*.json',
+        'tailwind.config.*',
+        'postcss.config.*',
+        'README.md',
+      ];
+      return retryFiles.length > 0 ? [...new Set([...retryFiles, ...baseline])] : baseline;
     }
 
     switch (specialist) {
       case 'template_scaffold_specialist':
         return projectType === 'threejs'
-          ? ['package.json', 'README.md', 'index.html', 'src/main.tsx', 'src/App.tsx', 'src/game/**']
+          ? [
+              'package.json',
+              'README.md',
+              'index.html',
+              'src/main.tsx',
+              'src/App.tsx',
+              'src/game/**',
+            ]
           : mode === 'create'
             ? ['package.json', 'README.md', 'index.html', 'src/**']
             : [];
       case 'javascript_specialist':
         return [
           'index.html',
+          'app.js',
+          'main.js',
+          'script.js',
           'src/**/*.js',
           'src/**/*.jsx',
           'src/**/*.ts',
@@ -422,7 +457,17 @@ export class TaskMaster {
           'README.md',
         ];
       case 'styling_ux_specialist':
-        return ['index.html', 'src/**/*.css', 'src/**/*.scss', 'src/**/*.html', 'src/**/*.tsx', 'src/**/*.jsx', 'public/**'];
+        return [
+          'index.html',
+          'styles.css',
+          'style.css',
+          'src/**/*.css',
+          'src/**/*.scss',
+          'src/**/*.html',
+          'src/**/*.tsx',
+          'src/**/*.jsx',
+          'public/**',
+        ];
       case 'python_specialist':
         return ['backend/**/*.py', 'scripts/**/*.py', 'tests/**/*.py'];
       case 'tauri_specialist':
@@ -452,11 +497,44 @@ export class TaskMaster {
       case 'testing_specialist':
         return ['tests/**', 'playwright.config.*', 'package.json', 'scripts/**/*.ts'];
       case 'security_specialist':
-        return ['src/**', 'app/**', 'lib/**', 'backend/**', 'components/**', 'tests/**', 'package.json', '.env', '.env.local', '*.config.js', '*.config.ts', '*.config.mjs', '.github/workflows/**'];
+        return [
+          'src/**',
+          'app/**',
+          'lib/**',
+          'backend/**',
+          'components/**',
+          'tests/**',
+          'package.json',
+          '.env',
+          '.env.local',
+          '*.config.js',
+          '*.config.ts',
+          '*.config.mjs',
+          '.github/workflows/**',
+        ];
       case 'performance_specialist':
-        return ['src/**', 'app/**', 'components/**', 'backend/**', 'public/**', 'tests/**', 'package.json', '*.config.js', '*.config.ts', '*.config.mjs'];
+        return [
+          'src/**',
+          'app/**',
+          'components/**',
+          'backend/**',
+          'public/**',
+          'tests/**',
+          'package.json',
+          '*.config.js',
+          '*.config.ts',
+          '*.config.mjs',
+        ];
       case 'data_contract_specialist':
-        return ['src/**', 'app/**', 'lib/**', 'backend/**', 'prisma/**', 'tests/**', 'package.json'];
+        return [
+          'src/**',
+          'app/**',
+          'lib/**',
+          'backend/**',
+          'prisma/**',
+          'tests/**',
+          'package.json',
+        ];
       default:
         return [];
     }
@@ -523,13 +601,18 @@ export class TaskMaster {
 
     if (specialist === 'repair_specialist') {
       return [
-        retryFiles.length > 0 ? `Touch only retry-target files: ${retryFiles.join(', ')}` : 'Touch only files named in the repair plan.',
+        retryFiles.length > 0
+          ? `Touch only retry-target files: ${retryFiles.join(', ')}`
+          : 'Touch only files named in the repair plan.',
         'Apply the smallest viable patch.',
         'Do not re-scaffold or broaden the feature scope.',
       ];
     }
 
-    const criteria = ['Stay inside claimed files.', 'Do not take over another specialist’s domain.'];
+    const criteria = [
+      'Stay inside claimed files.',
+      'Do not take over another specialist’s domain.',
+    ];
     if (mode === 'create') {
       criteria.push('Produce runnable output that fits the requested project shape.');
     }
@@ -564,7 +647,11 @@ export class TaskMaster {
       return existingSteps.map((step) => step.id).filter((stepId) => stepId !== previousStep.id);
     }
 
-    if (specialist === 'pipeline_specialist' || specialist === 'testing_specialist' || specialist === 'repair_specialist') {
+    if (
+      specialist === 'pipeline_specialist' ||
+      specialist === 'testing_specialist' ||
+      specialist === 'repair_specialist'
+    ) {
       return [previousStep.id];
     }
 

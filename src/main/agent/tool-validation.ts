@@ -1,7 +1,7 @@
 /**
  * Tool Validation Utilities
  * Validates tool calls before execution to prevent errors
- * 
+ *
  * ENHANCED: Now includes protection against:
  * - Project scope creep (mixing unrelated projects)
  * - Duplicate files in different locations
@@ -20,10 +20,7 @@ import {
   type SpecialistBlackboard,
   type SpecialistId,
 } from './specialist-contracts';
-import {
-  getVibeCoderToolPolicyError,
-  type VibeCoderExecutionPolicy,
-} from './behavior-profile';
+import { getVibeCoderToolPolicyError, type VibeCoderExecutionPolicy } from './behavior-profile';
 
 export interface ValidationResult {
   valid: boolean;
@@ -66,23 +63,86 @@ const sessionFileTracker: Map<string, string[]> = new Map();
  * FIXED: Added more project types for better detection accuracy
  */
 const PROJECT_SIGNATURES: Record<string, string[]> = {
-  tetris: ['tetromino', 'clearlines', 'gamecanvas', 'tetris', 'block_size', 'rows', 'cols', 'tetrominoes', 'rotatePiece'],
-  portfolio: ['hamburger', 'nav-menu', 'hero-content', 'contact-form', 'portfolio', 'about me', 'skills', 'experience', 'testimonial'],
+  tetris: [
+    'tetromino',
+    'clearlines',
+    'gamecanvas',
+    'tetris',
+    'block_size',
+    'rows',
+    'cols',
+    'tetrominoes',
+    'rotatePiece',
+  ],
+  portfolio: [
+    'hamburger',
+    'nav-menu',
+    'hero-content',
+    'contact-form',
+    'portfolio',
+    'about me',
+    'skills',
+    'experience',
+    'testimonial',
+  ],
   nebula: ['nebula', 'cosmic', 'toast', 'palette', 'theme', 'reveal', 'particle'],
   minecraft: ['voxel', 'chunk', 'minecraft', 'block', 'terrain', 'world', 'voxelworld'],
-  game: ['player', 'enemy', 'score', 'level', 'game-over', 'canvas', 'gameloop', 'collision', 'sprite', 'requestanimationframe'],
+  game: [
+    'player',
+    'enemy',
+    'score',
+    'level',
+    'game-over',
+    'canvas',
+    'gameloop',
+    'collision',
+    'sprite',
+    'requestanimationframe',
+  ],
   dashboard: ['dashboard', 'widget', 'chart', 'analytics', 'metric', 'kpi', 'statistics'],
   ecommerce: ['cart', 'checkout', 'product', 'order', 'payment', 'addtocart', 'cartitem'],
   blog: ['post', 'article', 'comment', 'author', 'category', 'tag', 'blogpost'],
   // Todo/task app signatures
-  todo: ['todo', 'task', 'addtodo', 'deletetodo', 'toggletodo', 'completed', 'todolist', 'todoapp', 'todoitem', 'remaining'],
+  todo: [
+    'todo',
+    'task',
+    'addtodo',
+    'deletetodo',
+    'toggletodo',
+    'completed',
+    'todolist',
+    'todoapp',
+    'todoitem',
+    'remaining',
+  ],
   crud: ['create', 'read', 'update', 'delete', 'crud', 'addbtn', 'deletebtn', 'editbtn'],
   notes: ['note', 'notes', 'notepad', 'addnote', 'deletenote', 'savenote'],
   // NEW: Additional project types for better detection
-  threejs: ['three.js', 'threejs', 'scene', 'renderer', 'camera', 'geometry', 'material', 'mesh', 'orbitcontrols', 'webglrenderer'],
+  threejs: [
+    'three.js',
+    'threejs',
+    'scene',
+    'renderer',
+    'camera',
+    'geometry',
+    'material',
+    'mesh',
+    'orbitcontrols',
+    'webglrenderer',
+  ],
   weather: ['weather', 'forecast', 'temperature', 'humidity', 'weatherapi', 'weatherdata'],
   // Keep calculator signatures specific to avoid false positives in game/math code.
-  calculator: ['calculator', 'operand', 'operator', 'expression', 'clearentry', 'clearall', 'equals', 'btn-operator', 'btn-number'],
+  calculator: [
+    'calculator',
+    'operand',
+    'operator',
+    'expression',
+    'clearentry',
+    'clearall',
+    'equals',
+    'btn-operator',
+    'btn-number',
+  ],
   chat: ['chat', 'message', 'sendmessage', 'chatroom', 'conversation', 'chatapp'],
   landing: ['landing', 'hero', 'cta', 'signup', 'subscribe', 'features', 'pricing'],
   api: ['api', 'endpoint', 'request', 'response', 'fetch', 'axios', 'restapi'],
@@ -96,9 +156,28 @@ const PROJECT_SIGNATURES: Record<string, string[]> = {
 const INCOMPATIBLE_TYPES: Record<string, string[]> = {
   todo: ['portfolio', 'game', 'tetris', 'minecraft', 'dashboard', 'ecommerce', 'blog', 'threejs'],
   game: ['portfolio', 'todo', 'dashboard', 'ecommerce', 'blog', 'notes', 'weather', 'calculator'],
-  tetris: ['portfolio', 'todo', 'dashboard', 'ecommerce', 'blog', 'notes', 'minecraft', 'threejs', 'weather'],
+  tetris: [
+    'portfolio',
+    'todo',
+    'dashboard',
+    'ecommerce',
+    'blog',
+    'notes',
+    'minecraft',
+    'threejs',
+    'weather',
+  ],
   portfolio: ['game', 'tetris', 'minecraft', 'todo', 'crud', 'notes', 'calculator', 'chat'],
-  minecraft: ['portfolio', 'todo', 'dashboard', 'ecommerce', 'blog', 'tetris', 'calculator', 'weather'],
+  minecraft: [
+    'portfolio',
+    'todo',
+    'dashboard',
+    'ecommerce',
+    'blog',
+    'tetris',
+    'calculator',
+    'weather',
+  ],
   dashboard: ['game', 'tetris', 'minecraft', 'portfolio', 'chat'],
   ecommerce: ['game', 'tetris', 'minecraft', 'chat', 'calculator'],
   blog: ['game', 'tetris', 'minecraft', 'calculator', 'chat'],
@@ -119,7 +198,7 @@ export type FileTrackerMode = 'create' | 'fix' | 'review' | 'enhance';
 
 /**
  * Reset the session file tracker
- * 
+ *
  * @param mode - Task mode that determines behavior:
  *   - 'create': Full reset for new project generation (default)
  *   - 'fix': Preserve existing files, only track new/modified files
@@ -132,7 +211,9 @@ export function resetFileTracker(mode: FileTrackerMode = 'create'): void {
     console.log('[ToolValidation] 🛡️ File tracker reset for CREATE mode');
   } else {
     // In fix/review/enhance modes, don't clear - just log the mode
-    console.log(`[ToolValidation] 🛡️ File tracker preserved for ${mode.toUpperCase()} mode (${sessionFileTracker.size} files tracked)`);
+    console.log(
+      `[ToolValidation] 🛡️ File tracker preserved for ${mode.toUpperCase()} mode (${sessionFileTracker.size} files tracked)`
+    );
   }
 }
 
@@ -148,7 +229,9 @@ export function populateFileTracker(existingFiles: string[]): void {
       sessionFileTracker.set(fileName, [...existingPaths, filePath]);
     }
   }
-  console.log(`[ToolValidation] 🛡️ Populated file tracker with ${existingFiles.length} existing files`);
+  console.log(
+    `[ToolValidation] 🛡️ Populated file tracker with ${existingFiles.length} existing files`
+  );
 }
 
 /**
@@ -218,7 +301,8 @@ function hasTrackedViteConfigNearHtml(trackedPaths: string[], htmlFilePath: stri
 function toHtmlRelativeAssetPath(projectRelativePath: string, htmlFilePath: string): string {
   const clean = normalizeProjectPath(projectRelativePath);
   const htmlDir = path.posix.dirname(normalizeProjectPath(htmlFilePath));
-  const relativePath = path.posix.relative(htmlDir === '.' ? '' : htmlDir, clean) || path.posix.basename(clean);
+  const relativePath =
+    path.posix.relative(htmlDir === '.' ? '' : htmlDir, clean) || path.posix.basename(clean);
   return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
 }
 
@@ -256,13 +340,16 @@ function hasBundlerRuntime(workspacePath?: string): boolean {
     const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
     const scriptValues = Object.values(scripts).map((value) => String(value).toLowerCase());
 
-    const hasBundlerInDeps = ['vite', 'webpack', 'rollup', 'parcel', 'esbuild'].some((name) => Boolean(deps[name]));
-    const hasBundlerInScripts = scriptValues.some((script) =>
-      script.includes('vite') ||
-      script.includes('webpack') ||
-      script.includes('rollup') ||
-      script.includes('parcel') ||
-      script.includes('esbuild')
+    const hasBundlerInDeps = ['vite', 'webpack', 'rollup', 'parcel', 'esbuild'].some((name) =>
+      Boolean(deps[name])
+    );
+    const hasBundlerInScripts = scriptValues.some(
+      (script) =>
+        script.includes('vite') ||
+        script.includes('webpack') ||
+        script.includes('rollup') ||
+        script.includes('parcel') ||
+        script.includes('esbuild')
     );
 
     return hasBundlerInDeps || hasBundlerInScripts;
@@ -273,7 +360,9 @@ function hasBundlerRuntime(workspacePath?: string): boolean {
 
 function looksLikeBundlerSourcePath(filePath: string): boolean {
   const normalized = normalizeForGlob(filePath).toLowerCase();
-  return /^src\/.+\.(ts|tsx|js|jsx)$/.test(normalized) || /^main\.(ts|tsx|js|jsx)$/.test(normalized);
+  return (
+    /^src\/.+\.(ts|tsx|js|jsx)$/.test(normalized) || /^main\.(ts|tsx|js|jsx)$/.test(normalized)
+  );
 }
 
 /**
@@ -482,33 +571,53 @@ export function detectProjectType(taskContext: string): string | null {
   const taskLower = taskContext.toLowerCase();
 
   // Explicit technology mentions should win over generic "game" matches.
-  if (taskLower.includes('three.js') || taskLower.includes('threejs') || taskLower.includes('webgl')) return 'threejs';
+  if (
+    taskLower.includes('three.js') ||
+    taskLower.includes('threejs') ||
+    taskLower.includes('webgl')
+  )
+    return 'threejs';
   if (taskLower.includes('tetris')) return 'tetris';
   if (taskLower.includes('minecraft')) return 'minecraft';
-  
+
   for (const [projectType, keywords] of Object.entries(PROJECT_SIGNATURES)) {
-    const matchCount = keywords.filter(kw => taskLower.includes(kw)).length;
+    const matchCount = keywords.filter((kw) => taskLower.includes(kw)).length;
     if (matchCount >= 2) {
       return projectType;
     }
   }
-  
+
   // Single keyword matches for explicit mentions (ordered by specificity)
   if (taskLower.includes('3d')) return 'threejs';
   if (taskLower.includes('portfolio')) return 'portfolio';
   if (taskLower.includes('dashboard')) return 'dashboard';
-  if (taskLower.includes('ecommerce') || taskLower.includes('e-commerce') || taskLower.includes('shop')) return 'ecommerce';
+  if (
+    taskLower.includes('ecommerce') ||
+    taskLower.includes('e-commerce') ||
+    taskLower.includes('shop')
+  )
+    return 'ecommerce';
   if (taskLower.includes('blog')) return 'blog';
-  if (taskLower.includes('todo') || taskLower.includes('task list') || taskLower.includes('tasklist')) return 'todo';
+  if (
+    taskLower.includes('todo') ||
+    taskLower.includes('task list') ||
+    taskLower.includes('tasklist')
+  )
+    return 'todo';
   if (taskLower.includes('calculator')) return 'calculator';
   if (taskLower.includes('weather')) return 'weather';
   if (taskLower.includes('chat') || taskLower.includes('messaging')) return 'chat';
   if (taskLower.includes('landing page') || taskLower.includes('landingpage')) return 'landing';
   if (taskLower.includes('notes') || taskLower.includes('notepad')) return 'notes';
   if (taskLower.includes('crud')) return 'crud';
-  if (taskLower.includes(' api ') || taskLower.includes('rest api') || taskLower.includes('restapi')) return 'api';
+  if (
+    taskLower.includes(' api ') ||
+    taskLower.includes('rest api') ||
+    taskLower.includes('restapi')
+  )
+    return 'api';
   if (taskLower.includes('game')) return 'game';
-  
+
   return null;
 }
 
@@ -517,15 +626,15 @@ export function detectProjectType(taskContext: string): string | null {
  */
 export function detectProjectTypeFromContent(content: string): string | null {
   const scores = Object.entries(getProjectTypeScores(content));
-  
+
   // Sort by score descending
   scores.sort((a, b) => b[1] - a[1]);
-  
+
   // Return highest scoring type if it has at least 2 matches
   if (scores.length > 0 && scores[0][1] >= 2) {
     return scores[0][0];
   }
-  
+
   return null;
 }
 
@@ -547,7 +656,10 @@ function getProjectTypeScores(content: string): Record<string, number> {
  * Check if content type is incompatible with task type
  * Returns true if the content should NOT be written for this task
  */
-export function isContentIncompatibleWithTask(taskContext: string, content: string): { incompatible: boolean; reason: string } {
+export function isContentIncompatibleWithTask(
+  taskContext: string,
+  content: string
+): { incompatible: boolean; reason: string } {
   const taskLower = taskContext.toLowerCase();
   const contentLower = content.toLowerCase();
   const hasPresentationSiteIntent = [
@@ -565,16 +677,16 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
     'beautiful site',
     'beautiful webpage',
   ].some((hint) => taskLower.includes(hint));
-  
+
   // Detect task type using the same prioritised logic as the rest of validation.
   const taskType = detectProjectType(taskContext);
-  
+
   // Detect content type (what AI is generating)
   const contentType = detectProjectTypeFromContent(content);
   const projectScores = getProjectTypeScores(content);
   const taskTypeScore = taskType ? (projectScores[taskType] ?? 0) : 0;
   const contentTypeScore = contentType ? (projectScores[contentType] ?? 0) : 0;
-  
+
   // If we couldn't detect either, allow it (can't determine incompatibility)
   if (!taskType && !contentType) {
     return { incompatible: false, reason: '' };
@@ -585,32 +697,45 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
   if (taskType && taskTypeScore >= 2 && taskTypeScore >= contentTypeScore) {
     return { incompatible: false, reason: '' };
   }
-  
+
   // If task type is detected but content type is different and incompatible
   if (taskType && contentType && taskType !== contentType) {
     const incompatibleWith = INCOMPATIBLE_TYPES[taskType] || [];
     if (incompatibleWith.includes(contentType)) {
       return {
         incompatible: true,
-        reason: `Task is "${taskType}" but content is "${contentType}" - these are incompatible project types`
+        reason: `Task is "${taskType}" but content is "${contentType}" - these are incompatible project types`,
       };
     }
   }
-  
+
   // Special case: portfolio code detected when task doesn't mention portfolio
-  if (contentType === 'portfolio' && !taskLower.includes('portfolio') && !hasPresentationSiteIntent && taskType !== 'landing') {
+  if (
+    contentType === 'portfolio' &&
+    !taskLower.includes('portfolio') &&
+    !hasPresentationSiteIntent &&
+    taskType !== 'landing'
+  ) {
     // Check for strong portfolio indicators
-    const strongPortfolioIndicators = ['hamburger', 'nav-menu', 'hero-content', 'skills', 'experience'];
-    const portfolioMatches = strongPortfolioIndicators.filter(ind => contentLower.includes(ind)).length;
-    
+    const strongPortfolioIndicators = [
+      'hamburger',
+      'nav-menu',
+      'hero-content',
+      'skills',
+      'experience',
+    ];
+    const portfolioMatches = strongPortfolioIndicators.filter((ind) =>
+      contentLower.includes(ind)
+    ).length;
+
     if (portfolioMatches >= 2) {
       return {
         incompatible: true,
-        reason: `Content contains portfolio code (${portfolioMatches} indicators) but task doesn't mention portfolio`
+        reason: `Content contains portfolio code (${portfolioMatches} indicators) but task doesn't mention portfolio`,
       };
     }
   }
-  
+
   // Special case: only block obvious game drift when the task gives no gameplay hints at all.
   // Three.js prompts often ask for side scrollers/platformers without literally saying "game".
   const hasGameplayHint = [
@@ -631,10 +756,10 @@ export function isContentIncompatibleWithTask(taskContext: string, content: stri
   if (contentType === 'game' && taskType !== 'threejs' && !hasGameplayHint) {
     return {
       incompatible: true,
-      reason: `Content contains game code but task doesn't mention games`
+      reason: `Content contains game code but task doesn't mention games`,
     };
   }
-  
+
   return { incompatible: false, reason: '' };
 }
 
@@ -652,7 +777,11 @@ export function validateToolCall(
     return { valid: false, error: 'Invalid tool call: missing name' };
   }
 
-  const policyBlock = getVibeCoderToolPolicyError(executionPolicy, toolCall.name, toolCall.arguments);
+  const policyBlock = getVibeCoderToolPolicyError(
+    executionPolicy,
+    toolCall.name,
+    toolCall.arguments
+  );
   if (policyBlock) {
     return { valid: false, error: policyBlock };
   }
@@ -669,7 +798,7 @@ export function validateToolCall(
 
   // Validate write_file tool
   if (toolCall.name === 'write_file' || toolCall.name === 'create_file') {
-    return validateWriteFile(toolCall, workspacePath, taskContext, specialistContext);
+    return validateWriteFile(toolCall, workspacePath, taskContext, specialistContext, executionPolicy);
   }
 
   if (toolCall.name === 'patch_file') {
@@ -737,9 +866,9 @@ function validateReadFile(
     } catch (e) {
       // Path resolution failed
     }
-    return { 
-      valid: false, 
-      error: `read_file: absolute path detected (${filePath}). Use relative paths only.` 
+    return {
+      valid: false,
+      error: `read_file: absolute path detected (${filePath}). Use relative paths only.`,
     };
   }
 
@@ -750,15 +879,15 @@ function validateReadFile(
     const normalizedResolved = path.normalize(resolvedPath);
 
     if (!normalizedResolved.startsWith(normalizedWorkspace)) {
-      return { 
-        valid: false, 
-        error: `read_file: path outside workspace: ${filePath}` 
+      return {
+        valid: false,
+        error: `read_file: path outside workspace: ${filePath}`,
       };
     }
   } catch (e) {
-    return { 
-      valid: false, 
-      error: `read_file: invalid path: ${filePath}` 
+    return {
+      valid: false,
+      error: `read_file: invalid path: ${filePath}`,
     };
   }
 
@@ -772,7 +901,7 @@ function validateReadFile(
 
 /**
  * Validate write_file tool call
- * 
+ *
  * ENHANCED VALIDATION:
  * 1. Duplicate file detection (same file in root and src/)
  * 2. Project type coherence (content matches task)
@@ -782,7 +911,8 @@ function validateWriteFile(
   toolCall: any,
   workspacePath: string,
   taskContext?: string,
-  specialistContext?: SpecialistValidationContext
+  specialistContext?: SpecialistValidationContext,
+  executionPolicy?: VibeCoderExecutionPolicy
 ): ValidationResult {
   const args = toolCall.arguments || {};
   const filePath = args.path;
@@ -797,9 +927,20 @@ function validateWriteFile(
     return specialistBoundary;
   }
 
+  const coherenceBoundary = validateFrameworkFreezeBoundary(
+    filePath,
+    String(content),
+    workspacePath,
+    taskContext,
+    executionPolicy
+  );
+  if (coherenceBoundary) {
+    return coherenceBoundary;
+  }
+
   const fileName = path.basename(filePath).toLowerCase();
   const fileDir = path.dirname(filePath);
-  
+
   // ==========================================
   // CHECK 1: Duplicate File Detection
   // Blocks true clones (script.js in root AND src/script.js) but allows
@@ -810,18 +951,49 @@ function validateWriteFile(
 
   // Files that naturally exist in multiple directories in monorepos/workspaces
   const MULTI_LOCATION_FILES = new Set([
-    'package.json', 'tsconfig.json', 'tsconfig.build.json',
-    '.eslintrc.js', '.eslintrc.json', '.eslintrc.cjs',
-    'eslint.config.js', 'eslint.config.mjs', 'eslint.config.cjs',
-    '.prettierrc', '.prettierrc.json', '.prettierrc.js',
-    'jest.config.ts', 'jest.config.js', 'vitest.config.ts', 'vitest.config.js',
-    'index.ts', 'index.tsx', 'index.js', 'index.mjs',
-    'readme.md', 'changelog.md', 'license', 'license.md',
-    '.gitignore', '.env', '.env.example', '.env.local',
-    'dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
-    'vite.config.ts', 'vite.config.js', 'webpack.config.js',
-    'tailwind.config.js', 'tailwind.config.ts', 'postcss.config.js',
-    'main.ts', 'main.tsx', 'main.js', 'app.ts', 'app.tsx', 'app.js',
+    'package.json',
+    'tsconfig.json',
+    'tsconfig.build.json',
+    '.eslintrc.js',
+    '.eslintrc.json',
+    '.eslintrc.cjs',
+    'eslint.config.js',
+    'eslint.config.mjs',
+    'eslint.config.cjs',
+    '.prettierrc',
+    '.prettierrc.json',
+    '.prettierrc.js',
+    'jest.config.ts',
+    'jest.config.js',
+    'vitest.config.ts',
+    'vitest.config.js',
+    'index.ts',
+    'index.tsx',
+    'index.js',
+    'index.mjs',
+    'readme.md',
+    'changelog.md',
+    'license',
+    'license.md',
+    '.gitignore',
+    '.env',
+    '.env.example',
+    '.env.local',
+    'dockerfile',
+    'docker-compose.yml',
+    'docker-compose.yaml',
+    'vite.config.ts',
+    'vite.config.js',
+    'webpack.config.js',
+    'tailwind.config.js',
+    'tailwind.config.ts',
+    'postcss.config.js',
+    'main.ts',
+    'main.tsx',
+    'main.js',
+    'app.ts',
+    'app.tsx',
+    'app.js',
   ]);
 
   const isMultiLocationAllowed = MULTI_LOCATION_FILES.has(fileName);
@@ -837,7 +1009,9 @@ function validateWriteFile(
 
     // Allow config/entry files in different packages
     if (isMultiLocationAllowed) {
-      console.log(`[ToolValidation] ℹ️ Allowing "${fileName}" in multiple locations: "${existingPath}" and "${filePath}"`);
+      console.log(
+        `[ToolValidation] ℹ️ Allowing "${fileName}" in multiple locations: "${existingPath}" and "${filePath}"`
+      );
       continue;
     }
 
@@ -853,15 +1027,16 @@ function validateWriteFile(
 
       return {
         valid: false,
-        error: `🚨 DUPLICATE FILE DETECTED!\n\n` +
-               `"${fileName}" already exists at "${existingPath}".\n` +
-               `You're trying to create it AGAIN at "${filePath}".\n\n` +
-               `⛔ BLOCKED: Do NOT create the same file in multiple locations!\n\n` +
-               `RULE: Each file name should exist in exactly ONE location.\n` +
-               `- If you put files in src/, put ALL files there\n` +
-               `- If you put files in root, put ALL files there\n` +
-               `- NEVER create both script.js AND src/script.js\n\n` +
-               `The file at "${existingPath}" is the correct one. Do NOT create another.`
+        error:
+          `🚨 DUPLICATE FILE DETECTED!\n\n` +
+          `"${fileName}" already exists at "${existingPath}".\n` +
+          `You're trying to create it AGAIN at "${filePath}".\n\n` +
+          `⛔ BLOCKED: Do NOT create the same file in multiple locations!\n\n` +
+          `RULE: Each file name should exist in exactly ONE location.\n` +
+          `- If you put files in src/, put ALL files there\n` +
+          `- If you put files in root, put ALL files there\n` +
+          `- NEVER create both script.js AND src/script.js\n\n` +
+          `The file at "${existingPath}" is the correct one. Do NOT create another.`,
       };
     }
 
@@ -884,7 +1059,7 @@ function validateWriteFile(
       };
     }
   }
-  
+
   // Track this file BEFORE we continue (so future writes detect duplicates)
   sessionFileTracker.set(fileName, [...existingPaths, filePath]);
 
@@ -894,7 +1069,7 @@ function validateWriteFile(
   // ==========================================
   if (taskContext && content.length > 100) {
     const contentProjectType = detectProjectTypeFromContent(content);
-    
+
     // NEW: Use the enhanced incompatibility check
     const incompatibilityCheck = isContentIncompatibleWithTask(taskContext, content);
     if (incompatibilityCheck.incompatible) {
@@ -902,31 +1077,32 @@ function validateWriteFile(
       console.error(`[ToolValidation]   Reason: ${incompatibilityCheck.reason}`);
       console.error(`[ToolValidation]   File: ${filePath}`);
       console.error(`[ToolValidation]   Task: ${taskContext.substring(0, 100)}...`);
-      
+
       return {
         valid: false,
-        error: `🚨 CRITICAL: WRONG CONTENT TYPE DETECTED!\n\n` +
-               `${incompatibilityCheck.reason}\n\n` +
-               `⛔ BLOCKED: This file will NOT be written.\n\n` +
-               `Task was: "${taskContext.substring(0, 150)}..."\n\n` +
-               `TO FIX:\n` +
-               `1. Re-read the original task carefully\n` +
-               `2. Generate content that matches the ACTUAL task\n` +
-               `3. DO NOT use code from other projects or templates\n` +
-               `4. Every file must relate to: ${taskContext.substring(0, 80)}...`
+        error:
+          `🚨 CRITICAL: WRONG CONTENT TYPE DETECTED!\n\n` +
+          `${incompatibilityCheck.reason}\n\n` +
+          `⛔ BLOCKED: This file will NOT be written.\n\n` +
+          `Task was: "${taskContext.substring(0, 150)}..."\n\n` +
+          `TO FIX:\n` +
+          `1. Re-read the original task carefully\n` +
+          `2. Generate content that matches the ACTUAL task\n` +
+          `3. DO NOT use code from other projects or templates\n` +
+          `4. Every file must relate to: ${taskContext.substring(0, 80)}...`,
       };
     }
-    
+
     // NOTE: Keep the matrix decision centralized in isContentIncompatibleWithTask().
     // A duplicate hard-block here caused false positives to bypass confidence checks.
-    
+
     // ==========================================
     // CHECK 2c: Cross-File Consistency (NEW - Prevents mismatched files)
     // ==========================================
     // Check if this file is referenced by other files and verify consistency
     try {
       const htmlFiles: string[] = [];
-      
+
       // Find all HTML files that might reference this JS file
       // Use a recursive function to scan the workspace
       const scanForHtmlFiles = (dir: string, basePath: string = ''): void => {
@@ -935,10 +1111,14 @@ function validateWriteFile(
           for (const entry of entries) {
             const fullPath = path.join(dir, entry.name);
             const relativePath = basePath ? path.join(basePath, entry.name) : entry.name;
-            
+
             if (entry.isFile() && entry.name.endsWith('.html')) {
               htmlFiles.push(fullPath);
-            } else if (entry.isDirectory() && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
+            } else if (
+              entry.isDirectory() &&
+              !entry.name.startsWith('.') &&
+              entry.name !== 'node_modules'
+            ) {
               scanForHtmlFiles(fullPath, relativePath);
             }
           }
@@ -946,9 +1126,9 @@ function validateWriteFile(
           // Skip directories we can't read
         }
       };
-      
+
       scanForHtmlFiles(workspacePath);
-      
+
       // Check each HTML file
       for (const htmlPath of htmlFiles) {
         try {
@@ -958,26 +1138,31 @@ function validateWriteFile(
           if (htmlContent.includes(jsFileName) || htmlContent.includes(filePath)) {
             // Read the HTML to check what project type it expects
             const htmlProjectType = detectProjectTypeFromContent(htmlContent);
-            
+
             // If HTML expects a game but JS is portfolio/debugger code, BLOCK IT
             if (htmlProjectType && contentProjectType && htmlProjectType !== contentProjectType) {
               console.error(`[ToolValidation] 🚨 CROSS-FILE MISMATCH DETECTED!`);
-              console.error(`[ToolValidation]   HTML file (${path.basename(htmlPath)}) expects: ${htmlProjectType}`);
-              console.error(`[ToolValidation]   JS file (${filePath}) contains: ${contentProjectType}`);
-              
+              console.error(
+                `[ToolValidation]   HTML file (${path.basename(htmlPath)}) expects: ${htmlProjectType}`
+              );
+              console.error(
+                `[ToolValidation]   JS file (${filePath}) contains: ${contentProjectType}`
+              );
+
               return {
                 valid: false,
-                error: `🚨 CRITICAL: FILE MISMATCH DETECTED!\n\n` +
-                       `The file "${path.basename(htmlPath)}" references "${filePath}", but they don't match!\n\n` +
-                       `**HTML expects:** ${htmlProjectType} project\n` +
-                       `**JS contains:** ${contentProjectType} project\n\n` +
-                       `THIS IS A SERIOUS ERROR. Files in the same project must be consistent.\n\n` +
-                       `⛔ BLOCKED: This file will NOT be written.\n\n` +
-                       `TO FIX:\n` +
-                       `1. Read the HTML file to see what it expects\n` +
-                       `2. Generate JavaScript that matches the project type\n` +
-                       `3. Ensure all files work together as a cohesive project\n` +
-                       `4. DO NOT mix different project types in the same project`
+                error:
+                  `🚨 CRITICAL: FILE MISMATCH DETECTED!\n\n` +
+                  `The file "${path.basename(htmlPath)}" references "${filePath}", but they don't match!\n\n` +
+                  `**HTML expects:** ${htmlProjectType} project\n` +
+                  `**JS contains:** ${contentProjectType} project\n\n` +
+                  `THIS IS A SERIOUS ERROR. Files in the same project must be consistent.\n\n` +
+                  `⛔ BLOCKED: This file will NOT be written.\n\n` +
+                  `TO FIX:\n` +
+                  `1. Read the HTML file to see what it expects\n` +
+                  `2. Generate JavaScript that matches the project type\n` +
+                  `3. Ensure all files work together as a cohesive project\n` +
+                  `4. DO NOT mix different project types in the same project`,
               };
             }
           }
@@ -989,7 +1174,7 @@ function validateWriteFile(
       // Couldn't scan workspace, continue with other checks
     }
   }
-  
+
   // ==========================================
   // CHECK 2b: Content Similarity Check for Existing Files
   // Warns about full rewrites in explicit repair/fix flows.
@@ -1008,7 +1193,9 @@ function validateWriteFile(
         !/\b(create|generate|scaffold|new project|build from scratch)\b/i.test(taskContext);
 
       if (isExplicitFixPass || isLikelyFixIntent) {
-        console.warn(`[ToolValidation] ⚠️ Updating existing file during repair flow: "${filePath}"`);
+        console.warn(
+          `[ToolValidation] ⚠️ Updating existing file during repair flow: "${filePath}"`
+        );
         console.warn(`[ToolValidation] ⚠️ Consider using patch_file for surgical edits instead`);
 
         return {
@@ -1028,31 +1215,41 @@ function validateWriteFile(
     const taskLower = taskContext.toLowerCase();
 
     // If task mentions Minecraft/voxel/block, reject Tetris-related files
-    if ((taskLower.includes('minecraft') || taskLower.includes('voxel') || taskLower.includes('block')) && 
-        fileName.includes('tetris')) {
-      return { 
-        valid: false, 
-        error: `write_file: File name "${fileName}" does not match task. Task is about Minecraft/voxel game, but file name suggests Tetris. Use appropriate names like: game.js, world.js, chunk.js, player.js, block.js` 
+    if (
+      (taskLower.includes('minecraft') ||
+        taskLower.includes('voxel') ||
+        taskLower.includes('block')) &&
+      fileName.includes('tetris')
+    ) {
+      return {
+        valid: false,
+        error: `write_file: File name "${fileName}" does not match task. Task is about Minecraft/voxel game, but file name suggests Tetris. Use appropriate names like: game.js, world.js, chunk.js, player.js, block.js`,
       };
     }
-    
+
     // If task mentions Tetris, reject Minecraft-related files
-    if (taskLower.includes('tetris') && 
-        (fileName.includes('minecraft') || fileName.includes('voxel') || fileName.includes('chunk') || fileName.includes('block'))) {
-      return { 
-        valid: false, 
-        error: `write_file: File name "${fileName}" does not match task. Task is about Tetris, but file name suggests Minecraft. Use appropriate names like: tetris.js, board.js, piece.js` 
+    if (
+      taskLower.includes('tetris') &&
+      (fileName.includes('minecraft') ||
+        fileName.includes('voxel') ||
+        fileName.includes('chunk') ||
+        fileName.includes('block'))
+    ) {
+      return {
+        valid: false,
+        error: `write_file: File name "${fileName}" does not match task. Task is about Tetris, but file name suggests Minecraft. Use appropriate names like: tetris.js, board.js, piece.js`,
       };
     }
-    
+
     // If task mentions Tetris but content is clearly portfolio/other
     if (taskLower.includes('tetris') && content.length > 200) {
       const contentLower = content.toLowerCase();
       if (contentLower.includes('hamburger') && contentLower.includes('nav-menu')) {
         return {
           valid: false,
-          error: `write_file: Content mismatch! Task is about Tetris but content contains portfolio/navigation code. ` +
-                 `Generate Tetris game code instead.`
+          error:
+            `write_file: Content mismatch! Task is about Tetris but content contains portfolio/navigation code. ` +
+            `Generate Tetris game code instead.`,
         };
       }
     }
@@ -1072,9 +1269,9 @@ function validateWriteFile(
     } catch (e) {
       // Path resolution failed
     }
-    return { 
-      valid: false, 
-      error: `write_file: absolute path detected (${filePath}). Use relative paths only.` 
+    return {
+      valid: false,
+      error: `write_file: absolute path detected (${filePath}). Use relative paths only.`,
     };
   }
 
@@ -1087,15 +1284,15 @@ function validateWriteFile(
     const normalizedResolved = path.normalize(resolvedPath);
 
     if (!normalizedResolved.startsWith(normalizedWorkspace)) {
-      return { 
-        valid: false, 
-        error: `write_file: path outside workspace: ${filePath}` 
+      return {
+        valid: false,
+        error: `write_file: path outside workspace: ${filePath}`,
       };
     }
   } catch (e) {
-    return { 
-      valid: false, 
-      error: `write_file: invalid path: ${filePath}` 
+    return {
+      valid: false,
+      error: `write_file: invalid path: ${filePath}`,
     };
   }
 
@@ -1107,6 +1304,93 @@ function validateWriteFile(
   }
 
   return validateStructuredFileContent(filePath, String(content));
+}
+
+function isRepairFlowContext(
+  taskContext?: string,
+  executionPolicy?: VibeCoderExecutionPolicy
+): boolean {
+  if (executionPolicy?.intent === 'repair-only') {
+    return true;
+  }
+  if (!taskContext) {
+    return false;
+  }
+  return /critical fix pass required|repair scope is enforced|\b(fix|debug|repair|broken|failed|error|issue)\b/i.test(
+    taskContext
+  );
+}
+
+function validateFrameworkFreezeBoundary(
+  filePath: string,
+  content: string,
+  workspacePath: string,
+  taskContext?: string,
+  executionPolicy?: VibeCoderExecutionPolicy
+): ValidationResult | null {
+  if (!isRepairFlowContext(taskContext, executionPolicy)) {
+    return null;
+  }
+
+  const normalizedPath = normalizeForGlob(filePath).toLowerCase();
+  const hasMainJs = fs.existsSync(path.join(workspacePath, 'src', 'main.js'));
+  const hasReactEntrypoint =
+    fs.existsSync(path.join(workspacePath, 'src', 'main.tsx')) ||
+    fs.existsSync(path.join(workspacePath, 'src', 'main.jsx'));
+
+  const writingReactEntrypoint = normalizedPath === 'src/main.tsx' || normalizedPath === 'src/main.jsx';
+  const writingVanillaEntrypoint = normalizedPath === 'src/main.js';
+
+  if (hasMainJs && writingReactEntrypoint) {
+    return {
+      valid: false,
+      error:
+        `Framework freeze: repair flows cannot pivot from "src/main.js" to "${filePath}". ` +
+        `Patch the existing JS entrypoint instead of introducing a second stack.`,
+    };
+  }
+
+  if (hasReactEntrypoint && writingVanillaEntrypoint) {
+    return {
+      valid: false,
+      error:
+        `Framework freeze: repair flows cannot pivot from React entrypoints to "${filePath}". ` +
+        `Patch the existing TSX/JSX entrypoint instead of adding "src/main.js".`,
+    };
+  }
+
+  if (normalizedPath === 'index.html') {
+    const pointsToMainJs = /src=["'](?:\.\/|\/)?src\/main\.js["']/i.test(content);
+    const pointsToReactEntry = /src=["'](?:\.\/|\/)?src\/main\.(?:tsx|jsx|ts)["']/i.test(content);
+    const hasRootMount = /id=["']root["']/i.test(content);
+    const hasAppMount = /id=["']app["']/i.test(content);
+
+    if (hasReactEntrypoint && pointsToMainJs) {
+      return {
+        valid: false,
+        error:
+          'Framework freeze: index.html points to src/main.js while React entrypoint exists. ' +
+          'Keep entrypoint wiring on a single stack during repair.',
+      };
+    }
+    if (hasMainJs && pointsToReactEntry) {
+      return {
+        valid: false,
+        error:
+          'Framework freeze: index.html points to TS/TSX entry while src/main.js exists. ' +
+          'Do not migrate stacks mid-repair.',
+      };
+    }
+    if (hasReactEntrypoint && hasAppMount && !hasRootMount) {
+      return {
+        valid: false,
+        error:
+          'Framework freeze: React entrypoint expects a #root mount target, but index.html only defines #app.',
+      };
+    }
+  }
+
+  return null;
 }
 
 function validatePatchFile(
@@ -1195,8 +1479,7 @@ function validateStructuredFileContent(filePath: string, content: string): Valid
   const normalizedPath = filePath.replace(/\\/g, '/').toLowerCase();
   const fileName = path.basename(normalizedPath);
 
-  const looksLikeTsConfig =
-    normalizedPath.endsWith('.json') && fileName.startsWith('tsconfig');
+  const looksLikeTsConfig = normalizedPath.endsWith('.json') && fileName.startsWith('tsconfig');
   if (looksLikeTsConfig) {
     const tsConfigValidation = validateTypeScriptConfig(content, filePath);
     if (!tsConfigValidation.valid) {
@@ -1217,7 +1500,10 @@ function validateStructuredFileContent(filePath: string, content: string): Valid
 /**
  * Validate run_command tool call
  */
-function validateRunCommand(toolCall: any, specialistContext?: SpecialistValidationContext): ValidationResult {
+function validateRunCommand(
+  toolCall: any,
+  specialistContext?: SpecialistValidationContext
+): ValidationResult {
   const args = toolCall.arguments || {};
   const command = args.command;
 
@@ -1230,9 +1516,9 @@ function validateRunCommand(toolCall: any, specialistContext?: SpecialistValidat
   const lowerCommand = command.toLowerCase();
   for (const dangerous of dangerousCommands) {
     if (lowerCommand.includes(dangerous)) {
-      return { 
-        valid: false, 
-        error: `run_command: potentially dangerous command detected: ${dangerous}` 
+      return {
+        valid: false,
+        error: `run_command: potentially dangerous command detected: ${dangerous}`,
       };
     }
   }
@@ -1267,7 +1553,10 @@ function validateScaffoldProject(
   }
 
   const specialistId = resolveValidationSpecialist(specialistContext?.specialist);
-  if (specialistContext?.specialist === 'integration_analyst' || specialistId === 'integration_verifier') {
+  if (
+    specialistContext?.specialist === 'integration_analyst' ||
+    specialistId === 'integration_verifier'
+  ) {
     return {
       valid: false,
       error: 'integration_verifier: scaffold_project is not allowed during verification',
@@ -1288,9 +1577,9 @@ function validateScaffoldProject(
     } catch (e) {
       // Path resolution failed
     }
-    return { 
-      valid: false, 
-      error: `scaffold_project: absolute path detected (${projectPath}). Use relative paths only.` 
+    return {
+      valid: false,
+      error: `scaffold_project: absolute path detected (${projectPath}). Use relative paths only.`,
     };
   }
 
@@ -1301,13 +1590,13 @@ function validateScaffoldProject(
     if (!normalizedResolved.startsWith(normalizedWorkspace)) {
       return {
         valid: false,
-        error: `scaffold_project: path outside workspace: ${projectPath}`
+        error: `scaffold_project: path outside workspace: ${projectPath}`,
       };
     }
   } catch {
     return {
       valid: false,
-      error: `scaffold_project: invalid path: ${projectPath}`
+      error: `scaffold_project: invalid path: ${projectPath}`,
     };
   }
 
@@ -1317,7 +1606,7 @@ function validateScaffoldProject(
 /**
  * Validate index.html has required CSS/JS links
  * This catches the common mistake of creating CSS files but not linking them
- * 
+ *
  * ENHANCED: Now returns hard failures for missing CSS links and can auto-fix
  */
 export function validateIndexHtml(
@@ -1328,26 +1617,27 @@ export function validateIndexHtml(
   const errors: string[] = [];
   const warnings: string[] = [];
   const contentLower = content.toLowerCase();
-  const trackedPaths = Array.from(createdFiles.values()).flat().map((filePath) => normalizeProjectPath(filePath));
+  const trackedPaths = Array.from(createdFiles.values())
+    .flat()
+    .map((filePath) => normalizeProjectPath(filePath));
   const resolvedHtmlPath = resolveTrackedHtmlPath(trackedPaths, htmlFilePath);
-  
+
   // Get list of CSS files that were created
-  const cssFiles = trackedPaths.filter(f => 
-    f.endsWith('.css') && !f.includes('node_modules')
-  );
-  
+  const cssFiles = trackedPaths.filter((f) => f.endsWith('.css') && !f.includes('node_modules'));
+
   // Get list of JS files that were created (excluding config files)
-  const jsFiles = trackedPaths.filter(f => 
-    (f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.jsx')) && 
-    !f.includes('node_modules') &&
-    !f.includes('config') &&
-    !f.includes('.config.')
+  const jsFiles = trackedPaths.filter(
+    (f) =>
+      (f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.jsx')) &&
+      !f.includes('node_modules') &&
+      !f.includes('config') &&
+      !f.includes('.config.')
   );
-  
+
   // Check if index.html has ANY stylesheet link
-  const hasStylesheetLink = contentLower.includes('rel="stylesheet"') || 
-                            contentLower.includes("rel='stylesheet'");
-  
+  const hasStylesheetLink =
+    contentLower.includes('rel="stylesheet"') || contentLower.includes("rel='stylesheet'");
+
   // Check if index.html has ANY script tag
   const hasScriptTag = contentLower.includes('<script');
   const hasModuleScript = hasScriptTag && contentLower.includes('type="module"');
@@ -1358,34 +1648,36 @@ export function validateIndexHtml(
     const clean = normalizeProjectPath(projectRelativePath);
     return bundlerManagedProject ? toHtmlRelativeAssetPath(clean, resolvedHtmlPath) : `/${clean}`;
   };
-  
+
   // 🚨 HARD FAILURE: CSS files created but no stylesheet link
   if (cssFiles.length > 0 && !hasStylesheetLink && !allowBundlerManagedCss) {
     errors.push(
       `🚨 CRITICAL ERROR: CSS file(s) created (${cssFiles.join(', ')}) but index.html has NO <link rel="stylesheet"> tag!\n` +
-      `The page will appear completely unstyled (404 for CSS).\n` +
-      `FIX: Add this inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFiles[0])}" />`
+        `The page will appear completely unstyled (404 for CSS).\n` +
+        `FIX: Add this inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFiles[0])}" />`
     );
   }
-  
+
   // If JS files were created but no script tag (and not a Vite project with main.tsx)
   const isViteProject = content.includes('type="module"');
   if (jsFiles.length > 0 && !hasScriptTag && !isViteProject) {
     // Filter to main JS files only
-    const mainJsFiles = jsFiles.filter(f => 
-      f.includes('main') || f.includes('script') || f.includes('game') || f.includes('app')
+    const mainJsFiles = jsFiles.filter(
+      (f) => f.includes('main') || f.includes('script') || f.includes('game') || f.includes('app')
     );
-    
+
     if (mainJsFiles.length > 0) {
       errors.push(
         `🚨 ERROR: JS file(s) created (${mainJsFiles.join(', ')}) but index.html has no <script> tag!\n` +
-        `The JavaScript will not run (404 for JS).\n` +
-        `FIX: Add before </body>: <script src="${suggestedAssetHref(mainJsFiles[0])}"></script>` +
-        (bundlerManagedProject ? ` (Vite: use type="module" and point at your entry, e.g. <script type="module" src="${suggestedAssetHref('src/main.tsx')}"></script>)` : '')
+          `The JavaScript will not run (404 for JS).\n` +
+          `FIX: Add before </body>: <script src="${suggestedAssetHref(mainJsFiles[0])}"></script>` +
+          (bundlerManagedProject
+            ? ` (Vite: use type="module" and point at your entry, e.g. <script type="module" src="${suggestedAssetHref('src/main.tsx')}"></script>)`
+            : '')
       );
     }
   }
-  
+
   // Check for specific CSS file references
   for (const cssFile of cssFiles) {
     if (allowBundlerManagedCss) {
@@ -1396,16 +1688,16 @@ export function validateIndexHtml(
     if (!content.includes(cssFile) && !content.includes(fileName)) {
       errors.push(
         `CSS file "${cssFile}" was created but is not referenced in index.html.\n` +
-        `FIX: Add inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFile)}" />`
+          `FIX: Add inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFile)}" />`
       );
     }
   }
-  
+
   // Return errors (hard failures) before warnings
   if (errors.length > 0) {
     return {
       valid: false,
-      error: `🚨 index.html CRITICAL ERRORS (will cause 404s):\n\n${errors.join('\n\n')}`
+      error: `🚨 index.html CRITICAL ERRORS (will cause 404s):\n\n${errors.join('\n\n')}`,
     };
   }
 
@@ -1414,14 +1706,14 @@ export function validateIndexHtml(
       'index.html uses root-absolute /src/... URLs. Prefer ./src/... so `vite build` resolves reliably (e.g. Windows paths with spaces).'
     );
   }
-  
+
   if (warnings.length > 0) {
     return {
-      valid: true,  // Warnings don't block, but are reported
-      warning: `⚠️ index.html warnings:\n${warnings.join('\n')}`
+      valid: true, // Warnings don't block, but are reported
+      warning: `⚠️ index.html warnings:\n${warnings.join('\n')}`,
     };
   }
-  
+
   return { valid: true };
 }
 
@@ -1430,71 +1722,69 @@ export function validateIndexHtml(
  * This prevents 404 errors by ensuring all created files are properly referenced
  */
 export function autoFixIndexHtml(
-  content: string, 
-  cssFiles: string[], 
+  content: string,
+  cssFiles: string[],
   jsFiles: string[],
   htmlFilePath: string = 'index.html'
 ): { fixed: boolean; content: string; changes: string[] } {
   let fixedContent = content;
   const changes: string[] = [];
-  
+
   // Find the </head> tag to insert CSS links
   const headCloseIndex = fixedContent.toLowerCase().indexOf('</head>');
-  
+
   // Find the </body> tag to insert JS links
   const bodyCloseIndex = fixedContent.toLowerCase().indexOf('</body>');
-  
+
   // Add missing CSS links
   for (const cssFile of cssFiles) {
     const fileName = cssFile.split('/').pop() || cssFile;
     const contentLower = fixedContent.toLowerCase();
-    
+
     if (!contentLower.includes(cssFile) && !contentLower.includes(fileName)) {
       const linkTag = `    <link rel="stylesheet" href="${toHtmlRelativeAssetPath(cssFile, htmlFilePath)}" />\n`;
-      
+
       if (headCloseIndex !== -1) {
         // Insert before </head>
         const insertPosition = fixedContent.indexOf('</head>');
-        fixedContent = 
-          fixedContent.slice(0, insertPosition) + 
-          linkTag + 
-          fixedContent.slice(insertPosition);
-        
+        fixedContent =
+          fixedContent.slice(0, insertPosition) + linkTag + fixedContent.slice(insertPosition);
+
         changes.push(`Added CSS link: ${cssFile}`);
       }
     }
   }
-  
+
   // Add missing JS links (only for main files)
-  const mainJsFiles = jsFiles.filter(f => 
-    f.includes('main') || f.includes('script') || f.includes('game') || f.includes('app')
+  const mainJsFiles = jsFiles.filter(
+    (f) => f.includes('main') || f.includes('script') || f.includes('game') || f.includes('app')
   );
-  
+
   for (const jsFile of mainJsFiles) {
     const fileName = jsFile.split('/').pop() || jsFile;
     const contentLower = fixedContent.toLowerCase();
-    
+
     if (!contentLower.includes(jsFile) && !contentLower.includes(fileName)) {
       const scriptTag = `    <script src="${toHtmlRelativeAssetPath(jsFile, htmlFilePath)}"></script>\n`;
-      
+
       // Find current position of </body> (may have moved)
       const currentBodyClose = fixedContent.indexOf('</body>');
       if (currentBodyClose !== -1) {
         // Insert before </body>
-        fixedContent = 
-          fixedContent.slice(0, currentBodyClose) + 
-          scriptTag + 
+        fixedContent =
+          fixedContent.slice(0, currentBodyClose) +
+          scriptTag +
           fixedContent.slice(currentBodyClose);
-        
+
         changes.push(`Added JS script: ${jsFile}`);
       }
     }
   }
-  
+
   return {
     fixed: changes.length > 0,
     content: fixedContent,
-    changes
+    changes,
   };
 }
 
@@ -1510,45 +1800,47 @@ export function validateJavaScriptFile(
   const warnings: string[] = [];
   const bundlerProject = hasBundlerRuntime(options.workspacePath);
   const likelyBundlerLayout = looksLikeBundlerSourcePath(filePath);
-  
+
   // Check for CSS imports (Vite-specific, won't work in browser)
   const cssImportMatch = content.match(/import\s+['"][^'"]+\.css['"]/g);
   if (cssImportMatch && !bundlerProject) {
     if (likelyBundlerLayout) {
       warnings.push(
         `NOTE: File "${filePath}" imports CSS ("${cssImportMatch[0]}").\n` +
-        `No bundler runtime was detected yet, but this layout looks bundler-oriented (src/* entry style).\n` +
-        `If this project targets Vite/Webpack, this is expected. Otherwise add stylesheet links in HTML.`
+          `No bundler runtime was detected yet, but this layout looks bundler-oriented (src/* entry style).\n` +
+          `If this project targets Vite/Webpack, this is expected. Otherwise add stylesheet links in HTML.`
       );
     } else {
       warnings.push(
         `WARNING: File "${filePath}" uses CSS import syntax: "${cssImportMatch[0]}".\n` +
-        `This only works when running through a bundler (for example, npm run dev).\n` +
-        `If users open index.html directly, JavaScript may fail to load.\n` +
-        `Either:\n` +
-        `  1. Add <link rel="stylesheet" href="..."> to index.html and remove CSS import, OR\n` +
-        `  2. Document that users must run a bundler/dev server.`
+          `This only works when running through a bundler (for example, npm run dev).\n` +
+          `If users open index.html directly, JavaScript may fail to load.\n` +
+          `Either:\n` +
+          `  1. Add <link rel="stylesheet" href="..."> to index.html and remove CSS import, OR\n` +
+          `  2. Document that users must run a bundler/dev server.`
       );
     }
   }
-  
+
   // Check for other bundler-only imports
-  const assetImports = content.match(/import\s+\w+\s+from\s+['"][^'"]+\.(png|jpg|svg|gif|woff|woff2)['"]/) ;
+  const assetImports = content.match(
+    /import\s+\w+\s+from\s+['"][^'"]+\.(png|jpg|svg|gif|woff|woff2)['"]/
+  );
   if (assetImports && !bundlerProject) {
     const severity = likelyBundlerLayout ? 'NOTE' : 'WARNING';
     warnings.push(
       `${severity}: File "${filePath}" imports assets directly: "${assetImports[0]}".\n` +
-      `This requires a bundler runtime. Ensure runtime docs make that explicit.`
+        `This requires a bundler runtime. Ensure runtime docs make that explicit.`
     );
   }
-  
+
   if (warnings.length > 0) {
     return {
-      valid: true,  // Allow but warn - might be intentional Vite project
-      warning: warnings.join('\n')
+      valid: true, // Allow but warn - might be intentional Vite project
+      warning: warnings.join('\n'),
     };
   }
-  
+
   return { valid: true };
 }
 
@@ -1595,7 +1887,10 @@ export function validateTypeScriptConfig(content: string, filePath: string): Val
       }
     }
   } catch (err) {
-    return { valid: false, error: `${filePath}: failed to validate compiler options (${String(err)})` };
+    return {
+      valid: false,
+      error: `${filePath}: failed to validate compiler options (${String(err)})`,
+    };
   }
 
   return { valid: true };
@@ -1609,35 +1904,35 @@ export function validatePackageJson(content: string): ValidationResult {
     const pkg = JSON.parse(content);
     const warnings: string[] = [];
     const errors: string[] = [];
-    
+
     if (pkg.scripts) {
       // Check for macOS-only commands
       for (const [scriptName, scriptCmd] of Object.entries(pkg.scripts)) {
         const cmd = String(scriptCmd).toLowerCase();
-        
+
         // "open" command is macOS only
         if (cmd.startsWith('open ') || cmd.includes(' open ')) {
           errors.push(
             `🚨 Script "${scriptName}" uses "open" command which only works on macOS.\n` +
-            `   Windows/Linux users will get: "'open' is not recognized as an internal or external command"\n` +
-            `   FIX: Use "npx serve" or "npx http-server" for web projects.`
+              `   Windows/Linux users will get: "'open' is not recognized as an internal or external command"\n` +
+              `   FIX: Use "npx serve" or "npx http-server" for web projects.`
           );
         }
-        
+
         // "xdg-open" is Linux only
         if (cmd.includes('xdg-open')) {
           errors.push(
             `🚨 Script "${scriptName}" uses "xdg-open" which only works on Linux.\n` +
-            `   FIX: Use cross-platform tools like "npx serve" or "npx open-cli".`
+              `   FIX: Use cross-platform tools like "npx serve" or "npx open-cli".`
           );
         }
-        
+
         // "start" without proper escaping might fail
         if (cmd === 'start' || cmd.startsWith('start ')) {
           if (!cmd.includes('npm') && !cmd.includes('node')) {
             warnings.push(
               `Script "${scriptName}" uses Windows "start" command - may not work on macOS/Linux.\n` +
-              `   Consider using cross-platform alternatives.`
+                `   Consider using cross-platform alternatives.`
             );
           }
         }
@@ -1653,44 +1948,66 @@ export function validatePackageJson(content: string): ValidationResult {
       'svelte',
       '@react-three/fiber',
       'pixi.js',
-      '@pixi/react'
+      '@pixi/react',
     ];
-    const hasBrowserNpmDep = browserPackagesNeedingBundler.some((name) => Boolean(pkg.dependencies?.[name]));
-    const hasBundler =
-      Boolean(
-        pkg.devDependencies?.vite ||
-          pkg.devDependencies?.webpack ||
-          pkg.devDependencies?.parcel ||
-          pkg.devDependencies?.rollup ||
-          pkg.dependencies?.vite ||
-          pkg.dependencies?.next ||
-          pkg.devDependencies?.next ||
-          pkg.dependencies?.nuxt ||
-          pkg.devDependencies?.nuxt ||
-          pkg.dependencies?.['@remix-run/react'] ||
-          pkg.devDependencies?.['@remix-run/dev'] ||
-          pkg.dependencies?.astro ||
-          pkg.devDependencies?.astro
-      );
+    const hasBrowserNpmDep = browserPackagesNeedingBundler.some((name) =>
+      Boolean(pkg.dependencies?.[name])
+    );
+    const hasBundler = Boolean(
+      pkg.devDependencies?.vite ||
+      pkg.devDependencies?.webpack ||
+      pkg.devDependencies?.parcel ||
+      pkg.devDependencies?.rollup ||
+      pkg.dependencies?.vite ||
+      pkg.dependencies?.next ||
+      pkg.devDependencies?.next ||
+      pkg.dependencies?.nuxt ||
+      pkg.devDependencies?.nuxt ||
+      pkg.dependencies?.['@remix-run/react'] ||
+      pkg.devDependencies?.['@remix-run/dev'] ||
+      pkg.dependencies?.astro ||
+      pkg.devDependencies?.astro
+    );
     if (hasBrowserNpmDep && !hasBundler) {
       errors.push(
         `🚨 Browser npm dependencies (e.g. three, react) require a bundler. Plain "npx serve" / "serve" only serves static files — the browser cannot resolve bare imports like import * as THREE from 'three'. ` +
           `Add devDependencies: { "vite": "^5.4.0" }, scripts: { "dev": "vite", "build": "vite build", "preview": "vite preview", "start": "vite" }, and a root vite.config.js. README must say: npm install && npm run dev.`
       );
     }
-    
+
     // Catch hallucinated version ranges that are clearly impossible
     const allDeps: Record<string, string> = {
       ...(pkg.dependencies || {}),
-      ...(pkg.devDependencies || {})
+      ...(pkg.devDependencies || {}),
     };
 
     const KNOWN_MAX_MAJORS: Record<string, number> = {
-      react: 19, 'react-dom': 19, next: 15, vue: 3, svelte: 5, vite: 6,
-      express: 5, fastify: 5, three: 0, typescript: 5, tailwindcss: 4,
-      webpack: 5, rollup: 4, prisma: 6, '@prisma/client': 6, zod: 3,
-      bcryptjs: 2, bcrypt: 5, jsonwebtoken: 9, mongoose: 8, sequelize: 6,
-      axios: 1, lodash: 4, dayjs: 1, moment: 2, uuid: 10,
+      react: 19,
+      'react-dom': 19,
+      next: 15,
+      vue: 3,
+      svelte: 5,
+      vite: 6,
+      express: 5,
+      fastify: 5,
+      three: 0,
+      typescript: 5,
+      tailwindcss: 4,
+      webpack: 5,
+      rollup: 4,
+      prisma: 6,
+      '@prisma/client': 6,
+      zod: 3,
+      bcryptjs: 2,
+      bcrypt: 5,
+      jsonwebtoken: 9,
+      mongoose: 8,
+      sequelize: 6,
+      axios: 1,
+      lodash: 4,
+      dayjs: 1,
+      moment: 2,
+      uuid: 10,
     };
 
     for (const [depName, depRange] of Object.entries(allDeps)) {
@@ -1702,7 +2019,7 @@ export function validatePackageJson(content: string): ValidationResult {
       if (knownMax !== undefined && major > knownMax) {
         errors.push(
           `🚨 "${depName}@${depRange}" specifies a version that does not exist (latest major is ${knownMax}.x). ` +
-          `The AI likely hallucinated this version. Fix: use "^${knownMax}.0.0" or run "npm view ${depName} version" to confirm.`
+            `The AI likely hallucinated this version. Fix: use "^${knownMax}.0.0" or run "npm view ${depName} version" to confirm.`
         );
       }
     }
@@ -1710,17 +2027,17 @@ export function validatePackageJson(content: string): ValidationResult {
     if (errors.length > 0) {
       return {
         valid: false,
-        error: `Cross-platform ERRORS in package.json (project won't work on all OSes):\n\n${errors.join('\n\n')}`
+        error: `Cross-platform ERRORS in package.json (project won't work on all OSes):\n\n${errors.join('\n\n')}`,
       };
     }
-    
+
     if (warnings.length > 0) {
       return {
         valid: true,
-        warning: `Cross-platform warnings in package.json:\n${warnings.join('\n')}`
+        warning: `Cross-platform warnings in package.json:\n${warnings.join('\n')}`,
       };
     }
-    
+
     return { valid: true };
   } catch (e) {
     return { valid: false, error: 'Invalid JSON in package.json' };
@@ -1731,21 +2048,21 @@ export function validatePackageJson(content: string): ValidationResult {
  * Auto-fix package.json scripts for cross-platform compatibility
  * Converts macOS/Linux specific commands to cross-platform alternatives
  */
-export function autoFixPackageJsonScripts(content: string): { 
-  fixed: boolean; 
-  content: string; 
-  changes: string[] 
+export function autoFixPackageJsonScripts(content: string): {
+  fixed: boolean;
+  content: string;
+  changes: string[];
 } {
   try {
     const pkg = JSON.parse(content);
     const changes: string[] = [];
     let modified = false;
-    
+
     if (pkg.scripts) {
       for (const [scriptName, scriptCmd] of Object.entries(pkg.scripts)) {
         const cmd = String(scriptCmd);
         let newCmd = cmd;
-        
+
         // Fix "open" command (macOS)
         if (cmd.toLowerCase().includes('open ')) {
           // Pattern: "open index.html" -> "npx serve ."
@@ -1753,14 +2070,18 @@ export function autoFixPackageJsonScripts(content: string): {
           if (cmd.match(/open\s+(index\.html|\.\/|\.)/i)) {
             // Opening a local HTML file - use serve
             newCmd = 'npx serve .';
-            changes.push(`${scriptName}: Replaced "open ..." with "npx serve ." (cross-platform static server)`);
+            changes.push(
+              `${scriptName}: Replaced "open ..." with "npx serve ." (cross-platform static server)`
+            );
             modified = true;
           } else if (cmd.match(/open\s+https?:/i)) {
             // Opening a URL - use open-cli (cross-platform)
             const urlMatch = cmd.match(/open\s+(https?:[^\s]+)/i);
             if (urlMatch) {
               newCmd = cmd.replace(/open\s+/, 'npx open-cli ');
-              changes.push(`${scriptName}: Replaced "open" with "npx open-cli" (cross-platform URL opener)`);
+              changes.push(
+                `${scriptName}: Replaced "open" with "npx open-cli" (cross-platform URL opener)`
+              );
               modified = true;
             }
           } else {
@@ -1770,30 +2091,30 @@ export function autoFixPackageJsonScripts(content: string): {
             modified = true;
           }
         }
-        
+
         // Fix "xdg-open" command (Linux)
         if (cmd.includes('xdg-open')) {
           newCmd = cmd.replace(/xdg-open/g, 'npx open-cli');
           changes.push(`${scriptName}: Replaced "xdg-open" with "npx open-cli" (cross-platform)`);
           modified = true;
         }
-        
-        // Fix common pattern: "start index.html" (Windows) 
+
+        // Fix common pattern: "start index.html" (Windows)
         // This often appears with && chains
         if (cmd.match(/^\s*start\s+[^"'`\s]+\.(html|htm)/i)) {
           newCmd = 'npx serve .';
           changes.push(`${scriptName}: Replaced "start index.html" with "npx serve ."`);
           modified = true;
         }
-        
+
         // Update if changed
         if (newCmd !== cmd) {
           pkg.scripts[scriptName] = newCmd;
         }
       }
-      
+
       // Add serve as devDependency if we're using it
-      if (changes.some(c => c.includes('npx serve'))) {
+      if (changes.some((c) => c.includes('npx serve'))) {
         if (!pkg.devDependencies) pkg.devDependencies = {};
         if (!pkg.devDependencies['serve'] && !pkg.dependencies?.['serve']) {
           pkg.devDependencies['serve'] = '^14.0.0';
@@ -1801,9 +2122,9 @@ export function autoFixPackageJsonScripts(content: string): {
           modified = true;
         }
       }
-      
+
       // Add open-cli if we're using it
-      if (changes.some(c => c.includes('open-cli'))) {
+      if (changes.some((c) => c.includes('open-cli'))) {
         if (!pkg.devDependencies) pkg.devDependencies = {};
         if (!pkg.devDependencies['open-cli'] && !pkg.dependencies?.['open-cli']) {
           pkg.devDependencies['open-cli'] = '^7.0.0';
@@ -1823,16 +2144,15 @@ export function autoFixPackageJsonScripts(content: string): {
         'svelte',
         '@react-three/fiber',
         'pixi.js',
-        '@pixi/react'
+        '@pixi/react',
       ];
       const hasBrowserDep = browserPkgs.some((n) => Boolean(pkg.dependencies?.[n]));
-      const hasBundler =
-        Boolean(
-          pkg.devDependencies?.vite ||
-            pkg.devDependencies?.webpack ||
-            pkg.devDependencies?.parcel ||
-            pkg.dependencies?.vite
-        );
+      const hasBundler = Boolean(
+        pkg.devDependencies?.vite ||
+        pkg.devDependencies?.webpack ||
+        pkg.devDependencies?.parcel ||
+        pkg.dependencies?.vite
+      );
       if (hasBrowserDep && !hasBundler) {
         if (!pkg.devDependencies) pkg.devDependencies = {};
         pkg.devDependencies.vite = pkg.devDependencies.vite || '^5.4.0';
@@ -1840,7 +2160,8 @@ export function autoFixPackageJsonScripts(content: string): {
         const devCmd = String(pkg.scripts.dev || '');
         const startCmd = String(pkg.scripts.start || '');
         if (!pkg.scripts.dev || devCmd.includes('serve')) pkg.scripts.dev = 'vite';
-        if (!pkg.scripts.start || startCmd.includes('serve') || startCmd === 'npx serve') pkg.scripts.start = 'vite';
+        if (!pkg.scripts.start || startCmd.includes('serve') || startCmd === 'npx serve')
+          pkg.scripts.start = 'vite';
         if (!pkg.scripts.build) pkg.scripts.build = 'vite build';
         if (!pkg.scripts.preview) pkg.scripts.preview = 'vite preview';
         changes.push(
@@ -1851,11 +2172,11 @@ export function autoFixPackageJsonScripts(content: string): {
     } catch {
       // ignore
     }
-    
+
     return {
       fixed: modified,
       content: modified ? JSON.stringify(pkg, null, 2) : content,
-      changes
+      changes,
     };
   } catch (e) {
     return { fixed: false, content, changes: [`Error parsing package.json: ${e}`] };
@@ -1872,54 +2193,66 @@ export function detectOrphanedFiles(
 ): string[] {
   const orphaned: string[] = [];
   const entryContent = files.get(entryPoint) || '';
-  
+
   for (const [filePath, content] of files) {
     if (filePath === entryPoint) continue;
-    
+
     const fileName = path.basename(filePath);
     const fileNameNoExt = path.basename(filePath, path.extname(filePath));
-    
+
     // Check if this file is referenced anywhere
     let isReferenced = false;
-    
+
     // Check in entry point
-    if (entryContent.includes(filePath) || 
-        entryContent.includes(fileName) ||
-        entryContent.includes(`src="${filePath}"`) ||
-        entryContent.includes(`href="${filePath}"`)) {
+    if (
+      entryContent.includes(filePath) ||
+      entryContent.includes(fileName) ||
+      entryContent.includes(`src="${filePath}"`) ||
+      entryContent.includes(`href="${filePath}"`)
+    ) {
       isReferenced = true;
     }
-    
+
     // Check if referenced by other files
     if (!isReferenced) {
       for (const [otherPath, otherContent] of files) {
         if (otherPath === filePath) continue;
-        
+
         // Check for import/require statements or script/link tags
-        if (otherContent.includes(`import`) && 
-            (otherContent.includes(`from './${fileNameNoExt}'`) ||
-             otherContent.includes(`from "./${fileNameNoExt}"`) ||
-             otherContent.includes(`from '${filePath}'`) ||
-             otherContent.includes(`from "${filePath}"`))) {
+        if (
+          otherContent.includes(`import`) &&
+          (otherContent.includes(`from './${fileNameNoExt}'`) ||
+            otherContent.includes(`from "./${fileNameNoExt}"`) ||
+            otherContent.includes(`from '${filePath}'`) ||
+            otherContent.includes(`from "${filePath}"`))
+        ) {
           isReferenced = true;
           break;
         }
-        
-        if (otherContent.includes(`require('${filePath}')`) ||
-            otherContent.includes(`require("./${fileNameNoExt}")`)) {
+
+        if (
+          otherContent.includes(`require('${filePath}')`) ||
+          otherContent.includes(`require("./${fileNameNoExt}")`)
+        ) {
           isReferenced = true;
           break;
         }
       }
     }
-    
+
     // Exclude common config files that don't need references
     const configFiles = [
-      'package.json', 'package-lock.json', 'tsconfig.json', 
-      'vite.config.ts', 'webpack.config.js', '.gitignore',
-      'README.md', '.env', '.env.example'
+      'package.json',
+      'package-lock.json',
+      'tsconfig.json',
+      'vite.config.ts',
+      'webpack.config.js',
+      '.gitignore',
+      'README.md',
+      '.env',
+      '.env.example',
     ];
-    
+
     if (!isReferenced && !configFiles.includes(fileName)) {
       // Only flag JS/TS/CSS files as potentially orphaned
       const ext = path.extname(filePath).toLowerCase();
@@ -1928,7 +2261,7 @@ export function detectOrphanedFiles(
       }
     }
   }
-  
+
   return orphaned;
 }
 
@@ -1946,4 +2279,3 @@ export function fixToolCall(toolCall: any, validation: ValidationResult): any {
   }
   return toolCall;
 }
-
