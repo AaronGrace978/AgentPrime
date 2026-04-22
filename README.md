@@ -96,6 +96,13 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 ## Recent Upgrades
 
+### Ollama Cloud, defaults, and agent runtime (April 2026)
+
+- **Default cloud model:** App defaults and dual-model “deep” presets favor **`kimi-k2.6:cloud`** where Ollama Cloud is the primary path (see `src/main/main.ts`, `src/main/agent-loop.ts`, `src/main/agent/specialized-agents.ts`, and `src/renderer/components/AIChat/constants.ts`). The model picker includes `kimi-k2.6:cloud`.
+- **Desktop key first:** When both the saved Ollama API key and the desktop alternate (`OLLAMA_API_KEY_DESKTOP` / `alternateApiKey`) are present, **`ollama-provider` uses the alternate first** and keeps the other key for the existing auth retry swap (`src/main/ai-providers/ollama-provider.ts`).
+- **Pipeline read scope:** `pipeline_specialist` may **read** root `index.html`, `README.md`, and `vite.config.*` in addition to package and source trees, so build wiring checks do not fail on read-boundary validation (`src/main/agent/specialist-contracts.ts`).
+- **Faster cloud timeouts:** Cloud model calls use **tighter `withAITimeout` caps** so smart fallback can move to the next model sooner instead of waiting on a single hung request (`src/main/core/timeout-utils.ts`).
+
 ### Live tool-call streaming across every provider (April 2026)
 
 Closes the streaming gap left by the previous round: every provider in the lineup now exposes a real `streamWithTools(...)` surface so agentic UIs can render tokens AND tool calls live, instead of waiting for the full turn to finish.
@@ -371,6 +378,8 @@ npm run dev
 ```
 
 That runs webpack watch tasks for the main and renderer bundles. When you want to launch the desktop app from the built output, use `npm start`.
+
+Contributor setup, IPC conventions, and backend tests: [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md).
 
 ## Scripts
 

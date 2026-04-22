@@ -1,15 +1,24 @@
 /**
  * Ollama Provider - Local and Cloud Ollama models
- * 
+ *
  * ENHANCED: Better timeout handling, health checks, and model detection
  * NEW: Anthropic API compatibility mode for tool calling (Ollama v0.14.0+)
  */
 
 import { BaseProvider } from './base-provider';
 import { AbortError } from '../core/timeout-utils';
-import type { 
-  ProviderConfig, ChatMessage, ChatOptions, ChatResult, ModelInfo, StreamCallback,
-  Tool, ToolUseBlock, ContentBlock, ChatWithToolsResult, ToolStreamCallback
+import type {
+  ProviderConfig,
+  ChatMessage,
+  ChatOptions,
+  ChatResult,
+  ModelInfo,
+  StreamCallback,
+  Tool,
+  ToolUseBlock,
+  ContentBlock,
+  ChatWithToolsResult,
+  ToolStreamCallback,
 } from '../../types/ai-providers';
 import axios from 'axios';
 import { Readable } from 'stream';
@@ -60,7 +69,7 @@ export class OllamaProvider extends BaseProvider {
   private useAnthropicCompat: boolean;
   private alternateApiKey: string | null = null; // Desktop/secondary API key for key rotation
   private keySwapAttempted: boolean = false; // Prevent infinite retry loops
-  
+
   /**
    * Get axios config with proper timeout and headers
    * For cloud endpoints, we rely on Node.js DNS resolution (which prefers IPv4)
@@ -71,31 +80,35 @@ export class OllamaProvider extends BaseProvider {
       headers: this.getHeaders(),
       // Force IPv4 family for DNS resolution to avoid IPv6 issues
       // This is especially important when DNS servers return IPv6 first
-      family: 4
+      family: 4,
     };
   }
-  
+
   constructor(config: ProviderConfig = {}) {
     super(config);
     this.name = 'ollama';
     this.displayName = 'Ollama';
-    
+
     // Detect cloud from model name or baseUrl
     const modelName = this.normalizeModelIdentifier((config.model || '') as string);
     const isCloudModel = isOllamaCloudModel(modelName);
-    const hasApiKey = !!config.apiKey;
+    const rawAlternateApiKey =
+      (config as any).alternateApiKey || process.env.OLLAMA_API_KEY_DESKTOP || null;
+    const hasApiKey = !!config.apiKey || !!rawAlternateApiKey;
     const normalizedBaseUrl = normalizeOllamaBaseUrl(config.baseUrl, modelName);
-    
+
     // Priority: cloud model override > explicit cloud baseUrl > local default
     // CRITICAL: Cloud models MUST use the cloud endpoint, even if baseUrl points to local Ollama.
     // This prevents sending cloud model names to a local Ollama instance (which returns 404).
     const isLocalUrl = isLocalOllamaUrl(normalizedBaseUrl);
-    
+
     if (isCloudModel && (!normalizedBaseUrl || isLocalUrl)) {
       // Cloud model detected — force cloud endpoint (ignore local baseUrl from settings)
       this.baseUrl = getCloudUrlForModel(modelName);
       if (isLocalUrl) {
-        console.log(`[OllamaProvider] ⚠️ Cloud model '${modelName}' detected but baseUrl was local (${config.baseUrl}) — overriding to ${this.baseUrl}`);
+        console.log(
+          `[OllamaProvider] ⚠️ Cloud model '${modelName}' detected but baseUrl was local (${config.baseUrl}) — overriding to ${this.baseUrl}`
+        );
       }
     } else if (normalizedBaseUrl) {
       // User provided explicit cloud URL - respect it
@@ -107,15 +120,26 @@ export class OllamaProvider extends BaseProvider {
       // Default to local Ollama (use 127.0.0.1 to avoid IPv6 issues)
       this.baseUrl = LOCAL_OLLAMA_URL;
     }
-    
-    this.apiKey = config.apiKey || null; // For Ollama Cloud
-    // Store alternate key (desktop key) for automatic key rotation on failure
-    this.alternateApiKey = (config as any).alternateApiKey || process.env.OLLAMA_API_KEY_DESKTOP || null;
+
+    const configuredPrimaryKey = config.apiKey || null;
+    const configuredAlternateKey = rawAlternateApiKey;
+
+    // Prefer desktop/secondary key first when present.
+    // Keep the previous primary key as fallback for automatic auth retry.
+    if (configuredAlternateKey && configuredAlternateKey !== configuredPrimaryKey) {
+      this.apiKey = configuredAlternateKey;
+      this.alternateApiKey = configuredPrimaryKey;
+    } else {
+      this.apiKey = configuredPrimaryKey; // For Ollama Cloud
+      this.alternateApiKey = configuredAlternateKey;
+    }
     // Anthropic API compatibility mode (requires Ollama v0.14.0+)
     this.useAnthropicCompat = config.useAnthropicCompat || false;
-    
+
     const hasAltKey = !!this.alternateApiKey && this.alternateApiKey !== this.apiKey;
-    console.log(`[OllamaProvider] Initialized: baseUrl=${this.baseUrl}, model=${modelName}, hasApiKey=${hasApiKey}, hasAlternateKey=${hasAltKey}`);
+    console.log(
+      `[OllamaProvider] Initialized: baseUrl=${this.baseUrl}, model=${modelName}, hasApiKey=${hasApiKey}, hasAlternateKey=${hasAltKey}`
+    );
   }
 
   private getHeaders(): Record<string, string> {
@@ -141,19 +165,20 @@ export class OllamaProvider extends BaseProvider {
       this.keySwapAttempted = true; // Mark as attempted
       console.log(`[OllamaProvider] 🔄 Swapped to alternate API key`);
       // Reset the flag after 60s so future requests can try again
-      setTimeout(() => { this.keySwapAttempted = false; }, 60000);
+      setTimeout(() => {
+        this.keySwapAttempted = false;
+      }, 60000);
       return true;
     }
     return false;
   }
-
 
   /**
    * Resolve model name for API calls.
    * When using direct API access to ollama.com (not local Ollama), cloud models
    * should NOT include the :cloud or -cloud suffix.
    * See: https://docs.ollama.com/cloud
-   * 
+   *
    * Examples:
    * - Local CLI: 'qwen3-coder-next:cloud' → stays 'qwen3-coder-next:cloud'
    * - Direct API: 'qwen3-coder-next:cloud' → 'qwen3-coder-next'
@@ -181,7 +206,12 @@ export class OllamaProvider extends BaseProvider {
     return getRecommendedMaxTokens(model, 'provider_default');
   }
 
-  private getRequestTimeoutMs(model: string, maxTokens: number, streaming: boolean, isCloudModel: boolean): number {
+  private getRequestTimeoutMs(
+    model: string,
+    maxTokens: number,
+    streaming: boolean,
+    isCloudModel: boolean
+  ): number {
     const tokenMultiplier = Math.max(1, maxTokens / 2048);
     const cloudMultiplier = isCloudModel ? 4 : 1;
     const isLargeModel =
@@ -201,7 +231,11 @@ export class OllamaProvider extends BaseProvider {
     return Math.min(computed, isCloudModel ? 900000 : 300000);
   }
 
-  private resolveRequestContext(model: string, maxTokens: number, streaming: boolean): {
+  private resolveRequestContext(
+    model: string,
+    maxTokens: number,
+    streaming: boolean
+  ): {
     baseUrl: string;
     isCloudModel: boolean;
     isLocal: boolean;
@@ -256,7 +290,7 @@ export class OllamaProvider extends BaseProvider {
     try {
       await axios.get(`${this.baseUrl}/api/tags`, {
         headers: this.getHeaders(),
-        timeout: 2000  // Fast timeout for health check
+        timeout: 2000, // Fast timeout for health check
       });
       return true;
     } catch {
@@ -272,11 +306,11 @@ export class OllamaProvider extends BaseProvider {
     if (modelCache && Date.now() - modelCache.timestamp < CACHE_TTL) {
       return modelCache.models;
     }
-    
+
     try {
       const response = await axios.get(`${this.baseUrl}/api/tags`, {
         headers: this.getHeaders(),
-        timeout: 5000
+        timeout: 5000,
       });
       const models = response.data?.models?.map((m: any) => m.name) || [];
       modelCache = { models, timestamp: Date.now() };
@@ -292,29 +326,30 @@ export class OllamaProvider extends BaseProvider {
   async hasModel(modelName: string): Promise<boolean> {
     const models = await this.getAvailableModels();
     const baseName = modelName.split(':')[0];
-    return models.some(m => m === modelName || m.startsWith(baseName + ':') || m === baseName);
+    return models.some((m) => m === modelName || m.startsWith(baseName + ':') || m === baseName);
   }
 
   async getModels(): Promise<ModelInfo[]> {
     try {
       const response = await axios.get(`${this.baseUrl}/api/tags`, {
         headers: this.getHeaders(),
-        timeout: 5000
+        timeout: 5000,
       });
-      const models = response.data?.models?.map((m: any) => ({
-        id: m.name,
-        name: m.name,
-        provider: 'ollama',
-        size: m.size,
-        modified: m.modified_at
-      })) || [];
-      
+      const models =
+        response.data?.models?.map((m: any) => ({
+          id: m.name,
+          name: m.name,
+          provider: 'ollama',
+          size: m.size,
+          modified: m.modified_at,
+        })) || [];
+
       // Update cache
-      modelCache = { 
-        models: models.map((m: ModelInfo) => m.name), 
-        timestamp: Date.now() 
+      modelCache = {
+        models: models.map((m: ModelInfo) => m.name),
+        timestamp: Date.now(),
       };
-      
+
       return models;
     } catch (e: any) {
       console.error('Ollama getModels error:', e.message);
@@ -326,26 +361,25 @@ export class OllamaProvider extends BaseProvider {
     try {
       const response = await axios.get(`${this.baseUrl}/api/tags`, {
         headers: this.getHeaders(),
-        timeout: 3000  // Faster timeout
+        timeout: 3000, // Faster timeout
       });
       const modelCount = response.data?.models?.length || 0;
-      
+
       // Update cache
       modelCache = {
         models: response.data?.models?.map((m: any) => m.name) || [],
-        timestamp: Date.now()
+        timestamp: Date.now(),
       };
-      
+
       return {
         success: true,
-        models: modelCount
+        models: modelCount,
       };
     } catch (e: any) {
       return {
         success: false,
-        error: e.code === 'ECONNREFUSED' 
-          ? 'Ollama not running. Start with: ollama serve' 
-          : e.message
+        error:
+          e.code === 'ECONNREFUSED' ? 'Ollama not running. Start with: ollama serve' : e.message,
       };
     }
   }
@@ -353,38 +387,46 @@ export class OllamaProvider extends BaseProvider {
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
     const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
-    const { baseUrl, isCloudModel, isLocal, apiModel, requestUrl, timeout } = this.resolveRequestContext(
-      model,
-      maxTokens,
-      false
+    const { baseUrl, isCloudModel, isLocal, apiModel, requestUrl, timeout } =
+      this.resolveRequestContext(model, maxTokens, false);
+    console.log(
+      `[Ollama] Chat with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`
     );
-    console.log(`[Ollama] Chat with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
-    console.log(`[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}`);
+    console.log(
+      `[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout / 1000)}s, maxTokens: ${maxTokens}`
+    );
     console.log(`[Ollama] API Key present: ${!!this.apiKey}, baseUrl: ${baseUrl}`);
-    
-    try {
-      const response = await axios.post(requestUrl, {
-        model: apiModel,
-        messages: this.formatMessages(messages),
-        stream: false,
-        options: {
-          temperature: options.temperature ?? 0.7,
-          num_predict: maxTokens
-        }
-      }, {
-        headers: this.getHeaders(),
-        timeout: timeout,
-        signal: options.signal
-      });
 
-      return this.annotateServedBy({
-        success: true,
-        content: response.data?.message?.content || '',
-        usage: {
-          promptTokens: response.data?.prompt_eval_count,
-          completionTokens: response.data?.eval_count
+    try {
+      const response = await axios.post(
+        requestUrl,
+        {
+          model: apiModel,
+          messages: this.formatMessages(messages),
+          stream: false,
+          options: {
+            temperature: options.temperature ?? 0.7,
+            num_predict: maxTokens,
+          },
+        },
+        {
+          headers: this.getHeaders(),
+          timeout: timeout,
+          signal: options.signal,
         }
-      }, apiModel);
+      );
+
+      return this.annotateServedBy(
+        {
+          success: true,
+          content: response.data?.message?.content || '',
+          usage: {
+            promptTokens: response.data?.prompt_eval_count,
+            completionTokens: response.data?.eval_count,
+          },
+        },
+        apiModel
+      );
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
         throw new AbortError();
@@ -397,60 +439,63 @@ export class OllamaProvider extends BaseProvider {
         status: e.response?.status,
         statusText: e.response?.statusText,
         message: e.message,
-        isNetworkError: !e.response // Network errors don't have response
+        isNetworkError: !e.response, // Network errors don't have response
       });
-      
+
       // Better error messages
       if (e.code === 'ECONNREFUSED' || e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN') {
         if (isCloudModel) {
           return {
             success: false,
-            error: `❌ Cannot connect to Ollama Cloud (${e.code}).\n\n` +
+            error:
+              `❌ Cannot connect to Ollama Cloud (${e.code}).\n\n` +
               `Possible issues:\n` +
               `• Internet connection problem\n` +
               `• DNS resolution failed\n` +
               `• Firewall/proxy blocking connection\n` +
-              `• Check your network settings`
+              `• Check your network settings`,
           };
         }
         return {
           success: false,
-          error: '❌ Ollama not running! Start with: ollama serve'
+          error: '❌ Ollama not running! Start with: ollama serve',
         };
       }
       if (e.code === 'ETIMEDOUT' || e.code === 'ECONNABORTED') {
         return {
           success: false,
-          error: `⏱️ Request timed out after ${Math.round(timeout/1000)}s.\n\n` +
+          error:
+            `⏱️ Request timed out after ${Math.round(timeout / 1000)}s.\n\n` +
             `Possible issues:\n` +
             `• Slow internet connection\n` +
             `• Model is overloaded\n` +
-            `• Try a faster/smaller model`
+            `• Try a faster/smaller model`,
         };
       }
       if (e.code === 'ENETUNREACH' || e.code === 'EHOSTUNREACH') {
         return {
           success: false,
-          error: `❌ Network unreachable (${e.code}).\n\n` +
-            `Check your internet connection and try again.`
+          error:
+            `❌ Network unreachable (${e.code}).\n\n` +
+            `Check your internet connection and try again.`,
         };
       }
       if (e.response?.status === 404) {
         if (isCloudModel) {
           return {
             success: false,
-            error: `❌ Cloud model '${this.normalizeModelIdentifier(model)}' not found or unavailable.\n\nPossible issues:\n• Model name might be incorrect (check Ollama Cloud dashboard)\n• Model might not be available in your region\n• Your endpoint may not match the selected model catalog\n\nCheck your Ollama Cloud model name and endpoint in Settings.`
+            error: `❌ Cloud model '${this.normalizeModelIdentifier(model)}' not found or unavailable.\n\nPossible issues:\n• Model name might be incorrect (check Ollama Cloud dashboard)\n• Model might not be available in your region\n• Your endpoint may not match the selected model catalog\n\nCheck your Ollama Cloud model name and endpoint in Settings.`,
           };
         }
         if (isLocal) {
           return {
             success: false,
-            error: `Model '${model}' not found. Pull it with: ollama pull ${model}`
+            error: `Model '${model}' not found. Pull it with: ollama pull ${model}`,
           };
         }
         return {
           success: false,
-          error: `Model '${model}' not found. Check your Ollama configuration.`
+          error: `Model '${model}' not found. Check your Ollama configuration.`,
         };
       }
       if (e.response?.status === 401 || e.response?.status === 403) {
@@ -461,17 +506,22 @@ export class OllamaProvider extends BaseProvider {
         }
         return {
           success: false,
-          error: '❌ Authentication failed for Ollama Cloud.\n\nYour API key might be invalid or expired. Check your API key in Settings.'
+          error:
+            '❌ Authentication failed for Ollama Cloud.\n\nYour API key might be invalid or expired. Check your API key in Settings.',
         };
       }
       return {
         success: false,
-        error: e.response?.data?.error?.message || e.message
+        error: e.response?.data?.error?.message || e.message,
       };
     }
   }
 
-  async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
+  async stream(
+    messages: ChatMessage[],
+    onChunk: StreamCallback,
+    options: ChatOptions = {}
+  ): Promise<void> {
     const model = (options.model || this.config?.model || 'llama3.2') as string;
     const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
     const { isCloudModel, isLocal, apiModel, requestUrl, timeout } = this.resolveRequestContext(
@@ -479,24 +529,32 @@ export class OllamaProvider extends BaseProvider {
       maxTokens,
       true
     );
-    
-    console.log(`[Ollama] Stream with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`);
-    console.log(`[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout/1000)}s, maxTokens: ${maxTokens}, API Key present: ${!!this.apiKey}`);
+
+    console.log(
+      `[Ollama] Stream with ${apiModel} (${isCloudModel ? 'CLOUD' : 'local'}${apiModel !== model ? `, resolved from ${model}` : ''})`
+    );
+    console.log(
+      `[Ollama] Request URL: ${requestUrl}, timeout: ${Math.round(timeout / 1000)}s, maxTokens: ${maxTokens}, API Key present: ${!!this.apiKey}`
+    );
 
     try {
-      const response = await axios.post(requestUrl, {
-        model: apiModel,
-        messages: this.formatMessages(messages),
-        stream: true,
-        options: {
-          temperature: options.temperature ?? 0.7,
-          num_predict: maxTokens
+      const response = await axios.post(
+        requestUrl,
+        {
+          model: apiModel,
+          messages: this.formatMessages(messages),
+          stream: true,
+          options: {
+            temperature: options.temperature ?? 0.7,
+            num_predict: maxTokens,
+          },
+        },
+        {
+          ...this.getAxiosConfig(timeout),
+          responseType: 'stream',
+          signal: options.signal,
         }
-      }, {
-        ...this.getAxiosConfig(timeout),
-        responseType: 'stream',
-        signal: options.signal
-      });
+      );
 
       let fullContent = '';
       let lineBuffer = '';
@@ -516,7 +574,7 @@ export class OllamaProvider extends BaseProvider {
                 fullContent += data.message.content;
                 onChunk({
                   content: data.message.content,
-                  done: data.done || false
+                  done: data.done || false,
                 });
               } else if (data.done) {
                 onChunk({ content: '', done: true });
@@ -536,7 +594,9 @@ export class OllamaProvider extends BaseProvider {
                 fullContent += data.message.content;
                 onChunk({ content: data.message.content, done: data.done || false });
               }
-            } catch { /* ignore trailing fragment */ }
+            } catch {
+              /* ignore trailing fragment */
+            }
           }
           resolve();
         });
@@ -555,19 +615,19 @@ export class OllamaProvider extends BaseProvider {
         status: e.response?.status,
         statusText: e.response?.statusText,
         message: e.message,
-        isNetworkError: !e.response
+        isNetworkError: !e.response,
       });
-      
+
       // Better error messages matching the chat() method
       if (e.code === 'ECONNREFUSED' || e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN') {
         if (isCloudModel) {
           throw new Error(
             `❌ Cannot connect to Ollama Cloud (${e.code}).\n\n` +
-            `Possible issues:\n` +
-            `• Internet connection problem\n` +
-            `• DNS resolution failed\n` +
-            `• Firewall/proxy blocking connection\n` +
-            `• Check your network settings`
+              `Possible issues:\n` +
+              `• Internet connection problem\n` +
+              `• DNS resolution failed\n` +
+              `• Firewall/proxy blocking connection\n` +
+              `• Check your network settings`
           );
         }
         throw new Error('❌ Ollama not running! Start with: ollama serve');
@@ -575,16 +635,16 @@ export class OllamaProvider extends BaseProvider {
       if (e.code === 'ETIMEDOUT' || e.code === 'ECONNABORTED') {
         throw new Error(
           `⏱️ Request timed out.\n\n` +
-          `Possible issues:\n` +
-          `• Slow internet connection\n` +
-          `• Model is overloaded\n` +
-          `• Try a faster/smaller model`
+            `Possible issues:\n` +
+            `• Slow internet connection\n` +
+            `• Model is overloaded\n` +
+            `• Try a faster/smaller model`
         );
       }
       if (e.code === 'ENETUNREACH' || e.code === 'EHOSTUNREACH') {
         throw new Error(
           `❌ Network unreachable (${e.code}).\n\n` +
-          `Check your internet connection and try again.`
+            `Check your internet connection and try again.`
         );
       }
       // Check for 404 in both response status and error message
@@ -592,11 +652,11 @@ export class OllamaProvider extends BaseProvider {
         if (isCloudModel) {
           throw new Error(
             `❌ Cloud model '${this.normalizeModelIdentifier(model)}' not found or unavailable.\n\n` +
-            `Possible issues:\n` +
-            `• Model name might be incorrect (check Ollama Cloud dashboard)\n` +
-            `• Model might not be available in your region\n` +
-            `• Your endpoint may not match the selected model catalog\n\n` +
-            `Check your Ollama Cloud model name and endpoint in Settings.`
+              `Possible issues:\n` +
+              `• Model name might be incorrect (check Ollama Cloud dashboard)\n` +
+              `• Model might not be available in your region\n` +
+              `• Your endpoint may not match the selected model catalog\n\n` +
+              `Check your Ollama Cloud model name and endpoint in Settings.`
           );
         }
         if (isLocal) {
@@ -613,7 +673,7 @@ export class OllamaProvider extends BaseProvider {
         }
         throw new Error(
           `❌ Authentication failed for Ollama Cloud.\n\n` +
-          `Your API key might be invalid or expired. Check your API key in Settings.`
+            `Your API key might be invalid or expired. Check your API key in Settings.`
         );
       }
       // Extract better error message from response if available
@@ -625,29 +685,43 @@ export class OllamaProvider extends BaseProvider {
   async complete(prompt: string, options: ChatOptions = {}): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'llama3.2') as string;
     const maxTokens = options.maxTokens || 100;
-    const { baseUrl, isCloudModel, isLocal, apiModel } = this.resolveRequestContext(model, maxTokens, false);
-    const timeout = Math.max(5000, Math.min(this.getRequestTimeoutMs(model, maxTokens, false, isCloudModel), maxTokens * 75));
+    const { baseUrl, isCloudModel, isLocal, apiModel } = this.resolveRequestContext(
+      model,
+      maxTokens,
+      false
+    );
+    const timeout = Math.max(
+      5000,
+      Math.min(this.getRequestTimeoutMs(model, maxTokens, false, isCloudModel), maxTokens * 75)
+    );
 
     try {
-      const response = await axios.post(`${baseUrl}/api/generate`, {
-        model: apiModel,
-        prompt,
-        stream: false,
-        options: {
-          temperature: options.temperature ?? 0.1,
-          num_predict: maxTokens,
-          stop: options.stop || []
+      const response = await axios.post(
+        `${baseUrl}/api/generate`,
+        {
+          model: apiModel,
+          prompt,
+          stream: false,
+          options: {
+            temperature: options.temperature ?? 0.1,
+            num_predict: maxTokens,
+            stop: options.stop || [],
+          },
+        },
+        {
+          headers: this.getHeaders(),
+          timeout: timeout,
+          signal: options.signal,
         }
-      }, {
-        headers: this.getHeaders(),
-        timeout: timeout,
-        signal: options.signal
-      });
+      );
 
-      return this.annotateServedBy({
-        success: true,
-        content: response.data?.response || ''
-      }, apiModel);
+      return this.annotateServedBy(
+        {
+          success: true,
+          content: response.data?.response || '',
+        },
+        apiModel
+      );
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
         throw new AbortError();
@@ -655,7 +729,7 @@ export class OllamaProvider extends BaseProvider {
       if (e.code === 'ECONNREFUSED') {
         return {
           success: false,
-          error: '❌ Ollama not running!'
+          error: '❌ Ollama not running!',
         };
       }
       if (e.response?.status === 404) {
@@ -663,12 +737,12 @@ export class OllamaProvider extends BaseProvider {
           success: false,
           error: isLocal
             ? `Model '${model}' not found. Pull it with: ollama pull ${model}`
-            : `Model '${model}' not found. Check your Ollama Cloud configuration.`
+            : `Model '${model}' not found. Check your Ollama Cloud configuration.`,
         };
       }
       return {
         success: false,
-        error: e.message
+        error: e.message,
       };
     }
   }
@@ -678,29 +752,33 @@ export class OllamaProvider extends BaseProvider {
    * Returns chunks as they arrive, avoiding timeout issues
    */
   async chatStream(
-    messages: ChatMessage[], 
+    messages: ChatMessage[],
     onChunk: (chunk: string, done: boolean) => void,
     options: ChatOptions = {}
   ): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'llama3.2') as string;
     const maxTokens = options.maxTokens || this.getDefaultMaxTokens(model);
     const { baseUrl, apiModel, timeout } = this.resolveRequestContext(model, maxTokens, true);
-    
+
     try {
-      const response = await axios.post(`${baseUrl}/api/chat`, {
-        model: apiModel,
-        messages: this.formatMessages(messages),
-        stream: true,
-        options: {
-          temperature: options.temperature ?? 0.7,
-          num_predict: maxTokens
+      const response = await axios.post(
+        `${baseUrl}/api/chat`,
+        {
+          model: apiModel,
+          messages: this.formatMessages(messages),
+          stream: true,
+          options: {
+            temperature: options.temperature ?? 0.7,
+            num_predict: maxTokens,
+          },
+        },
+        {
+          headers: this.getHeaders(),
+          timeout,
+          responseType: 'stream',
+          signal: options.signal,
         }
-      }, {
-        headers: this.getHeaders(),
-        timeout,
-        responseType: 'stream',
-        signal: options.signal
-      });
+      );
 
       let fullContent = '';
       let promptTokens = 0;
@@ -739,13 +817,20 @@ export class OllamaProvider extends BaseProvider {
               }
               if (data.prompt_eval_count) promptTokens = data.prompt_eval_count;
               if (data.eval_count) completionTokens = data.eval_count;
-            } catch { /* ignore trailing fragment */ }
+            } catch {
+              /* ignore trailing fragment */
+            }
           }
-          resolve(this.annotateServedBy({
-            success: true,
-            content: fullContent,
-            usage: { promptTokens, completionTokens }
-          }, apiModel));
+          resolve(
+            this.annotateServedBy(
+              {
+                success: true,
+                content: fullContent,
+                usage: { promptTokens, completionTokens },
+              },
+              apiModel
+            )
+          );
         });
 
         (response.data as Readable).on('error', (err: Error) => {
@@ -758,17 +843,15 @@ export class OllamaProvider extends BaseProvider {
       }
       return {
         success: false,
-        error: e.code === 'ECONNREFUSED' 
-          ? '❌ Ollama not running!' 
-          : e.message
+        error: e.code === 'ECONNREFUSED' ? '❌ Ollama not running!' : e.message,
       };
     }
   }
 
   formatMessages(messages: ChatMessage[]): ChatMessage[] {
-    return messages.map(m => ({
+    return messages.map((m) => ({
       role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
-      content: m.content
+      content: m.content,
     }));
   }
 
@@ -789,7 +872,7 @@ export class OllamaProvider extends BaseProvider {
     return {
       'Content-Type': 'application/json',
       'x-api-key': this.apiKey || 'ollama', // Required but ignored for local
-      'anthropic-version': '2023-06-01'
+      'anthropic-version': '2023-06-01',
     };
   }
 
@@ -799,14 +882,18 @@ export class OllamaProvider extends BaseProvider {
   async supportsAnthropicCompat(): Promise<boolean> {
     try {
       // Try a minimal request to the Anthropic-compatible endpoint
-      const response = await axios.post(`${this.baseUrl}/v1/messages`, {
-        model: 'llama3.2', // Use a common model
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'hi' }]
-      }, {
-        headers: this.getAnthropicHeaders(),
-        timeout: 5000
-      });
+      const response = await axios.post(
+        `${this.baseUrl}/v1/messages`,
+        {
+          model: 'llama3.2', // Use a common model
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'hi' }],
+        },
+        {
+          headers: this.getAnthropicHeaders(),
+          timeout: 5000,
+        }
+      );
       return response.status === 200;
     } catch (e: any) {
       // 404 means the endpoint doesn't exist (older Ollama version)
@@ -822,7 +909,10 @@ export class OllamaProvider extends BaseProvider {
    * Chat using Anthropic-compatible API (enables tool calling)
    * Requires Ollama v0.14.0 or later
    */
-  async chatAnthropicCompat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResult> {
+  async chatAnthropicCompat(
+    messages: ChatMessage[],
+    options: ChatOptions = {}
+  ): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
     const baseUrl = normalizeOllamaBaseUrl(this.baseUrl, model) || LOCAL_OLLAMA_URL;
     const isDirectApi = isCloudOllamaUrl(baseUrl);
@@ -839,7 +929,7 @@ export class OllamaProvider extends BaseProvider {
         model: apiModel,
         max_tokens: maxTokens,
         messages: userMessages,
-        temperature: options.temperature ?? 0.7
+        temperature: options.temperature ?? 0.7,
       };
 
       // Add system message if present
@@ -850,7 +940,7 @@ export class OllamaProvider extends BaseProvider {
       const response = await axios.post(`${baseUrl}/v1/messages`, requestBody, {
         headers: this.getAnthropicHeaders(),
         timeout: 300000,
-        signal: options.signal
+        signal: options.signal,
       });
 
       const content = response.data?.content?.[0]?.text || '';
@@ -860,8 +950,8 @@ export class OllamaProvider extends BaseProvider {
         content,
         usage: {
           promptTokens: response.data?.usage?.input_tokens,
-          completionTokens: response.data?.usage?.output_tokens
-        }
+          completionTokens: response.data?.usage?.output_tokens,
+        },
       };
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
@@ -870,18 +960,19 @@ export class OllamaProvider extends BaseProvider {
       if (e.response?.status === 404) {
         return {
           success: false,
-          error: '❌ Anthropic-compatible API not available. Requires Ollama v0.14.0+. Update with: ollama update'
+          error:
+            '❌ Anthropic-compatible API not available. Requires Ollama v0.14.0+. Update with: ollama update',
         };
       }
       if (e.code === 'ECONNREFUSED') {
         return {
           success: false,
-          error: '❌ Ollama not running! Start with: ollama serve'
+          error: '❌ Ollama not running! Start with: ollama serve',
         };
       }
       return {
         success: false,
-        error: e.response?.data?.error?.message || e.message
+        error: e.response?.data?.error?.message || e.message,
       };
     }
   }
@@ -912,7 +1003,7 @@ export class OllamaProvider extends BaseProvider {
         max_tokens: maxTokens,
         messages: userMessages,
         tools,
-        temperature: options.temperature ?? 0.7
+        temperature: options.temperature ?? 0.7,
       };
 
       if (systemMessage) {
@@ -922,7 +1013,7 @@ export class OllamaProvider extends BaseProvider {
       const response = await axios.post(`${baseUrl}/v1/messages`, requestBody, {
         headers: this.getAnthropicHeaders(),
         timeout: 300000,
-        signal: options.signal
+        signal: options.signal,
       });
 
       const data = response.data;
@@ -933,7 +1024,7 @@ export class OllamaProvider extends BaseProvider {
       const textBlocks = contentBlocks.filter(
         (block): block is { type: 'text'; text: string } => block.type === 'text'
       );
-      const textContent = textBlocks.map(b => b.text).join('\n');
+      const textContent = textBlocks.map((b) => b.text).join('\n');
 
       return {
         success: true,
@@ -943,8 +1034,8 @@ export class OllamaProvider extends BaseProvider {
         contentBlocks,
         usage: {
           promptTokens: data.usage?.input_tokens,
-          completionTokens: data.usage?.output_tokens
-        }
+          completionTokens: data.usage?.output_tokens,
+        },
       };
     } catch (e: any) {
       if (axios.isCancel?.(e) || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') {
@@ -953,18 +1044,18 @@ export class OllamaProvider extends BaseProvider {
       if (e.response?.status === 404) {
         return {
           success: false,
-          error: '❌ Tool calling requires Ollama v0.14.0+. Update with: ollama update'
+          error: '❌ Tool calling requires Ollama v0.14.0+. Update with: ollama update',
         };
       }
       if (e.code === 'ECONNREFUSED') {
         return {
           success: false,
-          error: '❌ Ollama not running! Start with: ollama serve'
+          error: '❌ Ollama not running! Start with: ollama serve',
         };
       }
       return {
         success: false,
-        error: e.response?.data?.error?.message || e.message
+        error: e.response?.data?.error?.message || e.message,
       };
     }
   }
@@ -995,19 +1086,35 @@ export class OllamaProvider extends BaseProvider {
       const result = await this.chatWithTools(messages, tools, options);
 
       if (!result.success) {
-        try { onChunk({ type: 'error', error: result.error || 'Ollama tool call failed', result }); } catch { /* ignore */ }
+        try {
+          onChunk({ type: 'error', error: result.error || 'Ollama tool call failed', result });
+        } catch {
+          /* ignore */
+        }
         return result;
       }
 
       if (result.content) {
-        try { onChunk({ type: 'text', text: result.content }); } catch { /* ignore */ }
+        try {
+          onChunk({ type: 'text', text: result.content });
+        } catch {
+          /* ignore */
+        }
       }
       if (Array.isArray(result.toolCalls)) {
         for (const tc of result.toolCalls) {
-          try { onChunk({ type: 'tool_use', toolCall: tc }); } catch { /* ignore */ }
+          try {
+            onChunk({ type: 'tool_use', toolCall: tc });
+          } catch {
+            /* ignore */
+          }
         }
       }
-      try { onChunk({ type: 'done', result }); } catch { /* ignore */ }
+      try {
+        onChunk({ type: 'done', result });
+      } catch {
+        /* ignore */
+      }
       return result;
     } catch (e: any) {
       // chatWithTools already converts axios cancels to AbortError; let
@@ -1015,7 +1122,11 @@ export class OllamaProvider extends BaseProvider {
       if (e instanceof AbortError) throw e;
       const errorMessage = e?.message || String(e);
       const result: ChatWithToolsResult = { success: false, error: errorMessage };
-      try { onChunk({ type: 'error', error: errorMessage, result }); } catch { /* ignore */ }
+      try {
+        onChunk({ type: 'error', error: errorMessage, result });
+      } catch {
+        /* ignore */
+      }
       return result;
     }
   }
@@ -1042,7 +1153,7 @@ export class OllamaProvider extends BaseProvider {
         max_tokens: maxTokens,
         messages: userMessages,
         stream: true,
-        temperature: options.temperature ?? 0.7
+        temperature: options.temperature ?? 0.7,
       };
 
       if (systemMessage) {
@@ -1057,7 +1168,7 @@ export class OllamaProvider extends BaseProvider {
         headers: this.getAnthropicHeaders(),
         timeout: 600000,
         responseType: 'stream',
-        signal: options.signal
+        signal: options.signal,
       });
 
       let sseBuf = '';
@@ -1117,7 +1228,7 @@ export class OllamaProvider extends BaseProvider {
         if (!content) continue;
         userMessages.push({
           role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content
+          content,
         });
       }
     }
@@ -1144,14 +1255,22 @@ export class OllamaProvider extends BaseProvider {
    * Create a tool result message to send back after tool execution
    * Note: Returns Anthropic-style tool result format (content is an array, not string)
    */
-  createToolResultMessage(toolUseId: string, result: string): { role: 'user'; content: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> } {
+  createToolResultMessage(
+    toolUseId: string,
+    result: string
+  ): {
+    role: 'user';
+    content: Array<{ type: 'tool_result'; tool_use_id: string; content: string }>;
+  } {
     return {
       role: 'user',
-      content: [{
-        type: 'tool_result',
-        tool_use_id: toolUseId,
-        content: result
-      }]
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: toolUseId,
+          content: result,
+        },
+      ],
     };
   }
 
@@ -1172,9 +1291,9 @@ export class OllamaProvider extends BaseProvider {
 
     while (iterations < maxIterations) {
       iterations++;
-      
+
       const result = await this.chatWithTools(messages, tools, options);
-      
+
       if (!result.success) {
         return { success: false, finalContent: '', iterations, error: result.error };
       }
@@ -1192,7 +1311,7 @@ export class OllamaProvider extends BaseProvider {
       // Execute tool calls and add results
       const assistantMessage: any = {
         role: 'assistant',
-        content: result.contentBlocks
+        content: result.contentBlocks,
       };
       messages.push(assistantMessage);
 
@@ -1205,14 +1324,14 @@ export class OllamaProvider extends BaseProvider {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolCall.id,
-            content: toolResult
+            content: toolResult,
           });
         } catch (e: any) {
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolCall.id,
             content: `Error: ${e.message}`,
-            is_error: true
+            is_error: true,
           });
         }
       }
@@ -1220,11 +1339,11 @@ export class OllamaProvider extends BaseProvider {
       messages.push({ role: 'user', content: toolResults } as any);
     }
 
-    return { 
-      success: true, 
-      finalContent, 
+    return {
+      success: true,
+      finalContent,
       iterations,
-      error: `Reached max iterations (${maxIterations})`
+      error: `Reached max iterations (${maxIterations})`,
     };
   }
 }

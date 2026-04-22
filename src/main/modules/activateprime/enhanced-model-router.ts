@@ -91,8 +91,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1200,
           successRate: 0.95,
           costPerToken: 0.0001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'qwen3-coder-next:cloud',
@@ -106,8 +106,23 @@ export class EnhancedModelRouter {
           avgResponseTime: 800,
           successRate: 0.95,
           costPerToken: 0.0001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
+      },
+      {
+        name: 'kimi-k2.6:cloud',
+        provider: 'ollama',
+        strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
+        speed: 'fast',
+        contextWindow: 256000,
+        cost: 'low',
+        supportedTasks: ['coding', 'analysis', 'debugging', 'complex_reasoning', 'agentic'],
+        performanceMetrics: {
+          avgResponseTime: 800,
+          successRate: 0.95,
+          costPerToken: 0.0001,
+          totalRequests: 0,
+        },
       },
       {
         name: 'deepseek-v3.1:671b-cloud',
@@ -121,8 +136,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1200,
           successRate: 0.92,
           costPerToken: 0.0001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'glm-4.6:cloud',
@@ -136,8 +151,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1100,
           successRate: 0.93,
           costPerToken: 0.0001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'qwen2.5-coder:32b',
@@ -151,8 +166,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 800,
           successRate: 0.88,
           costPerToken: 0,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'qwen2.5-coder:7b',
@@ -166,8 +181,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 600,
           successRate: 0.85,
           costPerToken: 0,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
 
       // Anthropic models (excellent reasoning) - Claude 4 Opus & Sonnet
@@ -178,13 +193,20 @@ export class EnhancedModelRouter {
         speed: 'medium',
         contextWindow: 1000000,
         cost: 'high',
-        supportedTasks: ['coding', 'analysis', 'creative', 'debugging', 'complex_reasoning', 'agentic'],
+        supportedTasks: [
+          'coding',
+          'analysis',
+          'creative',
+          'debugging',
+          'complex_reasoning',
+          'agentic',
+        ],
         performanceMetrics: {
           avgResponseTime: 1500,
           successRate: 0.98,
           costPerToken: 0.0012,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'claude-opus-4-6',
@@ -193,13 +215,20 @@ export class EnhancedModelRouter {
         speed: 'medium',
         contextWindow: 1000000,
         cost: 'high',
-        supportedTasks: ['coding', 'analysis', 'creative', 'debugging', 'complex_reasoning', 'agentic'],
+        supportedTasks: [
+          'coding',
+          'analysis',
+          'creative',
+          'debugging',
+          'complex_reasoning',
+          'agentic',
+        ],
         performanceMetrics: {
           avgResponseTime: 1400,
           successRate: 0.98,
           costPerToken: 0.0012,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'claude-sonnet-4-6',
@@ -208,13 +237,20 @@ export class EnhancedModelRouter {
         speed: 'medium',
         contextWindow: 1000000,
         cost: 'high',
-        supportedTasks: ['coding', 'analysis', 'creative', 'debugging', 'complex_reasoning', 'agentic'],
+        supportedTasks: [
+          'coding',
+          'analysis',
+          'creative',
+          'debugging',
+          'complex_reasoning',
+          'agentic',
+        ],
         performanceMetrics: {
           avgResponseTime: 1200,
           successRate: 0.97,
           costPerToken: 0.0009,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'claude-opus-4-5-20251101',
@@ -228,8 +264,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1450,
           successRate: 0.98,
           costPerToken: 0.0012,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'claude-sonnet-4-20250514',
@@ -243,8 +279,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1300,
           successRate: 0.97,
           costPerToken: 0.0008,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'claude-3-5-sonnet-20241022',
@@ -258,8 +294,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1500,
           successRate: 0.98,
           costPerToken: 0.001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'claude-3-haiku-20240307',
@@ -273,8 +309,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 900,
           successRate: 0.94,
           costPerToken: 0.0005,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
 
       // OpenAI models (balanced) - GPT-5.2 + GPT-4
@@ -290,8 +326,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1200,
           successRate: 0.97,
           costPerToken: 0.001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'gpt-5.2',
@@ -305,8 +341,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1200,
           successRate: 0.97,
           costPerToken: 0.001,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'gpt-4o',
@@ -320,8 +356,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 1300,
           successRate: 0.96,
           costPerToken: 0.0008,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
       {
         name: 'gpt-4o-mini',
@@ -335,8 +371,8 @@ export class EnhancedModelRouter {
           avgResponseTime: 700,
           successRate: 0.92,
           costPerToken: 0.0002,
-          totalRequests: 0
-        }
+          totalRequests: 0,
+        },
       },
 
       // OpenRouter models (additional options)
@@ -352,9 +388,9 @@ export class EnhancedModelRouter {
           avgResponseTime: 1600,
           successRate: 0.97,
           costPerToken: 0.0012,
-          totalRequests: 0
-        }
-      }
+          totalRequests: 0,
+        },
+      },
     ];
 
     for (const model of defaultModels) {
@@ -368,63 +404,125 @@ export class EnhancedModelRouter {
   private initializeRoutingRules(): void {
     this.routingRules.set('coding_tasks', {
       preferred: 'local_first',
-      models: ['qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud', 'glm-4.6:cloud', 'qwen2.5-coder:32b', 'claude-sonnet-4-6', 'claude-opus-4-7', 'claude-opus-4-6', 'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-4o'],
+      models: [
+        'kimi-k2.6:cloud',
+        'qwen3-coder:480b-cloud',
+        'qwen3-coder-next:cloud',
+        'glm-4.6:cloud',
+        'qwen2.5-coder:32b',
+        'claude-sonnet-4-6',
+        'claude-opus-4-7',
+        'claude-opus-4-6',
+        'gpt-5.2',
+        'gpt-5.2-2025-12-11',
+        'gpt-4o',
+      ],
       speedPriority: 0.7,
-      costPriority: 0.3
+      costPriority: 0.3,
     });
 
     this.routingRules.set('simple_questions', {
       preferred: 'fastest',
       models: ['qwen2.5-coder:7b', 'gpt-4o-mini', 'claude-3-haiku-20240307'],
       speedPriority: 0.9,
-      costPriority: 0.1
+      costPriority: 0.1,
     });
 
     this.routingRules.set('complex_reasoning', {
       preferred: 'best_quality',
-      models: ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-5.2-2025-12-11', 'gpt-4o', 'qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud'],
+      models: [
+        'claude-opus-4-7',
+        'claude-opus-4-6',
+        'claude-sonnet-4-6',
+        'claude-sonnet-4-20250514',
+        'claude-3-5-sonnet-20241022',
+        'gpt-5.2',
+        'gpt-5.2-2025-12-11',
+        'gpt-4o',
+        'kimi-k2.6:cloud',
+        'qwen3-coder:480b-cloud',
+        'qwen3-coder-next:cloud',
+      ],
       speedPriority: 0.4,
-      costPriority: 0.6
+      costPriority: 0.6,
     });
 
     this.routingRules.set('creative_tasks', {
       preferred: 'best_quality',
-      models: ['claude-opus-4-7', 'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-4o', 'deepseek-v3.1:671b-cloud'],
+      models: [
+        'claude-opus-4-7',
+        'claude-opus-4-6',
+        'claude-sonnet-4-6',
+        'claude-sonnet-4-20250514',
+        'claude-3-5-sonnet-20241022',
+        'gpt-5.2',
+        'gpt-4o',
+        'deepseek-v3.1:671b-cloud',
+      ],
       speedPriority: 0.5,
-      costPriority: 0.5
+      costPriority: 0.5,
     });
 
     this.routingRules.set('debugging', {
       preferred: 'local_first',
-      models: ['qwen3-coder:480b-cloud', 'qwen3-coder-next:cloud', 'qwen2.5-coder:32b', 'claude-sonnet-4-6', 'claude-3-5-sonnet-20241022', 'gpt-5.2', 'gpt-4o'],
+      models: [
+        'kimi-k2.6:cloud',
+        'qwen3-coder:480b-cloud',
+        'qwen3-coder-next:cloud',
+        'qwen2.5-coder:32b',
+        'claude-sonnet-4-6',
+        'claude-3-5-sonnet-20241022',
+        'gpt-5.2',
+        'gpt-4o',
+      ],
       speedPriority: 0.6,
-      costPriority: 0.4
+      costPriority: 0.4,
     });
   }
 
   /**
    * Analyze task complexity and requirements
    */
-  analyzeTaskComplexity(prompt: string, context?: {
-    codeLines?: number;
-    hasErrors?: boolean;
-    isCreative?: boolean;
-    needsReasoning?: boolean;
-    timeSensitive?: boolean;
-    userPreferences?: TaskAnalysis['userPreferences'];
-  }): TaskAnalysis {
+  analyzeTaskComplexity(
+    prompt: string,
+    context?: {
+      codeLines?: number;
+      hasErrors?: boolean;
+      isCreative?: boolean;
+      needsReasoning?: boolean;
+      timeSensitive?: boolean;
+      userPreferences?: TaskAnalysis['userPreferences'];
+    }
+  ): TaskAnalysis {
     const lowerPrompt = prompt.toLowerCase();
     const wordCount = prompt.split(/\s+/).length;
 
     // Determine task type
     let taskType = 'simple_questions';
-    if (lowerPrompt.includes('function') || lowerPrompt.includes('class') || lowerPrompt.includes('implement')) {
+    if (
+      lowerPrompt.includes('function') ||
+      lowerPrompt.includes('class') ||
+      lowerPrompt.includes('implement')
+    ) {
       taskType = 'coding_tasks';
-    } else if (lowerPrompt.includes('analyze') || lowerPrompt.includes('research') || lowerPrompt.includes('explain')) {
+    } else if (
+      lowerPrompt.includes('analyze') ||
+      lowerPrompt.includes('research') ||
+      lowerPrompt.includes('explain')
+    ) {
       taskType = 'complex_reasoning';
-    } else if (lowerPrompt.includes('create') || lowerPrompt.includes('design') || lowerPrompt.includes('generate')) {
+    } else if (
+      lowerPrompt.includes('create') ||
+      lowerPrompt.includes('design') ||
+      lowerPrompt.includes('generate')
+    ) {
       taskType = 'creative_tasks';
-    } else if (lowerPrompt.includes('error') || lowerPrompt.includes('bug') || lowerPrompt.includes('fix') || lowerPrompt.includes('debug')) {
+    } else if (
+      lowerPrompt.includes('error') ||
+      lowerPrompt.includes('bug') ||
+      lowerPrompt.includes('fix') ||
+      lowerPrompt.includes('debug')
+    ) {
       taskType = 'debugging';
     }
 
@@ -440,17 +538,20 @@ export class EnhancedModelRouter {
     const estimatedTokens = Math.ceil(prompt.length / 4);
 
     // Determine requirements
-    const requiresReasoning = complexity === 'complex' ||
+    const requiresReasoning =
+      complexity === 'complex' ||
       lowerPrompt.includes('why') ||
       lowerPrompt.includes('analyze') ||
       lowerPrompt.includes('reason');
 
-    const requiresCreativity = lowerPrompt.includes('create') ||
+    const requiresCreativity =
+      lowerPrompt.includes('create') ||
       lowerPrompt.includes('design') ||
       lowerPrompt.includes('generate') ||
       lowerPrompt.includes('innovative');
 
-    const timeSensitive = lowerPrompt.includes('urgent') ||
+    const timeSensitive =
+      lowerPrompt.includes('urgent') ||
       lowerPrompt.includes('asap') ||
       lowerPrompt.includes('immediately') ||
       (context?.timeSensitive ?? false);
@@ -462,19 +563,17 @@ export class EnhancedModelRouter {
       requiresReasoning,
       requiresCreativity,
       timeSensitive,
-      userPreferences: context?.userPreferences
+      userPreferences: context?.userPreferences,
     };
   }
 
   /**
    * Route request to best model based on task analysis
    */
-  routeRequest(
-    prompt: string,
-    userPreferences?: TaskAnalysis['userPreferences']
-  ): RoutingDecision {
+  routeRequest(prompt: string, userPreferences?: TaskAnalysis['userPreferences']): RoutingDecision {
     const taskAnalysis = this.analyzeTaskComplexity(prompt, { userPreferences });
-    const rule = this.routingRules.get(taskAnalysis.taskType) || this.routingRules.get('simple_questions')!;
+    const rule =
+      this.routingRules.get(taskAnalysis.taskType) || this.routingRules.get('simple_questions')!;
 
     // Score models based on task requirements and preferences
     const modelScores = this.scoreModels(taskAnalysis, rule);
@@ -490,12 +589,12 @@ export class EnhancedModelRouter {
     const model = this.models.get(bestModel.modelName)!;
 
     // Generate fallback options
-    const fallbackOptions = sortedModels.slice(1, 4).map(m => {
+    const fallbackOptions = sortedModels.slice(1, 4).map((m) => {
       const modelInfo = this.models.get(m.modelName)!;
       return {
         provider: modelInfo.provider,
         model: m.modelName,
-        reason: `Fallback option with score ${m.score.toFixed(2)}`
+        reason: `Fallback option with score ${m.score.toFixed(2)}`,
       };
     });
 
@@ -507,14 +606,17 @@ export class EnhancedModelRouter {
       model: bestModel.modelName,
       reasoning: bestModel.reasoning,
       expectedPerformance,
-      fallbackOptions
+      fallbackOptions,
     };
   }
 
   /**
    * Score models based on task requirements
    */
-  private scoreModels(taskAnalysis: TaskAnalysis, rule: any): Array<{
+  private scoreModels(
+    taskAnalysis: TaskAnalysis,
+    rule: any
+  ): Array<{
     modelName: string;
     score: number;
     reasoning: string;
@@ -534,10 +636,11 @@ export class EnhancedModelRouter {
 
       // Task compatibility (primary factor - 40%)
       const taskMatch = model.supportedTasks.includes(taskAnalysis.taskType);
-      const strengthMatch = model.strengths.some(s =>
-        taskAnalysis.taskType.includes(s) ||
-        (taskAnalysis.requiresReasoning && s === 'complex') ||
-        (taskAnalysis.requiresCreativity && s === 'creative')
+      const strengthMatch = model.strengths.some(
+        (s) =>
+          taskAnalysis.taskType.includes(s) ||
+          (taskAnalysis.requiresReasoning && s === 'complex') ||
+          (taskAnalysis.requiresCreativity && s === 'creative')
       );
 
       if (taskMatch || strengthMatch) {
@@ -585,8 +688,10 @@ export class EnhancedModelRouter {
           score += 5;
           reasoningParts.push('matches preferred speed');
         }
-        if (taskAnalysis.userPreferences.maxCost &&
-            this.costToNumber(model.cost) <= this.costToNumber(taskAnalysis.userPreferences.maxCost)) {
+        if (
+          taskAnalysis.userPreferences.maxCost &&
+          this.costToNumber(model.cost) <= this.costToNumber(taskAnalysis.userPreferences.maxCost)
+        ) {
           score += 3;
           reasoningParts.push('within cost budget');
         }
@@ -601,7 +706,7 @@ export class EnhancedModelRouter {
       scores.push({
         modelName,
         score,
-        reasoning: reasoningParts.join(', ')
+        reasoning: reasoningParts.join(', '),
       });
     }
 
@@ -637,26 +742,26 @@ export class EnhancedModelRouter {
    */
   private getPerformanceScore(modelName: string, taskType: string): number {
     const relevantRecords = this.performanceHistory.filter(
-      record => record.model === modelName &&
-               record.taskType === taskType &&
-               record.success
+      (record) => record.model === modelName && record.taskType === taskType && record.success
     );
 
     if (relevantRecords.length === 0) return 0.5; // Neutral score for no history
 
-    const avgResponseTime = relevantRecords.reduce((sum, r) => sum + r.responseTime, 0) / relevantRecords.length;
-    const successRate = relevantRecords.filter(r => r.success).length / relevantRecords.length;
-    const avgUserFeedback = relevantRecords
-      .filter(r => r.userFeedback)
-      .reduce((sum, r) => sum + (r.userFeedback || 0), 0) /
-      relevantRecords.filter(r => r.userFeedback).length || 3;
+    const avgResponseTime =
+      relevantRecords.reduce((sum, r) => sum + r.responseTime, 0) / relevantRecords.length;
+    const successRate = relevantRecords.filter((r) => r.success).length / relevantRecords.length;
+    const avgUserFeedback =
+      relevantRecords
+        .filter((r) => r.userFeedback)
+        .reduce((sum, r) => sum + (r.userFeedback || 0), 0) /
+        relevantRecords.filter((r) => r.userFeedback).length || 3;
 
     // Normalize to 0-1 scale
-    const timeScore = Math.max(0, 1 - (avgResponseTime / 5000)); // Expect <5s
+    const timeScore = Math.max(0, 1 - avgResponseTime / 5000); // Expect <5s
     const successScore = successRate;
     const feedbackScore = (avgUserFeedback - 1) / 4; // 1-5 scale to 0-1
 
-    return (timeScore * 0.4 + successScore * 0.4 + feedbackScore * 0.2);
+    return timeScore * 0.4 + successScore * 0.4 + feedbackScore * 0.2;
   }
 
   /**
@@ -667,14 +772,19 @@ export class EnhancedModelRouter {
     taskAnalysis: TaskAnalysis
   ): RoutingDecision['expectedPerformance'] {
     const baseTime = model.performanceMetrics.avgResponseTime;
-    const complexityMultiplier = taskAnalysis.complexity === 'complex' ? 1.5 :
-                                taskAnalysis.complexity === 'medium' ? 1.2 : 1.0;
+    const complexityMultiplier =
+      taskAnalysis.complexity === 'complex'
+        ? 1.5
+        : taskAnalysis.complexity === 'medium'
+          ? 1.2
+          : 1.0;
 
     const estimatedTime = baseTime * complexityMultiplier;
 
     // Estimate cost (rough approximation)
-    const estimatedCost = (taskAnalysis.estimatedTokens * model.performanceMetrics.costPerToken) +
-                         (taskAnalysis.estimatedTokens * 0.1 * model.performanceMetrics.costPerToken); // Output tokens
+    const estimatedCost =
+      taskAnalysis.estimatedTokens * model.performanceMetrics.costPerToken +
+      taskAnalysis.estimatedTokens * 0.1 * model.performanceMetrics.costPerToken; // Output tokens
 
     // Confidence based on historical success rate
     const confidence = model.performanceMetrics.successRate;
@@ -682,7 +792,7 @@ export class EnhancedModelRouter {
     return {
       estimatedTime: Math.round(estimatedTime),
       estimatedCost: Math.round(estimatedCost * 10000) / 10000, // Round to 4 decimals
-      confidence: Math.round(confidence * 100) / 100
+      confidence: Math.round(confidence * 100) / 100,
     };
   }
 
@@ -692,7 +802,7 @@ export class EnhancedModelRouter {
   recordPerformance(record: Omit<PerformanceRecord, 'timestamp'>): void {
     const fullRecord: PerformanceRecord = {
       ...record,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
     this.performanceHistory.push(fullRecord);
@@ -717,8 +827,10 @@ export class EnhancedModelRouter {
     const totalRequests = metrics.totalRequests + 1;
 
     // Update averages
-    metrics.avgResponseTime = ((metrics.avgResponseTime * metrics.totalRequests) + record.responseTime) / totalRequests;
-    metrics.successRate = ((metrics.successRate * metrics.totalRequests) + (record.success ? 1 : 0)) / totalRequests;
+    metrics.avgResponseTime =
+      (metrics.avgResponseTime * metrics.totalRequests + record.responseTime) / totalRequests;
+    metrics.successRate =
+      (metrics.successRate * metrics.totalRequests + (record.success ? 1 : 0)) / totalRequests;
     metrics.totalRequests = totalRequests;
   }
 
@@ -744,15 +856,21 @@ export class EnhancedModelRouter {
     }
 
     const totalRequests = this.performanceHistory.length;
-    const avgResponseTime = totalRequests > 0 ?
-      this.performanceHistory.reduce((sum, r) => sum + r.responseTime, 0) / totalRequests : 0;
+    const avgResponseTime =
+      totalRequests > 0
+        ? this.performanceHistory.reduce((sum, r) => sum + r.responseTime, 0) / totalRequests
+        : 0;
 
-    const avgSuccessRate = totalRequests > 0 ?
-      this.performanceHistory.filter(r => r.success).length / totalRequests : 0;
+    const avgSuccessRate =
+      totalRequests > 0
+        ? this.performanceHistory.filter((r) => r.success).length / totalRequests
+        : 0;
 
-    const avgCostPerToken = totalRequests > 0 ?
-      this.performanceHistory.reduce((sum, r) => sum + r.cost, 0) /
-      this.performanceHistory.reduce((sum, r) => sum + r.tokensUsed, 0) : 0;
+    const avgCostPerToken =
+      totalRequests > 0
+        ? this.performanceHistory.reduce((sum, r) => sum + r.cost, 0) /
+          this.performanceHistory.reduce((sum, r) => sum + r.tokensUsed, 0)
+        : 0;
 
     return {
       totalRequests,
@@ -761,8 +879,8 @@ export class EnhancedModelRouter {
       avgPerformance: {
         responseTime: Math.round(avgResponseTime),
         successRate: Math.round(avgSuccessRate * 100) / 100,
-        costPerToken: Math.round(avgCostPerToken * 10000) / 10000
-      }
+        costPerToken: Math.round(avgCostPerToken * 10000) / 10000,
+      },
     };
   }
 

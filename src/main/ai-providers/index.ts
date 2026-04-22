@@ -1,7 +1,7 @@
 /**
  * AI Provider Router
  * Manages multiple AI providers and routes requests
- * 
+ *
  * Features:
  * - Multi-provider support (Ollama, Anthropic, OpenAI, OpenRouter)
  * - Dual Model System: Fast model + Deep model with intelligent routing
@@ -24,13 +24,17 @@ import type {
   Tool,
   ToolUseBlock,
   ChatWithToolsResult,
-  ToolStreamCallback
+  ToolStreamCallback,
 } from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
 import { injectCreed } from '../core/dino-buddy-creed';
 import { recordAIRuntimeExecution } from '../core/ai-runtime-state';
 import { isAbortError } from '../core/timeout-utils';
-import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget, runtimeBudgetToDualMode } from '../../types/runtime-budget';
+import {
+  DEFAULT_RUNTIME_BUDGET_MODE,
+  dualModeToRuntimeBudget,
+  runtimeBudgetToDualMode,
+} from '../../types/runtime-budget';
 
 interface ProviderEntry {
   Class: new (config: ProviderConfig) => BaseProvider;
@@ -48,10 +52,10 @@ type RuntimeBudgetMode = 'instant' | 'standard' | 'deep';
  * Complexity analysis result
  */
 interface ComplexityAnalysis {
-  score: number;           // 1-10 scale
+  score: number; // 1-10 scale
   reasoning: string;
   suggestedMode: ModelMode;
-  triggers: string[];      // Matched trigger keywords
+  triggers: string[]; // Matched trigger keywords
 }
 
 interface LegacyRouterSettings {
@@ -80,7 +84,7 @@ class AIProviderRouter {
   private activeProvider: string | null;
   private activeModel: string | null;
   private fallbackProvider: string | null;
-  
+
   // Dual Model System
   private dualModelEnabled: boolean = false;
   private dualModelConfig: DualModelConfig | null = null;
@@ -90,29 +94,32 @@ class AIProviderRouter {
       streaming: true,
       streamingTools: false,
       contextWindowHint: 128000,
-      notes: 'Native tool-calling via Ollama /api/chat tools parameter. streamWithTools uses a non-streaming shim (Ollama tool-stream support is build-dependent).'
+      notes:
+        'Native tool-calling via Ollama /api/chat tools parameter. streamWithTools uses a non-streaming shim (Ollama tool-stream support is build-dependent).',
     },
     anthropic: {
       nativeToolCalling: true,
       streaming: true,
       streamingTools: true,
       contextWindowHint: 200000,
-      notes: 'Native tool-calling + native tool-streaming via Anthropic SSE (input_json_delta).'
+      notes: 'Native tool-calling + native tool-streaming via Anthropic SSE (input_json_delta).',
     },
     openai: {
       nativeToolCalling: true,
       streaming: true,
       streamingTools: true,
       contextWindowHint: 128000,
-      notes: 'Native tool-calling + native tool-streaming via Chat Completions deltas and Responses function_call_arguments.delta.'
+      notes:
+        'Native tool-calling + native tool-streaming via Chat Completions deltas and Responses function_call_arguments.delta.',
     },
     openrouter: {
       nativeToolCalling: true,
       streaming: true,
       streamingTools: true,
       contextWindowHint: 128000,
-      notes: 'Native tool-calling + native tool-streaming via OpenAI-compatible deltas forwarded to underlying model.'
-    }
+      notes:
+        'Native tool-calling + native tool-streaming via OpenAI-compatible deltas forwarded to underlying model.',
+    },
   };
 
   constructor() {
@@ -120,18 +127,18 @@ class AIProviderRouter {
     this.activeProvider = null;
     this.activeModel = null;
     this.fallbackProvider = null;
-    
+
     // Initialize default providers
     this.registerProvider('ollama', OllamaProvider);
     this.registerProvider('anthropic', AnthropicProvider);
     this.registerProvider('openai', OpenAIProvider);
     this.registerProvider('openrouter', OpenRouterProvider);
   }
-  
+
   // ═══════════════════════════════════════════════════════════════════════════
   // DUAL MODEL SYSTEM
   // ═══════════════════════════════════════════════════════════════════════════
-  
+
   /**
    * Configure the dual model system
    */
@@ -142,10 +149,10 @@ class AIProviderRouter {
       fastModel: `${config.fastModel.provider}/${config.fastModel.model}`,
       deepModel: `${config.deepModel.provider}/${config.deepModel.model}`,
       autoRoute: config.autoRoute,
-      threshold: config.complexityThreshold
+      threshold: config.complexityThreshold,
     });
   }
-  
+
   /**
    * Disable dual model system
    */
@@ -153,36 +160,41 @@ class AIProviderRouter {
     this.dualModelEnabled = false;
     console.log('[DualModel] Disabled');
   }
-  
+
   /**
    * Check if dual model is enabled
    */
   isDualModelEnabled(): boolean {
     return this.dualModelEnabled && this.dualModelConfig !== null;
   }
-  
+
   /**
    * Get current dual model configuration
    */
   getDualModelConfig(): DualModelConfig | null {
     return this.dualModelConfig;
   }
-  
+
   /**
    * Analyze message complexity for routing
    */
   analyzeComplexity(message: string, context?: any): ComplexityAnalysis {
     const config = this.dualModelConfig;
     if (!config) {
-      return { score: 5, reasoning: 'Dual model not configured', suggestedMode: 'auto', triggers: [] };
+      return {
+        score: 5,
+        reasoning: 'Dual model not configured',
+        suggestedMode: 'auto',
+        triggers: [],
+      };
     }
-    
+
     let score = 5; // Start at medium
     const triggers: string[] = [];
     const reasons: string[] = [];
-    
+
     const lowerMessage = message.toLowerCase();
-    
+
     // Check deep model triggers
     for (const trigger of config.deepModelTriggers) {
       if (lowerMessage.includes(trigger.toLowerCase())) {
@@ -191,7 +203,7 @@ class AIProviderRouter {
         reasons.push(`Matched deep trigger: "${trigger}"`);
       }
     }
-    
+
     // Check fast model triggers
     for (const trigger of config.fastModelTriggers) {
       if (lowerMessage.includes(trigger.toLowerCase())) {
@@ -200,51 +212,51 @@ class AIProviderRouter {
         reasons.push(`Matched fast trigger: "${trigger}"`);
       }
     }
-    
+
     // Heuristic complexity analysis
     const complexityIndicators = {
       // High complexity indicators (+)
-      'analyze': 1.5,
-      'debug': 1.5,
-      'refactor': 2,
-      'architect': 2,
+      analyze: 1.5,
+      debug: 1.5,
+      refactor: 2,
+      architect: 2,
       'design pattern': 2,
-      'optimize': 1.5,
-      'complex': 1.5,
-      'explain': 1,
-      'why': 0.5,
+      optimize: 1.5,
+      complex: 1.5,
+      explain: 1,
+      why: 0.5,
       'how does': 0.5,
-      'implement': 1,
+      implement: 1,
       'create a complete': 1.5,
       'full application': 2,
-      'security': 1.5,
-      'performance': 1.5,
-      'algorithm': 1.5,
+      security: 1.5,
+      performance: 1.5,
+      algorithm: 1.5,
       'data structure': 1.5,
-      'concurrency': 2,
-      'async': 1,
+      concurrency: 2,
+      async: 1,
       'error handling': 1,
       'edge case': 1.5,
-      'test': 1,
-      'review': 1.5,
-      
+      test: 1,
+      review: 1.5,
+
       // Low complexity indicators (-)
-      'quick': -1,
-      'simple': -1.5,
-      'basic': -1,
-      'just': -0.5,
-      'small': -1,
+      quick: -1,
+      simple: -1.5,
+      basic: -1,
+      just: -0.5,
+      small: -1,
       'fix typo': -2,
-      'rename': -1.5,
-      'format': -1.5,
+      rename: -1.5,
+      format: -1.5,
       'what is': -0.5,
-      'hello': -2,
-      'hi': -2,
-      'thanks': -2,
-      'yes': -2,
-      'no': -2,
+      hello: -2,
+      hi: -2,
+      thanks: -2,
+      yes: -2,
+      no: -2,
     };
-    
+
     for (const [indicator, weight] of Object.entries(complexityIndicators)) {
       if (lowerMessage.includes(indicator)) {
         score += weight;
@@ -253,7 +265,7 @@ class AIProviderRouter {
         }
       }
     }
-    
+
     // Message length factor
     if (message.length > 500) {
       score += 1;
@@ -262,14 +274,14 @@ class AIProviderRouter {
       score -= 1;
       reasons.push('Short message (-1)');
     }
-    
+
     // Code block detection
     const codeBlockCount = (message.match(/```/g) || []).length / 2;
     if (codeBlockCount > 0) {
       score += codeBlockCount * 0.5;
       reasons.push(`Contains ${codeBlockCount} code block(s)`);
     }
-    
+
     // Context-based adjustments
     if (context) {
       if (context.codeLines && context.codeLines > 500) {
@@ -285,10 +297,10 @@ class AIProviderRouter {
         reasons.push('Multi-file context');
       }
     }
-    
+
     // Clamp to 1-10
     score = Math.max(1, Math.min(10, Math.round(score)));
-    
+
     // Determine suggested mode
     let suggestedMode: ModelMode;
     if (score >= config.complexityThreshold) {
@@ -296,87 +308,91 @@ class AIProviderRouter {
     } else {
       suggestedMode = 'fast';
     }
-    
+
     return {
       score,
       reasoning: reasons.join('; ') || 'Standard complexity',
       suggestedMode,
-      triggers
+      triggers,
     };
   }
-  
+
   /**
    * Route to appropriate model based on dual-model config
    */
   routeDualModel(
-    message: string, 
+    message: string,
     mode: ModelMode = 'auto',
     context?: any
   ): { provider: string; model: string; mode: ModelMode; analysis?: ComplexityAnalysis } {
     const config = this.dualModelConfig;
-    
+
     if (!config || !this.dualModelEnabled) {
       // Fallback to active provider (Anthropic by default)
       return {
         provider: this.activeProvider || 'anthropic',
         model: this.activeModel || 'claude-sonnet-4-20250514',
-        mode: 'auto'
+        mode: 'auto',
       };
     }
-    
+
     // Manual mode selection
     if (mode === 'fast' && config.fastModel.enabled) {
       return {
         provider: config.fastModel.provider,
         model: config.fastModel.model,
-        mode: 'fast'
+        mode: 'fast',
       };
     }
-    
+
     if (mode === 'deep' && config.deepModel.enabled) {
       return {
         provider: config.deepModel.provider,
         model: config.deepModel.model,
-        mode: 'deep'
+        mode: 'deep',
       };
     }
-    
+
     // Auto-routing
     if (mode === 'auto' && config.autoRoute) {
       const analysis = this.analyzeComplexity(message, context);
-      
+
       if (analysis.suggestedMode === 'deep' && config.deepModel.enabled) {
-        console.log(`[DualModel] Auto-routed to DEEP model (score: ${analysis.score}): ${analysis.reasoning}`);
+        console.log(
+          `[DualModel] Auto-routed to DEEP model (score: ${analysis.score}): ${analysis.reasoning}`
+        );
         return {
           provider: config.deepModel.provider,
           model: config.deepModel.model,
           mode: 'deep',
-          analysis
+          analysis,
         };
       } else if (config.fastModel.enabled) {
-        console.log(`[DualModel] Auto-routed to FAST model (score: ${analysis.score}): ${analysis.reasoning}`);
+        console.log(
+          `[DualModel] Auto-routed to FAST model (score: ${analysis.score}): ${analysis.reasoning}`
+        );
         return {
           provider: config.fastModel.provider,
           model: config.fastModel.model,
           mode: 'fast',
-          analysis
+          analysis,
         };
       }
     }
-    
+
     // Default to fast model if available, otherwise deep
     if (config.fastModel.enabled) {
       return {
         provider: config.fastModel.provider,
         model: config.fastModel.model,
-        mode: 'fast'
+        mode: 'fast',
       };
     }
-    
+
     return {
       provider: config.deepModel.provider,
       model: config.deepModel.model,
-      mode: 'deep'
+      mode: 'deep',
     };
   }
 
@@ -384,20 +400,26 @@ class AIProviderRouter {
     message: string,
     runtimeBudget: RuntimeBudgetMode = DEFAULT_RUNTIME_BUDGET_MODE,
     context?: any
-  ): { provider: string; model: string; mode: ModelMode; runtimeBudget: RuntimeBudgetMode; analysis?: ComplexityAnalysis } {
+  ): {
+    provider: string;
+    model: string;
+    mode: ModelMode;
+    runtimeBudget: RuntimeBudgetMode;
+    analysis?: ComplexityAnalysis;
+  } {
     const routing = this.routeDualModel(message, runtimeBudgetToDualMode(runtimeBudget), context);
     return {
       ...routing,
       runtimeBudget,
     };
   }
-  
+
   /**
    * Chat with dual-model routing
    */
   async dualChat(
     messages: ChatMessage[],
-    options: ChatOptions & { 
+    options: ChatOptions & {
       dualMode?: ModelMode;
       runtimeBudget?: RuntimeBudgetMode;
       context?: any;
@@ -406,74 +428,81 @@ class AIProviderRouter {
     if (!this.isDualModelEnabled()) {
       return this.chat(messages, options);
     }
-    
+
     // Get the last user message for analysis
-    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
     const messageContent = lastUserMessage?.content || '';
-    
-    const runtimeBudget = options.runtimeBudget || dualModeToRuntimeBudget(options.dualMode || 'auto');
+
+    const runtimeBudget =
+      options.runtimeBudget || dualModeToRuntimeBudget(options.dualMode || 'auto');
     const routing = this.routeRuntimeBudget(messageContent, runtimeBudget, options.context);
-    
+
     // Temporarily switch provider
     const originalProvider = this.activeProvider;
     const originalModel = this.activeModel;
-    
+
     try {
       this.setActiveProvider(routing.provider, routing.model);
       const result = await this.chat(messages, { ...options, model: routing.model });
-      
+
       return {
         ...result,
         dualModelInfo: {
           mode: routing.mode,
           runtimeBudget: routing.runtimeBudget,
-          analysis: routing.analysis
-        }
+          analysis: routing.analysis,
+        },
       };
     } finally {
       // Restore original provider
       this.setActiveProvider(originalProvider, originalModel);
     }
   }
-  
+
   /**
    * Stream with dual-model routing
    */
   async dualStream(
     messages: ChatMessage[],
     onChunk: StreamCallback,
-    options: ChatOptions & { 
+    options: ChatOptions & {
       dualMode?: ModelMode;
       runtimeBudget?: RuntimeBudgetMode;
       context?: any;
-      onRouting?: (info: { mode: ModelMode; provider: string; model: string; analysis?: ComplexityAnalysis }) => void;
+      onRouting?: (info: {
+        mode: ModelMode;
+        provider: string;
+        model: string;
+        analysis?: ComplexityAnalysis;
+      }) => void;
     } = {}
   ): Promise<void> {
     if (!this.isDualModelEnabled()) {
       return this.stream(messages, onChunk, options);
     }
-    
+
     // Get the last user message for analysis
-    const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === 'user');
     const messageContent = lastUserMessage?.content || '';
-    
-    const runtimeBudget = options.runtimeBudget || dualModeToRuntimeBudget(options.dualMode || 'auto');
+
+    const runtimeBudget =
+      options.runtimeBudget || dualModeToRuntimeBudget(options.dualMode || 'auto');
     const routing = this.routeRuntimeBudget(messageContent, runtimeBudget, options.context);
-    
+
     // Notify about routing decision
     if (options.onRouting) {
       options.onRouting({
         mode: routing.mode,
         provider: routing.provider,
         model: routing.model,
-        analysis: routing.analysis
+        analysis: routing.analysis,
       });
     }
-    
+
     // Temporarily switch provider
     const originalProvider = this.activeProvider;
     const originalModel = this.activeModel;
-    
+
     try {
       this.setActiveProvider(routing.provider, routing.model);
       return await this.stream(messages, onChunk, { ...options, model: routing.model });
@@ -486,11 +515,14 @@ class AIProviderRouter {
   /**
    * Register a provider class
    */
-  registerProvider(name: string, ProviderClass: new (config: ProviderConfig) => BaseProvider): void {
+  registerProvider(
+    name: string,
+    ProviderClass: new (config: ProviderConfig) => BaseProvider
+  ): void {
     this.providers.set(name, {
       Class: ProviderClass,
       instance: null,
-      config: {}
+      config: {},
     });
   }
 
@@ -505,7 +537,7 @@ class AIProviderRouter {
 
     provider.config = { ...provider.config, ...config };
     provider.instance = new provider.Class(provider.config);
-    
+
     return provider.instance;
   }
 
@@ -538,7 +570,10 @@ class AIProviderRouter {
    * Infer the most likely provider for a model identifier.
    * This prevents stale UI settings from claiming "openai" while the model is clearly an Ollama cloud model.
    */
-  inferProviderForModel(model: string | null | undefined, preferredProvider: string | null = null): string | null {
+  inferProviderForModel(
+    model: string | null | undefined,
+    preferredProvider: string | null = null
+  ): string | null {
     if (!model) {
       return preferredProvider;
     }
@@ -548,7 +583,12 @@ class AIProviderRouter {
       return preferredProvider;
     }
 
-    if (normalized.startsWith('openai/') || normalized.startsWith('gpt-') || normalized.startsWith('o1') || normalized.startsWith('o3')) {
+    if (
+      normalized.startsWith('openai/') ||
+      normalized.startsWith('gpt-') ||
+      normalized.startsWith('o1') ||
+      normalized.startsWith('o3')
+    ) {
       return 'openai';
     }
 
@@ -603,7 +643,10 @@ class AIProviderRouter {
 
     if (settings.activeProvider || settings.activeModel) {
       const activeProvider = settings.activeProvider ?? this.activeProvider;
-      const activeModel = settings.activeModel ?? settings.providers?.[activeProvider || '']?.model ?? this.activeModel;
+      const activeModel =
+        settings.activeModel ??
+        settings.providers?.[activeProvider || '']?.model ??
+        this.activeModel;
       this.setActiveProvider(activeProvider || null, activeModel || null);
     }
 
@@ -632,7 +675,7 @@ class AIProviderRouter {
       const instance = provider.instance || new provider.Class(provider.config);
       info.push({
         id: name,
-        ...instance.getInfo()
+        ...instance.getInfo(),
       });
     }
     return info;
@@ -641,19 +684,23 @@ class AIProviderRouter {
   /**
    * Capability matrix for provider-specific features.
    */
-  getProviderCapabilities(providerName?: string): ProviderCapabilityProfile | Record<string, ProviderCapabilityProfile> {
+  getProviderCapabilities(
+    providerName?: string
+  ): ProviderCapabilityProfile | Record<string, ProviderCapabilityProfile> {
     if (!providerName) {
       return { ...this.providerCapabilities };
     }
-    return this.providerCapabilities[providerName] || {
-      nativeToolCalling: false,
-      streaming: true,
-      notes: 'Unknown provider; assuming generic fallback support.'
-    };
+    return (
+      this.providerCapabilities[providerName] || {
+        nativeToolCalling: false,
+        streaming: true,
+        notes: 'Unknown provider; assuming generic fallback support.',
+      }
+    );
   }
 
   private extractToolCallsFromText(content: string, tools: Tool[]): ToolUseBlock[] {
-    const toolNames = new Set((tools || []).map(tool => tool.name));
+    const toolNames = new Set((tools || []).map((tool) => tool.name));
     if (!content || toolNames.size === 0) {
       return [];
     }
@@ -672,7 +719,10 @@ class AIProviderRouter {
     const fencedJsonMatches = content.match(/```json[\s\S]*?```/gi) || [];
     for (const fenced of fencedJsonMatches) {
       maybeCandidates.push(
-        fenced.replace(/```json/i, '').replace(/```$/, '').trim()
+        fenced
+          .replace(/```json/i, '')
+          .replace(/```$/, '')
+          .trim()
       );
     }
 
@@ -682,19 +732,22 @@ class AIProviderRouter {
         const name = item?.name || item?.function?.name;
         const args = item?.arguments || item?.function?.arguments || item?.input;
         if (!name || !toolNames.has(name)) continue;
-        const input = typeof args === 'string' ? (() => {
-          try {
-            return JSON.parse(args);
-          } catch {
-            return {};
-          }
-        })() : (args || {});
+        const input =
+          typeof args === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(args);
+                } catch {
+                  return {};
+                }
+              })()
+            : args || {};
 
         results.push({
           type: 'tool_use',
           id: item?.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name,
-          input
+          input,
         });
       }
     };
@@ -729,19 +782,19 @@ class AIProviderRouter {
     if (profile.nativeToolCalling && typeof provider.chatWithTools === 'function') {
       const nativeResult: ChatWithToolsResult = await provider.chatWithTools(messages, tools, {
         ...options,
-        model
+        model,
       });
       return {
         ...nativeResult,
         adapter: 'native',
-        provider: providerName
+        provider: providerName,
       };
     }
 
     const fallbackResult = await this.chat(messages, {
       ...options,
       model,
-      tools
+      tools,
     });
     const content = fallbackResult.content || '';
     const toolCalls = this.extractToolCallsFromText(content, tools);
@@ -752,7 +805,7 @@ class AIProviderRouter {
       toolCalls,
       contentBlocks: content ? [{ type: 'text', text: content }] : [],
       adapter: 'fallback',
-      provider: providerName
+      provider: providerName,
     };
   }
 
@@ -787,12 +840,12 @@ class AIProviderRouter {
     if (typeof provider?.streamWithTools === 'function') {
       const result: ChatWithToolsResult = await provider.streamWithTools(messages, tools, onChunk, {
         ...options,
-        model
+        model,
       });
       return {
         ...result,
         adapter: profile.streamingTools ? 'native' : 'shim',
-        provider: providerName
+        provider: providerName,
       };
     }
 
@@ -800,18 +853,34 @@ class AIProviderRouter {
     // `chatWithTools` so every router caller can rely on the surface.
     const result = await this.chatWithTools(messages, tools, options);
     if (!result.success) {
-      try { onChunk({ type: 'error', error: result.error || 'chatWithTools failed', result }); } catch { /* ignore */ }
+      try {
+        onChunk({ type: 'error', error: result.error || 'chatWithTools failed', result });
+      } catch {
+        /* ignore */
+      }
       return { ...result, adapter: 'fallback', provider: providerName };
     }
     if (result.content) {
-      try { onChunk({ type: 'text', text: result.content }); } catch { /* ignore */ }
+      try {
+        onChunk({ type: 'text', text: result.content });
+      } catch {
+        /* ignore */
+      }
     }
     if (Array.isArray(result.toolCalls)) {
       for (const tc of result.toolCalls) {
-        try { onChunk({ type: 'tool_use', toolCall: tc }); } catch { /* ignore */ }
+        try {
+          onChunk({ type: 'tool_use', toolCall: tc });
+        } catch {
+          /* ignore */
+        }
       }
     }
-    try { onChunk({ type: 'done', result }); } catch { /* ignore */ }
+    try {
+      onChunk({ type: 'done', result });
+    } catch {
+      /* ignore */
+    }
     return { ...result, adapter: 'fallback', provider: providerName };
   }
 
@@ -824,7 +893,9 @@ class AIProviderRouter {
     executeTool: (toolName: string, args: Record<string, any>) => Promise<any>,
     options: ChatOptions = {},
     maxRounds = 8
-  ): Promise<ChatResult & { toolCallsExecuted: number; adapter: 'native' | 'fallback'; provider: string }> {
+  ): Promise<
+    ChatResult & { toolCallsExecuted: number; adapter: 'native' | 'fallback'; provider: string }
+  > {
     let workingMessages = [...messages];
     let totalToolCalls = 0;
     let lastAdapter: 'native' | 'fallback' = 'fallback';
@@ -840,7 +911,7 @@ class AIProviderRouter {
           ...result,
           toolCallsExecuted: totalToolCalls,
           adapter: lastAdapter,
-          provider: lastProvider
+          provider: lastProvider,
         };
       }
 
@@ -850,7 +921,7 @@ class AIProviderRouter {
           ...result,
           toolCallsExecuted: totalToolCalls,
           adapter: lastAdapter,
-          provider: lastProvider
+          provider: lastProvider,
         };
       }
 
@@ -871,7 +942,7 @@ class AIProviderRouter {
       }
       workingMessages.push({
         role: 'user',
-        content: `Tool results:\n${toolResults.join('\n\n')}`
+        content: `Tool results:\n${toolResults.join('\n\n')}`,
       });
     }
 
@@ -880,7 +951,7 @@ class AIProviderRouter {
       error: `Tool loop exceeded max rounds (${maxRounds})`,
       toolCallsExecuted: totalToolCalls,
       adapter: lastAdapter,
-      provider: lastProvider
+      provider: lastProvider,
     };
   }
 
@@ -890,12 +961,14 @@ class AIProviderRouter {
   private isRateLimitError(error: any): boolean {
     if (!error) return false;
     const msg = (error.message || error.error || String(error)).toLowerCase();
-    return msg.includes('429') || 
-           msg.includes('rate_limit') || 
-           msg.includes('rate limit') ||
-           msg.includes('too many requests') ||
-           error.status === 429 ||
-           error.response?.status === 429;
+    return (
+      msg.includes('429') ||
+      msg.includes('rate_limit') ||
+      msg.includes('rate limit') ||
+      msg.includes('too many requests') ||
+      error.status === 429 ||
+      error.response?.status === 429
+    );
   }
 
   private isTransientProviderError(error: any): boolean {
@@ -908,23 +981,27 @@ class AIProviderRouter {
       return true;
     }
 
-    return msg.includes('timeout') ||
-           msg.includes('timed out') ||
-           msg.includes('econnreset') ||
-           msg.includes('eai_again') ||
-           msg.includes('enotfound') ||
-           msg.includes('enetunreach') ||
-           msg.includes('ehostunreach') ||
-           msg.includes('network unreachable') ||
-           msg.includes('connection reset') ||
-           msg.includes('temporarily unavailable') ||
-           msg.includes('service unavailable') ||
-           msg.includes('bad gateway') ||
-           msg.includes('gateway timeout');
+    return (
+      msg.includes('timeout') ||
+      msg.includes('timed out') ||
+      msg.includes('econnreset') ||
+      msg.includes('eai_again') ||
+      msg.includes('enotfound') ||
+      msg.includes('enetunreach') ||
+      msg.includes('ehostunreach') ||
+      msg.includes('network unreachable') ||
+      msg.includes('connection reset') ||
+      msg.includes('temporarily unavailable') ||
+      msg.includes('service unavailable') ||
+      msg.includes('bad gateway') ||
+      msg.includes('gateway timeout')
+    );
   }
 
   private shouldFallbackFromResult(result: ChatResult): boolean {
-    return !result.success && (this.isRateLimitError(result) || this.isTransientProviderError(result));
+    return (
+      !result.success && (this.isRateLimitError(result) || this.isTransientProviderError(result))
+    );
   }
 
   private shouldFallbackFromError(error: any): boolean {
@@ -949,21 +1026,25 @@ class AIProviderRouter {
       case 'anthropic':
         return normalizedModel.startsWith('claude-');
       case 'openai':
-        return normalizedModel.startsWith('gpt-') ||
-               normalizedModel.startsWith('o1') ||
-               normalizedModel.startsWith('o3') ||
-               normalizedModel.startsWith('o4') ||
-               normalizedModel.startsWith('text-');
+        return (
+          normalizedModel.startsWith('gpt-') ||
+          normalizedModel.startsWith('o1') ||
+          normalizedModel.startsWith('o3') ||
+          normalizedModel.startsWith('o4') ||
+          normalizedModel.startsWith('text-')
+        );
       case 'openrouter':
         return normalizedModel.includes('/');
       case 'ollama':
         // Ollama model ids are typically local names (llama3.2, qwen2.5-coder:7b, *:cloud),
         // and should not look like hosted-provider ids.
-        return !normalizedModel.startsWith('claude-') &&
-               !normalizedModel.startsWith('gpt-') &&
-               !normalizedModel.startsWith('openai/') &&
-               !normalizedModel.startsWith('anthropic/') &&
-               !normalizedModel.includes('/');
+        return (
+          !normalizedModel.startsWith('claude-') &&
+          !normalizedModel.startsWith('gpt-') &&
+          !normalizedModel.startsWith('openai/') &&
+          !normalizedModel.startsWith('anthropic/') &&
+          !normalizedModel.includes('/')
+        );
       default:
         return true;
     }
@@ -976,16 +1057,24 @@ class AIProviderRouter {
   private buildFallbackOptions(fallbackProviderName: string, options: ChatOptions): ChatOptions {
     const requestedModel = (options.model || this.activeModel || undefined) as string | undefined;
 
-    if (requestedModel && this.isModelCompatibleWithProvider(fallbackProviderName, requestedModel)) {
+    if (
+      requestedModel &&
+      this.isModelCompatibleWithProvider(fallbackProviderName, requestedModel)
+    ) {
       return options;
     }
 
-    const fallbackConfigModel = this.providers.get(fallbackProviderName)?.config?.model as string | undefined;
-    if (fallbackConfigModel && this.isModelCompatibleWithProvider(fallbackProviderName, fallbackConfigModel)) {
+    const fallbackConfigModel = this.providers.get(fallbackProviderName)?.config?.model as
+      | string
+      | undefined;
+    if (
+      fallbackConfigModel &&
+      this.isModelCompatibleWithProvider(fallbackProviderName, fallbackConfigModel)
+    ) {
       if (requestedModel && requestedModel !== fallbackConfigModel) {
         console.log(
           `[AI Router] Fallback provider ${fallbackProviderName} replacing incompatible model ` +
-          `'${requestedModel}' with '${fallbackConfigModel}'`
+            `'${requestedModel}' with '${fallbackConfigModel}'`
         );
       }
       return { ...options, model: fallbackConfigModel };
@@ -1008,10 +1097,7 @@ class AIProviderRouter {
     requestedModel?: string,
     viaFallback: boolean = false
   ): ChatResult {
-    const actualModel =
-      result.servedBy?.model ||
-      result.modelSelection?.model ||
-      requestedModel;
+    const actualModel = result.servedBy?.model || result.modelSelection?.model || requestedModel;
 
     recordAIRuntimeExecution({
       requestedProvider,
@@ -1030,8 +1116,8 @@ class AIProviderRouter {
         model: actualModel,
         requestedProvider,
         requestedModel,
-        viaFallback
-      }
+        viaFallback,
+      },
     };
   }
 
@@ -1082,9 +1168,9 @@ class AIProviderRouter {
         model,
         false
       );
-      
+
       const shouldFallback = this.shouldFallbackFromResult(result);
-      
+
       if (
         routerFallbackEnabled &&
         shouldFallback &&
@@ -1092,11 +1178,15 @@ class AIProviderRouter {
         this.fallbackProvider !== this.activeProvider
       ) {
         if (this.isRateLimitError(result)) {
-          console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
+          console.log(
+            `[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`
+          );
         } else {
-          console.log(`[AI Router] Primary provider hit a transient error, trying fallback: ${this.fallbackProvider}`);
+          console.log(
+            `[AI Router] Primary provider hit a transient error, trying fallback: ${this.fallbackProvider}`
+          );
         }
-        
+
         // Check if fallback is Ollama and verify it's available
         if (this.fallbackProvider === 'ollama') {
           const ollamaProvider = this.getProvider('ollama') as any;
@@ -1105,18 +1195,19 @@ class AIProviderRouter {
             if (!isHealthy) {
               return {
                 success: false,
-                error: `❌ Primary provider failed and Ollama fallback is not available.\n\n` +
-                       `Primary error: ${result.error || 'Unknown error'}\n\n` +
-                       `Ollama is not running. To use Ollama fallback:\n` +
-                       `1. Install Ollama: https://ollama.ai\n` +
-                       `2. Start Ollama: ollama serve\n` +
-                       `3. Pull a model: ollama pull deepseek-coder:6.7b\n\n` +
-                       `Or configure a different provider in Settings.`
+                error:
+                  `❌ Primary provider failed and Ollama fallback is not available.\n\n` +
+                  `Primary error: ${result.error || 'Unknown error'}\n\n` +
+                  `Ollama is not running. To use Ollama fallback:\n` +
+                  `1. Install Ollama: https://ollama.ai\n` +
+                  `2. Start Ollama: ollama serve\n` +
+                  `3. Pull a model: ollama pull deepseek-coder:6.7b\n\n` +
+                  `Or configure a different provider in Settings.`,
               };
             }
           }
         }
-        
+
         const fallback = this.getProvider(this.fallbackProvider);
         const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
         return this.annotateChatResult(
@@ -1131,13 +1222,22 @@ class AIProviderRouter {
       return result;
     } catch (e: any) {
       const shouldFallback = this.shouldFallbackFromError(e);
-      if (routerFallbackEnabled && shouldFallback && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
+      if (
+        routerFallbackEnabled &&
+        shouldFallback &&
+        this.fallbackProvider &&
+        this.fallbackProvider !== this.activeProvider
+      ) {
         if (this.isRateLimitError(e)) {
-          console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
+          console.log(
+            `[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`
+          );
         } else {
-          console.log(`[AI Router] Primary provider hit a transient error, trying fallback: ${this.fallbackProvider}`);
+          console.log(
+            `[AI Router] Primary provider hit a transient error, trying fallback: ${this.fallbackProvider}`
+          );
         }
-        
+
         // Check if fallback is Ollama and verify it's available
         if (this.fallbackProvider === 'ollama') {
           const ollamaProvider = this.getProvider('ollama') as any;
@@ -1146,18 +1246,19 @@ class AIProviderRouter {
             if (!isHealthy) {
               return {
                 success: false,
-                error: `❌ Primary provider failed and Ollama fallback is not available.\n\n` +
-                       `Primary error: ${e.message}\n\n` +
-                       `Ollama is not running. To use Ollama fallback:\n` +
-                       `1. Install Ollama: https://ollama.ai\n` +
-                       `2. Start Ollama: ollama serve\n` +
-                       `3. Pull a model: ollama pull deepseek-coder:6.7b\n\n` +
-                       `Or configure a different provider in Settings.`
+                error:
+                  `❌ Primary provider failed and Ollama fallback is not available.\n\n` +
+                  `Primary error: ${e.message}\n\n` +
+                  `Ollama is not running. To use Ollama fallback:\n` +
+                  `1. Install Ollama: https://ollama.ai\n` +
+                  `2. Start Ollama: ollama serve\n` +
+                  `3. Pull a model: ollama pull deepseek-coder:6.7b\n\n` +
+                  `Or configure a different provider in Settings.`,
               };
             }
           }
         }
-        
+
         const fallback = this.getProvider(this.fallbackProvider);
         const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
         return this.annotateChatResult(
@@ -1175,7 +1276,11 @@ class AIProviderRouter {
   /**
    * Stream with the active provider (with fallback)
    */
-  async stream(messages: ChatMessage[], onChunk: StreamCallback, options: ChatOptions = {}): Promise<void> {
+  async stream(
+    messages: ChatMessage[],
+    onChunk: StreamCallback,
+    options: ChatOptions = {}
+  ): Promise<void> {
     const provider = this.getActiveProvider();
     const model = (options.model || this.activeModel) as string | undefined;
     const requestedProvider = this.activeProvider || provider.name || 'ollama';
@@ -1189,13 +1294,19 @@ class AIProviderRouter {
     } catch (e: any) {
       const isRateLimit = this.isRateLimitError(e);
       const shouldFallback = this.shouldFallbackFromError(e);
-      if (shouldFallback && this.fallbackProvider && this.fallbackProvider !== this.activeProvider) {
+      if (
+        shouldFallback &&
+        this.fallbackProvider &&
+        this.fallbackProvider !== this.activeProvider
+      ) {
         if (isRateLimit) {
-          console.log(`[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`);
+          console.log(
+            `[AI Router] ⚠️ Rate limit detected, switching to fallback: ${this.fallbackProvider}`
+          );
         } else {
           console.log(`Primary provider error, trying fallback: ${this.fallbackProvider}`);
         }
-        
+
         // Check if fallback is Ollama and verify it's available
         if (this.fallbackProvider === 'ollama') {
           const ollamaProvider = this.getProvider('ollama') as any;
@@ -1204,17 +1315,17 @@ class AIProviderRouter {
             if (!isHealthy) {
               throw new Error(
                 `❌ Primary provider failed and Ollama fallback is not available.\n\n` +
-                `Primary error: ${e.message}\n\n` +
-                `Ollama is not running. To use Ollama fallback:\n` +
-                `1. Install Ollama: https://ollama.ai\n` +
-                `2. Start Ollama: ollama serve\n` +
-                `3. Pull a model: ollama pull deepseek-coder:6.7b\n\n` +
-                `Or configure a different provider in Settings.`
+                  `Primary error: ${e.message}\n\n` +
+                  `Ollama is not running. To use Ollama fallback:\n` +
+                  `1. Install Ollama: https://ollama.ai\n` +
+                  `2. Start Ollama: ollama serve\n` +
+                  `3. Pull a model: ollama pull deepseek-coder:6.7b\n\n` +
+                  `Or configure a different provider in Settings.`
               );
             }
           }
         }
-        
+
         const fallback = this.getProvider(this.fallbackProvider);
         const fallbackOptions = this.buildFallbackOptions(this.fallbackProvider, options);
         this.publishRuntimeInfo(
@@ -1249,7 +1360,9 @@ class AIProviderRouter {
   /**
    * Test connection to a specific provider
    */
-  async testProvider(providerName: string): Promise<{ success: boolean; error?: string; models?: number }> {
+  async testProvider(
+    providerName: string
+  ): Promise<{ success: boolean; error?: string; models?: number }> {
     const provider = this.getProvider(providerName);
     return provider.testConnection();
   }
@@ -1294,134 +1407,140 @@ class AIProviderRouter {
     // Model capabilities and preferences
     const modelCapabilities = {
       // Ollama models (local, fast, good for code)
-      'ollama': {
+      ollama: {
         'qwen3-coder:480b-cloud': {
           strengths: ['code', 'analysis', 'debug', 'complex'],
           speed: 'medium',
           context: 128000,
-          cost: 'low'
+          cost: 'low',
         },
         'qwen3-coder-next:cloud': {
           strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
           speed: 'fast',
           context: 256000,
-          cost: 'low'
+          cost: 'low',
+        },
+        'kimi-k2.6:cloud': {
+          strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
+          speed: 'fast',
+          context: 256000,
+          cost: 'low',
         },
         'glm-5.1:cloud': {
           strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
           speed: 'fast',
           context: 198000,
-          cost: 'low'
+          cost: 'low',
         },
         'gemma4:31b-cloud': {
           strengths: ['code', 'analysis', 'debug', 'complex'],
           speed: 'medium',
           context: 256000,
-          cost: 'low'
+          cost: 'low',
         },
         'deepseek-v3.1:671b-cloud': {
           strengths: ['analysis', 'creative', 'complex', 'chat'],
           speed: 'medium',
           context: 128000,
-          cost: 'low'
+          cost: 'low',
         },
         'glm-4.6:cloud': {
           strengths: ['code', 'analysis', 'chat', 'creative', 'complex'],
           speed: 'fast',
           context: 128000,
-          cost: 'low'
+          cost: 'low',
         },
         'qwen2.5-coder:32b': {
           strengths: ['code', 'debug', 'analysis'],
           speed: 'fast',
           context: 32000,
-          cost: 'free'
+          cost: 'free',
         },
         'qwen2.5-coder:7b': {
           strengths: ['code', 'chat', 'simple'],
           speed: 'fast',
           context: 32000,
-          cost: 'free'
-        }
+          cost: 'free',
+        },
       },
       // Anthropic models (excellent reasoning, expensive)
-      'anthropic': {
+      anthropic: {
         'claude-opus-4-7': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
           speed: 'medium',
           context: 1000000,
-          cost: 'premium'
+          cost: 'premium',
         },
         'claude-opus-4-6': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
           speed: 'medium',
           context: 1000000,
-          cost: 'premium'
+          cost: 'premium',
         },
         'claude-sonnet-4-6': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
           speed: 'medium',
           context: 1000000,
-          cost: 'high'
+          cost: 'high',
         },
         'claude-opus-4-5-20251101': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code', 'agentic'],
           speed: 'medium',
           context: 200000,
-          cost: 'premium'
+          cost: 'premium',
         },
         'claude-opus-4-20250514': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code'],
           speed: 'medium',
           context: 200000,
-          cost: 'premium'
+          cost: 'premium',
         },
         'claude-sonnet-4-20250514': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code'],
           speed: 'medium',
           context: 200000,
-          cost: 'high'
+          cost: 'high',
         },
         'claude-3-5-sonnet-20241022': {
           strengths: ['analysis', 'creative', 'complex', 'debug', 'code'],
           speed: 'medium',
           context: 200000,
-          cost: 'high'
+          cost: 'high',
         },
         'claude-3-haiku-20240307': {
           strengths: ['chat', 'simple', 'analysis'],
           speed: 'fast',
           context: 200000,
-          cost: 'medium'
-        }
+          cost: 'medium',
+        },
       },
       // OpenAI models (balanced, reliable)
-      'openai': {
+      openai: {
         'gpt-5.2-2025-12-11': {
           strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning'],
           speed: 'medium',
           context: 128000,
-          cost: 'high'
+          cost: 'high',
         },
         'gpt-5.2': {
           strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning'],
           speed: 'medium',
           context: 128000,
-          cost: 'high'
+          cost: 'high',
         },
         'gpt-4o': {
           strengths: ['analysis', 'creative', 'complex', 'code', 'debug'],
           speed: 'medium',
           context: 128000,
-          cost: 'high'
+          cost: 'high',
         },
         'gpt-4o-mini': {
           strengths: ['chat', 'simple', 'analysis', 'code'],
           speed: 'fast',
           context: 128000,
-          cost: 'low'
-        }
-      }
+          cost: 'low',
+        },
+      },
     };
 
     // Task-specific logic
@@ -1527,7 +1646,7 @@ class AIProviderRouter {
     return {
       provider: bestProvider,
       model: bestModel,
-      reasoning
+      reasoning,
     };
   }
 
@@ -1571,8 +1690,8 @@ class AIProviderRouter {
             provider: selectedProvider,
             model: selectedModel,
             reasoning,
-            autoSelected: true
-          }
+            autoSelected: true,
+          },
         };
       } finally {
         // Restore original provider

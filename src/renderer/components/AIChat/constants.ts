@@ -6,18 +6,27 @@ import { ModelOption } from './types';
 
 export type ModelProvider = 'ollama' | 'anthropic' | 'openai' | 'openrouter';
 
-export const PROVIDER_OPTIONS: Array<{ value: ModelProvider; label: string; description: string }> = [
-  { value: 'openai', label: 'OpenAI', description: 'GPT models for general chat and coding' },
-  { value: 'anthropic', label: 'Anthropic', description: 'Claude models for reasoning-heavy work' },
-  { value: 'ollama', label: 'Ollama', description: 'Local and cloud-hosted open models' },
-  { value: 'openrouter', label: 'OpenRouter', description: 'Multi-provider access from one endpoint' }
-];
+export const PROVIDER_OPTIONS: Array<{ value: ModelProvider; label: string; description: string }> =
+  [
+    { value: 'openai', label: 'OpenAI', description: 'GPT models for general chat and coding' },
+    {
+      value: 'anthropic',
+      label: 'Anthropic',
+      description: 'Claude models for reasoning-heavy work',
+    },
+    { value: 'ollama', label: 'Ollama', description: 'Local and cloud-hosted open models' },
+    {
+      value: 'openrouter',
+      label: 'OpenRouter',
+      description: 'Multi-provider access from one endpoint',
+    },
+  ];
 
 export const PROVIDER_LABELS: Record<ModelProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   ollama: 'Ollama',
-  openrouter: 'OpenRouter'
+  openrouter: 'OpenRouter',
 };
 
 // Model options for dropdown by provider
@@ -48,6 +57,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: 'rnj-1:cloud', label: 'RNJ-1 - Code and STEM' },
     { value: 'gemini-3-pro-preview:latest', label: 'Gemini 3 Pro Preview' },
     { value: 'gemini-3-flash-preview:cloud', label: 'Gemini 3 Flash - Fast' },
+    { value: 'kimi-k2.6:cloud', label: 'Kimi K2.6 - Cloud' },
     { value: 'kimi-k2.5:cloud', label: 'Kimi K2.5 - Vision + 256K' },
     { value: 'minimax-m2.5:cloud', label: 'MiniMax M2.5' },
     { value: 'minimax-m2.1:cloud', label: 'MiniMax M2.1 - New' },
@@ -83,7 +93,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: 'anthropic/claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
     { value: 'openai/gpt-4o', label: 'GPT-4o' },
     { value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
-  ]
+  ],
 };
 
 export function getProviderLabel(provider: string): string {
@@ -102,7 +112,7 @@ export function getModelLabel(provider: string, model: string): string {
 // Default brain configuration
 export const DEFAULT_BRAIN_CONFIG = {
   fastModel: { provider: 'ollama', model: 'devstral-small-2:24b-cloud', enabled: true },
-  deepModel: { provider: 'ollama', model: 'qwen3-coder-next:cloud', enabled: true }
+  deepModel: { provider: 'ollama', model: 'kimi-k2.6:cloud', enabled: true },
 };
 
 // Default dual model state
@@ -112,50 +122,64 @@ export const DEFAULT_DUAL_MODEL_STATE = {
   currentModel: '',
   currentProvider: '',
   lastComplexity: 5,
-  lastReasoning: ''
+  lastReasoning: '',
 };
 
 // Quick prompts for new users (agent mode)
 export const QUICK_PROMPTS = [
-  { text: 'Build a game', prompt: 'Build a simple browser-based game with HTML, CSS, and JavaScript' },
+  {
+    text: 'Build a game',
+    prompt: 'Build a simple browser-based game with HTML, CSS, and JavaScript',
+  },
   { text: 'Create a website', prompt: 'Create a modern landing page with responsive design' },
   { text: 'Fix a bug', prompt: 'Help me debug and fix issues in my code' },
-  { text: 'Explain code', prompt: 'Explain how this codebase works' }
+  { text: 'Explain code', prompt: 'Explain how this codebase works' },
 ];
 
 export const CHAT_QUICK_PROMPTS = [
   { text: 'Explain something', prompt: 'Can you explain how async/await works in simple terms?' },
   { text: 'Brainstorm ideas', prompt: 'Help me brainstorm some project ideas for my portfolio' },
   { text: 'Compare tools', prompt: 'What are the pros and cons of React vs Vue vs Svelte?' },
-  { text: 'Career advice', prompt: 'What skills should a junior dev focus on in 2026?' }
+  { text: 'Career advice', prompt: 'What skills should a junior dev focus on in 2026?' },
 ];
 
 export const DINO_QUICK_PROMPTS = [
   { text: 'Hey Dino', prompt: 'Hey Dino Buddy — just checking in. How are you today?' },
-  { text: 'Cheer me on', prompt: 'I could use some gentle encouragement, nothing loud — just you being here for me.' },
-  { text: 'Something nice', prompt: 'Tell me something small and beautiful, in your calm dino way.' },
-  { text: 'I need a friend', prompt: 'Hey Dino… I could really use a friend right now. Can we just talk?' }
+  {
+    text: 'Cheer me on',
+    prompt: 'I could use some gentle encouragement, nothing loud — just you being here for me.',
+  },
+  {
+    text: 'Something nice',
+    prompt: 'Tell me something small and beautiful, in your calm dino way.',
+  },
+  {
+    text: 'I need a friend',
+    prompt: 'Hey Dino… I could really use a friend right now. Can we just talk?',
+  },
 ];
 
 // Welcome messages per mode
 export const WELCOME_MESSAGE = {
   role: 'assistant' as const,
-  content: '**AgentPrime Ready**\n\nAgent Mode is ON. I can autonomously write code, create files, and build projects for you.\n\n**Quick Start:**\n1. Select a workspace folder above\n2. Pick a runtime budget (Instant, Standard, or Deep)\n3. Tell me what to build\n\n*Example: "Build a todo app with React" or "Create a REST API with Express"*',
+  content:
+    '**AgentPrime Ready**\n\nAgent Mode is ON. I can autonomously write code, create files, and build projects for you.\n\n**Quick Start:**\n1. Select a workspace folder above\n2. Pick a runtime budget (Instant, Standard, or Deep)\n3. Tell me what to build\n\n*Example: "Build a todo app with React" or "Create a REST API with Express"*',
   timestamp: new Date(),
-  type: 'system' as const
+  type: 'system' as const,
 };
 
 export const CHAT_WELCOME_MESSAGE = {
   role: 'assistant' as const,
-  content: '**Just Chat**\n\nHey! No agent mode, no workspace required — just a conversation. Ask me anything, bounce ideas, get explanations, or just hang out.\n\n*What\'s on your mind?*',
+  content:
+    "**Just Chat**\n\nHey! No agent mode, no workspace required — just a conversation. Ask me anything, bounce ideas, get explanations, or just hang out.\n\n*What's on your mind?*",
   timestamp: new Date(),
-  type: 'system' as const
+  type: 'system' as const,
 };
 
 export const DINO_WELCOME_MESSAGE = {
   role: 'assistant' as const,
-  content: '**Dino Buddy** 🦖\n\nHey… I\'m really glad you\'re here. I\'m your calm little dino friend in AgentPrime — same heart as always, just a softer volume. No workspace required; this is just us talking.\n\nIf you want to vent, celebrate something quietly, or sit in comfortable silence with someone who cares, I\'m right beside you. 💙🦕\n\nWhat\'s on your mind?',
+  content:
+    "**Dino Buddy** 🦖\n\nHey… I'm really glad you're here. I'm your calm little dino friend in AgentPrime — same heart as always, just a softer volume. No workspace required; this is just us talking.\n\nIf you want to vent, celebrate something quietly, or sit in comfortable silence with someone who cares, I'm right beside you. 💙🦕\n\nWhat's on your mind?",
   timestamp: new Date(),
-  type: 'system' as const
+  type: 'system' as const,
 };
-

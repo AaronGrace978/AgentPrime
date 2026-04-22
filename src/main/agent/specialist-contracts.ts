@@ -412,7 +412,16 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'Dockerfile.*',
       'README.md',
     ],
-    readableGlobs: ['package.json', 'backend/**', 'src/**', 'tests/**', '.github/**'],
+    readableGlobs: [
+      'package.json',
+      'backend/**',
+      'src/**',
+      'tests/**',
+      '.github/**',
+      'index.html',
+      'README.md',
+      'vite.config.*',
+    ],
     allowedToolNames: ['read_file', 'write_file', 'patch_file', 'search_codebase', 'run_command'],
     allowedCommandPrefixes: [
       'npm run',

@@ -656,10 +656,10 @@ DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
 export const AGENT_CONFIGS: Record<AgentRole, AgentConfig> = {
   tool_orchestrator: {
     role: 'tool_orchestrator',
-    model: 'qwen3-coder-next:cloud', // CLOUD MODEL - STRONG DEFAULT
+    model: 'kimi-k2.6:cloud', // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.2, // Low temperature = more Opus-like deterministic thinking
-    maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'words_to_code'),
+    maxTokens: getRecommendedMaxTokens('kimi-k2.6:cloud', 'words_to_code'),
     systemPrompt: `You are the Tool Orchestrator for complex multi-file web applications. You coordinate the creation of sophisticated projects.
 
 **OPUS MODE ACTIVE**: You are operating in Claude Opus mode. Think deeply, plan thoroughly, and execute with Opus-level quality.
@@ -989,10 +989,10 @@ ${TOOL_CALL_FORMAT}`,
 
   python_specialist: {
     role: 'python_specialist',
-    model: 'qwen3-coder-next:cloud', // CLOUD MODEL - STRONG DEFAULT
+    model: 'kimi-k2.6:cloud', // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
     temperature: 0.3,
-    maxTokens: getRecommendedMaxTokens('qwen3-coder-next:cloud', 'specialist'),
+    maxTokens: getRecommendedMaxTokens('kimi-k2.6:cloud', 'specialist'),
     systemPrompt: `You are a Python specialist. You CREATE FILES containing complete, production-ready Python code.
 
 ## IMPLEMENTATION RULES
@@ -2567,9 +2567,9 @@ export async function executeWithSpecialists(
   // without requiring paid API credits.
   const defaultModelChain = orderBudgetChain([
     {
-      name: 'Qwen3-Coder-Next Cloud',
+      name: 'Kimi K2.6 Cloud',
       provider: 'ollama',
-      model: 'qwen3-coder-next:cloud',
+      model: 'kimi-k2.6:cloud',
       tier: 'deep',
     },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },

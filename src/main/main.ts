@@ -249,7 +249,7 @@ if (fs.existsSync(dotenvPath)) {
 
 // Ollama defaults
 // Single-model mode should default to a strong cloud model rather than the local 7B.
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen3-coder:480b-cloud';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'kimi-k2.6:cloud';
 const OLLAMA_FAST_MODEL = process.env.OLLAMA_FAST_MODEL || 'devstral-small-2:24b-cloud';
 const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'qwen3-coder-next:cloud';
 // Ollama API keys from environment (primary + desktop fallback)

@@ -1,15 +1,15 @@
 /**
  * Timeout Utilities for AgentPrime
  * Provides timeout wrappers for operations to prevent infinite hangs
- * 
+ *
  * ENHANCED: Adaptive timeouts based on model size and operation complexity
  */
 
 export class TimeoutError extends Error {
   public readonly shouldFallback: boolean;
-  
+
   constructor(
-    message: string, 
+    message: string,
     public readonly timeoutMs: number,
     shouldFallback: boolean = true
   ) {
@@ -63,7 +63,7 @@ type OperationType = 'chat' | 'completion' | 'analysis' | 'complex' | 'project';
  */
 export function detectModelSize(modelName: string): ModelSize {
   const name = modelName.toLowerCase();
-  
+
   // Cloud models (external API calls) - need longer timeouts
   if (name.includes('cloud') || name.includes('api')) return 'cloud';
 
@@ -82,22 +82,30 @@ export function detectModelSize(modelName: string): ModelSize {
   ) {
     return 'cloud';
   }
-  
+
   // XLarge models (>100B params)
   if (name.includes('671b') || name.includes('405b') || name.includes('180b')) return 'xlarge';
-  
+
   // Large models (30B-100B)
-  if (name.includes('70b') || name.includes('72b') || name.includes('34b') || name.includes('40b')) return 'large';
-  
+  if (name.includes('70b') || name.includes('72b') || name.includes('34b') || name.includes('40b'))
+    return 'large';
+
   // Medium models (7B-30B)
-  if (name.includes('13b') || name.includes('14b') || name.includes('8b') || name.includes('7b') || name.includes('22b')) return 'medium';
-  
+  if (
+    name.includes('13b') ||
+    name.includes('14b') ||
+    name.includes('8b') ||
+    name.includes('7b') ||
+    name.includes('22b')
+  )
+    return 'medium';
+
   // Small models (1B-7B)
   if (name.includes('3b') || name.includes('1b') || name.includes('4b')) return 'small';
-  
+
   // Tiny models (<1B)
   if (name.includes('0.5b') || name.includes('500m')) return 'tiny';
-  
+
   // Default to medium if unknown
   return 'medium';
 }
@@ -111,8 +119,8 @@ function getModelTimeoutMultiplier(modelSize: ModelSize): number {
     small: 1,
     medium: 1.5,
     large: 3,
-    xlarge: 6,    // 671B models need 6x timeout
-    cloud: 2      // Cloud models need headroom, but interactive flows should fail over quickly
+    xlarge: 6, // 671B models need 6x timeout
+    cloud: 2, // Cloud models need headroom, but interactive flows should fail over quickly
   };
   return multipliers[modelSize];
 }
@@ -139,11 +147,11 @@ export async function withTimeout<T>(
   errorMsg: string = `Operation timed out after ${ms}ms`
 ): Promise<T> {
   let timeoutId: NodeJS.Timeout;
-  
+
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutId = setTimeout(() => reject(new TimeoutError(errorMsg, ms, true)), ms);
   });
-  
+
   try {
     const result = await Promise.race([promise, timeoutPromise]);
     clearTimeout(timeoutId!);
@@ -159,11 +167,11 @@ export async function withTimeout<T>(
  * These are multiplied by model size factor
  */
 const BASE_TIMEOUTS = {
-  chat: 45000,        // 45 seconds base for chat
-  completion: 3000,   // 3 seconds for completions
-  analysis: 90000,    // 90 seconds for analysis
-  complex: 180000,    // 3 minutes base for complex tasks
-  project: 300000     // 5 minutes for full project generation
+  chat: 45000, // 45 seconds base for chat
+  completion: 3000, // 3 seconds for completions
+  analysis: 90000, // 90 seconds for analysis
+  complex: 180000, // 3 minutes base for complex tasks
+  project: 300000, // 5 minutes for full project generation
 };
 
 /**
@@ -172,11 +180,23 @@ const BASE_TIMEOUTS = {
  * but not SO fast that Ollama cloud models always timeout on valid work.
  */
 const MAX_TIMEOUTS: Record<OperationType, number> = {
-  chat: 300000,       // 5 minutes
-  completion: 30000,  // 30 seconds
-  analysis: 600000,   // 10 minutes
-  complex: 900000,    // 15 minutes
-  project: 1200000    // 20 minutes
+  chat: 300000, // 5 minutes
+  completion: 30000, // 30 seconds
+  analysis: 600000, // 10 minutes
+  complex: 900000, // 15 minutes
+  project: 1200000, // 20 minutes
+};
+
+/**
+ * Additional caps for cloud models so fallback engages sooner.
+ * These values are intentionally lower than MAX_TIMEOUTS but still high enough
+ * for large model responses under normal network conditions.
+ */
+const CLOUD_TIMEOUT_CAPS: Partial<Record<OperationType, number>> = {
+  chat: 120000, // 2 minutes
+  analysis: 180000, // 3 minutes
+  complex: 240000, // 4 minutes
+  project: 300000, // 5 minutes
 };
 
 /**
@@ -193,22 +213,27 @@ export async function withAITimeout<T>(
   runtimeBudget: RuntimeBudgetMode = 'standard'
 ): Promise<T> {
   const baseTimeout = BASE_TIMEOUTS[operationType];
-  
+
   // Calculate adaptive timeout based on model size
   const modelSize = modelName ? detectModelSize(modelName) : 'medium';
-  const multiplier = getModelTimeoutMultiplier(modelSize) * getRuntimeBudgetTimeoutMultiplier(runtimeBudget);
+  const multiplier =
+    getModelTimeoutMultiplier(modelSize) * getRuntimeBudgetTimeoutMultiplier(runtimeBudget);
   const adaptiveTimeout = Math.round(baseTimeout * multiplier);
-  const timeout = Math.min(adaptiveTimeout, MAX_TIMEOUTS[operationType]);
-  
-  const errorMsg = `${operationType} operation timed out after ${Math.round(timeout/1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}, budget: ${runtimeBudget}). Falling back to faster model...`;
+  const genericCap = MAX_TIMEOUTS[operationType];
+  const cloudCap = modelSize === 'cloud' ? CLOUD_TIMEOUT_CAPS[operationType] : undefined;
+  const timeout = Math.min(adaptiveTimeout, genericCap, cloudCap ?? Number.POSITIVE_INFINITY);
+
+  const errorMsg = `${operationType} operation timed out after ${Math.round(timeout / 1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}, budget: ${runtimeBudget}). Falling back to faster model...`;
 
   if (timeout < adaptiveTimeout) {
     console.log(
       `[Timeout] ${operationType} timeout capped from ${Math.round(adaptiveTimeout / 1000)}s to ${Math.round(timeout / 1000)}s for ${modelSize} model`
     );
   }
-  console.log(`[Timeout] ${operationType} timeout set to ${Math.round(timeout/1000)}s for ${modelSize} model (${runtimeBudget} budget)`);
-  
+  console.log(
+    `[Timeout] ${operationType} timeout set to ${Math.round(timeout / 1000)}s for ${modelSize} model (${runtimeBudget} budget)`
+  );
+
   return withTimeout(aiPromise, timeout, errorMsg);
 }
 
@@ -223,13 +248,13 @@ export async function withFileTimeout<T>(
   operationType: 'read' | 'write' | 'search' = 'read'
 ): Promise<T> {
   const timeouts = {
-    read: 10000,   // 10 seconds for reading files
-    write: 30000,  // 30 seconds for writing files
-    search: 5000   // 5 seconds for file searches
+    read: 10000, // 10 seconds for reading files
+    write: 30000, // 30 seconds for writing files
+    search: 5000, // 5 seconds for file searches
   };
 
   const timeout = timeouts[operationType];
-  const errorMsg = `File ${operationType} operation timed out after ${timeout/1000}s. The file may be locked or the operation is too large.`;
+  const errorMsg = `File ${operationType} operation timed out after ${timeout / 1000}s. The file may be locked or the operation is too large.`;
 
   return withTimeout(filePromise, timeout, errorMsg);
 }
@@ -241,6 +266,7 @@ export async function withFileTimeout<T>(
  */
 export const FALLBACK_MODEL_CHAIN = [
   // Prefer faster interactive models before deeper long-running fallbacks.
+  { provider: 'ollama', model: 'kimi-k2.6:cloud', size: 'cloud' as ModelSize },
   { provider: 'ollama', model: 'minimax-m2.7:cloud', size: 'cloud' as ModelSize },
   { provider: 'ollama', model: 'gemma4', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
@@ -335,14 +361,16 @@ export async function withRetry<T>(
       }
 
       if (attempt === maxRetries) {
-        throw new Error(`Operation failed after ${maxRetries + 1} attempts. Last error: ${lastError.message}`);
+        throw new Error(
+          `Operation failed after ${maxRetries + 1} attempts. Last error: ${lastError.message}`
+        );
       }
 
       // Shorter backoff: 500ms, 1s (don't waste time on slow models)
       const delay = baseDelay * Math.pow(2, attempt);
       console.log(`[Timeout] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
 
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
@@ -388,10 +416,14 @@ export async function withSmartFallback<T>(
   const primaryModelSize = detectModelSize(primaryModel);
   // For cloud models, fail over faster instead of repeating the same large request.
   const primaryRetries =
-    primaryModelSize === 'cloud' && (operationType === 'chat' || operationType === 'analysis' || operationType === 'complex' || operationType === 'project')
+    primaryModelSize === 'cloud' &&
+    (operationType === 'chat' ||
+      operationType === 'analysis' ||
+      operationType === 'complex' ||
+      operationType === 'project')
       ? 0
       : 1;
-  
+
   // Try primary model first
   try {
     attempts++;
@@ -409,7 +441,7 @@ export async function withSmartFallback<T>(
       usedFallback: false,
       finalProvider: servedBy?.provider || primaryProvider,
       finalModel: servedBy?.model || primaryModel,
-      attempts
+      attempts,
     };
   } catch (primaryError) {
     // User-initiated abort: do NOT walk the fallback chain. The whole
@@ -428,10 +460,12 @@ export async function withSmartFallback<T>(
       if (fallback.provider === primaryProvider && fallback.model === primaryModel) continue;
 
       if (shouldSkipProvider(fallback.provider)) {
-        console.log(`[SmartFallback] Skipping ${fallback.provider}/${fallback.model} (provider failed recently)`);
+        console.log(
+          `[SmartFallback] Skipping ${fallback.provider}/${fallback.model} (provider failed recently)`
+        );
         continue;
       }
-      
+
       try {
         attempts++;
         console.log(`[SmartFallback] Trying fallback: ${fallback.provider}/${fallback.model}`);
@@ -449,7 +483,7 @@ export async function withSmartFallback<T>(
           usedFallback: true,
           finalProvider: servedBy?.provider || fallback.provider,
           finalModel: servedBy?.model || fallback.model,
-          attempts
+          attempts,
         };
       } catch (fallbackError) {
         if (isAbortError(fallbackError)) {
@@ -457,12 +491,16 @@ export async function withSmartFallback<T>(
           throw fallbackError;
         }
         const errMsg = (fallbackError as Error).message || String(fallbackError);
-        console.log(`[SmartFallback] Fallback ${fallback.model} failed: ${errMsg.substring(0, 200)}`);
+        console.log(
+          `[SmartFallback] Fallback ${fallback.model} failed: ${errMsg.substring(0, 200)}`
+        );
         recordProviderFailure(fallback.provider);
         continue;
       }
     }
-    
-    throw new Error(`All models failed after ${attempts} attempts. Primary: ${primaryModel}. Check your API keys and Ollama configuration.`);
+
+    throw new Error(
+      `All models failed after ${attempts} attempts. Primary: ${primaryModel}. Check your API keys and Ollama configuration.`
+    );
   }
 }

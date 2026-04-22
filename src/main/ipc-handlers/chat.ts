@@ -1,9 +1,9 @@
 /**
  * Chat IPC Handler
  * Handles AI chat interactions with streaming support
- * 
+ *
  * Security: Chat messages are validated and rate-limited
- * 
+ *
  * ENHANCED: Added health check and model diagnostics
  */
 
@@ -12,7 +12,12 @@ import aiRouter from '../ai-providers';
 import { CommandExecutor } from '../core/command-executor';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
 import { parseChatIpcContext } from '../security/chat-ipc-context';
-import { withAITimeoutAndRetry, TimeoutError, FALLBACK_MODEL_CHAIN, isAbortError } from '../core/timeout-utils';
+import {
+  withAITimeoutAndRetry,
+  TimeoutError,
+  FALLBACK_MODEL_CHAIN,
+  isAbortError,
+} from '../core/timeout-utils';
 import { stateManager } from '../core/state-manager';
 import { getBudgetAdjustedMaxTokens, isOllamaCloudModel } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
@@ -31,8 +36,15 @@ import {
   resolveVibeCoderExecutionPolicy,
 } from '../agent/behavior-profile';
 
-function resolveProviderForModel(model: string | undefined, preferredProvider: string | undefined): string {
-  return aiRouter.inferProviderForModel(model, preferredProvider || 'ollama') || preferredProvider || 'ollama';
+function resolveProviderForModel(
+  model: string | undefined,
+  preferredProvider: string | undefined
+): string {
+  return (
+    aiRouter.inferProviderForModel(model, preferredProvider || 'ollama') ||
+    preferredProvider ||
+    'ollama'
+  );
 }
 
 function resolveConfiguredModel(
@@ -42,24 +54,28 @@ function resolveConfiguredModel(
   requestedProvider?: string
 ) {
   const localOllamaModel =
-    settings?.providers?.ollama?.model ||
-    settings?.activeModel ||
-    'qwen3-coder:480b-cloud';
+    settings?.providers?.ollama?.model || settings?.activeModel || 'kimi-k2.6:cloud';
 
   const dualConfig = settings?.dualModelEnabled ? settings?.dualModelConfig : null;
-  const budgetModel = !requestedModel && dualConfig
-    ? runtimeBudget === 'instant'
-      ? dualConfig.fastModel?.model
-      : runtimeBudget === 'deep'
-        ? dualConfig.deepModel?.model
-        : (dualConfig.deepModel?.model || dualConfig.fastModel?.model)
-    : undefined;
+  const budgetModel =
+    !requestedModel && dualConfig
+      ? runtimeBudget === 'instant'
+        ? dualConfig.fastModel?.model
+        : runtimeBudget === 'deep'
+          ? dualConfig.deepModel?.model
+          : dualConfig.deepModel?.model || dualConfig.fastModel?.model
+      : undefined;
 
   const requestedModelForRun = requestedModel || budgetModel;
   const requestedProviderForRun = requestedProvider || settings?.activeProvider || 'ollama';
-  const runtime = resolveEffectiveAIRuntime(settings, requestedModelForRun, requestedProviderForRun);
+  const runtime = resolveEffectiveAIRuntime(
+    settings,
+    requestedModelForRun,
+    requestedProviderForRun
+  );
   const activeModel = runtime.effectiveModel || localOllamaModel;
-  const activeProvider = runtime.effectiveProvider || resolveProviderForModel(activeModel, requestedProviderForRun);
+  const activeProvider =
+    runtime.effectiveProvider || resolveProviderForModel(activeModel, requestedProviderForRun);
 
   return { activeModel, activeProvider, localOllamaModel, runtime };
 }
@@ -103,7 +119,10 @@ function buildAssistantResponseMetadata(
   };
 }
 
-function resolveConversationMode(context?: { just_chat_mode?: boolean; dino_buddy_mode?: boolean }): ConversationMode {
+function resolveConversationMode(context?: {
+  just_chat_mode?: boolean;
+  dino_buddy_mode?: boolean;
+}): ConversationMode {
   if (context?.dino_buddy_mode) {
     return 'dino';
   }
@@ -151,43 +170,46 @@ function getExecutor(): CommandExecutor {
  * Register chat IPC handler
  */
 export function register(deps: ChatHandlerDeps): void {
-  const { 
-    ipcMain, 
-    getWorkspacePath, 
-    getCurrentFile, 
+  const {
+    ipcMain,
+    getWorkspacePath,
+    getCurrentFile,
     getCurrentFolder,
     getConversationHistory,
     addToConversationHistory,
-    getSettings
+    getSettings,
   } = deps;
 
   // Health check endpoint - check Ollama status and models
   ipcMain.handle('ai:health-check', async () => {
     const health = await checkOllamaHealth();
-    
+
     // Build helpful message
     let message = '';
     if (!health.running) {
-      message = `❌ Ollama is not running!\n\n` +
-                `Start Ollama:\n  ollama serve\n\n` +
-                `Then pull a recommended model:\n  ollama pull qwen2.5:14b`;
+      message =
+        `❌ Ollama is not running!\n\n` +
+        `Start Ollama:\n  ollama serve\n\n` +
+        `Then pull a recommended model:\n  ollama pull qwen2.5:14b`;
     } else if (health.models.length === 0) {
-      message = `⚠️ Ollama is running but no models installed!\n\n` +
-                `Pull a recommended model:\n  ollama pull qwen2.5:14b`;
+      message =
+        `⚠️ Ollama is running but no models installed!\n\n` +
+        `Pull a recommended model:\n  ollama pull qwen2.5:14b`;
     } else {
-      const installedCount = health.recommended.filter(r => r.installed).length;
+      const installedCount = health.recommended.filter((r) => r.installed).length;
       if (installedCount === 0) {
-        message = `⚠️ No recommended models installed.\n\n` +
-                  `For best results, install:\n  ollama pull qwen2.5:14b`;
+        message =
+          `⚠️ No recommended models installed.\n\n` +
+          `For best results, install:\n  ollama pull qwen2.5:14b`;
       } else {
         message = `✅ Ollama healthy with ${health.models.length} models`;
       }
     }
-    
+
     return {
       success: health.running,
       ...health,
-      message
+      message,
     };
   });
 
@@ -199,14 +221,14 @@ export function register(deps: ChatHandlerDeps): void {
         success: true,
         history: history.map((msg, index) => ({
           ...msg,
-          timestamp: new Date(Date.now() - (history.length - 1 - index) * 60000) // Rough timestamp estimation
-        }))
+          timestamp: new Date(Date.now() - (history.length - 1 - index) * 60000), // Rough timestamp estimation
+        })),
       };
     } catch (error: any) {
       return {
         success: false,
         error: error.message,
-        history: []
+        history: [],
       };
     }
   });
@@ -223,14 +245,14 @@ export function register(deps: ChatHandlerDeps): void {
         history: messages.map((msg) => ({
           role: msg.role as 'user' | 'assistant',
           content: msg.content,
-          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
-        }))
+          timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+        })),
       };
     } catch (error: any) {
       return {
         success: false,
         error: error.message,
-        history: []
+        history: [],
       };
     }
   });
@@ -255,7 +277,11 @@ export function register(deps: ChatHandlerDeps): void {
       // Abort all active chat streams first — this drops the underlying
       // HTTP socket so the model billing stops immediately.
       for (const [, controller] of activeChatControllers) {
-        try { controller.abort(); } catch { /* ignore */ }
+        try {
+          controller.abort();
+        } catch {
+          /* ignore */
+        }
         stoppedSomething = true;
       }
       activeChatControllers.clear();
@@ -264,7 +290,10 @@ export function register(deps: ChatHandlerDeps): void {
       if (agentRuntime.activeAgentMode === 'monolithic' && agentRuntime.getPipeline()) {
         agentRuntime.getPipeline()!.getAgent().requestStop('Stopped by user');
         stoppedSomething = true;
-      } else if (agentRuntime.activeAgentMode === 'specialized' && agentRuntime.getSpecializedLoop()) {
+      } else if (
+        agentRuntime.activeAgentMode === 'specialized' &&
+        agentRuntime.getSpecializedLoop()
+      ) {
         (agentRuntime.getSpecializedLoop() as any).requestStop?.('Stopped by user');
         stoppedSomething = true;
       }
@@ -278,23 +307,37 @@ export function register(deps: ChatHandlerDeps): void {
     }
   });
 
-  ipcMain.handle('agent:review-update-status', async (_event: any, sessionId: string, filePath: string, status: 'accepted' | 'rejected' | 'pending') => {
-    try {
-      const snapshot = reviewSessionManager.updateChangeStatus(sessionId, filePath, status);
-      return { success: true, session: snapshot };
-    } catch (error: any) {
-      return { success: false, error: error?.message || 'Failed to update review status' };
+  ipcMain.handle(
+    'agent:review-update-status',
+    async (
+      _event: any,
+      sessionId: string,
+      filePath: string,
+      status: 'accepted' | 'rejected' | 'pending'
+    ) => {
+      try {
+        const snapshot = reviewSessionManager.updateChangeStatus(sessionId, filePath, status);
+        return { success: true, session: snapshot };
+      } catch (error: any) {
+        return { success: false, error: error?.message || 'Failed to update review status' };
+      }
     }
-  });
+  );
 
-  ipcMain.handle('agent:review-update-pending', async (_event: any, sessionId: string, status: 'accepted' | 'rejected') => {
-    try {
-      const snapshot = reviewSessionManager.bulkUpdatePendingStatuses(sessionId, status);
-      return { success: true, session: snapshot };
-    } catch (error: any) {
-      return { success: false, error: error?.message || 'Failed to update pending review statuses' };
+  ipcMain.handle(
+    'agent:review-update-pending',
+    async (_event: any, sessionId: string, status: 'accepted' | 'rejected') => {
+      try {
+        const snapshot = reviewSessionManager.bulkUpdatePendingStatuses(sessionId, status);
+        return { success: true, session: snapshot };
+      } catch (error: any) {
+        return {
+          success: false,
+          error: error?.message || 'Failed to update pending review statuses',
+        };
+      }
     }
-  });
+  );
 
   ipcMain.handle('agent:review-apply', async (_event: any, sessionId: string) => {
     try {
@@ -310,7 +353,10 @@ export function register(deps: ChatHandlerDeps): void {
       const snapshot = reviewSessionManager.getLatestAppliedSession();
       return { success: true, session: snapshot };
     } catch (error: any) {
-      return { success: false, error: error?.message || 'Failed to load the latest applied review session' };
+      return {
+        success: false,
+        error: error?.message || 'Failed to load the latest applied review session',
+      };
     }
   });
 
@@ -324,7 +370,10 @@ export function register(deps: ChatHandlerDeps): void {
       const snapshot = reviewSessionManager.revertAppliedChanges(latestSession.sessionId);
       return { success: true, session: snapshot };
     } catch (error: any) {
-      return { success: false, error: error?.message || 'Failed to revert the latest applied review session' };
+      return {
+        success: false,
+        error: error?.message || 'Failed to revert the latest applied review session',
+      };
     }
   });
 
@@ -341,29 +390,29 @@ export function register(deps: ChatHandlerDeps): void {
   ipcMain.handle('summarize-conversation', async (_event: any, mode?: ConversationMode) => {
     try {
       const history = getConversationHistory(mode || 'agent');
-      
+
       if (!conversationSummarizer.needsSummarization(history, 8000)) {
         return {
           success: true,
           needed: false,
-          message: 'Conversation is short enough, no summarization needed'
+          message: 'Conversation is short enough, no summarization needed',
         };
       }
-      
+
       const result = await conversationSummarizer.summarize(history);
-      
+
       return {
         success: true,
         needed: true,
         summary: result.summary,
         originalCount: history.length,
         condensedCount: result.condensedMessages.length,
-        tokensSaved: result.summary.tokensSaved
+        tokensSaved: result.summary.tokensSaved,
       };
     } catch (error: any) {
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   });
@@ -380,10 +429,10 @@ export function register(deps: ChatHandlerDeps): void {
       return {
         success: false,
         error: 'Rate limit exceeded. Please slow down.',
-        requestId
+        requestId,
       };
     }
-    
+
     // === SECURITY: Validate message ===
     const messageValidation = validateChatMessage(message);
     if (!messageValidation.valid) {
@@ -391,21 +440,25 @@ export function register(deps: ChatHandlerDeps): void {
       return {
         success: false,
         error: `Invalid message: ${messageValidation.errors.join('; ')}`,
-        requestId
+        requestId,
       };
     }
-    
+
     // Use sanitized message
     message = messageValidation.sanitized || message;
 
     const context = parseChatIpcContext(contextRaw);
     const conversationMode = resolveConversationMode(context);
-    const runtimeBudget = context.runtime_budget || dualModeToRuntimeBudget(context.dual_mode) || DEFAULT_RUNTIME_BUDGET_MODE;
+    const runtimeBudget =
+      context.runtime_budget ||
+      dualModeToRuntimeBudget(context.dual_mode) ||
+      DEFAULT_RUNTIME_BUDGET_MODE;
 
     try {
       // Check if agent mode is enabled
       const useAgentLoop = context.use_agent_loop || context.agent_mode || false;
-      const useSpecializedAgents = context.use_specialized_agents || context.specialized_mode || false;
+      const useSpecializedAgents =
+        context.use_specialized_agents || context.specialized_mode || false;
 
       if (useAgentLoop) {
         const workspacePath = getWorkspacePath();
@@ -413,10 +466,10 @@ export function register(deps: ChatHandlerDeps): void {
           return {
             success: false,
             error: 'No workspace folder open. Please open a folder first to use Agent Mode.',
-            requestId
+            requestId,
           };
         }
-        
+
         // Get settings early for model/provider selection
         const agentSettings = getSettings();
         const {
@@ -424,19 +477,30 @@ export function register(deps: ChatHandlerDeps): void {
           activeProvider,
           runtime: requestedRuntime,
         } = resolveConfiguredModel(agentSettings, context.model, runtimeBudget, context.provider);
-        const assistantBehaviorProfile = normalizeAssistantBehaviorProfile(agentSettings?.assistantBehaviorProfile);
-        const vibeCoderExecutionPolicy = resolveVibeCoderExecutionPolicy(assistantBehaviorProfile, message);
+        const assistantBehaviorProfile = normalizeAssistantBehaviorProfile(
+          agentSettings?.assistantBehaviorProfile
+        );
+        const vibeCoderExecutionPolicy = resolveVibeCoderExecutionPolicy(
+          assistantBehaviorProfile,
+          message
+        );
         const vibeCoderIntent = vibeCoderExecutionPolicy?.intent;
-        const autonomyLevel = clampAgentAutonomyLevel(context.agent_autonomy ?? agentSettings?.agentAutonomyLevel);
-        const autonomyPolicy = resolveEffectiveAutonomyPolicy(autonomyLevel, vibeCoderExecutionPolicy);
+        const autonomyLevel = clampAgentAutonomyLevel(
+          context.agent_autonomy ?? agentSettings?.agentAutonomyLevel
+        );
+        const autonomyPolicy = resolveEffectiveAutonomyPolicy(
+          autonomyLevel,
+          vibeCoderExecutionPolicy
+        );
         emitRuntimeInfo(event.sender, requestId, requestedRuntime);
-        
+
         // Detect if using Ollama Cloud (model name contains 'cloud' or baseUrl is cloud)
-        const isOllamaCloud = selectedModel?.includes(':cloud') ||
-                              selectedModel?.includes('-cloud') ||
-                              agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.com') ||
-                              agentSettings?.providers?.ollama?.baseUrl?.includes('api.ollama.com') ||
-                              agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.deepseek.com');
+        const isOllamaCloud =
+          selectedModel?.includes(':cloud') ||
+          selectedModel?.includes('-cloud') ||
+          agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.com') ||
+          agentSettings?.providers?.ollama?.baseUrl?.includes('api.ollama.com') ||
+          agentSettings?.providers?.ollama?.baseUrl?.includes('ollama.deepseek.com');
 
         // Keep the review/apply happy-path E2E deterministic even if local settings disable specialists.
         if (message.trim() === '__AGENTPRIME_TEST_REVIEW__') {
@@ -489,7 +553,8 @@ export function register(deps: ChatHandlerDeps): void {
 
           return {
             success: true,
-            response: 'Prepared a staged static-site fixture for review. Accept the files, apply them, then verify and run the project.',
+            response:
+              'Prepared a staged static-site fixture for review. Accept the files, apply them, then verify and run the project.',
             responseMetadata: buildAssistantResponseMetadata(assistantBehaviorProfile, undefined, {
               provider: activeProvider,
               model: selectedModel,
@@ -524,15 +589,25 @@ export function register(deps: ChatHandlerDeps): void {
           aiRouter.setActiveProvider(activeProvider, selectedModel);
           const directResponse = await aiRouter.chat(
             [
-              { role: 'system', content: buildVibeCoderDirectResponseSystemPrompt(vibeCoderDirectIntent) },
+              {
+                role: 'system',
+                content: buildVibeCoderDirectResponseSystemPrompt(vibeCoderDirectIntent),
+              },
               { role: 'user', content: message },
             ],
             {
               model: selectedModel,
             }
           );
-          const responseRuntime = resolveEffectiveAIRuntime(agentSettings, selectedModel, activeProvider);
-          const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
+          const responseRuntime = resolveEffectiveAIRuntime(
+            agentSettings,
+            selectedModel,
+            activeProvider
+          );
+          const responseMetadata = buildAssistantResponseMetadata(
+            assistantBehaviorProfile,
+            responseRuntime
+          );
           emitRuntimeInfo(event.sender, requestId, responseRuntime);
 
           if (!directResponse.success) {
@@ -613,20 +688,29 @@ export function register(deps: ChatHandlerDeps): void {
       }
       // Check if user wants to examine codebase
       // Skip this check if in words_to_code_mode - we want to GENERATE, not analyze
-      const examineKeywords = ['examine codebase', 'analyze codebase', 'codebase overview', 'show codebase', 'list files'];
-      const wantsExamination = !context.words_to_code_mode && examineKeywords.some(keyword => 
-        message.toLowerCase().includes(keyword.toLowerCase())
-      );
+      const examineKeywords = [
+        'examine codebase',
+        'analyze codebase',
+        'codebase overview',
+        'show codebase',
+        'list files',
+      ];
+      const wantsExamination =
+        !context.words_to_code_mode &&
+        examineKeywords.some((keyword) => message.toLowerCase().includes(keyword.toLowerCase()));
 
       if (wantsExamination && !context.dino_buddy_mode) {
         try {
           const workspacePath = getWorkspacePath();
-          
+
           if (workspacePath) {
             // Import and call the internal function directly
             const { examineCodebaseInternal } = require('./analysis');
-            const summaryResult = await examineCodebaseInternal(workspacePath, { maxFiles: 100, includeContent: false });
-            
+            const summaryResult = await examineCodebaseInternal(workspacePath, {
+              maxFiles: 100,
+              includeContent: false,
+            });
+
             if (summaryResult && summaryResult.success) {
               const summary = summaryResult.summary;
               const langSummary = Object.entries(summary.languages)
@@ -663,7 +747,7 @@ Would you like me to examine any specific files or provide more details about a 
                 success: true,
                 response,
                 requestId,
-                codebaseExamined: true
+                codebaseExamined: true,
               };
             }
           }
@@ -676,16 +760,16 @@ Would you like me to examine any specific files or provide more details about a 
       if (!context.dino_buddy_mode) {
         try {
           const executor = getExecutor();
-          
+
           if (executor.isFileOperationCommand(message)) {
             const commandContext = {
               workspacePath: getWorkspacePath() || undefined,
               currentFile: context.file_path || getCurrentFile() || undefined,
-              currentFolder: context.focused_folder || getCurrentFolder() || undefined
+              currentFolder: context.focused_folder || getCurrentFolder() || undefined,
             };
-            
+
             const commandResult = await executor.execute(message, commandContext);
-            
+
             if (commandResult.requiresConfirmation) {
               // Send confirmation request to renderer
               event.sender.send('command-requires-confirmation', {
@@ -693,48 +777,49 @@ Would you like me to examine any specific files or provide more details about a 
                 command: message,
                 prompt: commandResult.confirmationPrompt,
                 plan: commandResult.plan,
-                assessment: commandResult.assessment
+                assessment: commandResult.assessment,
               });
-              
+
               return {
                 success: true,
                 response: commandResult.confirmationPrompt || 'Please confirm this operation.',
                 requestId,
-                requiresConfirmation: true
+                requiresConfirmation: true,
               };
             } else if (commandResult.success) {
               return {
                 success: true,
                 response: commandResult.message || '✅ Command executed successfully.',
                 requestId,
-                commandExecuted: true
+                commandExecuted: true,
               };
             } else {
               // Command failed - send error but continue to AI as fallback
               event.sender.send('command-error', {
                 requestId,
-                error: commandResult.error
+                error: commandResult.error,
               });
             }
           }
         } catch (cmdError: any) {
           // Command executor error - continue to AI
-          const isExpectedError = cmdError.message?.includes('Cannot find module') || 
-                                 cmdError.message?.includes('not compiled') ||
-                                 cmdError.code === 'MODULE_NOT_FOUND';
+          const isExpectedError =
+            cmdError.message?.includes('Cannot find module') ||
+            cmdError.message?.includes('not compiled') ||
+            cmdError.code === 'MODULE_NOT_FOUND';
           if (!isExpectedError) {
             console.log('Command executor error, continuing to AI:', cmdError.message);
           }
         }
       }
-      
+
       // Build conversation history
       const history = getConversationHistory(conversationMode);
       const messages = [
-        ...history.map(msg => ({ role: msg.role, content: msg.content })),
-        { role: 'user' as const, content: message }
+        ...history.map((msg) => ({ role: msg.role, content: msg.content })),
+        { role: 'user' as const, content: message },
       ];
-      
+
       // Build system prompt
       let systemPrompt = '';
       if (context.just_chat_mode) {
@@ -818,7 +903,7 @@ Separate files with blank lines.
 
 💡 REMEMBER: You're creating something you'd be proud to ship. Quality over speed. Intelligence over templates.`;
       }
-      
+
       // Get settings for provider configuration
       const settings = getSettings();
       const {
@@ -827,16 +912,16 @@ Separate files with blank lines.
         runtime: initialRuntime,
       } = resolveConfiguredModel(settings, context.model, runtimeBudget, context.provider);
       emitRuntimeInfo(event.sender, requestId, initialRuntime);
-      
+
       // Add system prompt as first message if provided
-      const messagesWithSystem = systemPrompt 
+      const messagesWithSystem = systemPrompt
         ? [{ role: 'system' as const, content: systemPrompt }, ...messages]
         : messages;
-      
+
       // Send thinking reaction to Dino Buddy
       event.sender.send('dino:reaction', {
         expression: 'thinking',
-        message: ''
+        message: '',
       });
 
       // Use AI router to stream response
@@ -857,8 +942,7 @@ Separate files with blank lines.
         // a real failure — so the UI doesn't show a scary error toast.
         const userAborted = chatAbortController.signal.aborted;
         const isAbortChunk =
-          userAborted ||
-          (typeof chunk.error === 'string' && chunk.error === 'Request aborted');
+          userAborted || (typeof chunk.error === 'string' && chunk.error === 'Request aborted');
 
         if (chunk.error != null && chunk.error !== '' && !isAbortChunk) {
           const e = chunk.error;
@@ -870,7 +954,7 @@ Separate files with blank lines.
           event.sender.send('chat-stream', {
             requestId,
             chunk: chunk.content,
-            done: false
+            done: false,
           });
         }
 
@@ -880,7 +964,7 @@ Separate files with blank lines.
             chunk: '',
             done: true,
             error: isAbortChunk ? undefined : chunk.error,
-            aborted: isAbortChunk || undefined
+            aborted: isAbortChunk || undefined,
           });
         }
       };
@@ -888,7 +972,7 @@ Separate files with blank lines.
       // Check for dual model configuration
       const dualModelEnabled = settings?.dualModelEnabled && settings?.dualModelConfig;
       const dualMode = context.dual_mode || 'auto'; // Backward-compatible router mode
-      
+
       // Determine max tokens based on mode
       // Words to Code needs MUCH higher limits for complete game/app generation
       const isWordsToCodeMode = context.words_to_code_mode || context.wordsToCode || false;
@@ -899,7 +983,7 @@ Separate files with blank lines.
         isWordsToCodeMode ? 'words_to_code' : isConversationalMode ? 'just_chat' : 'chat',
         runtimeBudget
       );
-      
+
       console.log(
         `[Chat] Mode: ${isWordsToCodeMode ? 'Words to Code' : context.dino_buddy_mode ? 'Dino' : isJustChatMode ? 'Just Chat' : 'Standard'}, maxTokens: ${maxTokens}, ollamaCloud: ${isOllamaCloudModel(activeModel)}`
       );
@@ -907,7 +991,7 @@ Separate files with blank lines.
       if (dualModelEnabled && !isConversationalMode) {
         // Configure dual model system
         aiRouter.configureDualModel(settings.dualModelConfig);
-        
+
         // Use dual-model streaming with smart routing
         await aiRouter.dualStream(messagesWithSystem, processStreamChunk, {
           model: activeModel,
@@ -918,7 +1002,7 @@ Separate files with blank lines.
           context: {
             codeLines: context.file_content?.split('\n').length || 0,
             hasErrors: context.has_errors || false,
-            fileCount: context.mentioned_files?.length || 0
+            fileCount: context.mentioned_files?.length || 0,
           },
           onRouting: (routingInfo) => {
             // Notify renderer about routing decision
@@ -929,13 +1013,13 @@ Separate files with blank lines.
               provider: routingInfo.provider,
               model: routingInfo.model,
               complexity: routingInfo.analysis?.score || 5,
-              reasoning: routingInfo.analysis?.reasoning || ''
+              reasoning: routingInfo.analysis?.reasoning || '',
             });
           },
           onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
             latestRuntime = runtime;
             emitRuntimeInfo(event.sender, requestId, runtime);
-          }
+          },
         });
       } else {
         // Standard single-model streaming.
@@ -953,7 +1037,7 @@ Separate files with blank lines.
             onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
               latestRuntime = runtime;
               emitRuntimeInfo(event.sender, requestId, runtime);
-            }
+            },
           });
         } finally {
           aiRouter.setActiveProvider(originalProvider, originalModel);
@@ -973,11 +1057,11 @@ Separate files with blank lines.
           requestId,
           error: streamTerminalError,
           model: latestRuntime.displayModel,
-          provider: latestRuntime.displayProvider
+          provider: latestRuntime.displayProvider,
         });
         event.sender.send('dino:reaction', {
           expression: 'error',
-          message: 'Let me help fix that! 🦕'
+          message: 'Let me help fix that! 🦕',
         });
         return {
           success: false,
@@ -1004,11 +1088,11 @@ Separate files with blank lines.
           requestId,
           error: emptyMsg,
           model: latestRuntime.displayModel,
-          provider: latestRuntime.displayProvider
+          provider: latestRuntime.displayProvider,
         });
         event.sender.send('dino:reaction', {
           expression: 'error',
-          message: 'Let me help fix that! 🦕'
+          message: 'Let me help fix that! 🦕',
         });
         return {
           success: false,
@@ -1019,15 +1103,15 @@ Separate files with blank lines.
           runtime: latestRuntime,
         };
       }
-      
+
       // Store in history
       addToConversationHistory(conversationMode, 'user', message);
       addToConversationHistory(conversationMode, 'assistant', fullResponse);
-      
+
       // Send success reaction to Dino Buddy
       event.sender.send('dino:reaction', {
         expression: 'success',
-        message: 'Great job! ✨'
+        message: 'Great job! ✨',
       });
       getTelemetryService().track('ai_response', {
         mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
@@ -1036,14 +1120,13 @@ Separate files with blank lines.
         runtimeBudget,
         ...flattenRuntimeForTelemetry(latestRuntime),
       });
-      
+
       return {
         success: true,
         response: fullResponse,
         requestId,
         runtime: latestRuntime,
       };
-      
     } catch (error: unknown) {
       // User-initiated abort: render as a clean stopped state, not an error.
       if (isAbortError(error) || chatAbortController.signal.aborted) {
@@ -1051,7 +1134,7 @@ Separate files with blank lines.
           requestId,
           chunk: '',
           done: true,
-          aborted: true
+          aborted: true,
         });
         return {
           success: true,
@@ -1070,10 +1153,15 @@ Separate files with blank lines.
             : error != null && typeof error === 'object' && 'message' in error
               ? String((error as { message: unknown }).message)
               : 'Unknown error';
-      
+
       // Get model and provider info for error context
       const settings = getSettings();
-      const { runtime } = resolveConfiguredModel(settings, context.model, runtimeBudget, context.provider);
+      const { runtime } = resolveConfiguredModel(
+        settings,
+        context.model,
+        runtimeBudget,
+        context.provider
+      );
       getTelemetryService().track('ai_response', {
         mode: context.just_chat_mode ? 'chat' : context.dino_buddy_mode ? 'dino' : 'standard',
         success: false,
@@ -1081,21 +1169,21 @@ Separate files with blank lines.
         ...flattenRuntimeForTelemetry(runtime),
         error: errorMessage,
       });
-      
+
       event.sender.send('chat-error', {
         requestId,
         error: errorMessage,
         model: runtime.displayModel,
-        provider: runtime.displayProvider
+        provider: runtime.displayProvider,
       });
       emitRuntimeInfo(event.sender, requestId, runtime);
 
       // Send error reaction to Dino Buddy
       event.sender.send('dino:reaction', {
         expression: 'error',
-        message: 'Let me help fix that! 🦕'
+        message: 'Let me help fix that! 🦕',
       });
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -1109,4 +1197,3 @@ Separate files with blank lines.
     }
   });
 }
-
