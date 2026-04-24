@@ -86,6 +86,29 @@ describe('SpecializedAgentLoop verification', () => {
     expect(verification.missingFiles).toContain('src/main.tsx');
   });
 
+  it('targets index.html when a stylesheet link points at the wrong location', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-style-link-');
+    fs.mkdirSync(path.join(workspacePath, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'static-site',
+      scripts: { start: 'npx serve .' },
+    }, null, 2));
+    fs.writeFileSync(
+      path.join(workspacePath, 'index.html'),
+      '<!DOCTYPE html><html><head><link rel="stylesheet" href="/styles.css"></head><body></body></html>'
+    );
+    fs.writeFileSync(path.join(workspacePath, 'src/styles.css'), 'body { color: white; }');
+
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+    const verification = await (loop as any).verifyProject([]);
+
+    expect(verification.isComplete).toBe(false);
+    expect(verification.missingFiles).toContain('index.html');
+    expect(verification.missingFiles).not.toContain('styles.css');
+    expect(verification.errors.join('\n')).toContain('existing file is "src/styles.css"');
+    expect(verification.errors.join('\n')).toContain('reference "./src/styles.css"');
+  });
+
   it('flags static sites that are missing index.html even when package.json exists', async () => {
     const workspacePath = createTempDir('agentprime-specialized-static-missing-index-');
     fs.mkdirSync(path.join(workspacePath, 'src'), { recursive: true });

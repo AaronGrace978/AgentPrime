@@ -39,9 +39,9 @@ describe('detectTaskMode', () => {
     expect(result.confidence).toBeGreaterThanOrEqual(0.8);
   });
 
-  it('should default to CREATE for ambiguous messages', () => {
+  it('should default to low-confidence REVIEW for ambiguous messages', () => {
     const result = detectTaskMode('hello world');
-    expect(result.mode).toBe(TaskMode.CREATE);
+    expect(result.mode).toBe(TaskMode.REVIEW);
     expect(result.confidence).toBeLessThan(0.7);
   });
 

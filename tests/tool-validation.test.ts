@@ -376,6 +376,21 @@ describe('index.html validation', () => {
     expect(validation.error).toMatch(/styles\.css/);
     expect(validation.error).toMatch(/stylesheet/i);
   });
+
+  it('rejects root stylesheet links when the created stylesheet is under src', () => {
+    const validation = validateIndexHtml(
+      '<!DOCTYPE html><html><head><link rel="stylesheet" href="/styles.css" /></head><body><script src="/script.js"></script></body></html>',
+      new Map([
+        ['index.html', ['index.html']],
+        ['styles.css', ['src/styles.css']],
+        ['script.js', ['script.js']],
+      ])
+    );
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toContain('src/styles.css');
+    expect(validation.error).toContain('/src/styles.css');
+  });
 });
 
 describe('index.html auto-fix', () => {

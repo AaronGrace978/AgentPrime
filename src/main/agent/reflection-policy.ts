@@ -23,12 +23,22 @@ export interface ReflectionBudgetPlan {
 const RISKY_TASK_PATTERN =
   /(scaffold|template|full app|full application|tauri|desktop|browser test|e2e|end-to-end|security|performance|migrate|schema|contract|database|auth|payment|deploy|release)/i;
 
+const SIMPLE_STATIC_SITE_PATTERN =
+  /\b(static\s+)?(site|website|webpage|web\s+page|landing\s+page|portfolio\s+site|homepage)\b/i;
+
+const COMPLEX_APP_PATTERN =
+  /\b(react|vue|svelte|next|vite|fullstack|full-stack|backend|api|database|auth|login|dashboard|three\.js|threejs|game|webgl|tauri|electron)\b/i;
+
 export function looksRiskyTask(userMessage: string, isUpdate: boolean): boolean {
   const normalizedTask = userMessage.toLowerCase();
   return (
     (!isUpdate && RISKY_TASK_PATTERN.test(normalizedTask)) ||
     normalizedTask.length > 800
   );
+}
+
+export function looksSimpleStaticWebsiteTask(userMessage: string): boolean {
+  return SIMPLE_STATIC_SITE_PATTERN.test(userMessage) && !COMPLEX_APP_PATTERN.test(userMessage);
 }
 
 export function shouldApplyAgentChangesImmediately(explicitApplySetting?: boolean): boolean {
@@ -38,13 +48,16 @@ export function shouldApplyAgentChangesImmediately(explicitApplySetting?: boolea
 export function resolveReflectionBudget(options: ReflectionBudgetOptions): ReflectionBudgetPlan {
   const requestedBudget = options.requestedBudget || 'standard';
   const risky = looksRiskyTask(options.userMessage, options.isUpdate);
+  const simpleStaticWebsite = looksSimpleStaticWebsiteTask(options.userMessage);
   const escalated =
     options.retryCount > 0 ||
     options.hasRepairScope === true ||
     options.verificationFailed === true;
 
   let budget: RuntimeBudgetMode = requestedBudget;
-  if (escalated) {
+  if (simpleStaticWebsite) {
+    budget = escalated ? 'standard' : 'instant';
+  } else if (escalated) {
     budget = 'deep';
   } else if (requestedBudget === 'instant') {
     budget = risky ? 'standard' : 'instant';

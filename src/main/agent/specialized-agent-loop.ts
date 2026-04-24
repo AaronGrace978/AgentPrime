@@ -291,6 +291,9 @@ export class SpecializedAgentLoop extends EventEmitter {
     const hasSourceTargets = normalizedRetryFiles.some((file) =>
       /^(src|app|pages|components|lib|backend|public)\//.test(file)
     );
+    const hasRootStaticAssetTargets = normalizedRetryFiles.some((file) =>
+      /^(index\.html|styles?\.css|script\.js|app\.js|main\.js)$/i.test(file)
+    );
     const hasConfigTargets = normalizedRetryFiles.some((file) =>
       /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig.*\.json|vite\.config\.[^/]+|tailwind\.config\.[^/]+|postcss\.config\.[^/]+|next\.config\.[^/]+|Dockerfile(\.[^/]+)?|Makefile|requirements[^/]*\.txt|pyproject\.toml|\.github\/workflows\/)/i.test(
         file
@@ -300,9 +303,12 @@ export class SpecializedAgentLoop extends EventEmitter {
       (file) =>
         /^(tests|__tests__)\//.test(file) || /(playwright|vitest|jest)\.config\./i.test(file)
     );
-    const hasStylingSpecificFailures = lastVerification.errors.some((error) =>
-      /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
-    );
+    const hasStylingSpecificFailures =
+      hasRootStaticAssetTargets ||
+      normalizedRetryFiles.some((file) => /\.(css|scss|html)$/i.test(file)) ||
+      lastVerification.errors.some((error) =>
+        /(\.css\b|\.scss\b|stylesheet|layout|visual|theme|accessibility|index\.html)/i.test(error)
+      );
     const hasSecurityFailures = lastVerification.errors.some((error) =>
       /(security|auth|authorize|authorization|permission|rbac|secret|token|xss|csrf|injection|csp)/i.test(
         error
@@ -383,14 +389,18 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
     if (
       hasConcreteRetryTargets &&
-      hasSourceTargets &&
+      (hasSourceTargets || hasRootStaticAssetTargets) &&
       !hasConfigTargets &&
       refined.includes('pipeline_specialist')
     ) {
       refined = refined.filter((role) => role !== 'pipeline_specialist');
       log.info(
-        '[SpecializedAgent] ℹ️ Retry only targets application source files; skipping pipeline_specialist'
+        '[SpecializedAgent] ℹ️ Retry only targets application/static asset files; skipping pipeline_specialist'
       );
+    }
+
+    if ((hasSourceTargets || hasRootStaticAssetTargets) && !refined.includes('javascript_specialist')) {
+      refined.push('javascript_specialist');
     }
 
     for (const directRole of directRetryRoles) {
@@ -1423,11 +1433,25 @@ export class SpecializedAgentLoop extends EventEmitter {
           for (const ref of cssRefs) {
             const cssFile = ref.match(/href=["']([^"']+\.css)["']/)?.[1];
             if (cssFile && !cssFile.startsWith('http')) {
-              const normalizedPath = this.normalizePath(cssFile);
+              const normalizedPath = this.resolveHtmlReferencePath(cssFile, file);
+              if (!normalizedPath) {
+                continue;
+              }
               if (
                 !existingFiles.includes(normalizedPath) &&
-                !this.fileExists(workspacePath, cssFile)
+                !this.fileExists(workspacePath, normalizedPath)
               ) {
+                const alternatePath = this.findExistingFileByBasename(existingFiles, normalizedPath);
+                if (alternatePath) {
+                  errors.push(
+                    `${file} references CSS "${cssFile}" as "${normalizedPath}", but the existing file is "${alternatePath}". Update ${file} to reference "${this.toHtmlRelativeAssetPath(alternatePath, file)}" instead of creating duplicate "${normalizedPath}".`
+                  );
+                  if (!missingFiles.includes(file)) {
+                    missingFiles.push(file);
+                  }
+                  continue;
+                }
+
                 // SMART VALIDATION: Check if file name makes sense
                 if (this.isValidFileReference(cssFile, workspacePath)) {
                   missingFiles.push(normalizedPath);
@@ -1449,7 +1473,10 @@ export class SpecializedAgentLoop extends EventEmitter {
               /src=["']([^"']+\.(?:js|jsx|ts|tsx|mjs|cjs|tsxx))["']/
             )?.[1];
             if (scriptFile && !scriptFile.startsWith('http')) {
-              const normalizedPath = this.normalizePath(scriptFile);
+              const normalizedPath = this.resolveHtmlReferencePath(scriptFile, file);
+              if (!normalizedPath) {
+                continue;
+              }
               if (scriptFile.endsWith('.tsxx')) {
                 errors.push(
                   `${file} references invalid script entry: ${scriptFile} (.tsxx is not a valid TypeScript React extension)`
@@ -1463,8 +1490,19 @@ export class SpecializedAgentLoop extends EventEmitter {
 
               if (
                 !existingFiles.includes(normalizedPath) &&
-                !this.fileExists(workspacePath, scriptFile)
+                !this.fileExists(workspacePath, normalizedPath)
               ) {
+                const alternatePath = this.findExistingFileByBasename(existingFiles, normalizedPath);
+                if (alternatePath) {
+                  errors.push(
+                    `${file} references script "${scriptFile}" as "${normalizedPath}", but the existing file is "${alternatePath}". Update ${file} to reference "${this.toHtmlRelativeAssetPath(alternatePath, file)}" instead of creating duplicate "${normalizedPath}".`
+                  );
+                  if (!missingFiles.includes(file)) {
+                    missingFiles.push(file);
+                  }
+                  continue;
+                }
+
                 // SMART VALIDATION: Check if file name makes sense for the project
                 if (this.isValidFileReference(scriptFile, workspacePath)) {
                   missingFiles.push(normalizedPath);
@@ -2075,6 +2113,45 @@ export class SpecializedAgentLoop extends EventEmitter {
   private fileExists(workspacePath: string, filePath: string): boolean {
     const fullPath = path.join(workspacePath, filePath);
     return fs.existsSync(fullPath);
+  }
+
+  private resolveHtmlReferencePath(referencePath: string, htmlFilePath: string): string | null {
+    const clean = referencePath.split(/[?#]/)[0]?.trim();
+    if (
+      !clean ||
+      clean.startsWith('http://') ||
+      clean.startsWith('https://') ||
+      clean.startsWith('//') ||
+      clean.startsWith('data:') ||
+      clean.startsWith('#')
+    ) {
+      return null;
+    }
+
+    if (clean.startsWith('/')) {
+      return this.normalizePath(clean);
+    }
+
+    const htmlDir = path.posix.dirname(this.normalizePath(htmlFilePath));
+    const baseDir = htmlDir === '.' ? '' : htmlDir;
+    return this.normalizePath(path.posix.normalize(path.posix.join(baseDir, clean)));
+  }
+
+  private toHtmlRelativeAssetPath(projectRelativePath: string, htmlFilePath: string): string {
+    const clean = this.normalizePath(projectRelativePath);
+    const htmlDir = path.posix.dirname(this.normalizePath(htmlFilePath));
+    const relativePath =
+      path.posix.relative(htmlDir === '.' ? '' : htmlDir, clean) || path.posix.basename(clean);
+    return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+  }
+
+  private findExistingFileByBasename(existingFiles: string[], missingPath: string): string | null {
+    const missingName = path.posix.basename(this.normalizePath(missingPath)).toLowerCase();
+    const candidates = existingFiles.filter(
+      (filePath) => path.posix.basename(this.normalizePath(filePath)).toLowerCase() === missingName
+    );
+
+    return candidates[0] || null;
   }
 
   /**

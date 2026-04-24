@@ -96,6 +96,26 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 ## Recent Upgrades
 
+### Agent loop reliability and static-site repair fixes (April 2026)
+
+This patch hardens the create -> validate -> repair path that previously caused simple static websites to bounce between specialists or stall on false validation failures.
+
+- **Root static asset ownership:** `javascript_specialist` and `repair_specialist` can now write common zero-dependency website files like `styles.css`, `style.css`, `script.js`, `app.js`, and `main.js`, so plain HTML/CSS/JS projects no longer fail with false "outside writable scope" errors.
+- **Smarter repair routing:** Repair retries that only target app source or static assets now skip `pipeline_specialist` and route back to implementation specialists instead of asking the build/pipeline lane to rewrite website files.
+- **Path-aware HTML validation:** HTML asset references are resolved against the actual project path, so `/styles.css`, `styles.css`, and `src/styles.css` are validated as real paths rather than loose basename matches.
+- **Reduced false project-type mismatches:** Cross-file mismatch checks now focus on script-like assets and incompatible project types, avoiding CSS-driven false positives while still blocking bad app wiring like a game HTML shell pointing at portfolio JavaScript.
+- **Faster simple website path:** Simple static-site prompts stay on `instant` or `standard` reflection budgets unless repair escalation is truly needed, avoiding deep-planning overhead for three-file websites.
+- **Template smoke reliability:** Template smoke tests pre-check missing local toolchains, FastAPI/Pydantic template pins were updated for newer Python installs, and browser smoke analysis ignores build artifacts like `.next`, `coverage`, and `release`.
+- **Verification:** The patch was rebuilt into `dist` and verified with focused regression tests plus `npm run verify`.
+
+Potential next enhancements:
+
+- Add a live "why this specialist?" trace in Agent Mode so users can see why a role was selected or skipped during create/repair.
+- Add a one-click minimal static-site smoke test that creates `index.html`, `styles.css`, and `script.js`, then validates the result without invoking the full template suite.
+- Surface reflection budget decisions in the run log with short human-readable reasons, especially when a task is downgraded from deep to instant/standard.
+- Add a scoped repair dashboard that groups verifier findings by file owner, missing asset, dependency issue, or build/runtime issue.
+- Expand template smoke coverage in CI with optional Go/Rust/Python toolchain matrix jobs so local missing tools do not hide platform-specific regressions.
+
 ### Ollama Cloud, defaults, and agent runtime (April 2026)
 
 - **Default cloud models:** App defaults favor **`kimi-k2.6:cloud`** for deeper work and **`deepseek-v4-flash:cloud`** for fast cloud routing where Ollama Cloud is the primary path (see `src/main/main.ts`, `src/main/agent-loop.ts`, `src/main/agent/specialized-agents.ts`, and `src/renderer/components/AIChat/constants.ts`). The model picker includes both models.

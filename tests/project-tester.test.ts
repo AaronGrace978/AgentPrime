@@ -55,10 +55,12 @@ describe('ProjectBrowserTester helpers', () => {
     fs.mkdirSync(path.join(workspacePath, 'nested'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'node_modules'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'build'), { recursive: true });
+    fs.mkdirSync(path.join(workspacePath, '.next', 'server', 'app'), { recursive: true });
     fs.writeFileSync(path.join(workspacePath, 'nested', 'page.html'), '<html></html>');
     fs.writeFileSync(path.join(workspacePath, 'index.html'), '<html></html>');
     fs.writeFileSync(path.join(workspacePath, 'node_modules', 'ignore.html'), '<html></html>');
     fs.writeFileSync(path.join(workspacePath, 'build', 'ignore.html'), '<html></html>');
+    fs.writeFileSync(path.join(workspacePath, '.next', 'server', 'app', 'ignore.html'), '<html></html>');
 
     const tester = new ProjectBrowserTester(workspacePath);
     const htmlFiles = (tester as any).findHtmlFiles();
@@ -66,6 +68,7 @@ describe('ProjectBrowserTester helpers', () => {
     expect(path.basename(htmlFiles[0])).toBe('index.html');
     expect(htmlFiles.some((filePath: string) => filePath.includes('node_modules'))).toBe(false);
     expect(htmlFiles.some((filePath: string) => filePath.includes(`${path.sep}build${path.sep}`))).toBe(false);
+    expect(htmlFiles.some((filePath: string) => filePath.includes(`${path.sep}.next${path.sep}`))).toBe(false);
   });
 
   it('detects vite and other bundler-managed projects from package metadata', () => {
@@ -119,6 +122,28 @@ describe('ProjectBrowserTester helpers', () => {
       severity: 'critical',
       description: expect.stringContaining('Referenced file not found: ./main.js'),
     }));
+  });
+
+  it('resolves root-absolute asset references from the workspace root', () => {
+    const workspacePath = createTempDir('agentprime-browser-root-assets-');
+    const htmlPath = path.join(workspacePath, 'index.html');
+    fs.writeFileSync(path.join(workspacePath, 'styles.css'), 'body { color: white; }');
+    fs.writeFileSync(path.join(workspacePath, 'main.js'), 'console.log("ok");');
+    fs.writeFileSync(htmlPath, `<!doctype html>
+<html>
+  <head>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <script src="/main.js"></script>
+  </body>
+</html>`);
+
+    const tester = new ProjectBrowserTester(workspacePath);
+    const result = (tester as any).staticHtmlAnalysis(createBaseResult(), [htmlPath]);
+
+    expect(result.passed).toBe(true);
+    expect(result.issues).toHaveLength(0);
   });
 
   it('reports runtime server errors and formats readable failure output', () => {

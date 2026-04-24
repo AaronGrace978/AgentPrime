@@ -57,6 +57,20 @@ describe('specialist-aware tool validation', () => {
     expect(readme.valid).toBe(true);
   });
 
+  it('allows javascript specialist to write root CSS for plain static site co-wiring', () => {
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'styles.css', content: 'body { margin: 0; }' },
+      },
+      workspacePath,
+      'Build a simple static website',
+      { specialist: 'javascript_specialist' }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
   it('allows javascript specialist to read index.html for Vite app wiring', () => {
     const result = validateToolCall(
       {

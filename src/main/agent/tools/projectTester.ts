@@ -245,7 +245,7 @@ export class ProjectBrowserTester {
         const fullPath = path.join(dir, entry.name);
         
         if (entry.isDirectory()) {
-          if (!['node_modules', '.git', 'dist', 'build'].includes(entry.name)) {
+          if (!['node_modules', '.git', 'dist', 'build', '.next', 'coverage', 'release'].includes(entry.name)) {
             scan(fullPath);
           }
         } else if (entry.name.endsWith('.html')) {
@@ -577,7 +577,9 @@ export class ProjectBrowserTester {
         for (const ref of [...cssRefs, ...jsRefs]) {
           const filePath = ref.match(/["']([^"']+)["']/)?.[1];
           if (filePath && !filePath.startsWith('http') && !filePath.startsWith('//')) {
-            const fullPath = path.join(path.dirname(htmlFile), filePath);
+            const fullPath = filePath.startsWith('/')
+              ? path.join(this.workspacePath, filePath.replace(/^\/+/, ''))
+              : path.join(path.dirname(htmlFile), filePath);
             if (!fs.existsSync(fullPath)) {
               result.issues.push({
                 severity: 'critical',

@@ -11,7 +11,7 @@ type CommandSpec = {
   requiredTools?: string[];
 };
 
-const pythonCommand = process.platform === 'win32' ? 'py -3' : 'python3';
+const pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
 
 const templateCommands: Record<string, CommandSpec[]> = {
   'electron-react': [{ command: 'npm run build', requiredTools: ['npm'] }],
@@ -123,6 +123,23 @@ async function main(): Promise<void> {
 
     const projectName = `smoke-${templateId}`;
     console.log(`\n=== Generating ${templateId} ===`);
+    const commandsToRun = enableRuntimeSweep
+      ? [...commands, ...(runtimeProbeCommands[templateId] || [])]
+      : commands;
+    const missingTemplateTools = [
+      ...new Set(commandsToRun.flatMap((spec) => spec.requiredTools || [])),
+    ].filter((tool) => !isToolAvailable(tool));
+
+    if (missingTemplateTools.length > 0) {
+      const reason = `Missing required tools: ${missingTemplateTools.join(', ')}`;
+      if (process.env.CI === 'true' || process.env.AGENTPRIME_FAIL_ON_MISSING_TOOLCHAIN === 'true') {
+        failures.push({ templateId, error: reason });
+      } else {
+        console.warn(`Skipping ${templateId} (${reason})`);
+        skipped.push({ templateId, reason });
+      }
+      continue;
+    }
 
     try {
       const result = await engine.createProject(templateId, baseDir, {
@@ -132,10 +149,6 @@ async function main(): Promise<void> {
       });
 
       console.log(result.installOutput || 'No automatic install output.');
-
-      const commandsToRun = enableRuntimeSweep
-        ? [...commands, ...(runtimeProbeCommands[templateId] || [])]
-        : commands;
 
       for (const spec of commandsToRun) {
         const missingTools = (spec.requiredTools || []).filter((tool) => !isToolAvailable(tool));

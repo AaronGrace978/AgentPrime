@@ -306,6 +306,40 @@ function toHtmlRelativeAssetPath(projectRelativePath: string, htmlFilePath: stri
   return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
 }
 
+function resolveHtmlAssetPath(assetPath: string, htmlFilePath: string): string | null {
+  const clean = assetPath.split(/[?#]/)[0]?.trim();
+  if (
+    !clean ||
+    clean.startsWith('http://') ||
+    clean.startsWith('https://') ||
+    clean.startsWith('//') ||
+    clean.startsWith('data:') ||
+    clean.startsWith('#')
+  ) {
+    return null;
+  }
+
+  if (clean.startsWith('/')) {
+    return normalizeProjectPath(clean);
+  }
+
+  const htmlDir = path.posix.dirname(normalizeProjectPath(htmlFilePath));
+  const baseDir = htmlDir === '.' ? '' : htmlDir;
+  return normalizeProjectPath(path.posix.normalize(path.posix.join(baseDir, clean)));
+}
+
+function extractHtmlAssetReferences(content: string, attrName: 'href' | 'src'): string[] {
+  const attrPattern = new RegExp(`${attrName}=["']([^"']+)["']`, 'gi');
+  const references: string[] = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = attrPattern.exec(content)) !== null) {
+    references.push(match[1]);
+  }
+
+  return references;
+}
+
 function hasBundlerRuntime(workspacePath?: string): boolean {
   if (!workspacePath) {
     return false;
@@ -1687,6 +1721,12 @@ export function validateIndexHtml(
   const hasModuleScript = hasScriptTag && contentLower.includes('type="module"');
   const bundlerManagedProject = hasTrackedViteConfigNearHtml(trackedPaths, resolvedHtmlPath);
   const allowBundlerManagedCss = bundlerManagedProject && hasModuleScript;
+  const stylesheetReferences = new Set(
+    extractHtmlAssetReferences(content, 'href')
+      .filter((reference) => /\.css(?:[?#]|$)/i.test(reference))
+      .map((reference) => resolveHtmlAssetPath(reference, resolvedHtmlPath))
+      .filter((reference): reference is string => Boolean(reference))
+  );
 
   const suggestedAssetHref = (projectRelativePath: string): string => {
     const clean = normalizeProjectPath(projectRelativePath);
@@ -1728,8 +1768,7 @@ export function validateIndexHtml(
       break;
     }
 
-    const fileName = cssFile.split('/').pop() || cssFile;
-    if (!content.includes(cssFile) && !content.includes(fileName)) {
+    if (!stylesheetReferences.has(cssFile)) {
       errors.push(
         `CSS file "${cssFile}" was created but is not referenced in index.html.\n` +
           `FIX: Add inside <head>: <link rel="stylesheet" href="${suggestedAssetHref(cssFile)}" />`
