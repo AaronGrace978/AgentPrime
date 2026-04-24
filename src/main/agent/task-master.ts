@@ -414,6 +414,11 @@ export class TaskMaster {
     if (specialist === 'repair_specialist') {
       const baseline = [
         'index.html',
+        'styles.css',
+        'style.css',
+        'script.js',
+        'app.js',
+        'main.js',
         'src/**',
         'backend/**',
         'tests/**',
@@ -444,6 +449,8 @@ export class TaskMaster {
       case 'javascript_specialist':
         return [
           'index.html',
+          'styles.css',
+          'style.css',
           'app.js',
           'main.js',
           'script.js',

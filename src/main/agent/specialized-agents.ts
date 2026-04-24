@@ -55,6 +55,7 @@ import {
   scaffoldProjectFromTemplate,
   workspaceNeedsDeterministicScaffold,
 } from './scaffold-resolver';
+import { looksSimpleStaticWebsiteTask } from './static-site-classifier';
 import {
   getWorkspaceSymbolIndexForAgents,
   scheduleWorkspaceSymbolIndexRebuildForAgents,
@@ -721,6 +722,9 @@ Write complete, production-ready code that builds cleanly and matches the reques
 - Node.js backend development
 - TypeScript with proper types
 - Modern frontend architectures
+
+## SIMPLE STATIC SITES (HTML + CSS + JS ONLY)
+If the user wants a plain static page/site with no bundler (no React/Vite/npm workflow), create only what runs in the browser: typically \`index.html\`, \`styles.css\` or \`style.css\`, and \`script.js\` / \`main.js\` / \`app.js\` as linked from the HTML. Do **not** create \`SPEC.md\`, \`package.json\`, or other npm/project scaffolding unless the user explicitly asked for a spec document or a package-managed app.
 
 ## IMPLEMENTATION RULES
 ✅ Create COMPLETE, WORKING code - no TODOs or placeholders
@@ -1392,8 +1396,9 @@ export function routeToSpecialists(
     context.language === 'python' ||
     context.files?.some((f) => f.endsWith('.py'));
 
+  const simpleStaticWebsite = looksSimpleStaticWebsiteTask(task);
   const needsPipeline =
-    taskLower.includes('build') ||
+    (!simpleStaticWebsite && taskLower.includes('build')) ||
     taskLower.includes('deploy') ||
     taskLower.includes('ci/cd') ||
     taskLower.includes('pipeline') ||
@@ -2768,7 +2773,11 @@ Output as a structured list. Be specific and comprehensive.`;
     endPhase('deterministic_scaffold', 'success', { skipped: true });
   }
 
-  if (scaffoldApplied && deterministicScaffoldOnly) {
+  if (
+    scaffoldApplied &&
+    (deterministicScaffoldOnly ||
+      (scaffoldTemplateId === 'static-site' && looksSimpleStaticWebsiteTask(task)))
+  ) {
     log.info(
       '[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists'
     );

@@ -37,6 +37,7 @@ import { getTaskMaster, type TaskMasterRetryContext } from './task-master';
 import { getProjectRuntimeProfileSync, mapRuntimeKindToRegistryType } from './project-runtime';
 import {
   detectCanonicalTemplateId,
+  resolveDeterministicScaffoldOnlyFlag,
   scaffoldProjectFromTemplate,
   workspaceNeedsDeterministicScaffold,
 } from './scaffold-resolver';
@@ -703,6 +704,12 @@ export class SpecializedAgentLoop extends EventEmitter {
     const applyImmediately = shouldApplyAgentChangesImmediately(
       this.context.monolithicApplyImmediately
     );
+    const deterministicScaffoldOnly = resolveDeterministicScaffoldOnlyFlag({
+      message: userMessage,
+      workspacePath: this.context.workspacePath,
+      allowScaffold: executionPolicy?.allowScaffold !== false,
+      explicitFromContext: Boolean(this.context.deterministicScaffoldOnly),
+    });
     telemetry.track('agent_task_start', {
       mode: 'specialized',
       workspacePath: this.context.workspacePath,
@@ -716,7 +723,7 @@ export class SpecializedAgentLoop extends EventEmitter {
     const transaction = transactionManager.startTransaction(this.context.workspacePath);
 
     try {
-      if (this.context.deterministicScaffoldOnly && executionPolicy?.allowScaffold !== false) {
+      if (deterministicScaffoldOnly) {
         return await this.runDeterministicScaffoldReview(
           userMessage,
           transaction,
@@ -920,9 +927,7 @@ export class SpecializedAgentLoop extends EventEmitter {
                   planningMode: reflectionPlan.planningMode,
                   reflectionSummary: reflectionPlan.summary,
                   autonomyLevel,
-                  deterministicScaffoldOnly:
-                    this.context.deterministicScaffoldOnly &&
-                    executionPolicy?.allowScaffold !== false,
+                  deterministicScaffoldOnly,
                   vibeCoderExecutionPolicy: executionPolicy,
                   blackboard,
                 },
@@ -996,7 +1001,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             '[SpecializedAgent] ✅ Structural verification passed (pre-install/build/runtime checks)'
           );
 
-          if (this.context.deterministicScaffoldOnly && executionPolicy?.allowScaffold !== false) {
+          if (deterministicScaffoldOnly) {
             log.info(
               '[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply'
             );

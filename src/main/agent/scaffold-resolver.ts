@@ -4,6 +4,7 @@ import { app } from 'electron';
 
 import TemplateEngine from '../legacy/template-engine';
 import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
+import { looksSimpleStaticWebsiteTask } from './static-site-classifier';
 
 interface TemplateDefinitionFile {
   template: string;
@@ -111,6 +112,10 @@ export function detectCanonicalTemplateId(task: string, projectType?: string): s
     return 'vue-vite';
   }
 
+  if (looksSimpleStaticWebsiteTask(task)) {
+    return 'static-site';
+  }
+
   return null;
 }
 
@@ -176,6 +181,39 @@ export function workspaceNeedsDeterministicScaffold(workspacePath: string): bool
   });
 
   return meaningfulFiles.length <= 2;
+}
+
+/**
+ * Whether specialized-agent runs should stop after deterministic template materialization.
+ * Production: near-empty workspace + static-site template only (fast path for plain sites).
+ * Tests: any canonical template in a near-empty workspace (broader coverage).
+ */
+export function resolveDeterministicScaffoldOnlyFlag(options: {
+  message: string;
+  workspacePath: string;
+  allowScaffold: boolean;
+  explicitFromContext: boolean;
+  allowTestCanonicalTemplates?: boolean;
+}): boolean {
+  if (!options.allowScaffold) {
+    return false;
+  }
+  if (options.explicitFromContext) {
+    return true;
+  }
+  if (!workspaceNeedsDeterministicScaffold(options.workspacePath)) {
+    return false;
+  }
+
+  const templateId = detectCanonicalTemplateId(options.message);
+  if (
+    options.allowTestCanonicalTemplates === true &&
+    process.env.NODE_ENV === 'test' &&
+    Boolean(templateId)
+  ) {
+    return true;
+  }
+  return templateId === 'static-site';
 }
 
 function getTemplatesRoot(): string {

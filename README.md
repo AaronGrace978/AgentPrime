@@ -101,12 +101,19 @@ This is still an active build, but it now behaves much more like an actual AI ID
 This patch hardens the create -> validate -> repair path that previously caused simple static websites to bounce between specialists or stall on false validation failures.
 
 - **Root static asset ownership:** `javascript_specialist` and `repair_specialist` can now write common zero-dependency website files like `styles.css`, `style.css`, `script.js`, `app.js`, and `main.js`, so plain HTML/CSS/JS projects no longer fail with false "outside writable scope" errors.
+- **Task Master claims matched writable scopes:** The Task Master’s `claimedFiles` for `javascript_specialist` and `repair_specialist` now include the same root static assets, so tool validation no longer blocks valid writes with `outside assigned file claims` after the writable check already passed.
+- **Shared simple static-site classification:** `src/main/agent/static-site-classifier.ts` centralizes the “plain HTML/CSS/JS site” heuristic so reflection budgets, router behavior, and scaffold selection stay consistent.
 - **Smarter repair routing:** Repair retries that only target app source or static assets now skip `pipeline_specialist` and route back to implementation specialists instead of asking the build/pipeline lane to rewrite website files.
+- **Routing: less pipeline noise on “build a website”:** `routeToSpecialists` no longer adds `pipeline_specialist` for generic *build* wording when the task is classified as a simple static site; deploy, Docker, manifests, and dependency work still add pipeline.
+- **Deterministic static-site path:** `resolveDeterministicScaffoldOnlyFlag` (see `scaffold-resolver.ts`) and `agent-chat-runtime.ts` can stop after materializing the `static-site` template in near-empty workspaces. The specialized loop also recomputes this path so a seeded template is not always followed by a full planning/orchestrator pass. `executeWithSpecialists` can return early after a `static-site` scaffold for simple-website prompts (with regression tests).
 - **Path-aware HTML validation:** HTML asset references are resolved against the actual project path, so `/styles.css`, `styles.css`, and `src/styles.css` are validated as real paths rather than loose basename matches.
 - **Reduced false project-type mismatches:** Cross-file mismatch checks now focus on script-like assets and incompatible project types, avoiding CSS-driven false positives while still blocking bad app wiring like a game HTML shell pointing at portfolio JavaScript.
 - **Faster simple website path:** Simple static-site prompts stay on `instant` or `standard` reflection budgets unless repair escalation is truly needed, avoiding deep-planning overhead for three-file websites.
 - **Template smoke reliability:** Template smoke tests pre-check missing local toolchains, FastAPI/Pydantic template pins were updated for newer Python installs, and browser smoke analysis ignores build artifacts like `.next`, `coverage`, and `release`.
-- **Verification:** The patch was rebuilt into `dist` and verified with focused regression tests plus `npm run verify`.
+- **JavaScript specialist prompt (plain static sites):** When the task is clearly a no-bundler static page, the specialist prompt discourages inventing `SPEC.md` or `package.json` unless the user asked for a spec or an npm project.
+- **Verification:** Rebuilt to `dist` and verified with `npm run build` and `npm run verify` (local toolchain skips e.g. Go templates in smoke tests when tools are missing).
+
+**Done for today (April 24, 2026):** Static-site and specialist routing are aligned end-to-end; the README above reflects the shipped behavior. Re-run the app after `npm run build` so the Electron process loads the latest `dist` bundle.
 
 Potential next enhancements:
 

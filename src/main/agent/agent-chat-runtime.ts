@@ -10,7 +10,7 @@ import { createPipeline, type AgentPipeline } from '../agent-pipeline';
 import type { ChatIpcContext } from '../security/chat-ipc-context';
 import { checkOllamaHealth } from '../core/ollama-probe';
 import { getTelemetryService } from '../core/telemetry-service';
-import { detectCanonicalTemplateId, workspaceNeedsDeterministicScaffold } from './scaffold-resolver';
+import { resolveDeterministicScaffoldOnlyFlag } from './scaffold-resolver';
 import { clampAgentAutonomyLevel, resolveEffectiveAutonomyPolicy } from './autonomy-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
 import { flattenRuntimeForTelemetry } from '../core/ai-runtime-telemetry';
@@ -178,13 +178,13 @@ export class AgentChatRuntime {
       console.log(
         `[Chat] Specialized agent mode enabled, provider: ${activeProvider}, model: ${selectedModel}, cloud: ${isOllamaCloud}, autonomy: L${autonomyPolicy.level} (${autonomyPolicy.label})`
       );
-      const deterministicScaffoldOnly =
-        vibeCoderExecutionPolicy?.allowScaffold === false
-          ? false
-          : Boolean(context.deterministic_scaffold_only) ||
-            (process.env.NODE_ENV === 'test' &&
-              workspaceNeedsDeterministicScaffold(workspacePath) &&
-              Boolean(detectCanonicalTemplateId(message)));
+      const deterministicScaffoldOnly = resolveDeterministicScaffoldOnlyFlag({
+        message,
+        workspacePath,
+        allowScaffold: vibeCoderExecutionPolicy?.allowScaffold !== false,
+        explicitFromContext: Boolean(context.deterministic_scaffold_only),
+        allowTestCanonicalTemplates: true,
+      });
 
       if (!deterministicScaffoldOnly && activeProvider === 'ollama' && !isOllamaCloud) {
         const health = await checkOllamaHealth();

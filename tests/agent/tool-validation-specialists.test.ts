@@ -7,6 +7,7 @@ import {
   populateFileTracker,
 } from '../../src/main/agent/tool-validation';
 import { resolveVibeCoderExecutionPolicy } from '../../src/main/agent/behavior-profile';
+import { TaskMaster } from '../../src/main/agent/task-master';
 
 describe('specialist-aware tool validation', () => {
   const workspacePath = 'G:/AgentPrime';
@@ -66,6 +67,27 @@ describe('specialist-aware tool validation', () => {
       workspacePath,
       'Build a simple static website',
       { specialist: 'javascript_specialist' }
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('allows javascript specialist root CSS when TaskMaster file claims are applied', () => {
+    const taskMaster = new TaskMaster(workspacePath, 'Build a simple website');
+    const plan = taskMaster.buildPlan({
+      mode: 'create',
+      specialists: ['javascript_specialist', 'pipeline_specialist'],
+    });
+    const claimedFiles = plan.claimedFiles.javascript_specialist;
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: { path: 'styles.css', content: 'body { margin: 0; }' },
+      },
+      workspacePath,
+      'Build a simple website',
+      { specialist: 'javascript_specialist', claimedFiles }
     );
 
     expect(result.valid).toBe(true);

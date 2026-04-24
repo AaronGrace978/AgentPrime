@@ -1,6 +1,10 @@
 import { looksSimpleStaticWebsiteTask, resolveReflectionBudget } from '../../src/main/agent/reflection-policy';
 
 describe('reflection policy', () => {
+  it('treats basic website phrasing as simple static website work', () => {
+    expect(looksSimpleStaticWebsiteTask('Make a basic website with HTML and CSS')).toBe(true);
+  });
+
   it('keeps simple static website creation on the instant path', () => {
     const plan = resolveReflectionBudget({
       requestedBudget: 'deep',

@@ -1,5 +1,8 @@
 import type { AgentReviewCheckpointSummary } from '../../types/agent-review';
 import type { RuntimeBudgetMode } from '../../types/runtime-budget';
+import { looksSimpleStaticWebsiteTask } from './static-site-classifier';
+
+export { looksSimpleStaticWebsiteTask };
 
 export interface ReflectionBudgetOptions {
   requestedBudget?: RuntimeBudgetMode;
@@ -23,22 +26,12 @@ export interface ReflectionBudgetPlan {
 const RISKY_TASK_PATTERN =
   /(scaffold|template|full app|full application|tauri|desktop|browser test|e2e|end-to-end|security|performance|migrate|schema|contract|database|auth|payment|deploy|release)/i;
 
-const SIMPLE_STATIC_SITE_PATTERN =
-  /\b(static\s+)?(site|website|webpage|web\s+page|landing\s+page|portfolio\s+site|homepage)\b/i;
-
-const COMPLEX_APP_PATTERN =
-  /\b(react|vue|svelte|next|vite|fullstack|full-stack|backend|api|database|auth|login|dashboard|three\.js|threejs|game|webgl|tauri|electron)\b/i;
-
 export function looksRiskyTask(userMessage: string, isUpdate: boolean): boolean {
   const normalizedTask = userMessage.toLowerCase();
   return (
     (!isUpdate && RISKY_TASK_PATTERN.test(normalizedTask)) ||
     normalizedTask.length > 800
   );
-}
-
-export function looksSimpleStaticWebsiteTask(userMessage: string): boolean {
-  return SIMPLE_STATIC_SITE_PATTERN.test(userMessage) && !COMPLEX_APP_PATTERN.test(userMessage);
 }
 
 export function shouldApplyAgentChangesImmediately(explicitApplySetting?: boolean): boolean {
