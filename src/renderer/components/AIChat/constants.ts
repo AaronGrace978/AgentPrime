@@ -45,6 +45,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: 'qwen3-coder:480b-cloud', label: 'Qwen 3 Coder - Frontier' },
     { value: 'qwen3-vl:cloud', label: 'Qwen 3 VL - Vision + Tools' },
     { value: 'qwen3-next:cloud', label: 'Qwen 3 Next - Efficient Reasoning' },
+    { value: 'deepseek-v4-flash:cloud', label: 'DeepSeek V4 Flash - 1M Context' },
     { value: 'deepseek-v3.2:cloud', label: 'DeepSeek v3.2 - Latest' },
     { value: 'deepseek-v3.1:671b-cloud', label: 'DeepSeek v3.1 - Large Context' },
     { value: 'devstral-2:123b-cloud', label: 'Devstral 2 - Coding' },

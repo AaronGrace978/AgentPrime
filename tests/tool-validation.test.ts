@@ -164,6 +164,16 @@ describe('opus keyword extraction', () => {
     expect(keywords).toContain('typescript');
     expect(keywords).not.toContain('electron');
   });
+
+  it('recognizes website tasks without treating AgentPrime as a generic agent request', () => {
+    const keywords = extractTaskKeywords('Can you build me the official AgentPrime Website<3');
+
+    expect(keywords).toContain('website');
+    expect(keywords).toContain('landing-page');
+    expect(keywords).toContain('marketing');
+    expect(keywords).not.toContain('agent');
+    expect(keywords).not.toContain('tool-calling');
+  });
 });
 
 describe('scaffold_project validation', () => {

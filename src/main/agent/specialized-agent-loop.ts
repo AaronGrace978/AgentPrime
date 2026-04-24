@@ -1143,6 +1143,32 @@ export class SpecializedAgentLoop extends EventEmitter {
       }
 
       const operationCount = transaction.getOperationCount();
+      if (!verificationSucceeded) {
+        rolledBackIncomplete = true;
+        const response = this.buildResponse(allCreatedFiles, lastVerification, {
+          rolledBack: true,
+          stagedReview: false,
+        });
+
+        await transactionManager.rollbackTransaction();
+        telemetry.track('agent_task_complete', {
+          mode: 'specialized',
+          success: false,
+          rolledBack: true,
+          retryCount,
+          fileCount: allCreatedFiles.length,
+          durationMs: Date.now() - taskStartedAt,
+          stagedReview: false,
+          runtimeBudget: lastReflectionBudget,
+          autonomyLevel,
+          autonomyLabel: autonomyPolicy.label,
+        });
+        log.info(
+          `[${runId}] Specialized agent verification failed; rolled back ${operationCount} file operation(s)`
+        );
+        return response;
+      }
+
       const stagedReview = applyImmediately
         ? null
         : reviewSessionManager.createSessionFromOperations(
@@ -1886,6 +1912,25 @@ export class SpecializedAgentLoop extends EventEmitter {
         runtimeBudget: reflectionPlan.budget,
       });
       return `${response}\n\n### Review Required\nApply the staged changes from the review panel to write them into the workspace.`;
+    }
+
+    if (!verification.isComplete) {
+      const rolledBackResponse = this.buildResponse(scaffolded.createdFiles, verification, {
+        rolledBack: true,
+        stagedReview: false,
+      });
+      await transactionManager.rollbackTransaction();
+      telemetry.track('agent_task_complete', {
+        mode: 'specialized',
+        success: false,
+        rolledBack: true,
+        retryCount: 0,
+        fileCount: scaffolded.createdFiles.length,
+        durationMs: Date.now() - taskStartedAt,
+        stagedReview: false,
+        runtimeBudget: reflectionPlan.budget,
+      });
+      return rolledBackResponse;
     }
 
     if (transaction.getOperationCount() > 0) {

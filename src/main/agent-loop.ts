@@ -2892,6 +2892,7 @@ interface ModelTier {
 const DEFAULT_MODEL_CHAIN: ModelTier[] = [
   { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
   { name: 'Deep', provider: 'ollama', model: 'kimi-k2.6:cloud', tier: 'deep' },
+  { name: 'DeepSeek V4 Flash', provider: 'ollama', model: 'deepseek-v4-flash:cloud', tier: 'deep' },
   { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
 ];
 
@@ -3377,6 +3378,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       this.modelChain = [
         { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
         { name: 'Deep', provider: 'ollama', model: 'kimi-k2.6:cloud', tier: 'deep' },
+        { name: 'DeepSeek V4 Flash', provider: 'ollama', model: 'deepseek-v4-flash:cloud', tier: 'deep' },
         { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
       ];
       log.info('[Agent] 📋 Configured Ollama model escalation chain');

@@ -23,10 +23,13 @@ export function estimateModelCapability(model: string): number {
   if (/opus|671b|675b|480b|405b|gpt-5\.5|gpt-5\.4(?!-nano)|\bo3\b|\bo1\b|claude-opus|frontier|large-3|mistral-large-3/.test(m)) {
     score = Math.max(score, 9);
   }
-  if (/sonnet|gpt-4o|gpt-5(?!\.4-nano)|deepseek-v3|gemini-3-pro|devstral-2(?!-small)|123b|glm-5(?!\.)/.test(m)) {
+  if (/sonnet|gpt-4o|gpt-5(?!\.4-nano)|deepseek-v[34]|gemini-3-pro|devstral-2(?!-small)|123b|glm-5(?!\.)/.test(m)) {
     score = Math.max(score, 7);
   }
-  if (/haiku|nano|:-small|:7b|:8b|:3b|1\.5b|flash(?!-)|mini(?!max|stral)/.test(m)) {
+  if (
+    /haiku|nano|:-small|:7b|:8b|:3b|1\.5b|flash(?!-)|mini(?!max|stral)/.test(m) &&
+    !/deepseek-v4-flash/.test(m)
+  ) {
     score = Math.min(score, 5);
   }
 

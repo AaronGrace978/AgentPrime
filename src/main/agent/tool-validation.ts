@@ -1328,35 +1328,56 @@ function validateFrameworkFreezeBoundary(
   taskContext?: string,
   executionPolicy?: VibeCoderExecutionPolicy
 ): ValidationResult | null {
-  if (!isRepairFlowContext(taskContext, executionPolicy)) {
-    return null;
-  }
-
   const normalizedPath = normalizeForGlob(filePath).toLowerCase();
   const hasMainJs = fs.existsSync(path.join(workspacePath, 'src', 'main.js'));
   const hasReactEntrypoint =
     fs.existsSync(path.join(workspacePath, 'src', 'main.tsx')) ||
     fs.existsSync(path.join(workspacePath, 'src', 'main.jsx'));
+  const trackedPaths = Array.from(sessionFileTracker.values())
+    .flat()
+    .map((trackedPath) => normalizeForGlob(trackedPath).toLowerCase());
+  const hasTrackedMainJs = trackedPaths.includes('src/main.js');
+  const hasTrackedReactEntrypoint =
+    trackedPaths.includes('src/main.tsx') || trackedPaths.includes('src/main.jsx');
 
   const writingReactEntrypoint = normalizedPath === 'src/main.tsx' || normalizedPath === 'src/main.jsx';
   const writingVanillaEntrypoint = normalizedPath === 'src/main.js';
 
-  if (hasMainJs && writingReactEntrypoint) {
+  if ((hasMainJs || hasTrackedMainJs) && writingReactEntrypoint) {
     return {
       valid: false,
       error:
-        `Framework freeze: repair flows cannot pivot from "src/main.js" to "${filePath}". ` +
-        `Patch the existing JS entrypoint instead of introducing a second stack.`,
+        `Framework freeze: Frontend stack conflict: cannot create "${filePath}" while "src/main.js" exists. ` +
+        `Use one entrypoint stack only; remove or patch the stale JS entrypoint before adding a React TSX entrypoint.`,
     };
   }
 
-  if (hasReactEntrypoint && writingVanillaEntrypoint) {
+  if ((hasReactEntrypoint || hasTrackedReactEntrypoint) && writingVanillaEntrypoint) {
     return {
       valid: false,
       error:
-        `Framework freeze: repair flows cannot pivot from React entrypoints to "${filePath}". ` +
-        `Patch the existing TSX/JSX entrypoint instead of adding "src/main.js".`,
+        `Framework freeze: Frontend stack conflict: cannot create "${filePath}" while a React TSX/JSX entrypoint exists. ` +
+        `Use one entrypoint stack only; remove or patch the stale React entrypoint before adding src/main.js.`,
     };
+  }
+
+  const viteConfigMatch = normalizedPath.match(/(^|\/)vite\.config\.(ts|js|mts|mjs)$/);
+  if (viteConfigMatch) {
+    const configDir = normalizedPath.slice(0, normalizedPath.length - path.posix.basename(normalizedPath).length);
+    const variants = ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs']
+      .map((name) => `${configDir}${name}`)
+      .filter((candidate) => candidate !== normalizedPath);
+    const conflictingConfig = variants.find((candidate) =>
+      trackedPaths.includes(candidate) || fs.existsSync(path.join(workspacePath, candidate))
+    );
+    if (conflictingConfig) {
+      return {
+        valid: false,
+        error:
+          `Build config conflict: cannot create "${filePath}" while "${conflictingConfig}" exists. ` +
+          `Use one Vite config file only.`,
+      };
+    }
   }
 
   if (normalizedPath === 'index.html') {
@@ -1365,27 +1386,27 @@ function validateFrameworkFreezeBoundary(
     const hasRootMount = /id=["']root["']/i.test(content);
     const hasAppMount = /id=["']app["']/i.test(content);
 
-    if (hasReactEntrypoint && pointsToMainJs) {
+    if ((hasReactEntrypoint || hasTrackedReactEntrypoint) && pointsToMainJs) {
       return {
         valid: false,
         error:
-          'Framework freeze: index.html points to src/main.js while React entrypoint exists. ' +
-          'Keep entrypoint wiring on a single stack during repair.',
+          'Framework freeze: Frontend stack conflict: index.html points to src/main.js while a React entrypoint exists. ' +
+          'Keep entrypoint wiring on one stack.',
       };
     }
-    if (hasMainJs && pointsToReactEntry) {
+    if ((hasMainJs || hasTrackedMainJs) && pointsToReactEntry) {
       return {
         valid: false,
         error:
-          'Framework freeze: index.html points to TS/TSX entry while src/main.js exists. ' +
-          'Do not migrate stacks mid-repair.',
+          'Framework freeze: Frontend stack conflict: index.html points to a TS/TSX entry while src/main.js exists. ' +
+          'Keep entrypoint wiring on one stack.',
       };
     }
-    if (hasReactEntrypoint && hasAppMount && !hasRootMount) {
+    if ((hasReactEntrypoint || hasTrackedReactEntrypoint) && hasAppMount && !hasRootMount) {
       return {
         valid: false,
         error:
-          'Framework freeze: React entrypoint expects a #root mount target, but index.html only defines #app.',
+          'Framework freeze: Frontend stack conflict: React entrypoint expects a #root mount target, but index.html only defines #app.',
       };
     }
   }

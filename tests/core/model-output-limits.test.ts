@@ -3,12 +3,16 @@ import { getRecommendedMaxTokens, isOllamaCloudModel } from '../../src/main/core
 describe('model output limits', () => {
   it('detects Ollama cloud models', () => {
     expect(isOllamaCloudModel('qwen3-coder-next:cloud')).toBe(true);
+    expect(isOllamaCloudModel('kimi-k2.6:cloud')).toBe(true);
+    expect(isOllamaCloudModel('deepseek-v4-flash:cloud')).toBe(true);
     expect(isOllamaCloudModel('deepseek-v3.1:671b-cloud')).toBe(true);
     expect(isOllamaCloudModel('qwen2.5-coder:32b')).toBe(false);
   });
 
   it('gives Ollama cloud higher chat and generation budgets', () => {
     expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'chat')).toBe(32768);
+    expect(getRecommendedMaxTokens('kimi-k2.6:cloud', 'agent')).toBe(32768);
+    expect(getRecommendedMaxTokens('deepseek-v4-flash:cloud', 'analysis')).toBe(32768);
     expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'agent')).toBe(32768);
     expect(getRecommendedMaxTokens('qwen3-coder-next:cloud', 'words_to_code')).toBe(32768);
   });

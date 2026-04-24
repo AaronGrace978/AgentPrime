@@ -2026,6 +2026,7 @@ async function executeTool(
         action: existedBefore ? 'modified' : 'created',
         status: 'pending',
       });
+      populateFileTracker([sanitizedPath.replace(/\\/g, '/')]);
       return { action: 'write_file', path: sanitizedPath, success: true };
 
     case 'read_file':
@@ -2571,6 +2572,12 @@ export async function executeWithSpecialists(
       name: 'Kimi K2.6 Cloud',
       provider: 'ollama',
       model: 'kimi-k2.6:cloud',
+      tier: 'deep',
+    },
+    {
+      name: 'DeepSeek V4 Flash Cloud',
+      provider: 'ollama',
+      model: 'deepseek-v4-flash:cloud',
       tier: 'deep',
     },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },

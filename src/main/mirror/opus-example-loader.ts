@@ -99,6 +99,9 @@ export function extractTaskKeywords(task: string): string[] {
   if (taskLower.includes('python')) keywords.push('python');
   if (taskLower.includes('typescript') || taskLower.includes(' ts ')) keywords.push('typescript');
   if (taskLower.includes('three.js') || taskLower.includes('threejs') || taskLower.includes('webgl')) keywords.push('threejs');
+  if (/\b(?:website|site|landing page|homepage|marketing page|splash page)\b/.test(taskLower)) {
+    keywords.push('website', 'landing-page', 'marketing', 'ui');
+  }
   const mentionsElectron = taskLower.includes('electron');
   const excludesElectron = /\b(?:not|no|without)\s+electron\b/.test(taskLower);
   if (mentionsElectron && !excludesElectron) keywords.push('electron');
@@ -110,8 +113,10 @@ export function extractTaskKeywords(task: string): string[] {
   // Pattern keywords
   if (taskLower.includes('error') || taskLower.includes('exception')) keywords.push('error-handling');
   if (taskLower.includes('retry') || taskLower.includes('resilient')) keywords.push('retry', 'resilience');
-  if (taskLower.includes('hook')) keywords.push('hooks');
-  if (taskLower.includes('agent') || taskLower.includes('tool')) keywords.push('agent', 'tool-calling');
+  if (/\bhooks?\b/.test(taskLower)) keywords.push('hooks');
+  if (/\bagents?\b|\bagentic\b/.test(taskLower) || /\btool(?:s|-calling)?\b/.test(taskLower)) {
+    keywords.push('agent', 'tool-calling');
+  }
   if (taskLower.includes('ipc')) keywords.push('ipc');
   if (taskLower.includes('mirror') || taskLower.includes('learn')) keywords.push('mirror', 'learning');
   if (taskLower.includes('architecture') || taskLower.includes('design')) keywords.push('architecture');
@@ -128,19 +133,19 @@ export function extractTaskKeywords(task: string): string[] {
  * Score an example against task keywords using manifest metadata
  */
 function scoreExampleWithManifest(example: OpusExample, keywords: string[]): number {
-  let score = 0;
+  let relevanceScore = 0;
   
   // Tag matching (high value)
   for (const keyword of keywords) {
     if (example.tags.includes(keyword)) {
-      score += 3;
+      relevanceScore += 3;
     }
   }
   
   // Category matching
   for (const keyword of keywords) {
     if (example.category.includes(keyword)) {
-      score += 2;
+      relevanceScore += 2;
     }
   }
   
@@ -148,22 +153,24 @@ function scoreExampleWithManifest(example: OpusExample, keywords: string[]): num
   const descLower = (example.description || '').toLowerCase();
   for (const keyword of keywords) {
     if (descLower.includes(keyword)) {
-      score += 1;
+      relevanceScore += 1;
     }
   }
-  
-  // Quality bonus
-  score += example.quality * 0.5;
   
   // Title matching
   const titleLower = (example.title || '').toLowerCase();
   for (const keyword of keywords) {
     if (titleLower.includes(keyword)) {
-      score += 2;
+      relevanceScore += 2;
     }
   }
   
-  return score;
+  if (keywords.length === 0) {
+    return example.quality * 0.5;
+  }
+
+  // Quality is a tiebreaker for actual task matches, not proof of relevance.
+  return relevanceScore > 0 ? relevanceScore + example.quality * 0.5 : 0;
 }
 
 /**

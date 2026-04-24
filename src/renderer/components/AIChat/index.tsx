@@ -1012,6 +1012,34 @@ const AIChat: React.FC<AIChatProps> = ({
       timestamp: new Date()
     }]);
 
+    let streamedAgentResponse = '';
+    let agentStreamAborted = false;
+    const handleAgentStreamChunk = (data: any) => {
+      if (!data?.agent_mode) return;
+
+      if (data.chunk) {
+        streamedAgentResponse += data.chunk;
+        setMessages(prev => {
+          const updated = [...prev];
+          const workingIdx = updated.findIndex(m => m.content.includes('Working on your request'));
+          const targetIdx = workingIdx >= 0 ? workingIdx : updated.length - 1;
+          const current = updated[targetIdx];
+          if (!current || current.role !== 'assistant') return prev;
+          updated[targetIdx] = {
+            ...current,
+            content: streamedAgentResponse,
+            timestamp: new Date()
+          };
+          return updated;
+        });
+      }
+
+      if (data.done && data.aborted) {
+        agentStreamAborted = true;
+      }
+    };
+    window.agentAPI.onChatStream(handleAgentStreamChunk);
+
     try {
       const activeFilePath = activeFileIndex >= 0 ? openFiles[activeFileIndex]?.file.path : undefined;
       let terminalHistory: string[] = [];
@@ -1052,11 +1080,27 @@ const AIChat: React.FC<AIChatProps> = ({
       setMessages(prev => {
         const filtered = prev.filter(m => !m.content.includes('Working on your request'));
         const failMsg = result.error ? classifyAIError(result.error).message : 'Agent run failed';
+        if (result.success && streamedAgentResponse) {
+          const updated = [...filtered];
+          const lastAssistantIdx = [...updated].reverse().findIndex(m => m.role === 'assistant');
+          const targetIdx = lastAssistantIdx >= 0 ? updated.length - 1 - lastAssistantIdx : -1;
+          if (targetIdx >= 0) {
+            updated[targetIdx] = {
+              ...updated[targetIdx],
+              content: streamedAgentResponse,
+              timestamp: new Date(),
+              metadata: normalizeMessageMetadata(result.responseMetadata),
+              aborted: agentStreamAborted || undefined,
+            };
+            return updated;
+          }
+        }
         return [...filtered, {
           role: 'assistant',
-          content: result.success ? (result.response || '') : failMsg,
+          content: result.success ? (streamedAgentResponse || result.response || '') : failMsg,
           timestamp: new Date(),
           metadata: result.success ? normalizeMessageMetadata(result.responseMetadata) : undefined,
+          aborted: agentStreamAborted || undefined,
         }];
       });
 
@@ -1127,6 +1171,7 @@ const AIChat: React.FC<AIChatProps> = ({
         await recordOutcome(currentInput, false, agentModel, 0);
       }
     } finally {
+      window.agentAPI.removeChatStream();
       pendingRepairScopeRef.current = null;
       setAgentRunning(false);
       setIsLoading(false);

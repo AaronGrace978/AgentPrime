@@ -4,6 +4,8 @@ describe('AI provider normalization', () => {
   it('infers Ollama for cloud model ids', () => {
     expect(aiRouter.inferProviderForModel('minimax-m2.7:cloud', 'openai')).toBe('ollama');
     expect(aiRouter.inferProviderForModel('qwen3-coder-next:cloud', 'anthropic')).toBe('ollama');
+    expect(aiRouter.inferProviderForModel('kimi-k2.6:cloud', 'openai')).toBe('ollama');
+    expect(aiRouter.inferProviderForModel('deepseek-v4-flash:cloud', 'openai')).toBe('ollama');
   });
 
   it('preserves explicit provider families for hosted APIs', () => {

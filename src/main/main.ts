@@ -577,13 +577,21 @@ function initializeAIProviders(): void {
   const normalizeProviderFromModel = (model: string | undefined, fallback: string) =>
     aiRouter.inferProviderForModel(model, fallback) || fallback;
 
+  const normalizeModelForProvider = (providerName: string | null | undefined, model: string | undefined) => {
+    if (!model) return model;
+    if (providerName === 'ollama') {
+      return model.replace(/^ollama\//i, '');
+    }
+    return model;
+  };
+
   const normalizeActiveSelection = () => {
     const previousProvider = settings.activeProvider;
     const previousModel = settings.activeModel;
     const runtime = resolveEffectiveAIRuntime(settings, settings.activeModel, settings.activeProvider);
 
     settings.activeProvider = runtime.effectiveProvider;
-    settings.activeModel = runtime.effectiveModel;
+    settings.activeModel = normalizeModelForProvider(runtime.effectiveProvider, runtime.effectiveModel) || runtime.effectiveModel;
 
     return previousProvider !== settings.activeProvider || previousModel !== settings.activeModel;
   };
@@ -597,17 +605,38 @@ function initializeAIProviders(): void {
       settings.dualModelConfig.fastModel.model,
       settings.dualModelConfig.fastModel.provider || 'ollama'
     );
+    settings.dualModelConfig.fastModel.model =
+      normalizeModelForProvider(
+        settings.dualModelConfig.fastModel.provider,
+        settings.dualModelConfig.fastModel.model
+      ) || settings.dualModelConfig.fastModel.model;
     settings.dualModelConfig.deepModel.provider = normalizeProviderFromModel(
       settings.dualModelConfig.deepModel.model,
       settings.dualModelConfig.deepModel.provider || 'ollama'
     );
+    settings.dualModelConfig.deepModel.model =
+      normalizeModelForProvider(
+        settings.dualModelConfig.deepModel.provider,
+        settings.dualModelConfig.deepModel.model
+      ) || settings.dualModelConfig.deepModel.model;
   }
+
+  const preferredDualOllamaModel =
+    settings.dualModelEnabled && settings.dualModelConfig
+      ? [
+          settings.dualModelConfig.fastModel.enabled ? settings.dualModelConfig.fastModel : null,
+          settings.dualModelConfig.deepModel.enabled ? settings.dualModelConfig.deepModel : null,
+        ].find((selection) => selection?.provider === 'ollama')?.model
+      : undefined;
 
   if (settings.providers.ollama) {
     const ollamaConfig = normalizeProviderConfig('ollama', settings.providers.ollama);
-    // Pass active model when user has Ollama selected so provider uses correct baseUrl (local vs cloud)
-    if (settings.activeProvider === 'ollama' && settings.activeModel) {
-      ollamaConfig.model = settings.activeModel;
+    // Pass the execution model so Ollama chooses the correct cloud/local endpoint at startup.
+    // Dual mode can route to a different model than the active picker model.
+    const ollamaExecutionModel =
+      preferredDualOllamaModel || (settings.activeProvider === 'ollama' ? settings.activeModel : undefined);
+    if (ollamaExecutionModel) {
+      ollamaConfig.model = ollamaExecutionModel;
     }
     aiRouter.configureProvider('ollama', ollamaConfig);
   }
@@ -667,7 +696,15 @@ function initializeAIProviders(): void {
     saveSettings();
   }
   
-  log.info(`✅ AI Provider initialized: ${settings.activeProvider} (${settings.activeModel})`);
+  if (settings.dualModelEnabled && settings.dualModelConfig) {
+    log.info(
+      `✅ AI Provider initialized: ${settings.activeProvider} active=${settings.activeModel}; ` +
+      `dual fast=${settings.dualModelConfig.fastModel.provider}/${settings.dualModelConfig.fastModel.model}, ` +
+      `deep=${settings.dualModelConfig.deepModel.provider}/${settings.dualModelConfig.deepModel.model}`
+    );
+  } else {
+    log.info(`✅ AI Provider initialized: ${settings.activeProvider} (${settings.activeModel})`);
+  }
 }
 
 // Settings cache to avoid repeated file reads

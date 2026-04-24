@@ -95,6 +95,29 @@ export class AgentChatRuntime {
   private specializedAgentLoop: SpecializedAgentLoop | null = null;
   activeAgentMode: 'monolithic' | 'specialized' | null = null;
 
+  private async streamAssistantResponse(
+    sender: WebContents,
+    requestId: string,
+    response: string
+  ): Promise<void> {
+    const chunks = response.match(/\S+\s*|\n+/g) || [];
+    for (const chunk of chunks) {
+      sender.send('chat-stream', {
+        requestId,
+        chunk,
+        done: false,
+        agent_mode: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 8));
+    }
+    sender.send('chat-stream', {
+      requestId,
+      chunk: '',
+      done: true,
+      agent_mode: true,
+    });
+  }
+
   getPipeline(): AgentPipeline | null {
     return this.agentPipeline;
   }
@@ -229,6 +252,7 @@ export class AgentChatRuntime {
         const responseMetadata = buildAssistantResponseMetadata(assistantBehaviorProfile, responseRuntime);
         emitRuntimeInfo(event.sender, requestId, responseRuntime);
         const reviewSession = this.specializedAgentLoop.consumePendingReviewSession();
+        await this.streamAssistantResponse(event.sender, requestId, response);
 
         addToConversationHistory(conversationMode, 'user', message);
         addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);
@@ -357,6 +381,8 @@ export class AgentChatRuntime {
           runtime: responseRuntime,
         };
       }
+
+      await this.streamAssistantResponse(event.sender, requestId, response);
 
       addToConversationHistory(conversationMode, 'user', message);
       addToConversationHistory(conversationMode, 'assistant', response, responseMetadata);

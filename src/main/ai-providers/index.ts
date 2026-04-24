@@ -1426,6 +1426,12 @@ class AIProviderRouter {
           context: 256000,
           cost: 'low',
         },
+        'deepseek-v4-flash:cloud': {
+          strengths: ['code', 'analysis', 'debug', 'complex', 'agentic', 'long_context'],
+          speed: 'fast',
+          context: 1000000,
+          cost: 'low',
+        },
         'glm-5.1:cloud': {
           strengths: ['code', 'analysis', 'debug', 'complex', 'agentic'],
           speed: 'fast',

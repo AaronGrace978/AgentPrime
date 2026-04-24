@@ -332,4 +332,52 @@ describe('SpecializedAgentLoop orchestration retry', () => {
     expect(result).toBe('repair response without scaffold fallback');
     expect(fallbackReviewSpy).not.toHaveBeenCalled();
   });
+
+  it('rolls back immediate-apply specialist changes when verification never passes', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-failed-apply-rollback-');
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      model: 'qwen-test',
+      monolithicApplyImmediately: true,
+    } as any);
+
+    jest.spyOn(specializedAgents, 'routeToSpecialists').mockReturnValue(['javascript_specialist'] as any);
+    jest.spyOn(specializedAgents, 'executeWithSpecialists').mockResolvedValue({
+      results: [],
+      finalAnalysis: '',
+      executedTools: [],
+      scaffoldApplied: false,
+      scaffoldTemplateId: undefined,
+      skippedGenerativePass: false,
+    } as any);
+    jest.spyOn(loop as any, 'getProjectFiles').mockReturnValue([]);
+    jest.spyOn(loop as any, 'detectLanguage').mockReturnValue('typescript');
+    jest.spyOn(loop as any, 'detectProjectType').mockReturnValue('application');
+    jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: false,
+      missingFiles: [],
+      errors: ['Mixed frontend entrypoints detected'],
+      createdFiles: ['src/main.tsx', 'src/main.js'],
+    });
+
+    jest.spyOn(transactionManager, 'startTransaction').mockReturnValue({
+      getOperationCount: () => 2,
+      getOperations: () => [],
+    } as any);
+    const commitSpy = jest.spyOn(transactionManager, 'commitTransaction').mockImplementation(() => undefined);
+    const rollbackSpy = jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    jest.spyOn(reviewSessionManager, 'createSessionFromOperations').mockReturnValue(null);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run('Build a website that must compile');
+
+    expect(result).toContain('## ⚠️ Project Needs Fixes');
+    expect(result).toContain('### ↩️ Changes Reverted');
+    expect(result).toContain('Mixed frontend entrypoints detected');
+    expect(rollbackSpy).toHaveBeenCalled();
+    expect(commitSpy).not.toHaveBeenCalled();
+  });
 });

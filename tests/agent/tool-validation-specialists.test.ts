@@ -250,6 +250,50 @@ describe('specialist-aware tool validation', () => {
     expect(result.error).toContain('DUPLICATE GAME MODULE DETECTED');
   });
 
+  it('blocks mixed frontend entrypoints during initial create generation', () => {
+    resetFileTracker('create');
+    populateFileTracker(['src/main.tsx']);
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: {
+          path: 'src/main.js',
+          content: "console.log('stale vanilla entry');",
+        },
+      },
+      workspacePath,
+      'Build a React Vite website',
+      { specialist: 'javascript_specialist' }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Frontend stack conflict');
+    expect(result.error).toContain('src/main.js');
+  });
+
+  it('blocks duplicate Vite config variants during initial create generation', () => {
+    resetFileTracker('create');
+    populateFileTracker(['vite.config.ts']);
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: {
+          path: 'vite.config.js',
+          content: 'export default {};',
+        },
+      },
+      workspacePath,
+      'Build a Vite website',
+      { specialist: 'pipeline_specialist' }
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('Build config conflict');
+    expect(result.error).toContain('vite.config.ts');
+  });
+
   it('blocks specialist writes when VibeCoder plan-only policy is active', () => {
     const result = validateToolCall(
       {

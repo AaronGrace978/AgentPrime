@@ -35,6 +35,7 @@ describe('estimateModelCapability', () => {
     it('promotes known general-purpose named models', () => {
       expect(estimateModelCapability('gpt-5')).toBe(7);
       expect(estimateModelCapability('deepseek-v3')).toBe(7);
+      expect(estimateModelCapability('deepseek-v4-flash:cloud')).toBe(7);
     });
 
     it('is case-insensitive for model name matching', () => {
