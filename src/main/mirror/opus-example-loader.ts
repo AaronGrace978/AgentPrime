@@ -31,6 +31,8 @@ interface OpusManifest {
 let cachedManifest: OpusManifest | null = null;
 let manifestLoadTime = 0;
 const MANIFEST_CACHE_TTL = 60000; // 1 minute
+const MIN_MANIFEST_RELEVANCE_SCORE = 2;
+const MAX_EXAMPLE_SNIPPET_CHARS = 1400;
 
 /**
  * Find the opus-examples directory
@@ -166,7 +168,7 @@ function scoreExampleWithManifest(example: OpusExample, keywords: string[]): num
   }
   
   if (keywords.length === 0) {
-    return example.quality * 0.5;
+    return 0;
   }
 
   // Quality is a tiebreaker for actual task matches, not proof of relevance.
@@ -231,7 +233,7 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
           score: scoreExampleWithManifest(ex, keywords),
           description: ex.description
         }))
-        .filter(s => s.score > 0)
+        .filter(s => s.score >= MIN_MANIFEST_RELEVANCE_SCORE)
         .sort((a, b) => b.score - a.score);
       
       console.log(`[OpusLoader] Manifest scoring: ${scoredFiles.length} relevant matches`);
@@ -256,11 +258,10 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
         const filePath = path.join(opusPath, file);
         const content = fs.readFileSync(filePath, 'utf8');
         
-        // ENHANCED: Return more complete examples (up to 2000 chars) for better mirroring
-        // This gives models more context to understand Opus's full approach
-        let snippet = content.substring(0, 2000).trim(); // Increased from 800 to 2000
+        // Keep examples compact so retrieved context guides the plan without drowning out the task.
+        let snippet = content.substring(0, MAX_EXAMPLE_SNIPPET_CHARS).trim();
         const lastNewline = snippet.lastIndexOf('\n');
-        if (lastNewline > 1000) {
+        if (lastNewline > 800) {
           snippet = snippet.substring(0, lastNewline);
         }
         
@@ -269,11 +270,11 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
           const manifestEntry = manifest?.examples.find(e => e.file === file);
           const title = manifestEntry?.title || file.replace(/\.(js|txt)$/, '');
           
-          // ENHANCED: More prominent formatting to emphasize Opus quality
-          examples.push(`\n### 🎯 OPUS EXAMPLE: ${title} (relevance: ${score.toFixed(1)})\n` +
-                       `This is REAL code from Claude Opus. Study every detail and mirror this exact approach:\n\n` +
+          console.log(`[OpusLoader] Selected example: ${title} (${file}, score=${score.toFixed(1)})`);
+          examples.push(`\n### Reference Example: ${title} (relevance: ${score.toFixed(1)})\n` +
+                       `Use this as a compact quality reference only where it fits the user's task:\n\n` +
                        `${snippet}\n` +
-                       `\n--- End of Opus Example ---\n`);
+                       `\n--- End of Reference Example ---\n`);
         }
       } catch (e) {
         // Skip unreadable files

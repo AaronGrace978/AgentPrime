@@ -41,7 +41,15 @@ export async function getRelevantPatterns(task: string, limit: number = 5): Prom
   
   try {
     const patterns = await mirrorMemoryInstance.getRelevantPatterns(task, limit);
-    console.log(`[MirrorSingleton] Retrieved ${patterns.length} patterns for task`);
+    const selected = patterns
+      .slice(0, 3)
+      .map(pattern => pattern.description || pattern.type || pattern.id)
+      .filter(Boolean)
+      .map(label => String(label).replace(/\s+/g, ' ').slice(0, 80));
+    console.log(
+      `[MirrorSingleton] Retrieved ${patterns.length} relevant pattern(s)` +
+      (selected.length > 0 ? `: ${selected.join(' | ')}` : '')
+    );
     return patterns;
   } catch (error) {
     console.error('[MirrorSingleton] Error getting patterns:', error);

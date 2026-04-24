@@ -429,16 +429,21 @@ export class MirrorMemory extends EventEmitter {
       let score = 0;
       const descLower = (pattern.description || '').toLowerCase();
       const descWords = descLower.split(/\s+/).filter(w => w.length > 2);
+      let hasTaskEvidence = false;
 
       // Keyword matching - more granular than before
       let matchingWords = 0;
       for (const word of taskWords) {
         if (descWords.includes(word)) matchingWords++;
       }
+      if (matchingWords > 0) {
+        hasTaskEvidence = true;
+      }
       score += Math.min(matchingWords * 0.15, 0.6); // Cap at 0.6 for keyword matches
 
       // Task type matching
       if (pattern.metadata?.taskType === taskType) {
+        hasTaskEvidence = true;
         score += 0.4;
       }
 
@@ -446,34 +451,38 @@ export class MirrorMemory extends EventEmitter {
       if (pattern.type) {
         const typeLower = pattern.type.toLowerCase();
         if (taskLower.includes(typeLower)) {
+          hasTaskEvidence = true;
           score += 0.3;
         }
       }
 
-      // Success rate boost (higher success = more relevant)
-      score += (pattern.successRate || 0.5) * 0.25;
+      // Success/confidence are tie-breakers for task-matched patterns, not relevance by themselves.
+      if (hasTaskEvidence) {
+        score += (pattern.successRate || 0.5) * 0.25;
 
-      // Recency boost (decays over time)
-      if (pattern.lastUsed) {
-        const daysSinceLastUse = (Date.now() - pattern.lastUsed) / (1000 * 60 * 60 * 24);
-        if (daysSinceLastUse < 1) {
-          score += 0.3;
-        } else if (daysSinceLastUse < 7) {
-          score += 0.2;
-        } else if (daysSinceLastUse < 30) {
-          score += 0.1;
+        // Recency boost (decays over time)
+        if (pattern.lastUsed) {
+          const daysSinceLastUse = (Date.now() - pattern.lastUsed) / (1000 * 60 * 60 * 24);
+          if (daysSinceLastUse < 1) {
+            score += 0.3;
+          } else if (daysSinceLastUse < 7) {
+            score += 0.2;
+          } else if (daysSinceLastUse < 30) {
+            score += 0.1;
+          }
         }
-      }
 
-      // Confidence boost
-      score += (pattern.confidence || 0) * 0.2;
+        // Confidence boost
+        score += (pattern.confidence || 0) * 0.2;
+      }
 
       return { pattern, score };
     });
 
     // Sort by relevance score and return top patterns
     scoredPatterns.sort((a, b) => b.score - a.score);
-    return scoredPatterns.slice(0, limit).map(item => item.pattern);
+    const relevantPatterns = scoredPatterns.filter(item => item.score >= 0.35);
+    return relevantPatterns.slice(0, limit).map(item => item.pattern);
   }
 
   /**

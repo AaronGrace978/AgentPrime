@@ -348,17 +348,14 @@ async function buildMirrorEnhancedPrompt(
   } = {}
 ): Promise<string> {
   let enhancedPrompt = injectBehaviorProfilePrompt(
-    `You are operating in OPUS MODE. This means you think, reason, and code EXACTLY like Claude Opus.
+    `You are operating with reference-quality engineering guidance.
 
-Claude Opus is known for:
-- Deep, thorough analysis before coding
-- Complete, production-ready solutions
-- Exceptional code quality and structure
-- Comprehensive error handling
-- Understanding of full project context
-- Following best practices automatically
-
-**YOUR DIRECTIVE**: Mirror Opus's behavior so closely that your output is indistinguishable from Opus.
+Work like a senior engineer:
+- Understand the user's exact task before choosing files or tools
+- Prefer complete, production-ready solutions over partial scaffolds
+- Keep cross-file contracts and build tooling coherent
+- Verify risky assumptions before writing broad changes
+- Treat retrieved patterns as guidance only when they are relevant
 
 ---
 
@@ -371,8 +368,8 @@ ${basePrompt}`,
     const mirror = await getMirrorContext(task);
 
     if (mirror.patterns.length > 0) {
-      enhancedPrompt += '\n\n## 🧠 LEARNED PATTERNS (Mirror these!)\n';
-      enhancedPrompt += 'These patterns have worked well in the past. Apply them:\n';
+      enhancedPrompt += '\n\n## Learned Patterns\n';
+      enhancedPrompt += 'Apply these only where they directly fit the current task:\n';
       for (const pattern of mirror.patterns) {
         const confidence = pattern.confidence
           ? ` (${(pattern.confidence * 100).toFixed(0)}% confident)`
@@ -388,25 +385,22 @@ ${basePrompt}`,
     // Only inject full opus examples for the orchestrator (planning phase).
     // Specialists get a compact reference instead of the full examples.
     if (role === 'tool_orchestrator' && mirror.opusExamples.length > 0) {
-      enhancedPrompt += '\n\n## 🎯 CRITICAL: ACT EXACTLY LIKE CLAUDE OPUS\n';
-      enhancedPrompt += "You MUST mirror Claude Opus's behavior, thinking, and code quality.\n";
+      enhancedPrompt += '\n\n## Reference Examples\n';
       enhancedPrompt +=
-        'These are REAL examples from Claude Opus. Study them carefully and REPLICATE this exact style:\n\n';
+        'Use these compact examples as quality references when their structure is relevant. Do not copy unrelated details:\n\n';
 
       for (const example of mirror.opusExamples) {
         enhancedPrompt += `${example}\n\n`;
       }
 
-      enhancedPrompt += '\n## 🧬 OPUS BEHAVIOR PATTERNS (MANDATORY)\n';
+      enhancedPrompt += '\n## Quality Bar\n';
       enhancedPrompt +=
-        '1. Deep thinking before coding  2. Complete, working code  3. Proper error handling\n';
+        '1. Plan the project shape before writing  2. Generate complete working code  3. Keep build config minimal and consistent\n';
       enhancedPrompt +=
-        '4. Clean, readable structure  5. Full project context awareness  6. Industry best practices\n';
-      enhancedPrompt +=
-        '\n**YOUR GOAL**: Generate code that is INDISTINGUISHABLE from Claude Opus output.\n';
+        '4. Preserve user intent  5. Validate every entrypoint and dependency  6. Avoid invented duplicate stacks\n';
     } else if (mirror.opusExamples.length > 0) {
       enhancedPrompt +=
-        '\nProduce complete, production-ready code following Opus quality standards.\n';
+        '\nProduce complete, production-ready code using retrieved references only when relevant.\n';
     }
 
     if (mirror.antiPatterns.length > 0) {
@@ -445,13 +439,12 @@ ${basePrompt}`,
 
     // 🎯 FINAL OPUS REINFORCEMENT
     if (mirror.opusExamples.length > 0 && role === 'tool_orchestrator') {
-      enhancedPrompt += '\n\n## 🔥 FINAL REMINDER: YOU ARE IN OPUS MODE\n';
-      enhancedPrompt += 'Before you generate ANY code, ask yourself:\n';
-      enhancedPrompt += '1. "Would Claude Opus write code this way?"\n';
-      enhancedPrompt += '2. "Is this complete and production-ready like Opus would make it?"\n';
-      enhancedPrompt += '3. "Does this match the quality and style of the Opus examples above?"\n';
-      enhancedPrompt += '\nIf the answer to ANY of these is "no", revise your approach.\n';
-      enhancedPrompt += '**Your output should be INDISTINGUISHABLE from Claude Opus.**\n';
+      enhancedPrompt += '\n\n## Final Planning Check\n';
+      enhancedPrompt += 'Before generating tool calls, confirm:\n';
+      enhancedPrompt += '1. The selected stack has one entrypoint and one build config.\n';
+      enhancedPrompt += '2. Every file you create is necessary for the user-visible result.\n';
+      enhancedPrompt += '3. Retrieved references are helping the current task rather than distracting from it.\n';
+      enhancedPrompt += 'If any answer is weak, revise the plan before writing files.\n';
     }
 
     log.info(
