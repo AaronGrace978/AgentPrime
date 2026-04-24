@@ -1747,6 +1747,26 @@ function parseToolCalls(content: string): any[] {
   return toolCalls;
 }
 
+function ensureToolCallsForGeneration(
+  role: AgentRole,
+  content: string,
+  options: {
+    required: boolean;
+    model: string;
+  }
+): any[] {
+  const toolCalls = parseToolCalls(content || '');
+  if (options.required && toolCalls.length === 0) {
+    const preview = (content || '').replace(/\s+/g, ' ').slice(0, 240);
+    throw new Error(
+      `${role} returned 0 executable tool calls with ${options.model}. ` +
+      `Create-mode responses must output JSON tool calls only. ` +
+      `Response preview: ${preview || '<empty>'}`
+    );
+  }
+  return toolCalls;
+}
+
 /**
  * Execute a tool call
  */
@@ -2805,6 +2825,7 @@ Output as a structured list. Be specific and comprehensive.`;
     let orchestratorResponse;
     let usedModel = orchestratorModel;
     let usedProvider = orchestratorProvider;
+    let orchestratorTools: any[] = [];
 
     try {
       const result = await withSmartFallback(
@@ -2828,6 +2849,15 @@ Output as a structured list. Be specific and comprehensive.`;
         if (!response.success) {
           throw new Error(response.error || 'Model returned unsuccessful response');
         }
+        const parsedTools = ensureToolCallsForGeneration(
+          'tool_orchestrator',
+          response.content || '',
+          {
+            required: taskMode === 'create' && !scaffoldApplied,
+            model,
+          }
+        );
+        orchestratorTools = parsedTools;
         return response;
       },
       orchestratorProvider,
@@ -2885,7 +2915,9 @@ Output as a structured list. Be specific and comprehensive.`;
     results.set('tool_orchestrator', orchestratorResponse.content || '');
 
     // Parse and execute tool calls from orchestrator
-    const orchestratorTools = parseToolCalls(orchestratorResponse.content || '');
+    if (orchestratorTools.length === 0) {
+      orchestratorTools = parseToolCalls(orchestratorResponse.content || '');
+    }
     for (const toolCall of orchestratorTools) {
     assertNotCancelled();
     try {
@@ -3086,6 +3118,10 @@ ${buildSharedContext(sharedContext)}`,
           if (!response.success) {
             throw new Error(response.error || 'Model returned unsuccessful response');
           }
+          ensureToolCallsForGeneration(role, response.content || '', {
+            required: taskMode === 'create' && role !== 'integration_analyst',
+            model,
+          });
           return response;
         },
         requestedRoleProvider,
