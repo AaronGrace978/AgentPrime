@@ -225,14 +225,14 @@ export async function withAITimeout<T>(
 
   const errorMsg = `${operationType} operation timed out after ${Math.round(timeout / 1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}, budget: ${runtimeBudget}). Falling back to faster model...`;
 
+  const timeoutParts = [
+    `${operationType} ${modelSize}/${runtimeBudget}`,
+    `timeout=${Math.round(timeout / 1000)}s`,
+  ];
   if (timeout < adaptiveTimeout) {
-    console.log(
-      `[Timeout] ${operationType} timeout capped from ${Math.round(adaptiveTimeout / 1000)}s to ${Math.round(timeout / 1000)}s for ${modelSize} model`
-    );
+    timeoutParts.push(`adaptive=${Math.round(adaptiveTimeout / 1000)}s capped for fallback`);
   }
-  console.log(
-    `[Timeout] ${operationType} timeout set to ${Math.round(timeout / 1000)}s for ${modelSize} model (${runtimeBudget} budget)`
-  );
+  console.log(`[Timeout] ${timeoutParts.join(' ')}`);
 
   return withTimeout(aiPromise, timeout, errorMsg);
 }

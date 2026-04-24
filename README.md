@@ -98,10 +98,10 @@ This is still an active build, but it now behaves much more like an actual AI ID
 
 ### Ollama Cloud, defaults, and agent runtime (April 2026)
 
-- **Default cloud model:** App defaults and dual-model “deep” presets favor **`kimi-k2.6:cloud`** where Ollama Cloud is the primary path (see `src/main/main.ts`, `src/main/agent-loop.ts`, `src/main/agent/specialized-agents.ts`, and `src/renderer/components/AIChat/constants.ts`). The model picker includes `kimi-k2.6:cloud`.
+- **Default cloud models:** App defaults favor **`kimi-k2.6:cloud`** for deeper work and **`deepseek-v4-flash:cloud`** for fast cloud routing where Ollama Cloud is the primary path (see `src/main/main.ts`, `src/main/agent-loop.ts`, `src/main/agent/specialized-agents.ts`, and `src/renderer/components/AIChat/constants.ts`). The model picker includes both models.
 - **Desktop key first:** When both the saved Ollama API key and the desktop alternate (`OLLAMA_API_KEY_DESKTOP` / `alternateApiKey`) are present, **`ollama-provider` uses the alternate first** and keeps the other key for the existing auth retry swap (`src/main/ai-providers/ollama-provider.ts`).
 - **Pipeline read scope:** `pipeline_specialist` may **read** root `index.html`, `README.md`, and `vite.config.*` in addition to package and source trees, so build wiring checks do not fail on read-boundary validation (`src/main/agent/specialist-contracts.ts`).
-- **Faster cloud timeouts:** Cloud model calls use **tighter `withAITimeout` caps** so smart fallback can move to the next model sooner instead of waiting on a single hung request (`src/main/core/timeout-utils.ts`).
+- **Faster cloud timeouts:** Cloud model calls use **tighter `withAITimeout` caps** with one-line timeout logs so smart fallback can move to the next model sooner without noisy duplicate timeout messages (`src/main/core/timeout-utils.ts`).
 
 ### Live tool-call streaming across every provider (April 2026)
 
@@ -354,6 +354,15 @@ AgentPrime is desktop-first, but it still treats the renderer like an untrusted 
 git clone https://github.com/AaronGrace978/AgentPrime.git
 cd AgentPrime
 npm install
+cp .env.example .env
+```
+
+Add at least one provider key before first launch. Ollama Cloud is the recommended default path:
+
+```bash
+OLLAMA_API_KEY=your-ollama-cloud-api-key
+OLLAMA_MODEL=kimi-k2.6:cloud
+OLLAMA_FAST_MODEL=deepseek-v4-flash:cloud
 ```
 
 ### Run The App

@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { promptBuilder, buildAgentRunContextPayload } from '../../agent';
 import type { AIRuntimeSnapshot, ModelInfo } from '../../../types/ai-providers';
+import type { ProviderApiKeyStatus } from '../../../types/ipc';
 import type { Settings } from '../../../types';
 
 // Types and constants
@@ -200,6 +201,7 @@ const AIChat: React.FC<AIChatProps> = ({
   getCursorPosition,
   onOpenFolder,
   onOpenTemplates,
+  onOpenSettings,
   onApplyCode,
   onAgentChangesReady
 }) => {
@@ -230,6 +232,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [isRetrying, setIsRetrying] = useState(false);
   const [lastFailedInput, setLastFailedInput] = useState('');
   const [runtimeStatus, setRuntimeStatus] = useState<AIRuntimeSnapshot | null>(null);
+  const [providerSetupNeeded, setProviderSetupNeeded] = useState(false);
 
   // Progress tracking state
   const [currentTask, setCurrentTask] = useState('');
@@ -286,6 +289,22 @@ const AIChat: React.FC<AIChatProps> = ({
       delete next[provider];
       return next;
     });
+  };
+
+  const refreshProviderSetupState = async () => {
+    try {
+      const statuses = await window.agentAPI.getProviderApiKeyStatuses?.() as
+        | Record<string, ProviderApiKeyStatus>
+        | undefined;
+      const usableProviderKeys = ['ollama', 'anthropic', 'openai', 'openrouter'].some((provider) => {
+        const status = statuses?.[provider];
+        return Boolean(status?.hasStoredKey || status?.hasEnvironmentKey);
+      });
+      setProviderSetupNeeded(!usableProviderKeys);
+    } catch (error) {
+      console.warn('Failed to load provider setup status:', getErrorMessage(error));
+      setProviderSetupNeeded(false);
+    }
   };
 
   const persistNonAgentSelection = async (mode: NonAgentMode, selection: NonAgentSelection) => {
@@ -359,6 +378,7 @@ const AIChat: React.FC<AIChatProps> = ({
           window.agentAPI.getSettings(),
           window.agentAPI.aiStatus().catch((error) => ({ success: false as const, error: error?.message }))
         ]);
+        void refreshProviderSetupState();
 
         const runtime = status && status.success ? status.runtime : null;
         if (runtime) {
@@ -1508,6 +1528,51 @@ const AIChat: React.FC<AIChatProps> = ({
           onClose={() => setCreateFolderDialogOpen(false)}
           onCreate={handleCreateFolder}
         />
+
+        {providerSetupNeeded && !isLoading && !agentRunning && (
+          <div style={{ padding: '0 18px 8px' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              padding: '12px 14px',
+              borderRadius: '12px',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              background: 'rgba(245, 158, 11, 0.1)',
+              color: 'var(--prime-text)',
+              fontSize: '12px'
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: '3px' }}>Connect an AI provider to start</div>
+                <div style={{ color: 'var(--prime-text-muted)' }}>
+                  Add an Ollama Cloud, Anthropic, OpenAI, or OpenRouter key in Settings.
+                </div>
+              </div>
+              {onOpenSettings && (
+                <button
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('agentprime:open-settings-tab', { detail: 'ai' }));
+                    onOpenSettings();
+                  }}
+                  style={{
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(245, 158, 11, 0.45)',
+                    background: 'rgba(245, 158, 11, 0.16)',
+                    color: '#fbbf24',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  Open Settings
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Error Recovery */}
         {lastError && !isLoading && !agentRunning && (

@@ -45,12 +45,12 @@ interface SettingsPanelProps {
 const DEFAULT_DUAL_MODEL_CONFIG: Settings['dualModelConfig'] = {
   fastModel: {
     provider: 'ollama',
-    model: 'devstral-small-2:24b-cloud',
+    model: 'deepseek-v4-flash:cloud',
     enabled: true
   },
   deepModel: {
     provider: 'ollama',
-    model: 'qwen3-coder-next:cloud',
+    model: 'kimi-k2.6:cloud',
     enabled: true
   },
   autoRoute: true,
@@ -170,6 +170,20 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    const handleOpenSettingsTab = (event: Event) => {
+      const tab = (event as CustomEvent<SettingsTab>).detail;
+      if (tab) {
+        setActiveTab(tab);
+      }
+    };
+
+    window.addEventListener('agentprime:open-settings-tab', handleOpenSettingsTab as EventListener);
+    return () => {
+      window.removeEventListener('agentprime:open-settings-tab', handleOpenSettingsTab as EventListener);
+    };
+  }, []);
+
   const discardChanges = useCallback(() => {
     setLocalSettings(settings);
     setHasChanges(false);
@@ -221,7 +235,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
       dinoBuddyMode: false,
       useSpecializedAgents: false,
       activeProvider: 'ollama',
-      activeModel: 'qwen3-coder:480b-cloud',
+      activeModel: 'kimi-k2.6:cloud',
       dualOllamaEnabled: false,
       assistantBehaviorProfile: 'default',
       agentAutonomyLevel: 3,
@@ -241,7 +255,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
   const getDefaultModelForProvider = useCallback((provider: string, fallback: string) => {
     if (provider === 'ollama') {
-      return 'qwen3-coder:480b-cloud';
+      return 'kimi-k2.6:cloud';
     }
     return getModelOptionsForProvider(provider)[0]?.value || fallback;
   }, []);

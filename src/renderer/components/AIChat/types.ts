@@ -58,6 +58,7 @@ export interface AIChatProps {
   getCursorPosition?: () => { lineNumber: number; column: number } | undefined;
   onOpenFolder?: () => void;
   onOpenTemplates?: () => void;
+  onOpenSettings?: () => void;
   onApplyCode?: (code: string, filePath?: string) => void;
   onAgentChangesReady?: (
     changes: AgentFileChange[],

@@ -1288,6 +1288,7 @@ function App() {
                   getCursorPosition={() => editorRef.current?.getCursorPosition?.()}
                   onOpenFolder={openFolder}
                   onOpenTemplates={() => setTemplateModalOpen(true)}
+                  onOpenSettings={() => setSettingsOpen(true)}
                   onApplyCode={async (code, filePath) => {
                     if (filePath) {
                       await openFile({
