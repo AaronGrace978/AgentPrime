@@ -27,7 +27,11 @@ import { Readable } from 'stream';
 import { AbortError } from '../core/timeout-utils';
 
 const OPENROUTER_FALLBACK_MODELS: Array<{ id: string; name: string }> = [
+  { id: 'anthropic/claude-opus-4-7', name: 'Claude Opus 4.7' },
+  { id: 'anthropic/claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
   { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4' },
+  { id: 'openai/gpt-5.5', name: 'GPT-5.5' },
+  { id: 'openai/gpt-5.4', name: 'GPT-5.4' },
   { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet' },
   { id: 'openai/gpt-4o', name: 'GPT-4o' },
   { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini' },
@@ -129,7 +133,7 @@ export class OpenRouterProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4') as string;
+    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {
@@ -169,7 +173,7 @@ export class OpenRouterProvider extends BaseProvider {
       throw new Error('API key not configured');
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4') as string;
+    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {
@@ -260,7 +264,7 @@ export class OpenRouterProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4') as string;
+    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {
@@ -332,7 +336,7 @@ export class OpenRouterProvider extends BaseProvider {
       return result;
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4') as string;
+    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {

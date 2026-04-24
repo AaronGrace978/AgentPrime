@@ -277,6 +277,8 @@ export const FALLBACK_MODEL_CHAIN = [
   { provider: 'openai', model: 'gpt-4o', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-opus-4-7', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-opus-4-6', size: 'cloud' as ModelSize },
+  { provider: 'openai', model: 'gpt-5.5', size: 'cloud' as ModelSize },
+  { provider: 'openai', model: 'gpt-5.4', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-5.2-2025-12-11', size: 'cloud' as ModelSize },
 ];
 

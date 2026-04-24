@@ -27,6 +27,8 @@ describe('estimateModelCapability', () => {
   describe('named model edge cases', () => {
     it('promotes known high-capability named models', () => {
       expect(estimateModelCapability('claude-opus-4-20250514')).toBe(9);
+      expect(estimateModelCapability('claude-opus-4-7')).toBe(9);
+      expect(estimateModelCapability('gpt-5.5')).toBe(9);
       expect(estimateModelCapability('mistral-large-3')).toBe(9);
     });
 

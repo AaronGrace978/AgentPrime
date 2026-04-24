@@ -16,6 +16,7 @@ describe('model output limits', () => {
   it('keeps non-cloud providers on conservative defaults', () => {
     expect(getRecommendedMaxTokens('claude-sonnet-4-6', 'chat')).toBe(16384);
     expect(getRecommendedMaxTokens('gpt-5.4-mini', 'chat')).toBe(16384);
+    expect(getRecommendedMaxTokens('gpt-5.5', 'chat')).toBe(16384);
     expect(getRecommendedMaxTokens('qwen2.5-coder:32b', 'chat')).toBe(8192);
   });
 });

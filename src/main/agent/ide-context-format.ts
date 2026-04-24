@@ -68,3 +68,66 @@ export function appendIdeContextToUserTask(
   if (!block.trim()) return userTask;
   return `${userTask}\n\n## IDE_CONTEXT (from UI)\n${block}`;
 }
+
+/**
+ * A structured error/diagnostic extracted from terminal output (build/install/run/test stages).
+ * Shape mirrors `AgentContext.repairScope.findings` so parsers and consumers can share a vocabulary.
+ */
+export interface TerminalStructuredError {
+  stage?: 'validation' | 'install' | 'build' | 'run' | 'browser' | 'test' | 'unknown';
+  severity?: 'info' | 'warning' | 'error' | 'critical';
+  summary: string;
+  files?: string[];
+  line?: number;
+  column?: number;
+  command?: string;
+  output?: string;
+  code?: string;
+  suggestedOwner?: string;
+}
+
+const MAX_TERMINAL_ERROR_ENTRIES = 20;
+const MAX_TERMINAL_ERROR_OUTPUT_CHARS = 1_500;
+
+function formatSingleTerminalError(err: TerminalStructuredError, index: number): string {
+  const lines: string[] = [];
+  const header = `${index + 1}. [${err.severity ?? 'error'}] ${err.stage ?? 'unknown'}: ${err.summary.trim()}`;
+  lines.push(header);
+  if (err.files?.length) {
+    const loc = err.line != null ? `:${err.line}${err.column != null ? `:${err.column}` : ''}` : '';
+    lines.push(`   files: ${err.files.join(', ')}${loc}`);
+  }
+  if (err.code) {
+    lines.push(`   code: ${err.code}`);
+  }
+  if (err.command) {
+    lines.push(`   command: ${err.command}`);
+  }
+  if (err.suggestedOwner) {
+    lines.push(`   owner: ${err.suggestedOwner}`);
+  }
+  if (err.output?.trim()) {
+    lines.push('   output:');
+    lines.push('   ```');
+    lines.push(truncate(err.output.trim(), MAX_TERMINAL_ERROR_OUTPUT_CHARS));
+    lines.push('   ```');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Renders a structured block of terminal diagnostics for the model prompt.
+ * Returns an empty string when the input is empty/undefined so callers can skip the section.
+ */
+export function formatTerminalStructuredErrorsForModel(
+  errors: TerminalStructuredError[] | undefined
+): string {
+  if (!errors || errors.length === 0) return '';
+  const trimmed = errors.slice(0, MAX_TERMINAL_ERROR_ENTRIES);
+  const parts = trimmed.map((err, idx) => formatSingleTerminalError(err, idx));
+  const overflow = errors.length - trimmed.length;
+  if (overflow > 0) {
+    parts.push(`… (${overflow} more diagnostic(s) omitted)`);
+  }
+  return parts.join('\n');
+}

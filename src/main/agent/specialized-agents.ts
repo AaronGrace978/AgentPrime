@@ -155,8 +155,9 @@ export async function bootstrapDeterministicScaffold(
 const FAST_MODELS = [
   // Cloud providers - CONFIRMED WORKING!
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' }, // Fast Claude
-  { provider: 'anthropic', model: 'claude-sonnet-4-20250514' }, // Deep Claude
+  { provider: 'anthropic', model: 'claude-sonnet-4-6' }, // Deep Claude
   { provider: 'openai', model: 'gpt-4o-mini' }, // Fast GPT
+  { provider: 'openai', model: 'gpt-5.4-mini' },
   { provider: 'openai', model: 'gpt-4o' }, // Deep GPT
 ];
 
@@ -2576,11 +2577,19 @@ export async function executeWithSpecialists(
     { name: 'GLM 5.1 Cloud', provider: 'ollama', model: 'glm-5.1:cloud', tier: 'deep' },
     { name: 'Gemma 4 31B Cloud', provider: 'ollama', model: 'gemma4:31b-cloud', tier: 'deep' },
     {
-      name: 'Claude Sonnet',
+      name: 'Claude Sonnet 4.6',
       provider: 'anthropic',
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       tier: 'deep',
     },
+    {
+      name: 'Claude Opus 4.7',
+      provider: 'anthropic',
+      model: 'claude-opus-4-7',
+      tier: 'premium',
+    },
+    { name: 'GPT-5.5', provider: 'openai', model: 'gpt-5.5', tier: 'premium' },
+    { name: 'GPT-5.4', provider: 'openai', model: 'gpt-5.4', tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
     {
       name: 'Claude Haiku',

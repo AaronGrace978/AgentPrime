@@ -20,7 +20,7 @@ export function estimateModelCapability(model: string): number {
     else score = 3;
   }
 
-  if (/opus|671b|675b|480b|405b|gpt-5\.4(?!-nano)|\bo3\b|\bo1\b|claude-opus|frontier|large-3|mistral-large-3/.test(m)) {
+  if (/opus|671b|675b|480b|405b|gpt-5\.5|gpt-5\.4(?!-nano)|\bo3\b|\bo1\b|claude-opus|frontier|large-3|mistral-large-3/.test(m)) {
     score = Math.max(score, 9);
   }
   if (/sonnet|gpt-4o|gpt-5(?!\.4-nano)|deepseek-v3|gemini-3-pro|devstral-2(?!-small)|123b|glm-5(?!\.)/.test(m)) {

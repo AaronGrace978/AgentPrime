@@ -108,6 +108,13 @@ const MODEL_COSTS: Record<string, ModelCost> = {
     outputCostPer1kTokens: 15,
     tier: 'high',
   },
+  'anthropic/claude-sonnet-4-6': {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    costPer1kTokens: 3,
+    outputCostPer1kTokens: 15,
+    tier: 'high',
+  },
   'openai/gpt-5.2': {
     provider: 'openai',
     model: 'gpt-5.2',
@@ -121,6 +128,48 @@ const MODEL_COSTS: Record<string, ModelCost> = {
     costPer1kTokens: 4,
     outputCostPer1kTokens: 16,
     tier: 'high',
+  },
+  'openai/gpt-5.4': {
+    provider: 'openai',
+    model: 'gpt-5.4',
+    costPer1kTokens: 2.5,
+    outputCostPer1kTokens: 15,
+    tier: 'high',
+  },
+  'openai/gpt-5.4-mini': {
+    provider: 'openai',
+    model: 'gpt-5.4-mini',
+    costPer1kTokens: 0.75,
+    outputCostPer1kTokens: 4.5,
+    tier: 'medium',
+  },
+  'openai/gpt-5.4-nano': {
+    provider: 'openai',
+    model: 'gpt-5.4-nano',
+    costPer1kTokens: 0.25,
+    outputCostPer1kTokens: 1.5,
+    tier: 'low',
+  },
+  'openai/gpt-5.5': {
+    provider: 'openai',
+    model: 'gpt-5.5',
+    costPer1kTokens: 5,
+    outputCostPer1kTokens: 30,
+    tier: 'premium',
+  },
+  'openai/gpt-5.5-mini': {
+    provider: 'openai',
+    model: 'gpt-5.5-mini',
+    costPer1kTokens: 1.5,
+    outputCostPer1kTokens: 9,
+    tier: 'medium',
+  },
+  'openai/gpt-5.5-nano': {
+    provider: 'openai',
+    model: 'gpt-5.5-nano',
+    costPer1kTokens: 0.5,
+    outputCostPer1kTokens: 3,
+    tier: 'low',
   },
 
   // Premium (Opus / flagship tier)
@@ -246,7 +295,7 @@ export class BudgetManager {
         }
         return {
           provider: 'anthropic',
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           reason: 'Best for complex tasks',
         };
 

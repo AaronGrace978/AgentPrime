@@ -390,7 +390,7 @@ let settings: Settings = {
     },
     openrouter: {
       apiKey: OPENROUTER_API_KEY,
-      model: 'anthropic/claude-sonnet-4'
+      model: 'anthropic/claude-sonnet-4-6'
     }
   }
 };

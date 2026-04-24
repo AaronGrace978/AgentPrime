@@ -1,6 +1,6 @@
 {
   "name": "agentprime",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-powered desktop IDE that works like Cursor - featuring multiple AI providers, intelligent code assistance, and advanced development tools",
   "main": "dist/main/main.js",
   "author": "Aaron Alexander Grace (BostonAI.io)",

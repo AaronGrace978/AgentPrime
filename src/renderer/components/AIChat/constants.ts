@@ -80,6 +80,9 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: 'claude-opus-4-20250514', label: 'Claude Opus 4 - Legacy' },
   ],
   openai: [
+    { value: 'gpt-5.5', label: 'GPT-5.5 - New Frontier (API when available)' },
+    { value: 'gpt-5.5-mini', label: 'GPT-5.5 Mini - Fast Coding' },
+    { value: 'gpt-5.5-nano', label: 'GPT-5.5 Nano - Lightweight' },
     { value: 'gpt-5.4', label: 'GPT-5.4 - Frontier Default' },
     { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini - Fast Coding' },
     { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano - Lightweight' },
@@ -90,7 +93,11 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini - Fast' },
   ],
   openrouter: [
+    { value: 'anthropic/claude-opus-4-7', label: 'Claude Opus 4.7' },
+    { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
     { value: 'anthropic/claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { value: 'openai/gpt-5.5', label: 'GPT-5.5' },
+    { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
     { value: 'openai/gpt-4o', label: 'GPT-4o' },
     { value: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' },
   ],

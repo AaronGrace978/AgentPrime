@@ -20,6 +20,46 @@ describe('AgentLoop core paths', () => {
     expect((agent as any).context.currentFile).toBe('src/main.ts');
   });
 
+  it('refreshes IDE context in the system prompt across context updates', () => {
+    const agent = createAgent({
+      ...baseContext,
+      ideContext: {
+        activeFile: {
+          path: 'src/old-file.ts',
+          cursorLine: 3,
+          cursorColumn: 1,
+          language: 'typescript',
+          content: 'export const oldValue = true;',
+        },
+        openTabs: [{ path: 'src/old-file.ts', isDirty: false, language: 'typescript' }],
+      },
+    } as any);
+
+    (agent as any).syncIdeContextPrompt();
+
+    let systemMessage = (agent as any).messages.find((message: any) => message.role === 'system');
+    expect(systemMessage.content).toContain('Active file: src/old-file.ts');
+
+    (agent as any).updateContext({
+      ideContext: {
+        activeFile: {
+          path: 'src/new-file.ts',
+          cursorLine: 9,
+          cursorColumn: 4,
+          language: 'typescript',
+          content: 'export const newValue = true;',
+        },
+        openTabs: [{ path: 'src/new-file.ts', isDirty: true, language: 'typescript' }],
+      },
+    });
+
+    systemMessage = (agent as any).messages.find((message: any) => message.role === 'system');
+    expect(systemMessage.content).toContain('Active file: src/new-file.ts');
+    expect(systemMessage.content).toContain('Cursor: L9:4');
+    expect(systemMessage.content).toContain('src/new-file.ts (modified) [typescript]');
+    expect(systemMessage.content).not.toContain('Active file: src/old-file.ts');
+  });
+
   it('parses direct JSON tool calls', () => {
     const agent = new AgentLoop(baseContext as any);
     const calls = (agent as any).parseToolCalls(JSON.stringify({

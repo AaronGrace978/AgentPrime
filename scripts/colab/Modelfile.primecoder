@@ -1,0 +1,30 @@
+# Ollama Modelfile for PrimeCoderV1
+#
+# After you produce primecoder-v1.gguf from merge_and_export.py + llama.cpp:
+#   ollama create primecoder-v1 -f Modelfile.primecoder
+#   ollama run primecoder-v1
+#
+# AgentPrime will then see it through the Ollama provider as model id: primecoder-v1
+
+FROM ./primecoder-v1.gguf
+
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end -}}
+{{- range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end -}}
+<|im_start|>assistant
+"""
+
+SYSTEM """You are PrimeCoderV1, the AgentPrime coding model.
+You produce minimal, correct, production-ready code changes.
+Prefer small surgical diffs over rewrites.
+When uncertain about project structure, ask — do not invent file paths."""
+
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.05
+PARAMETER num_ctx 8192
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|im_start|>"

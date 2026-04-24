@@ -331,7 +331,7 @@ class AIProviderRouter {
       // Fallback to active provider (Anthropic by default)
       return {
         provider: this.activeProvider || 'anthropic',
-        model: this.activeModel || 'claude-sonnet-4-20250514',
+        model: this.activeModel || 'claude-sonnet-4-6',
         mode: 'auto',
       };
     }
@@ -1516,6 +1516,42 @@ class AIProviderRouter {
       },
       // OpenAI models (balanced, reliable)
       openai: {
+        'gpt-5.5': {
+          strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning', 'agentic'],
+          speed: 'medium',
+          context: 1000000,
+          cost: 'premium',
+        },
+        'gpt-5.5-mini': {
+          strengths: ['code', 'debug', 'analysis', 'chat', 'complex'],
+          speed: 'fast',
+          context: 1000000,
+          cost: 'medium',
+        },
+        'gpt-5.5-nano': {
+          strengths: ['chat', 'simple', 'code', 'analysis'],
+          speed: 'fast',
+          context: 1000000,
+          cost: 'low',
+        },
+        'gpt-5.4': {
+          strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning'],
+          speed: 'medium',
+          context: 270000,
+          cost: 'high',
+        },
+        'gpt-5.4-mini': {
+          strengths: ['code', 'debug', 'analysis', 'chat'],
+          speed: 'fast',
+          context: 270000,
+          cost: 'medium',
+        },
+        'gpt-5.4-nano': {
+          strengths: ['chat', 'simple', 'code'],
+          speed: 'fast',
+          context: 270000,
+          cost: 'low',
+        },
         'gpt-5.2-2025-12-11': {
           strengths: ['analysis', 'creative', 'complex', 'code', 'debug', 'reasoning'],
           speed: 'medium',
@@ -1639,7 +1675,7 @@ class AIProviderRouter {
     // Fallback to current active if no good match
     if (!bestProvider) {
       bestProvider = this.activeProvider || 'anthropic';
-      bestModel = this.activeModel || 'claude-sonnet-4-20250514';
+      bestModel = this.activeModel || 'claude-sonnet-4-6';
       reasoning = 'Using default model (no optimal match found)';
     }
 

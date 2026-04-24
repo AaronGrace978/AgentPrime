@@ -8,6 +8,7 @@ describe('AI provider normalization', () => {
 
   it('preserves explicit provider families for hosted APIs', () => {
     expect(aiRouter.inferProviderForModel('gpt-5.4', 'ollama')).toBe('openai');
+    expect(aiRouter.inferProviderForModel('gpt-5.5', 'ollama')).toBe('openai');
     expect(aiRouter.inferProviderForModel('claude-sonnet-4-6', 'openai')).toBe('anthropic');
     expect(aiRouter.inferProviderForModel('openrouter/meta-llama/llama-3.3-70b-instruct', 'ollama')).toBe('openrouter');
   });

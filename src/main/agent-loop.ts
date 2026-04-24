@@ -1006,13 +1006,24 @@ import {
 } from './agent/behavior-profile';
 import { PromptSanitizer } from './security/prompt-sanitizer';
 import type { IdeContextSnapshot } from '../types/agent-ide-context';
-import { formatIdeContextForModel } from './agent/ide-context-format';
+import {
+  formatIdeContextForModel,
+  type TerminalStructuredError,
+} from './agent/ide-context-format';
+
+const IDE_CONTEXT_SECTION_HEADING = '## IDE_CONTEXT (from UI)';
+const IDE_CONTEXT_SECTION_END = '<!-- /IDE_CONTEXT_FROM_UI -->';
 
 export interface AgentContext {
   workspacePath: string;
   currentFile?: string;
   openFiles: string[];
   terminalHistory: string[];
+  /**
+   * Parsed/structured diagnostics extracted from terminal output (build/install/run/test/browser stages).
+   * Rendered into the specialist prompt under `## TERMINAL_PARSER (structured)` when present.
+   */
+  terminalStructuredErrors?: TerminalStructuredError[];
   /** Rich IDE snapshot from renderer (tabs, buffer, tree) — injected into system prompt, not user text. */
   ideContext?: IdeContextSnapshot;
   gitStatus?: string;
@@ -3349,12 +3360,15 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       ];
       log.info('[Agent] 📋 Configured Anthropic model escalation chain (with incremental fallback)');
     } else if (isOpenAIModel) {
-      // OpenAI escalation chain (GPT-5.2 → GPT-4o → fallback)
+      // OpenAI escalation: fast → mid → GPT-5.4 family → GPT-5.5 → legacy GPT-5.2 → Ollama
       this.modelChain = [
         { name: 'GPT-4o Mini', provider: 'openai', model: 'gpt-4o-mini', tier: 'fast' },
         { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
+        { name: 'GPT-5.4 Mini', provider: 'openai', model: 'gpt-5.4-mini', tier: 'deep' },
+        { name: 'GPT-5.4', provider: 'openai', model: 'gpt-5.4', tier: 'premium' },
+        { name: 'GPT-5.5', provider: 'openai', model: 'gpt-5.5', tier: 'premium' },
+        { name: 'GPT-5.2 (Pinned)', provider: 'openai', model: 'gpt-5.2-2025-12-11', tier: 'premium' },
         { name: 'GPT-5.2', provider: 'openai', model: 'gpt-5.2', tier: 'premium' },
-        { name: 'GPT-5.2 (Latest)', provider: 'openai', model: 'gpt-5.2-2025-12-11', tier: 'premium' },
         { name: 'Ollama Fallback', provider: 'ollama', model: 'kimi-k2.6:cloud', tier: 'fallback' }
       ];
       log.info('[Agent] 📋 Configured OpenAI model escalation chain');
@@ -3479,6 +3493,42 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     );
   }
 
+  private syncIdeContextPrompt(): void {
+    const systemMessage = this.messages.find((message) => message.role === 'system');
+    if (!systemMessage) {
+      return;
+    }
+
+    systemMessage.content = this.removeIdeContextPrompt(systemMessage.content);
+
+    const ideBlock = formatIdeContextForModel(this.context.ideContext);
+    if (ideBlock.trim()) {
+      systemMessage.content += `\n\n${IDE_CONTEXT_SECTION_HEADING}\n${ideBlock}\n${IDE_CONTEXT_SECTION_END}`;
+    }
+  }
+
+  private removeIdeContextPrompt(content: string): string {
+    const withEndMarker = new RegExp(
+      `\\n{0,2}${this.escapeRegExp(IDE_CONTEXT_SECTION_HEADING)}[\\s\\S]*?\\n${this.escapeRegExp(IDE_CONTEXT_SECTION_END)}\\n?`,
+      'g'
+    );
+    const withoutCurrentSection = content.replace(withEndMarker, '\n');
+
+    const legacyWithoutEndMarker = new RegExp(
+      `\\n{0,2}${this.escapeRegExp(IDE_CONTEXT_SECTION_HEADING)}[\\s\\S]*?(?=\\n{2}## |$)`,
+      'g'
+    );
+
+    return withoutCurrentSection
+      .replace(legacyWithoutEndMarker, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trimEnd();
+  }
+
+  private escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   /**
    * Sync message to state manager for persistence
    */
@@ -3512,13 +3562,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     const sanitization = PromptSanitizer.sanitize(rawUserMessage);
     const userMessage = sanitization.sanitizedText;
     this.syncBehaviorProfilePrompt();
-    const ideBlock = formatIdeContextForModel(this.context.ideContext);
-    if (ideBlock.trim()) {
-      const systemMessage = this.messages.find((m) => m.role === 'system');
-      if (systemMessage && !systemMessage.content.includes('IDE_CONTEXT (from UI)')) {
-        systemMessage.content += `\n\n## IDE_CONTEXT (from UI)\n${ideBlock}\n`;
-      }
-    }
+    this.syncIdeContextPrompt();
     log.info(`[${runId}] Starting agent loop run`, {
       sessionId: this.sessionId,
       workspacePath: this.context.workspacePath,
@@ -7305,6 +7349,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
   updateContext(updates: Partial<AgentContext>) {
     this.context = { ...this.context, ...updates };
     this.syncBehaviorProfilePrompt();
+    this.syncIdeContextPrompt();
   }
 }
 
