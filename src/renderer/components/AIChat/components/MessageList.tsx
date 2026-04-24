@@ -215,7 +215,6 @@ const renderMarkdown = (text: string): React.ReactNode => {
             if (shouldLaunch) {
               // Launch the project
               try {
-                // @ts-ignore - window.agentAPI is injected by preload
                 const result = await window.agentAPI.launchProject(projectPath);
                 if (result && result.success) {
                   console.log('Project launched:', result.message);
@@ -232,7 +231,6 @@ const renderMarkdown = (text: string): React.ReactNode => {
             } else {
               // Just open folder
               try {
-                // @ts-ignore - window.agentAPI is injected by preload
                 const result = await window.agentAPI.openFolder();
                 if (result && result.success) {
                   console.log('Opened folder:', result.path);

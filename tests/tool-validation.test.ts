@@ -152,6 +152,81 @@ export class Player {
 
     expect(result.valid).toBe(true);
   });
+
+  it('allows portfolio HTML to reference landing-style CSS without cross-file blocking', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-validator-'));
+    fs.mkdirSync(path.join(workspace, 'src'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspace, 'index.html'),
+      `<!DOCTYPE html>
+      <html>
+        <head><link rel="stylesheet" href="./src/styles.css"></head>
+        <body>
+          <nav class="nav-menu"></nav>
+          <main class="portfolio">
+            <section class="hero-content"></section>
+            <form class="contact-form"></form>
+          </main>
+        </body>
+      </html>`
+    );
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: {
+          path: 'src/styles.css',
+          content: `
+            .hero { min-height: 100vh; }
+            .cta { display: inline-flex; }
+            .features { display: grid; }
+            .pricing { padding: 4rem; }
+            .signup { border-radius: 999px; }
+          `,
+        },
+      },
+      workspace,
+      'Build a polished portfolio website'
+    );
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('still blocks script files that conflict with referenced HTML project type', () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-validator-'));
+    fs.writeFileSync(
+      path.join(workspace, 'index.html'),
+      `<!DOCTYPE html>
+      <html>
+        <body>
+          <canvas id="gameCanvas"></canvas>
+          <div class="game-over"></div>
+          <script src="./script.js"></script>
+        </body>
+      </html>`
+    );
+
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: {
+          path: 'script.js',
+          content: `
+            const navMenu = document.querySelector('.nav-menu');
+            const heroContent = document.querySelector('.hero-content');
+            const contactForm = document.querySelector('.contact-form');
+            const portfolioItems = ['about me', 'skills', 'experience', 'testimonial'];
+            console.log(navMenu, heroContent, contactForm, portfolioItems);
+          `,
+        },
+      },
+      workspace,
+      'Build an interactive website'
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('FILE MISMATCH DETECTED');
+  });
 });
 
 describe('opus keyword extraction', () => {

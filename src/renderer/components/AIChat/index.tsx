@@ -739,13 +739,11 @@ const AIChat: React.FC<AIChatProps> = ({
         throw new Error('Please select a workspace folder first');
       }
 
-      // @ts-ignore
       const result = await window.agentAPI.createFolder(folderName);
       if (result.success && result.path) {
         const folderPath = result.path;
         
         // The backend already sets it as workspace, but let's make sure
-        // @ts-ignore
         await window.agentAPI.setWorkspace(folderPath);
         
         // Update context with new workspace
@@ -1074,7 +1072,6 @@ const AIChat: React.FC<AIChatProps> = ({
         console.warn('Failed to gather terminal history for agent context:', historyError);
       }
 
-      // @ts-ignore
       const result = await window.agentAPI.chat(currentInput, {
         agent_mode: true,
         use_agent_loop: true,

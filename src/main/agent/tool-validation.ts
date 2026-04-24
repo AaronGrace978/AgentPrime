@@ -652,6 +652,19 @@ function getProjectTypeScores(content: string): Record<string, number> {
   return scores;
 }
 
+function areProjectTypesIncompatible(expectedType: string, actualType: string): boolean {
+  return (
+    (INCOMPATIBLE_TYPES[expectedType] || []).includes(actualType) ||
+    (INCOMPATIBLE_TYPES[actualType] || []).includes(expectedType)
+  );
+}
+
+function isScriptLikeReferencedFile(filePath: string): boolean {
+  return ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx'].includes(
+    path.extname(filePath).toLowerCase()
+  );
+}
+
 /**
  * Check if content type is incompatible with task type
  * Returns true if the content should NOT be written for this task
@@ -1099,7 +1112,9 @@ function validateWriteFile(
     // ==========================================
     // CHECK 2c: Cross-File Consistency (NEW - Prevents mismatched files)
     // ==========================================
-    // Check if this file is referenced by other files and verify consistency
+    // Check script files referenced by HTML and verify consistency. Stylesheets
+    // often share broad marketing terms (hero/features/portfolio), so blocking
+    // them here creates false positives during valid presentation-site builds.
     try {
       const htmlFiles: string[] = [];
 
@@ -1127,20 +1142,28 @@ function validateWriteFile(
         }
       };
 
-      scanForHtmlFiles(workspacePath);
+      if (isScriptLikeReferencedFile(filePath)) {
+        scanForHtmlFiles(workspacePath);
+      }
 
       // Check each HTML file
       for (const htmlPath of htmlFiles) {
         try {
           const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
-          // Check if HTML references this JS file
+          // Check if HTML references this script file
           const jsFileName = path.basename(filePath);
           if (htmlContent.includes(jsFileName) || htmlContent.includes(filePath)) {
             // Read the HTML to check what project type it expects
             const htmlProjectType = detectProjectTypeFromContent(htmlContent);
 
-            // If HTML expects a game but JS is portfolio/debugger code, BLOCK IT
-            if (htmlProjectType && contentProjectType && htmlProjectType !== contentProjectType) {
+            // If HTML expects a game but JS is portfolio/debugger code, BLOCK IT.
+            // Presentation-site labels like portfolio/landing are allowed to mix.
+            if (
+              htmlProjectType &&
+              contentProjectType &&
+              htmlProjectType !== contentProjectType &&
+              areProjectTypesIncompatible(htmlProjectType, contentProjectType)
+            ) {
               console.error(`[ToolValidation] 🚨 CROSS-FILE MISMATCH DETECTED!`);
               console.error(
                 `[ToolValidation]   HTML file (${path.basename(htmlPath)}) expects: ${htmlProjectType}`
