@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import type { MirrorPattern, MirrorMetrics, MirrorStats } from '../../types';
+import { normalizeRetrievalTask } from './opus-example-loader';
 
 /** Maximum patterns per category before pruning least-useful ones */
 const MAX_PATTERNS_PER_CATEGORY = 500;
@@ -421,20 +422,40 @@ export class MirrorMemory extends EventEmitter {
    */
   async getRelevantPatterns(task: string, limit: number = 10): Promise<MirrorPattern[]> {
     const allPatterns = await this.retrievePatterns(null, null, 'confidence');
-    const taskLower = task.toLowerCase();
-    const taskWords = taskLower.split(/\s+/).filter(w => w.length > 2);
+    const taskText = normalizeRetrievalTask(task);
+    const taskLower = taskText.toLowerCase();
+    const stopWords = new Set([
+      'build',
+      'make',
+      'create',
+      'official',
+      'please',
+      'with',
+      'from',
+      'that',
+      'this',
+      'into',
+      'using',
+    ]);
+    const taskWords = taskLower
+      .split(/[^a-z0-9]+/)
+      .filter(w => w.length > 3 && !stopWords.has(w));
     const taskType = this.detectTaskType(task);
 
     const scoredPatterns = allPatterns.map(pattern => {
       let score = 0;
       const descLower = (pattern.description || '').toLowerCase();
-      const descWords = descLower.split(/\s+/).filter(w => w.length > 2);
+      const descWords = descLower.split(/[^a-z0-9]+/).filter(w => w.length > 3);
       let hasTaskEvidence = false;
+      const matchedWords: string[] = [];
 
       // Keyword matching - more granular than before
       let matchingWords = 0;
       for (const word of taskWords) {
-        if (descWords.includes(word)) matchingWords++;
+        if (descWords.includes(word)) {
+          matchingWords++;
+          matchedWords.push(word);
+        }
       }
       if (matchingWords > 0) {
         hasTaskEvidence = true;
@@ -443,7 +464,6 @@ export class MirrorMemory extends EventEmitter {
 
       // Task type matching
       if (pattern.metadata?.taskType === taskType) {
-        hasTaskEvidence = true;
         score += 0.4;
       }
 
@@ -453,6 +473,7 @@ export class MirrorMemory extends EventEmitter {
         if (taskLower.includes(typeLower)) {
           hasTaskEvidence = true;
           score += 0.3;
+          matchedWords.push(`type:${pattern.type}`);
         }
       }
 
@@ -476,13 +497,25 @@ export class MirrorMemory extends EventEmitter {
         score += (pattern.confidence || 0) * 0.2;
       }
 
-      return { pattern, score };
+      return {
+        pattern,
+        score,
+        hasTaskEvidence,
+        reason: matchedWords.length > 0 ? `matched ${Array.from(new Set(matchedWords)).join(', ')}` : '',
+      };
     });
 
     // Sort by relevance score and return top patterns
     scoredPatterns.sort((a, b) => b.score - a.score);
-    const relevantPatterns = scoredPatterns.filter(item => item.score >= 0.35);
-    return relevantPatterns.slice(0, limit).map(item => item.pattern);
+    const relevantPatterns = scoredPatterns.filter(item => item.hasTaskEvidence && item.score >= 0.35);
+    return relevantPatterns.slice(0, limit).map(item => ({
+      ...item.pattern,
+      metadata: {
+        ...(item.pattern.metadata || {}),
+        retrievalReason: item.reason,
+        retrievalScore: Number(item.score.toFixed(2)),
+      },
+    }));
   }
 
   /**

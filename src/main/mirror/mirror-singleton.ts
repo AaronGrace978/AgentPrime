@@ -43,7 +43,11 @@ export async function getRelevantPatterns(task: string, limit: number = 5): Prom
     const patterns = await mirrorMemoryInstance.getRelevantPatterns(task, limit);
     const selected = patterns
       .slice(0, 3)
-      .map(pattern => pattern.description || pattern.type || pattern.id)
+      .map(pattern => {
+        const label = pattern.description || pattern.type || pattern.id;
+        const reason = pattern.metadata?.retrievalReason;
+        return reason ? `${label} (${reason})` : label;
+      })
       .filter(Boolean)
       .map(label => String(label).replace(/\s+/g, ' ').slice(0, 80));
     console.log(

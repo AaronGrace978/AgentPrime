@@ -171,8 +171,20 @@ describe('opus keyword extraction', () => {
     expect(keywords).toContain('website');
     expect(keywords).toContain('landing-page');
     expect(keywords).toContain('marketing');
+    expect(keywords).not.toContain('ui');
     expect(keywords).not.toContain('agent');
     expect(keywords).not.toContain('tool-calling');
+  });
+
+  it('ignores model-visible IDE context when extracting retrieval keywords', () => {
+    const keywords = extractTaskKeywords(
+      'Build the official AgentPrime website\n\n## IDE_CONTEXT (from UI)\nLogs mention agent tool-calling and circuit breaker retries.'
+    );
+
+    expect(keywords).toContain('website');
+    expect(keywords).not.toContain('agent');
+    expect(keywords).not.toContain('tool-calling');
+    expect(keywords).not.toContain('circuit-breaker');
   });
 });
 

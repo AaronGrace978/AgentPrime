@@ -19,10 +19,8 @@ import aiRouter from '../ai-providers';
 import type { ChatMessage, ChatOptions } from '../../types/ai-providers';
 import {
   getRelevantPatterns,
-  getAntiPatterns,
   storeTaskLearning,
 } from '../mirror/mirror-singleton';
-import { loadOpusExamples } from '../mirror/opus-example-loader';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -314,8 +312,6 @@ function appendScaffoldCustomizationInstructions(
 let _mirrorCache: {
   taskKey: string;
   patterns: Awaited<ReturnType<typeof getRelevantPatterns>>;
-  opusExamples: string[];
-  antiPatterns: Awaited<ReturnType<typeof getAntiPatterns>>;
 } | null = null;
 
 async function getMirrorContext(task: string) {
@@ -323,12 +319,8 @@ async function getMirrorContext(task: string) {
   if (_mirrorCache && _mirrorCache.taskKey === taskKey) {
     return _mirrorCache;
   }
-  const [patterns, opusExamples, antiPatterns] = await Promise.all([
-    getRelevantPatterns(task, 5),
-    loadOpusExamples(task, 2),
-    getAntiPatterns(3),
-  ]);
-  _mirrorCache = { taskKey, patterns, opusExamples, antiPatterns };
+  const patterns = await getRelevantPatterns(task, 5);
+  _mirrorCache = { taskKey, patterns };
   return _mirrorCache;
 }
 
@@ -369,45 +361,15 @@ ${basePrompt}`,
 
     if (mirror.patterns.length > 0) {
       enhancedPrompt += '\n\n## Learned Patterns\n';
-      enhancedPrompt += 'Apply these only where they directly fit the current task:\n';
+      enhancedPrompt += 'Apply only the task-matched guidance below. Each item includes why it was retrieved:\n';
       for (const pattern of mirror.patterns) {
         const confidence = pattern.confidence
           ? ` (${(pattern.confidence * 100).toFixed(0)}% confident)`
           : '';
-        enhancedPrompt += `• ${pattern.type || 'pattern'}: ${pattern.description || 'N/A'}${confidence}\n`;
-        if (pattern.examples && pattern.examples.length > 0) {
-          const example = pattern.examples[0].substring(0, 200).replace(/\n/g, ' ');
-          enhancedPrompt += `  Example: ${example}...\n`;
-        }
-      }
-    }
-
-    // Only inject full opus examples for the orchestrator (planning phase).
-    // Specialists get a compact reference instead of the full examples.
-    if (role === 'tool_orchestrator' && mirror.opusExamples.length > 0) {
-      enhancedPrompt += '\n\n## Reference Examples\n';
-      enhancedPrompt +=
-        'Use these compact examples as quality references when their structure is relevant. Do not copy unrelated details:\n\n';
-
-      for (const example of mirror.opusExamples) {
-        enhancedPrompt += `${example}\n\n`;
-      }
-
-      enhancedPrompt += '\n## Quality Bar\n';
-      enhancedPrompt +=
-        '1. Plan the project shape before writing  2. Generate complete working code  3. Keep build config minimal and consistent\n';
-      enhancedPrompt +=
-        '4. Preserve user intent  5. Validate every entrypoint and dependency  6. Avoid invented duplicate stacks\n';
-    } else if (mirror.opusExamples.length > 0) {
-      enhancedPrompt +=
-        '\nProduce complete, production-ready code using retrieved references only when relevant.\n';
-    }
-
-    if (mirror.antiPatterns.length > 0) {
-      enhancedPrompt += '\n\n## ⚠️ AVOID THESE MISTAKES\n';
-      enhancedPrompt += 'These have caused failures before. DO NOT do these:\n';
-      for (const anti of mirror.antiPatterns) {
-        enhancedPrompt += `• DON'T: ${anti.description || 'Unknown mistake'}\n`;
+        const reason = pattern.metadata?.retrievalReason
+          ? `\n  Why it matched: ${pattern.metadata.retrievalReason}`
+          : '';
+        enhancedPrompt += `- ${pattern.type || 'pattern'}: ${pattern.description || 'N/A'}${confidence}${reason}\n`;
       }
     }
 
@@ -437,19 +399,19 @@ ${basePrompt}`,
       }
     }
 
-    // 🎯 FINAL OPUS REINFORCEMENT
-    if (mirror.opusExamples.length > 0 && role === 'tool_orchestrator') {
-      enhancedPrompt += '\n\n## Final Planning Check\n';
-      enhancedPrompt += 'Before generating tool calls, confirm:\n';
-      enhancedPrompt += '1. The selected stack has one entrypoint and one build config.\n';
-      enhancedPrompt += '2. Every file you create is necessary for the user-visible result.\n';
-      enhancedPrompt += '3. Retrieved references are helping the current task rather than distracting from it.\n';
-      enhancedPrompt += 'If any answer is weak, revise the plan before writing files.\n';
+    if (mirror.patterns.length > 0) {
+      const reasons = mirror.patterns
+        .slice(0, 3)
+        .map(pattern => pattern.metadata?.retrievalReason)
+        .filter(Boolean)
+        .join(' | ');
+      log.info(
+        `[MirrorAgents] Applied task-matched guidance to ${role}` +
+        (reasons ? ` (${reasons})` : '')
+      );
+    } else {
+      log.info(`[MirrorAgents] No task-matched guidance applied to ${role}`);
     }
-
-    log.info(
-      `[MirrorAgents] 🧠 Enhanced ${role} prompt with ${mirror.patterns.length} patterns, ${mirror.opusExamples.length} Opus examples, ${mirror.antiPatterns.length} anti-patterns`
-    );
   } catch (error) {
     log.warn('[MirrorAgents] Could not enhance prompt with patterns:', error);
   }
@@ -463,15 +425,15 @@ ${basePrompt}`,
 function getRoleMirrorGuidance(role: AgentRole): string {
   const guidance: Record<AgentRole, string> = {
     tool_orchestrator: `
-## 🎯 MIRROR: GREAT ORCHESTRATION
-- Mirror how expert engineers break down complex tasks
+## Role Guidance: Orchestration
+- Break down complex tasks like a senior engineer
 - Delegate completely - don't try to do everything yourself
 - Create proper project structure FIRST, then delegate code generation
 - Ensure all specialists have clear, specific instructions`,
 
     javascript_specialist: `
-## 🎯 MIRROR: EXPERT JS/TS ENGINEERING  
-- Mirror production-quality code from top engineers
+## Role Guidance: JS/TS Engineering
+- Write production-quality TypeScript/JavaScript
 - COMPLETE files with ALL imports, NO placeholders
 - Wire up ALL UI elements - buttons, events, everything
 - Include error handling, loading states, edge cases
@@ -485,23 +447,23 @@ This is the #1 cause of "blank/unstyled page" bugs!
 If you create styles.css or src/styles.css, you MUST link it.`,
 
     styling_ux_specialist: `
-## 🎯 MIRROR: PRODUCT-QUALITY UX POLISH
-- Mirror strong visual hierarchy, spacing, and interaction clarity
+## Role Guidance: Product-Quality UX Polish
+- Use strong visual hierarchy, spacing, and interaction clarity
 - Prefer focused CSS/layout changes over wholesale rewrites
 - Make loading, hover, focus, and empty states feel intentional
 - Preserve accessibility and readability while improving polish
 - NEVER modify gameplay/runtime logic files under src/game/** (.ts/.tsx)`,
 
     python_specialist: `
-## 🎯 MIRROR: PYTHONIC EXCELLENCE
-- Mirror clean, readable Python from expert engineers
+## Role Guidance: Python Engineering
+- Write clean, readable Python
 - Type hints on EVERYTHING
 - Proper error handling with specific exceptions
 - Complete requirements.txt with version pins
 - Docstrings that actually explain behavior`,
 
     tauri_specialist: `
-## 🎯 MIRROR: TAURI V2 BEST PRACTICES
+## Role Guidance: Tauri V2 Best Practices
 - Use EXACT Tauri v2 configuration format (NOT v1)
 - ALWAYS use "devUrl" not "devPath"
 - ALWAYS use "frontendDist" not "distDir"
@@ -512,8 +474,8 @@ If you create styles.css or src/styles.css, you MUST link it.`,
 - Use latest dependency versions (January 2026)`,
 
     pipeline_specialist: `
-## 🎯 MIRROR: DEVOPS BEST PRACTICES
-- Mirror production-ready build configurations
+## Role Guidance: DevOps Best Practices
+- Write production-ready build configurations
 - Use COMPATIBLE dependency versions (check for known issues)
 - Include ALL required config files (webpack.config.js, etc.)
 - Test scripts that actually run
@@ -525,33 +487,33 @@ You must NEVER use write_file or patch_file on application source under \`src/\`
 If the task needs fixes in \`src/\`, emit no source writes here; use run_command to verify (npm run build) and describe what another specialist must change.`,
 
     testing_specialist: `
-## 🎯 MIRROR: HIGH-SIGNAL TEST ENGINEERING
+## Role Guidance: High-Signal Test Engineering
 - Add the smallest test that proves the requested behavior
 - Prefer stable browser and runtime evidence over snapshot churn
 - Keep fixtures focused and deterministic
 - Avoid tests that just restate implementation details`,
 
     security_specialist: `
-## 🎯 MIRROR: SECURITY REVIEW
+## Role Guidance: Security Review
 - Reduce concrete security risk with the smallest viable change
 - Prefer explicit validation, least privilege, and safe defaults
 - Keep fixes scoped to the vulnerable path and its trust boundary`,
 
     performance_specialist: `
-## 🎯 MIRROR: PERFORMANCE ENGINEERING
+## Role Guidance: Performance Engineering
 - Remove bottlenecks with small, measurable changes
 - Prefer cutting unnecessary work over broad rewrites
 - Protect correctness and UX while reducing latency or render cost`,
 
     data_contract_specialist: `
-## 🎯 MIRROR: DATA CONTRACTS
+## Role Guidance: Data Contracts
 - Keep schemas, DTOs, and validation aligned across boundaries
 - Preserve explicit contracts instead of relying on implied shapes
 - Fix mismatches at the boundary where data enters or leaves a system`,
 
     integration_analyst: `
-## 🎯 MIRROR: SENIOR ENGINEER CODE REVIEW
-- Mirror how senior engineers review PRs
+## Role Guidance: Senior Engineer Code Review
+- Review like a senior engineer
 - Check EVERY file connection (HTML → JS → CSS)
 - Verify ALL imports resolve correctly
 - Ensure event handlers are wired up
@@ -563,8 +525,8 @@ If CSS files exist but no link tag = BROKEN PROJECT = FIX IMMEDIATELY
 This is the #1 cause of "unstyled page" bugs!`,
 
     repair_specialist: `
-## 🎯 MIRROR: SURGICAL REPAIR
-- Mirror the smallest, safest fix that resolves the concrete failure
+## Role Guidance: Surgical Repair
+- Prefer the smallest, safest fix that resolves the concrete failure
 - Touch only the files implicated by verification
 - Preserve working code and accepted scaffold structure
 - No feature creep, no rewrites, no unrelated cleanup`,
@@ -652,11 +614,11 @@ export const AGENT_CONFIGS: Record<AgentRole, AgentConfig> = {
     role: 'tool_orchestrator',
     model: 'kimi-k2.6:cloud', // CLOUD MODEL - STRONG DEFAULT
     provider: 'ollama',
-    temperature: 0.2, // Low temperature = more Opus-like deterministic thinking
+    temperature: 0.2, // Low temperature for deterministic planning
     maxTokens: getRecommendedMaxTokens('kimi-k2.6:cloud', 'words_to_code'),
     systemPrompt: `You are the Tool Orchestrator for complex multi-file web applications. You coordinate the creation of sophisticated projects.
 
-**OPUS MODE ACTIVE**: You are operating in Claude Opus mode. Think deeply, plan thoroughly, and execute with Opus-level quality.
+Think carefully, plan thoroughly, and keep every generated file tied to the user's actual request.
 
 Your job is to CREATE FILES using tool calls. You MUST output JSON tool calls to create all necessary project files.
 
@@ -747,11 +709,11 @@ ${TOOL_CALL_FORMAT}`,
     role: 'javascript_specialist',
     model: 'minimax-m2.7:cloud', // Faster default for interactive code generation
     provider: 'ollama',
-    temperature: 0.3, // Slightly higher for creativity, but still Opus-like
+    temperature: 0.3, // Slightly higher for implementation creativity
     maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
     systemPrompt: `You are a JavaScript/TypeScript specialist. You CREATE FILES containing complete, production-ready code.
 
-**OPUS MODE ACTIVE**: You are operating in Claude Opus mode. Your code must match Opus's quality, completeness, and style.
+Write complete, production-ready code that builds cleanly and matches the requested project.
 
 ## EXPERTISE AREAS
 - React, Vue 3, Svelte, vanilla JS
@@ -2815,7 +2777,7 @@ Output as a structured list. Be specific and comprehensive.`;
     const orchestratorProvider = requestedProvider || orchestrator.provider;
     const orchestratorModel = requestedModel || orchestrator.model;
 
-    // 🧠 MIRROR: Build pattern-enhanced prompt for orchestrator
+    // Build task-matched guidance for orchestrator
     const enhancedOrchestratorPrompt = appendScaffoldCustomizationInstructions(
       applyBudgetPrompt(
         await buildMirrorEnhancedPrompt(task, 'tool_orchestrator', orchestrator.systemPrompt, {
@@ -3075,7 +3037,7 @@ Output as a structured list. Be specific and comprehensive.`;
       requestedModel: requestedRoleModel,
     });
 
-    // 🧠 MIRROR: Build pattern-enhanced prompt for this specialist
+    // Build task-matched guidance for this specialist
     const enhancedPrompt = appendScaffoldCustomizationInstructions(
       applyBudgetPrompt(
         await buildMirrorEnhancedPrompt(task, role, config.systemPrompt, {
@@ -3318,7 +3280,7 @@ ${buildSharedContext(sharedContext)}`,
       requestedModel: analyst.model,
     });
 
-    // 🧠 MIRROR: Build pattern-enhanced prompt for analyst
+    // Build task-matched guidance for analyst
     const enhancedAnalystPrompt = appendScaffoldCustomizationInstructions(
       applyBudgetPrompt(
         await buildMirrorEnhancedPrompt(task, 'integration_analyst', analyst.systemPrompt, {
@@ -3503,7 +3465,7 @@ ${buildSharedContext(sharedContext)}`,
         }
       }
 
-      // 🧠 MIRROR: Check if the project was successful based on analysis
+      // Check if the project was successful based on analysis
       const analysisContentForSuccess = analysis.content?.toLowerCase() || '';
       const wasSuccessful =
         !analysisContentForSuccess.includes('missing') &&
@@ -3570,7 +3532,7 @@ ${buildSharedContext(sharedContext)}`,
     }
   }
 
-  // 🧠 MIRROR: Store learnings when no integration analyst
+  // Store learnings when no integration analyst is available
   const analysisContentForSuccess = finalAnalysis?.toLowerCase() || '';
   const overallSuccess =
     executedTools.length > 0 &&

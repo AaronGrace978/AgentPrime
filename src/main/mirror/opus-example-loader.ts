@@ -1,5 +1,5 @@
 /**
- * Opus Example Loader - Smart pattern loading with manifest-based matching
+ * Reference Example Loader - Smart pattern loading with manifest-based matching
  * 
  * This replaces the basic filename-matching with rich metadata matching:
  * 1. Uses manifest.json for tags, categories, quality scores
@@ -34,6 +34,30 @@ const MANIFEST_CACHE_TTL = 60000; // 1 minute
 const MIN_MANIFEST_RELEVANCE_SCORE = 2;
 const MAX_EXAMPLE_SNIPPET_CHARS = 1400;
 
+export function normalizeRetrievalTask(task: string): string {
+  return task
+    .split(/\n## IDE_CONTEXT\b/i)[0]
+    .split(/\n<!--\s*IDE_CONTEXT/i)[0]
+    .trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function keywordMatchesText(text: string, keyword: string): boolean {
+  const parts = keyword
+    .trim()
+    .toLowerCase()
+    .split(/[-\s]+/)
+    .filter(Boolean)
+    .map(escapeRegExp);
+  if (parts.length === 0) return false;
+
+  const pattern = parts.join('[-\\s]+');
+  return new RegExp(`(^|[^a-z0-9])${pattern}([^a-z0-9]|$)`, 'i').test(text);
+}
+
 /**
  * Find the opus-examples directory
  */
@@ -66,7 +90,7 @@ function loadManifest(opusPath: string): OpusManifest | null {
   const manifestPath = path.join(opusPath, 'manifest.json');
   
   if (!fs.existsSync(manifestPath)) {
-    console.log('[OpusLoader] No manifest.json found, will use content scanning');
+    console.log('[ReferenceLoader] No manifest.json found, will use content scanning');
     return null;
   }
   
@@ -74,10 +98,10 @@ function loadManifest(opusPath: string): OpusManifest | null {
     const content = fs.readFileSync(manifestPath, 'utf8');
     cachedManifest = JSON.parse(content);
     manifestLoadTime = Date.now();
-    console.log(`[OpusLoader] Loaded manifest with ${cachedManifest?.examples?.length || 0} examples`);
+    console.log(`[ReferenceLoader] Loaded manifest with ${cachedManifest?.examples?.length || 0} examples`);
     return cachedManifest;
   } catch (error) {
-    console.warn('[OpusLoader] Failed to parse manifest:', error);
+    console.warn('[ReferenceLoader] Failed to parse manifest:', error);
     return null;
   }
 }
@@ -86,7 +110,7 @@ function loadManifest(opusPath: string): OpusManifest | null {
  * Extract keywords from a task description
  */
 export function extractTaskKeywords(task: string): string[] {
-  const taskLower = task.toLowerCase();
+  const taskLower = normalizeRetrievalTask(task).toLowerCase();
   
   // Common keywords to look for
   const keywords: string[] = [];
@@ -102,7 +126,7 @@ export function extractTaskKeywords(task: string): string[] {
   if (taskLower.includes('typescript') || taskLower.includes(' ts ')) keywords.push('typescript');
   if (taskLower.includes('three.js') || taskLower.includes('threejs') || taskLower.includes('webgl')) keywords.push('threejs');
   if (/\b(?:website|site|landing page|homepage|marketing page|splash page)\b/.test(taskLower)) {
-    keywords.push('website', 'landing-page', 'marketing', 'ui');
+    keywords.push('website', 'landing-page', 'marketing');
   }
   const mentionsElectron = taskLower.includes('electron');
   const excludesElectron = /\b(?:not|no|without)\s+electron\b/.test(taskLower);
@@ -146,7 +170,7 @@ function scoreExampleWithManifest(example: OpusExample, keywords: string[]): num
   
   // Category matching
   for (const keyword of keywords) {
-    if (example.category.includes(keyword)) {
+    if (keywordMatchesText(example.category, keyword)) {
       relevanceScore += 2;
     }
   }
@@ -154,7 +178,7 @@ function scoreExampleWithManifest(example: OpusExample, keywords: string[]): num
   // Description matching
   const descLower = (example.description || '').toLowerCase();
   for (const keyword of keywords) {
-    if (descLower.includes(keyword)) {
+    if (keywordMatchesText(descLower, keyword)) {
       relevanceScore += 1;
     }
   }
@@ -162,7 +186,7 @@ function scoreExampleWithManifest(example: OpusExample, keywords: string[]): num
   // Title matching
   const titleLower = (example.title || '').toLowerCase();
   for (const keyword of keywords) {
-    if (titleLower.includes(keyword)) {
+    if (keywordMatchesText(titleLower, keyword)) {
       relevanceScore += 2;
     }
   }
@@ -184,9 +208,9 @@ function scoreExampleByContent(filePath: string, keywords: string[]): number {
     let score = 0;
     
     for (const keyword of keywords) {
-      // Count occurrences (up to 3 per keyword)
-      const matches = (content.match(new RegExp(keyword, 'g')) || []).length;
-      score += Math.min(matches, 3);
+      if (keywordMatchesText(content, keyword)) {
+        score += 1;
+      }
     }
     
     // Bonus for ingested files (they're curated)
@@ -211,16 +235,16 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
   try {
     const opusPath = findOpusPath();
     if (!opusPath) {
-      console.log('[OpusLoader] No opus-examples directory found');
+      console.log('[ReferenceLoader] No reference examples directory found');
       return examples;
     }
     
-    console.log(`[OpusLoader] Loading examples for task: "${task.substring(0, 50)}..."`);
+    console.log(`[ReferenceLoader] Loading examples for task: "${normalizeRetrievalTask(task).substring(0, 50)}..."`);
     
     const manifest = loadManifest(opusPath);
     const keywords = extractTaskKeywords(task);
     
-    console.log(`[OpusLoader] Extracted keywords: ${keywords.join(', ')}`);
+    console.log(`[ReferenceLoader] Extracted keywords: ${keywords.join(', ')}`);
     
     let scoredFiles: { file: string; score: number; snippet?: string }[];
     
@@ -236,7 +260,7 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
         .filter(s => s.score >= MIN_MANIFEST_RELEVANCE_SCORE)
         .sort((a, b) => b.score - a.score);
       
-      console.log(`[OpusLoader] Manifest scoring: ${scoredFiles.length} relevant matches`);
+      console.log(`[ReferenceLoader] Manifest scoring: ${scoredFiles.length} relevant matches`);
     } else {
       // Fallback to content scanning
       const files = fs.readdirSync(opusPath)
@@ -249,7 +273,7 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
       .filter(s => s.score > 0)
       .sort((a, b) => b.score - a.score);
       
-      console.log(`[OpusLoader] Content scanning: ${scoredFiles.length} relevant matches`);
+      console.log(`[ReferenceLoader] Content scanning: ${scoredFiles.length} relevant matches`);
     }
     
     // Load top matches - ENHANCED: Return more complete examples for better mirroring
@@ -270,7 +294,7 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
           const manifestEntry = manifest?.examples.find(e => e.file === file);
           const title = manifestEntry?.title || file.replace(/\.(js|txt)$/, '');
           
-          console.log(`[OpusLoader] Selected example: ${title} (${file}, score=${score.toFixed(1)})`);
+          console.log(`[ReferenceLoader] Selected example: ${title} (${file}, score=${score.toFixed(1)})`);
           examples.push(`\n### Reference Example: ${title} (relevance: ${score.toFixed(1)})\n` +
                        `Use this as a compact quality reference only where it fits the user's task:\n\n` +
                        `${snippet}\n` +
@@ -281,10 +305,10 @@ export async function loadOpusExamples(task: string, limit: number = 3): Promise
       }
     }
     
-    console.log(`[OpusLoader] ✅ Loaded ${examples.length} relevant examples`);
+    console.log(`[ReferenceLoader] Loaded ${examples.length} relevant examples`);
     
   } catch (error) {
-    console.warn('[OpusLoader] Error loading examples:', error);
+    console.warn('[ReferenceLoader] Error loading examples:', error);
   }
   
   return examples;
