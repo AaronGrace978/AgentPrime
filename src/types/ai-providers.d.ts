@@ -70,6 +70,11 @@ export interface ChatOptions {
    * for the next iteration boundary.
    */
   signal?: AbortSignal;
+  /**
+   * Inject Dino Buddy creed into the system prompt stream.
+   * Keep this disabled for coding/tooling flows to avoid persona bleed.
+   */
+  includeCreed?: boolean;
   [key: string]: any;
 }
 

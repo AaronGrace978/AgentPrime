@@ -262,6 +262,18 @@ function normalizeProjectPath(filePath: string): string {
   return filePath.replace(/^\/+/, '').replace(/\\/g, '/');
 }
 
+function normalizeFsPathForComparison(fsPath: string): string {
+  const normalized = path.resolve(fsPath);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function isPathWithinWorkspace(workspacePath: string, targetPath: string): boolean {
+  const workspaceResolved = normalizeFsPathForComparison(workspacePath);
+  const targetResolved = normalizeFsPathForComparison(targetPath);
+  const relative = path.relative(workspaceResolved, targetResolved);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 function resolveTrackedHtmlPath(trackedPaths: string[], htmlFilePath?: string): string {
   if (htmlFilePath) {
     return normalizeProjectPath(htmlFilePath);
@@ -906,7 +918,7 @@ function validateReadFile(
   if (path.isAbsolute(filePath)) {
     try {
       const relativePath = path.relative(workspacePath, filePath);
-      if (!relativePath.startsWith('..')) {
+      if (isPathWithinWorkspace(workspacePath, filePath)) {
         console.warn(`[ToolValidation] Fixed absolute path: ${filePath} -> ${relativePath}`);
         return { valid: true, fixedPath: relativePath };
       }
@@ -922,10 +934,7 @@ function validateReadFile(
   // Check for paths outside workspace
   try {
     const resolvedPath = path.resolve(workspacePath, filePath);
-    const normalizedWorkspace = path.normalize(workspacePath);
-    const normalizedResolved = path.normalize(resolvedPath);
-
-    if (!normalizedResolved.startsWith(normalizedWorkspace)) {
+    if (!isPathWithinWorkspace(workspacePath, resolvedPath)) {
       return {
         valid: false,
         error: `read_file: path outside workspace: ${filePath}`,
@@ -1319,7 +1328,7 @@ function validateWriteFile(
     // Try to extract relative path
     try {
       const relativePath = path.relative(workspacePath, filePath);
-      if (!relativePath.startsWith('..')) {
+      if (isPathWithinWorkspace(workspacePath, filePath)) {
         console.warn(`[ToolValidation] Fixed absolute path: ${filePath} -> ${relativePath}`);
         return { valid: true, fixedPath: relativePath };
       }
@@ -1337,10 +1346,7 @@ function validateWriteFile(
   // ==========================================
   try {
     const resolvedPath = path.resolve(workspacePath, filePath);
-    const normalizedWorkspace = path.normalize(workspacePath);
-    const normalizedResolved = path.normalize(resolvedPath);
-
-    if (!normalizedResolved.startsWith(normalizedWorkspace)) {
+    if (!isPathWithinWorkspace(workspacePath, resolvedPath)) {
       return {
         valid: false,
         error: `write_file: path outside workspace: ${filePath}`,
@@ -1501,7 +1507,7 @@ function validatePatchFile(
   if (path.isAbsolute(filePath)) {
     try {
       const candidate = path.relative(workspacePath, filePath);
-      if (!candidate.startsWith('..')) {
+      if (isPathWithinWorkspace(workspacePath, filePath)) {
         relativePath = candidate;
       } else {
         return {
@@ -1518,9 +1524,7 @@ function validatePatchFile(
   }
 
   const resolvedPath = path.resolve(workspacePath, relativePath);
-  const normalizedWorkspace = path.normalize(workspacePath);
-  const normalizedResolved = path.normalize(resolvedPath);
-  if (!normalizedResolved.startsWith(normalizedWorkspace)) {
+  if (!isPathWithinWorkspace(workspacePath, resolvedPath)) {
     return {
       valid: false,
       error: `patch_file: path outside workspace: ${relativePath}`,
@@ -1648,7 +1652,7 @@ function validateScaffoldProject(
   if (path.isAbsolute(projectPath)) {
     try {
       const relativePath = path.relative(workspacePath, projectPath);
-      if (!relativePath.startsWith('..')) {
+      if (isPathWithinWorkspace(workspacePath, projectPath)) {
         console.warn(`[ToolValidation] Fixed absolute path: ${projectPath} -> ${relativePath}`);
         return { valid: true, fixedPath: relativePath };
       }
@@ -1663,9 +1667,7 @@ function validateScaffoldProject(
 
   try {
     const resolvedPath = path.resolve(workspacePath, projectPath);
-    const normalizedWorkspace = path.normalize(workspacePath);
-    const normalizedResolved = path.normalize(resolvedPath);
-    if (!normalizedResolved.startsWith(normalizedWorkspace)) {
+    if (!isPathWithinWorkspace(workspacePath, resolvedPath)) {
       return {
         valid: false,
         error: `scaffold_project: path outside workspace: ${projectPath}`,

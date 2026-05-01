@@ -24,6 +24,8 @@ import {
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  AbortError,
+  isAbortError,
   withAITimeoutAndRetry,
   withSmartFallback,
   FALLBACK_MODEL_CHAIN,
@@ -2052,12 +2054,33 @@ async function executeTool(
         let stdout = '';
         let stderr = '';
         let settled = false;
+        let forceKillTimer: NodeJS.Timeout | null = null;
+
+        const terminateChild = (reason: string) => {
+          try {
+            child.kill('SIGTERM');
+          } catch {
+            // ignore
+          }
+          if (!forceKillTimer) {
+            forceKillTimer = setTimeout(() => {
+              if (settled || child.killed) return;
+              try {
+                child.kill('SIGKILL');
+              } catch {
+                // ignore
+              }
+            }, 1500);
+          }
+          return reason;
+        };
 
         const resolveOnce = (value: any) => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
           clearInterval(cancelPoll);
+          if (forceKillTimer) clearTimeout(forceKillTimer);
           resolve(value);
         };
         const rejectOnce = (err: Error) => {
@@ -2065,6 +2088,7 @@ async function executeTool(
           settled = true;
           clearTimeout(timer);
           clearInterval(cancelPoll);
+          if (forceKillTimer) clearTimeout(forceKillTimer);
           reject(err);
         };
 
@@ -2090,21 +2114,13 @@ async function executeTool(
         });
 
         const timer = setTimeout(() => {
-          try {
-            child.kill('SIGTERM');
-          } catch {
-            // ignore
-          }
+          terminateChild('timeout');
           rejectOnce(new Error(`Command timed out after ${timeout}s`));
         }, timeout * 1000);
 
         const cancelPoll = setInterval(() => {
           if (!callbacks?.shouldCancel?.() || child.killed) return;
-          try {
-            child.kill('SIGTERM');
-          } catch {
-            // ignore
-          }
+          terminateChild('cancelled');
         }, 250);
 
         child.on('close', (code) => {
@@ -2327,6 +2343,17 @@ export async function executeWithSpecialists(
   let scaffoldApplied = false;
   let scaffoldTemplateId: string | undefined;
   const telemetry = getTelemetryService();
+  const aiAbortController = new AbortController();
+  const cancelWatcher = setInterval(() => {
+    if (!callbacks?.shouldCancel?.() || aiAbortController.signal.aborted) {
+      return;
+    }
+    aiAbortController.abort();
+  }, 200);
+  const runtimeBudget: RuntimeBudgetMode =
+    context.runtimeBudget === 'instant' || context.runtimeBudget === 'deep'
+      ? context.runtimeBudget
+      : 'standard';
   const phaseStarts = new Map<string, number>();
   const beginPhase = (phase: string, data: Record<string, any> = {}) => {
     phaseStarts.set(phase, Date.now());
@@ -2348,16 +2375,16 @@ export async function executeWithSpecialists(
   };
   const assertNotCancelled = () => {
     if (callbacks?.shouldCancel?.()) {
-      throw new Error('Specialized agent cancelled by user');
+      if (!aiAbortController.signal.aborted) {
+        aiAbortController.abort();
+      }
+      throw new AbortError('Specialized agent cancelled by user');
     }
   };
   assertNotCancelled();
+  try {
   const blackboard: SpecialistBlackboard | undefined = context.blackboard;
   const deterministicScaffoldOnly = Boolean(context.deterministicScaffoldOnly);
-  const runtimeBudget: RuntimeBudgetMode =
-    context.runtimeBudget === 'instant' || context.runtimeBudget === 'deep'
-      ? context.runtimeBudget
-      : 'standard';
   const reflectionQuestionLimit =
     typeof context.reflectionQuestionLimit === 'number' &&
     Number.isFinite(context.reflectionQuestionLimit)
@@ -2687,6 +2714,8 @@ Output as a structured list. Be specific and comprehensive.`;
               model: planningModel.model,
               temperature: 0.3,
               maxTokens: budgetedTokens(planningModel.model, 'analysis'),
+              includeCreed: false,
+              signal: aiAbortController.signal,
               disableRouterFallback: true,
             }
           ),
@@ -2696,6 +2725,9 @@ Output as a structured list. Be specific and comprehensive.`;
         runtimeBudget
       );
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       log.warn('[MirrorAgents] ⚠️ Planning phase failed, continuing without structured plan');
       planningResponse = { success: false };
     }
@@ -2844,6 +2876,7 @@ Output as a structured list. Be specific and comprehensive.`;
     try {
       const result = await withSmartFallback(
       async (provider, model) => {
+        assertNotCancelled();
         aiRouter.setActiveProvider(provider, model);
         usedModel = model;
         const response = await aiRouter.chat(
@@ -2855,6 +2888,8 @@ Output as a structured list. Be specific and comprehensive.`;
             model: model,
             temperature: orchestrator.temperature,
             maxTokens: budgetedTokens(model, 'words_to_code'),
+            includeCreed: false,
+            signal: aiAbortController.signal,
             disableRouterFallback: true,
           }
         );
@@ -2897,6 +2932,9 @@ Output as a structured list. Be specific and comprehensive.`;
       usedFallback: result.usedFallback,
     });
     } catch (error: any) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       mistakes.push(`Orchestrator complete failure: ${error.message}`);
       await storeTaskLearning(task, false, [], mistakes);
       endPhase('orchestrator', 'failure', {
@@ -3100,6 +3138,7 @@ Output as a structured list. Be specific and comprehensive.`;
       // Use smart fallback for each specialist
       const specialistResult = await withSmartFallback(
         async (provider, model) => {
+          assertNotCancelled();
           aiRouter.setActiveProvider(provider, model);
           const response = await aiRouter.chat(
             [
@@ -3124,6 +3163,8 @@ ${buildSharedContext(sharedContext)}`,
                     ? 'pipeline'
                     : 'specialist'
               ),
+              includeCreed: false,
+              signal: aiAbortController.signal,
               disableRouterFallback: true,
             }
           );
@@ -3351,6 +3392,7 @@ ${buildSharedContext(sharedContext)}`,
     try {
       const analysisResult = await withSmartFallback(
         async (provider, model) => {
+          assertNotCancelled();
           aiRouter.setActiveProvider(provider, model);
           const response = await aiRouter.chat(
             [
@@ -3364,6 +3406,8 @@ ${buildSharedContext(sharedContext)}`,
               model: model,
               temperature: analyst.temperature,
               maxTokens: budgetedTokens(model, 'analysis'),
+              includeCreed: false,
+              signal: aiAbortController.signal,
               disableRouterFallback: true,
             }
           );
@@ -3396,6 +3440,9 @@ ${buildSharedContext(sharedContext)}`,
         usedFallback: analysisResult.usedFallback,
       });
     } catch (error: any) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       log.warn(`[MirrorAgents] Integration analyst failed: ${error.message}`);
       analysis = { success: false, error: error.message };
       endPhase('integration_analysis', 'failure', {
@@ -3605,4 +3652,7 @@ ${buildSharedContext(sharedContext)}`,
     scaffoldTemplateId,
     skippedGenerativePass: false,
   };
+  } finally {
+    clearInterval(cancelWatcher);
+  }
 }

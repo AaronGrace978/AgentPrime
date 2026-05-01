@@ -1157,8 +1157,9 @@ class AIProviderRouter {
     const requestedProvider = this.activeProvider || provider.name || 'ollama';
     const routerFallbackEnabled = !options.disableRouterFallback;
 
-    // ═══ DINO BUDDY CREED — Injected at the deepest level ═══
-    const messagesWithCreed = injectCreed(messages);
+    // Creed injection must be explicit to prevent Dino persona bleeding into
+    // coding and validation workflows.
+    const messagesWithCreed = options.includeCreed === true ? injectCreed(messages) : messages;
 
     try {
       const result = this.annotateChatResult(
@@ -1285,8 +1286,9 @@ class AIProviderRouter {
     const model = (options.model || this.activeModel) as string | undefined;
     const requestedProvider = this.activeProvider || provider.name || 'ollama';
 
-    // ═══ DINO BUDDY CREED — Injected at the deepest level ═══
-    const messagesWithCreed = injectCreed(messages);
+    // Creed injection must be explicit to prevent Dino persona bleeding into
+    // coding and validation workflows.
+    const messagesWithCreed = options.includeCreed === true ? injectCreed(messages) : messages;
 
     try {
       this.publishRuntimeInfo(requestedProvider, requestedProvider, model, false, options);

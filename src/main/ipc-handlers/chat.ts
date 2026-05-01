@@ -597,6 +597,7 @@ export function register(deps: ChatHandlerDeps): void {
             ],
             {
               model: selectedModel,
+              includeCreed: false,
             }
           );
           const responseRuntime = resolveEffectiveAIRuntime(
@@ -996,6 +997,7 @@ Separate files with blank lines.
         await aiRouter.dualStream(messagesWithSystem, processStreamChunk, {
           model: activeModel,
           maxTokens: maxTokens,
+          includeCreed: context.dino_buddy_mode === true,
           dualMode: dualMode,
           runtimeBudget,
           signal: chatAbortController.signal,
@@ -1033,6 +1035,7 @@ Separate files with blank lines.
           await aiRouter.stream(messagesWithSystem, processStreamChunk, {
             model: activeModel,
             maxTokens: maxTokens,
+            includeCreed: context.dino_buddy_mode === true,
             signal: chatAbortController.signal,
             onRuntimeInfo: (runtime: AIRuntimeSnapshot) => {
               latestRuntime = runtime;

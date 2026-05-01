@@ -229,6 +229,74 @@ export class Player {
   });
 });
 
+describe('workspace boundary validation hardening', () => {
+  let rootPath: string;
+  let workspacePath: string;
+  let siblingPath: string;
+
+  beforeEach(() => {
+    rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprime-path-guard-'));
+    workspacePath = path.join(rootPath, 'project');
+    siblingPath = path.join(rootPath, 'project-outside');
+    fs.mkdirSync(workspacePath, { recursive: true });
+    fs.mkdirSync(siblingPath, { recursive: true });
+    fs.writeFileSync(path.join(siblingPath, 'secret.txt'), 'do not read');
+  });
+
+  afterEach(() => {
+    fs.rmSync(rootPath, { recursive: true, force: true });
+  });
+
+  it('rejects traversal read_file paths that escape workspace into similarly named sibling folders', () => {
+    const result = validateToolCall(
+      {
+        name: 'read_file',
+        arguments: {
+          path: '../project-outside/secret.txt',
+        },
+      },
+      workspacePath
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('path outside workspace');
+  });
+
+  it('rejects traversal write_file paths that escape workspace into similarly named sibling folders', () => {
+    const result = validateToolCall(
+      {
+        name: 'write_file',
+        arguments: {
+          path: '../project-outside/new-file.js',
+          content: 'console.log("outside");',
+        },
+      },
+      workspacePath,
+      'Create a javascript file'
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('path outside workspace');
+  });
+
+  it('rejects traversal patch_file paths that escape workspace into similarly named sibling folders', () => {
+    const result = validateToolCall(
+      {
+        name: 'patch_file',
+        arguments: {
+          path: '../project-outside/secret.txt',
+          old_text: 'do not read',
+          new_text: 'mutated',
+        },
+      },
+      workspacePath
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('path outside workspace');
+  });
+});
+
 describe('opus keyword extraction', () => {
   it('extracts threejs and ignores negated electron mentions', () => {
     const keywords = extractTaskKeywords(
