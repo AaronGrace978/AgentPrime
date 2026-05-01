@@ -183,6 +183,20 @@ export function workspaceNeedsDeterministicScaffold(workspacePath: string): bool
   return meaningfulFiles.length <= 2;
 }
 
+export function getExistingTemplateOutputCollisions(
+  templateId: string,
+  workspacePath: string
+): string[] {
+  const preflight = preflightTemplate(templateId);
+  if (!preflight.ok) {
+    return [];
+  }
+
+  return preflight.outputPaths.filter((outputPath) =>
+    fs.existsSync(path.join(workspacePath, outputPath))
+  );
+}
+
 /**
  * Whether specialized-agent runs should stop after deterministic template materialization.
  * Production: near-empty workspace + static-site template only (fast path for plain sites).
@@ -206,6 +220,12 @@ export function resolveDeterministicScaffoldOnlyFlag(options: {
   }
 
   const templateId = detectCanonicalTemplateId(options.message);
+  if (!templateId) {
+    return false;
+  }
+  if (getExistingTemplateOutputCollisions(templateId, options.workspacePath).length > 0) {
+    return false;
+  }
   if (
     options.allowTestCanonicalTemplates === true &&
     process.env.NODE_ENV === 'test' &&

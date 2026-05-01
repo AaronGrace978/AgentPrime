@@ -70,6 +70,26 @@ describe('resolveDeterministicScaffoldOnlyFlag', () => {
     }
   });
 
+  it('disables implicit scaffold-only when template outputs already exist', () => {
+    fs.writeFileSync(path.join(workspacePath, 'index.html'), '<h1>Existing site</h1>\n');
+    fs.writeFileSync(path.join(workspacePath, 'styles.css'), 'body { color: red; }\n');
+
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(
+        resolveDeterministicScaffoldOnlyFlag({
+          message: 'Update my simple website landing page',
+          workspacePath,
+          allowScaffold: true,
+          explicitFromContext: false,
+        })
+      ).toBe(false);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
   it('honors explicit deterministic_scaffold_only from context', () => {
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';

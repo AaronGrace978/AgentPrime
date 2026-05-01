@@ -37,6 +37,7 @@ import { getTaskMaster, type TaskMasterRetryContext } from './task-master';
 import { getProjectRuntimeProfileSync, mapRuntimeKindToRegistryType } from './project-runtime';
 import {
   detectCanonicalTemplateId,
+  getExistingTemplateOutputCollisions,
   resolveDeterministicScaffoldOnlyFlag,
   scaffoldProjectFromTemplate,
   workspaceNeedsDeterministicScaffold,
@@ -1140,7 +1141,11 @@ export class SpecializedAgentLoop extends EventEmitter {
 
       if (fallbackTemplateId) {
         await transactionManager.rollbackTransaction();
-        if (workspaceNeedsDeterministicScaffold(this.context.workspacePath)) {
+        if (
+          workspaceNeedsDeterministicScaffold(this.context.workspacePath) &&
+          getExistingTemplateOutputCollisions(fallbackTemplateId, this.context.workspacePath)
+            .length === 0
+        ) {
           rolledBackIncomplete = true;
           log.info(
             `[SpecializedAgent] ↩️ Falling back to deterministic scaffold review (${fallbackTemplateId}) after verification failed`

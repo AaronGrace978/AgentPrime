@@ -52,6 +52,7 @@ import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
 import { searchWithRipgrep } from '../core/ripgrep-runner';
 import {
   detectCanonicalTemplateId,
+  getExistingTemplateOutputCollisions,
   scaffoldProjectFromTemplate,
   workspaceNeedsDeterministicScaffold,
 } from './scaffold-resolver';
@@ -114,7 +115,11 @@ export async function bootstrapDeterministicScaffold(
     return [];
   }
   const templateId = detectCanonicalTemplateId(task);
-  if (!templateId || !workspaceNeedsDeterministicScaffold(workspacePath)) {
+  if (
+    !templateId ||
+    !workspaceNeedsDeterministicScaffold(workspacePath) ||
+    getExistingTemplateOutputCollisions(templateId, workspacePath).length > 0
+  ) {
     return [];
   }
   const scaffolded = await scaffoldProjectFromTemplate(workspacePath, task, {
