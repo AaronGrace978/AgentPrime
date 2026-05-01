@@ -29,6 +29,7 @@ import { buildReviewCheckpointSummary } from '../agent/reflection-policy';
 import { resolveEffectiveAIRuntime } from '../core/ai-runtime-state';
 import { flattenRuntimeForTelemetry } from '../core/ai-runtime-telemetry';
 import type { AIRuntimeSnapshot } from '../../types/ai-providers';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 import { DEFAULT_RUNTIME_BUDGET_MODE, dualModeToRuntimeBudget } from '../../types/runtime-budget';
 import {
   buildVibeCoderDirectResponseSystemPrompt,
@@ -54,7 +55,7 @@ function resolveConfiguredModel(
   requestedProvider?: string
 ) {
   const localOllamaModel =
-    settings?.providers?.ollama?.model || settings?.activeModel || 'kimi-k2.6:cloud';
+    settings?.providers?.ollama?.model || settings?.activeModel || DEFAULT_MODEL_IDS.ollamaChat;
 
   const dualConfig = settings?.dualModelEnabled ? settings?.dualModelConfig : null;
   const budgetModel =

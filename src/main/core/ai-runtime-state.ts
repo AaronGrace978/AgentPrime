@@ -1,6 +1,7 @@
 import aiRouter from '../ai-providers';
 import type { Settings } from '../../types';
 import type { AIRuntimeResolution, AIRuntimeSnapshot } from '../../types/ai-providers';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 
 interface RuntimeExecutionRecord {
   requestedProvider: string;
@@ -18,7 +19,7 @@ interface RuntimeExecutionRecord {
 let lastRuntimeExecution: RuntimeExecutionRecord | null = null;
 
 function getLocalOllamaModel(settings: Partial<Settings> | null | undefined): string {
-  return settings?.providers?.ollama?.model || settings?.activeModel || 'qwen3-coder:480b-cloud';
+  return settings?.providers?.ollama?.model || settings?.activeModel || DEFAULT_MODEL_IDS.ollamaAgent;
 }
 
 function providerHasCredentials(settings: Partial<Settings> | null | undefined, providerName: string): boolean {

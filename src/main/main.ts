@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import axios from 'axios';
 import type { Settings } from '../types';
+import { DEFAULT_MODEL_IDS } from '../types/model-defaults';
 import type { SystemDoctorReport, SystemStatusSummary } from '../types/system-health';
 import { getTheme, getTitleBarOverlay, type ThemeId } from '../renderer/themes';
 import { createLogger } from './core/logger';
@@ -249,7 +250,7 @@ if (fs.existsSync(dotenvPath)) {
 
 // Ollama defaults
 // Single-model mode should default to a strong cloud model rather than the local 7B.
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'kimi-k2.6:cloud';
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || DEFAULT_MODEL_IDS.ollamaChat;
 const OLLAMA_FAST_MODEL = process.env.OLLAMA_FAST_MODEL || 'devstral-small-2:24b-cloud';
 const OLLAMA_MODEL_FALLBACK = process.env.OLLAMA_MODEL_FALLBACK || 'qwen3-coder-next:cloud';
 // Ollama API keys from environment (primary + desktop fallback)
@@ -382,15 +383,15 @@ let settings: Settings = {
     },
     anthropic: {
       apiKey: ANTHROPIC_API_KEY,
-      model: 'claude-sonnet-4-6'
+      model: DEFAULT_MODEL_IDS.anthropic
     },
     openai: {
       apiKey: OPENAI_API_KEY,
-      model: 'gpt-5.4'
+      model: DEFAULT_MODEL_IDS.openai
     },
     openrouter: {
       apiKey: OPENROUTER_API_KEY,
-      model: 'anthropic/claude-sonnet-4-6'
+      model: DEFAULT_MODEL_IDS.openrouter
     }
   }
 };

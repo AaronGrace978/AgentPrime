@@ -16,6 +16,7 @@ import type {
   ChatWithToolsResult,
   ToolStreamCallback
 } from '../../types/ai-providers';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 import axios from 'axios';
 import { Readable } from 'stream';
 import { AbortError } from '../core/timeout-utils';
@@ -92,7 +93,7 @@ export class AnthropicProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.anthropic) as string;
     const { systemMessage, userMessages } = this.formatMessages(messages);
 
     // Ensure messages array is valid for Anthropic API
@@ -199,7 +200,7 @@ export class AnthropicProvider extends BaseProvider {
       throw new Error('API key not configured');
     }
 
-    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.anthropic) as string;
 
     // Use the shared canonical translator (handles system joining,
     // empty filtering, consecutive same-role merging, role priming) so
@@ -320,7 +321,7 @@ export class AnthropicProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.anthropic) as string;
 
     // Translate canonical messages → Anthropic wire format.
     // Strings stay strings; arrays of blocks (tool_use / tool_result) pass through.
@@ -427,7 +428,7 @@ export class AnthropicProvider extends BaseProvider {
       return result;
     }
 
-    const model = (options.model || this.config.model || 'claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.anthropic) as string;
     const { systemMessage, anthropicMessages } = this.toAnthropicMessages(messages);
 
     if (anthropicMessages.length === 0) {
@@ -737,7 +738,7 @@ export class AnthropicProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = options.model || this.config.model || 'claude-sonnet-4-6';
+    const model = options.model || this.config.model || DEFAULT_MODEL_IDS.anthropic;
     const mediaType = options.mediaType || 'image/png';
     const maxTokens = options.maxTokens || 4096;
 

@@ -10,6 +10,7 @@ import { promptBuilder, buildAgentRunContextPayload } from '../../agent';
 import type { AIRuntimeSnapshot, ModelInfo } from '../../../types/ai-providers';
 import type { ProviderApiKeyStatus } from '../../../types/ipc';
 import type { Settings } from '../../../types';
+import { DEFAULT_MODEL_IDS, DEFAULT_PROVIDER_SELECTIONS } from '../../../types/model-defaults';
 
 // Types and constants
 import { Message, MessageMetadata, AIChatProps, ChatMode, AgentFileChange } from './types';
@@ -84,11 +85,11 @@ type ProviderModelCatalogNotice = {
   message: string;
 };
 
-const DEFAULT_AGENT_MODEL = 'qwen3-coder:480b-cloud';
+const DEFAULT_AGENT_MODEL = DEFAULT_MODEL_IDS.ollamaAgent;
 const DEFAULT_ASSISTANT_BEHAVIOR_PROFILE: NonNullable<Settings['assistantBehaviorProfile']> = 'default';
 const DEFAULT_NON_AGENT_SELECTIONS: Record<NonAgentMode, NonAgentSelection> = {
-  chat: { provider: 'openai', model: 'gpt-5.4' },
-  dino: { provider: 'anthropic', model: 'claude-sonnet-4-6' },
+  chat: { ...DEFAULT_PROVIDER_SELECTIONS.chat },
+  dino: { ...DEFAULT_PROVIDER_SELECTIONS.dino },
 };
 
 function normalizeMessageMetadata(metadata: unknown): MessageMetadata | undefined {
@@ -218,7 +219,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [agentRunning, setAgentRunning] = useState(false);
-  const [agentSelectedModel, setAgentSelectedModel] = useState(DEFAULT_AGENT_MODEL);
+  const [agentSelectedModel, setAgentSelectedModel] = useState<string>(DEFAULT_AGENT_MODEL);
   const [nonAgentSelections, setNonAgentSelections] = useState<Record<NonAgentMode, NonAgentSelection>>(DEFAULT_NON_AGENT_SELECTIONS);
   const [availableProviderModels, setAvailableProviderModels] = useState<Record<string, Array<{ value: string; label: string }>>>({});
   const [providerModelCatalogNotices, setProviderModelCatalogNotices] = useState<Record<string, ProviderModelCatalogNotice>>({});
@@ -848,7 +849,7 @@ const AIChat: React.FC<AIChatProps> = ({
 
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: chatMode === 'dino' ? '🦖 *thinking...*' : '*thinking...*',
+        content: chatMode === 'dino' ? '🦖 *Dino Buddy is thinking...*' : '*thinking...*',
         timestamp: new Date()
       }]);
 

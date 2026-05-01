@@ -17,6 +17,7 @@ import type {
   ToolUseBlock,
   ToolStreamCallback
 } from '../../types/ai-providers';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 import {
   toOpenAIChatTools,
   toOpenAIChatMessages,
@@ -133,7 +134,7 @@ export class OpenRouterProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openrouter) as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {
@@ -173,7 +174,7 @@ export class OpenRouterProvider extends BaseProvider {
       throw new Error('API key not configured');
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openrouter) as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {
@@ -264,7 +265,7 @@ export class OpenRouterProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openrouter) as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {
@@ -336,7 +337,7 @@ export class OpenRouterProvider extends BaseProvider {
       return result;
     }
 
-    const model = (options.model || this.config.model || 'anthropic/claude-sonnet-4-6') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openrouter) as string;
 
     try {
       const response = await axios.post(`${this.baseUrl}/chat/completions`, {

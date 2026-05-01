@@ -27,6 +27,7 @@ import type {
   ToolStreamCallback,
 } from '../../types/ai-providers';
 import type { DualModelConfig } from '../../types';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 import { injectCreed } from '../core/dino-buddy-creed';
 import { recordAIRuntimeExecution } from '../core/ai-runtime-state';
 import { isAbortError } from '../core/timeout-utils';
@@ -331,7 +332,7 @@ class AIProviderRouter {
       // Fallback to active provider (Anthropic by default)
       return {
         provider: this.activeProvider || 'anthropic',
-        model: this.activeModel || 'claude-sonnet-4-6',
+        model: this.activeModel || DEFAULT_MODEL_IDS.anthropic,
         mode: 'auto',
       };
     }
@@ -1683,7 +1684,7 @@ class AIProviderRouter {
     // Fallback to current active if no good match
     if (!bestProvider) {
       bestProvider = this.activeProvider || 'anthropic';
-      bestModel = this.activeModel || 'claude-sonnet-4-6';
+      bestModel = this.activeModel || DEFAULT_MODEL_IDS.anthropic;
       reasoning = 'Using default model (no optimal match found)';
     }
 

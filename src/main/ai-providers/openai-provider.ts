@@ -16,6 +16,7 @@ import type {
   ToolUseBlock,
   ToolStreamCallback
 } from '../../types/ai-providers';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 import {
   toOpenAIChatTools,
   toOpenAIResponsesTools,
@@ -154,7 +155,7 @@ export class OpenAIProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'gpt-5.4') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openai) as string;
 
     // Check if this is GPT-5.x which uses the new /responses API
     const isGPT5 = model.startsWith('gpt-5');
@@ -227,7 +228,7 @@ export class OpenAIProvider extends BaseProvider {
       throw new Error('API key not configured');
     }
 
-    const model = (options.model || this.config.model || 'gpt-5.4') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openai) as string;
     const isGPT5 = model.startsWith('gpt-5');
 
     try {
@@ -403,7 +404,7 @@ export class OpenAIProvider extends BaseProvider {
       return { success: false, error: 'API key not configured' };
     }
 
-    const model = (options.model || this.config.model || 'gpt-5.4') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openai) as string;
     const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
 
     try {
@@ -518,7 +519,7 @@ export class OpenAIProvider extends BaseProvider {
       return result;
     }
 
-    const model = (options.model || this.config.model || 'gpt-5.4') as string;
+    const model = (options.model || this.config.model || DEFAULT_MODEL_IDS.openai) as string;
     const isResponsesApi =
       model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4');
 

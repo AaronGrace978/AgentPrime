@@ -17,6 +17,7 @@
 
 import aiRouter from '../ai-providers';
 import type { ChatMessage, ChatOptions } from '../../types/ai-providers';
+import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
 import {
   getRelevantPatterns,
   storeTaskLearning,
@@ -161,9 +162,9 @@ export async function bootstrapDeterministicScaffold(
 const FAST_MODELS = [
   // Cloud providers - CONFIRMED WORKING!
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022' }, // Fast Claude
-  { provider: 'anthropic', model: 'claude-sonnet-4-6' }, // Deep Claude
+  { provider: 'anthropic', model: DEFAULT_MODEL_IDS.anthropic }, // Deep Claude
   { provider: 'openai', model: 'gpt-4o-mini' }, // Fast GPT
-  { provider: 'openai', model: 'gpt-5.4-mini' },
+  { provider: 'openai', model: DEFAULT_MODEL_IDS.openaiFast },
   { provider: 'openai', model: 'gpt-4o' }, // Deep GPT
 ];
 
@@ -610,6 +611,14 @@ DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
 {"name": "find_symbols", "arguments": {"query": "SymbolName", "max_results": 40}}
 `;
 
+const SPECIALIST_MODEL = DEFAULT_MODEL_IDS.ollamaSpecialist;
+const ANALYSIS_MODEL = DEFAULT_MODEL_IDS.ollamaAnalysis;
+const DEFAULT_AGENT_CHAT_MODEL = DEFAULT_MODEL_IDS.ollamaChat;
+
+function withToolCallFormat(prompt: string): string {
+  return `${prompt.trim()}\n\n${TOOL_CALL_FORMAT}`;
+}
+
 /**
  * Agent Specialization Configurations
  *
@@ -620,10 +629,10 @@ DISCOVERY (large or unfamiliar repos — ripgrep + symbol index):
 export const AGENT_CONFIGS: Record<AgentRole, AgentConfig> = {
   tool_orchestrator: {
     role: 'tool_orchestrator',
-    model: 'kimi-k2.6:cloud', // CLOUD MODEL - STRONG DEFAULT
+    model: DEFAULT_AGENT_CHAT_MODEL,
     provider: 'ollama',
     temperature: 0.2, // Low temperature for deterministic planning
-    maxTokens: getRecommendedMaxTokens('kimi-k2.6:cloud', 'words_to_code'),
+    maxTokens: getRecommendedMaxTokens(DEFAULT_AGENT_CHAT_MODEL, 'words_to_code'),
     systemPrompt: `You are the Tool Orchestrator for complex multi-file web applications. You coordinate the creation of sophisticated projects.
 
 Think carefully, plan thoroughly, and keep every generated file tied to the user's actual request.
@@ -715,10 +724,10 @@ ${TOOL_CALL_FORMAT}`,
 
   javascript_specialist: {
     role: 'javascript_specialist',
-    model: 'minimax-m2.7:cloud', // Faster default for interactive code generation
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.3, // Slightly higher for implementation creativity
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'specialist'),
     systemPrompt: `You are a JavaScript/TypeScript specialist. You CREATE FILES containing complete, production-ready code.
 
 Write complete, production-ready code that builds cleanly and matches the requested project.
@@ -932,11 +941,11 @@ ${TOOL_CALL_FORMAT}`,
 
   styling_ux_specialist: {
     role: 'styling_ux_specialist',
-    model: 'minimax-m2.7:cloud',
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
-    systemPrompt: `You are a styling and UX specialist. You improve visual polish, CSS, layout, interaction feedback, and presentation details.
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'specialist'),
+    systemPrompt: withToolCallFormat(`You are a styling and UX specialist. You improve visual polish, CSS, layout, interaction feedback, and presentation details.
 
 ## YOUR JOB
 - Refine spacing, hierarchy, and readable visual structure
@@ -949,35 +958,31 @@ ${TOOL_CALL_FORMAT}`,
 - Keep the UI accessible and readable
 - Do not change backend, packaging, or unrelated pipeline files
 - Do NOT edit gameplay/runtime logic in src/game/** (.ts/.tsx). If gameplay logic needs changes, leave it for javascript_specialist or repair_specialist.
-- Do NOT edit README.md from this role.
-
-${TOOL_CALL_FORMAT}`,
+- Do NOT edit README.md from this role.`),
   },
 
   python_specialist: {
     role: 'python_specialist',
-    model: 'kimi-k2.6:cloud', // CLOUD MODEL - STRONG DEFAULT
+    model: DEFAULT_AGENT_CHAT_MODEL,
     provider: 'ollama',
     temperature: 0.3,
-    maxTokens: getRecommendedMaxTokens('kimi-k2.6:cloud', 'specialist'),
-    systemPrompt: `You are a Python specialist. You CREATE FILES containing complete, production-ready Python code.
+    maxTokens: getRecommendedMaxTokens(DEFAULT_AGENT_CHAT_MODEL, 'specialist'),
+    systemPrompt: withToolCallFormat(`You are a Python specialist. You CREATE FILES containing complete, production-ready Python code.
 
 ## IMPLEMENTATION RULES
 ✅ Type hints on all functions
 ✅ Proper error handling with specific exceptions
 ✅ Complete requirements.txt with version pins
 ✅ Docstrings for all public functions
-✅ No TODOs or placeholders - complete code only
-
-${TOOL_CALL_FORMAT}`,
+✅ No TODOs or placeholders - complete code only`),
   },
 
   tauri_specialist: {
     role: 'tauri_specialist',
-    model: 'deepseek-v3.1:671b-cloud', // CLOUD MODEL - BEST FOR COMPLEX TASKS
+    model: ANALYSIS_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('deepseek-v3.1:671b-cloud', 'specialist'),
+    maxTokens: getRecommendedMaxTokens(ANALYSIS_MODEL, 'specialist'),
     systemPrompt: `You are a Tauri v2 and Rust specialist. You CREATE FILES for modern desktop applications using Tauri 2.x.
 
 ## TAURI V2 CRITICAL REQUIREMENTS (MUST FOLLOW EXACTLY)
@@ -1078,10 +1083,10 @@ ${TOOL_CALL_FORMAT}`,
 
   pipeline_specialist: {
     role: 'pipeline_specialist',
-    model: 'minimax-m2.7:cloud', // Faster default for interactive config generation
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'pipeline'),
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'pipeline'),
     systemPrompt: `You are a DevOps and build pipeline specialist. You CREATE configuration files, build scripts, and deployment setups.
 
 ## EXPERTISE
@@ -1130,11 +1135,11 @@ ${TOOL_CALL_FORMAT}`,
 
   testing_specialist: {
     role: 'testing_specialist',
-    model: 'minimax-m2.7:cloud',
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'analysis'),
-    systemPrompt: `You are a testing specialist. You add and update focused automated tests and browser checks that prove the requested behavior.
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'analysis'),
+    systemPrompt: withToolCallFormat(`You are a testing specialist. You add and update focused automated tests and browser checks that prove the requested behavior.
 
 ## YOUR JOB
 - Add the smallest useful tests that materially reduce regression risk
@@ -1145,18 +1150,16 @@ ${TOOL_CALL_FORMAT}`,
 ## RULES
 - Touch only test harness, test files, and tightly related support scripts unless a repair plan explicitly allows more
 - Do not broaden product scope while adding tests
-- If a bug can be proven with one focused test, do not add five
-
-${TOOL_CALL_FORMAT}`,
+- If a bug can be proven with one focused test, do not add five`),
   },
 
   security_specialist: {
     role: 'security_specialist',
-    model: 'minimax-m2.7:cloud',
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'analysis'),
-    systemPrompt: `You are a security specialist. You harden trust boundaries, validation, auth, secrets handling, and unsafe input paths within the assigned files.
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'analysis'),
+    systemPrompt: withToolCallFormat(`You are a security specialist. You harden trust boundaries, validation, auth, secrets handling, and unsafe input paths within the assigned files.
 
 ## YOUR JOB
 - Fix concrete security risks with the smallest viable patch
@@ -1166,18 +1169,16 @@ ${TOOL_CALL_FORMAT}`,
 ## RULES
 - Do not broaden scope into unrelated feature work
 - Do not remove protections to make a test pass
-- If a security issue crosses files, touch only the minimum set needed to restore the boundary
-
-${TOOL_CALL_FORMAT}`,
+- If a security issue crosses files, touch only the minimum set needed to restore the boundary`),
   },
 
   performance_specialist: {
     role: 'performance_specialist',
-    model: 'minimax-m2.7:cloud',
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
-    systemPrompt: `You are a performance specialist. You reduce latency, unnecessary work, render cost, and runtime overhead inside the assigned files.
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'specialist'),
+    systemPrompt: withToolCallFormat(`You are a performance specialist. You reduce latency, unnecessary work, render cost, and runtime overhead inside the assigned files.
 
 ## YOUR JOB
 - Make the smallest measurable improvement that addresses the reported bottleneck
@@ -1187,18 +1188,16 @@ ${TOOL_CALL_FORMAT}`,
 ## RULES
 - Do not rewrite large subsystems without evidence
 - Avoid premature micro-optimizations
-- If verification found a slow or flaky path, focus only on that path
-
-${TOOL_CALL_FORMAT}`,
+- If verification found a slow or flaky path, focus only on that path`),
   },
 
   data_contract_specialist: {
     role: 'data_contract_specialist',
-    model: 'minimax-m2.7:cloud',
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
-    systemPrompt: `You are a data contract specialist. You own schemas, DTOs, validation layers, request/response shapes, and persistence boundary consistency.
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'specialist'),
+    systemPrompt: withToolCallFormat(`You are a data contract specialist. You own schemas, DTOs, validation layers, request/response shapes, and persistence boundary consistency.
 
 ## YOUR JOB
 - Keep data shapes aligned across callers, handlers, storage, and tests
@@ -1208,17 +1207,15 @@ ${TOOL_CALL_FORMAT}`,
 ## RULES
 - Do not hide shape mismatches by deleting validation
 - Do not drift into unrelated UX or pipeline work
-- If a contract change affects multiple files, update the minimum full chain so types and runtime behavior agree
-
-${TOOL_CALL_FORMAT}`,
+- If a contract change affects multiple files, update the minimum full chain so types and runtime behavior agree`),
   },
 
   integration_analyst: {
     role: 'integration_analyst',
-    model: 'deepseek-v3.1:671b-cloud', // CLOUD MODEL - SMART FOR ANALYSIS
+    model: ANALYSIS_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('deepseek-v3.1:671b-cloud', 'analysis'),
+    maxTokens: getRecommendedMaxTokens(ANALYSIS_MODEL, 'analysis'),
     systemPrompt: `You are an integration verifier. Review the project and REPORT any missing files, broken references, or runtime issues.
 
 ## YOUR JOB
@@ -1302,11 +1299,11 @@ ${TOOL_CALL_FORMAT}`,
 
   repair_specialist: {
     role: 'repair_specialist',
-    model: 'minimax-m2.7:cloud',
+    model: SPECIALIST_MODEL,
     provider: 'ollama',
     temperature: 0.2,
-    maxTokens: getRecommendedMaxTokens('minimax-m2.7:cloud', 'specialist'),
-    systemPrompt: `You are the repair specialist. You only fix concrete failures identified by verification.
+    maxTokens: getRecommendedMaxTokens(SPECIALIST_MODEL, 'specialist'),
+    systemPrompt: withToolCallFormat(`You are the repair specialist. You only fix concrete failures identified by verification.
 
 ## YOUR JOB
 1. Read the verifier findings carefully
@@ -1320,9 +1317,7 @@ ${TOOL_CALL_FORMAT}`,
 - Prefer surgical edits over broad rewrites
 - Preserve the accepted scaffold and existing working code
 - If verification reports TS7006 implicit-any errors, add explicit parameter types instead of weakening tsconfig
-- If verification reports TS2307 cannot find module, either remove the bad import or ensure the required dependency is declared in package.json
-
-${TOOL_CALL_FORMAT}`,
+- If verification reports TS2307 cannot find module, either remove the bad import or ensure the required dependency is declared in package.json`),
   },
 };
 
@@ -2583,13 +2578,13 @@ export async function executeWithSpecialists(
     {
       name: 'Kimi K2.6 Cloud',
       provider: 'ollama',
-      model: 'kimi-k2.6:cloud',
+      model: DEFAULT_MODEL_IDS.ollamaChat,
       tier: 'deep',
     },
     {
       name: 'DeepSeek V4 Flash Cloud',
       provider: 'ollama',
-      model: 'deepseek-v4-flash:cloud',
+      model: DEFAULT_MODEL_IDS.ollamaLongContext,
       tier: 'deep',
     },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
@@ -2598,7 +2593,7 @@ export async function executeWithSpecialists(
     {
       name: 'Claude Sonnet 4.6',
       provider: 'anthropic',
-      model: 'claude-sonnet-4-6',
+      model: DEFAULT_MODEL_IDS.anthropic,
       tier: 'deep',
     },
     {
@@ -2608,7 +2603,7 @@ export async function executeWithSpecialists(
       tier: 'premium',
     },
     { name: 'GPT-5.5', provider: 'openai', model: 'gpt-5.5', tier: 'premium' },
-    { name: 'GPT-5.4', provider: 'openai', model: 'gpt-5.4', tier: 'deep' },
+    { name: 'GPT-5.4', provider: 'openai', model: DEFAULT_MODEL_IDS.openai, tier: 'deep' },
     { name: 'GPT-4o', provider: 'openai', model: 'gpt-4o', tier: 'deep' },
     {
       name: 'Claude Haiku',
