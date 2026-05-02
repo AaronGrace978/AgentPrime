@@ -2,7 +2,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { bootstrapDeterministicScaffold, executeWithSpecialists } from '../src/main/agent/specialized-agents';
+import {
+  bootstrapDeterministicScaffold,
+  shouldSkipGenerativeSpecialistsAfterScaffold,
+} from '../src/main/agent/specialized-agents';
 import { detectCanonicalTemplateId, scaffoldProjectFromTemplate } from '../src/main/agent/scaffold-resolver';
 
 describe('deterministic Three.js bootstrap', () => {
@@ -53,26 +56,20 @@ describe('deterministic Three.js bootstrap', () => {
     expect(detectCanonicalTemplateId('Create a homepage for my portfolio')).toBe('static-site');
   });
 
-  it('stops after static-site scaffold for simple website prompts even without upstream scaffold-only flag', async () => {
-    const result = await executeWithSpecialists(
-      'Can you build me a website that highlights Dino Buddy abilities?',
-      ['tool_orchestrator', 'javascript_specialist', 'pipeline_specialist'],
-      {
-        workspacePath,
-        files: [],
-        planningMode: 'skip',
+  it('continues into generative specialists after static-site scaffold unless scaffold-only is explicit', () => {
+    expect(
+      shouldSkipGenerativeSpecialistsAfterScaffold({
+        scaffoldApplied: true,
         deterministicScaffoldOnly: false,
-        runtimeBudget: 'deep',
-      } as any,
-      'create'
-    );
+      })
+    ).toBe(false);
 
-    expect(result.scaffoldApplied).toBe(true);
-    expect(result.scaffoldTemplateId).toBe('static-site');
-    expect(result.skippedGenerativePass).toBe(true);
-    expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(true);
-    expect(fs.existsSync(path.join(workspacePath, 'styles.css'))).toBe(true);
-    expect(fs.existsSync(path.join(workspacePath, 'app.js'))).toBe(true);
+    expect(
+      shouldSkipGenerativeSpecialistsAfterScaffold({
+        scaffoldApplied: true,
+        deterministicScaffoldOnly: true,
+      })
+    ).toBe(true);
   });
 
   it('scaffolds explicit threejs_viewer requests through the canonical template path', async () => {

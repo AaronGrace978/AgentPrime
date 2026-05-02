@@ -90,6 +90,13 @@ interface AgentPendingFileChange {
   status: 'pending' | 'accepted' | 'rejected';
 }
 
+export function shouldSkipGenerativeSpecialistsAfterScaffold(options: {
+  scaffoldApplied: boolean;
+  deterministicScaffoldOnly?: boolean;
+}): boolean {
+  return options.scaffoldApplied && options.deterministicScaffoldOnly === true;
+}
+
 interface AgentCommandOutputEvent {
   command: string;
   stream: 'stdout' | 'stderr';
@@ -2806,9 +2813,10 @@ Output as a structured list. Be specific and comprehensive.`;
   }
 
   if (
-    scaffoldApplied &&
-    (deterministicScaffoldOnly ||
-      (scaffoldTemplateId === 'static-site' && looksSimpleStaticWebsiteTask(task)))
+    shouldSkipGenerativeSpecialistsAfterScaffold({
+      scaffoldApplied,
+      deterministicScaffoldOnly,
+    })
   ) {
     log.info(
       '[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists'
