@@ -78,8 +78,6 @@ import {
   FileHeader
 } from './components';
 
-import '../../vibe-styles.css';
-
 const LazyPanelFallback: React.FC<{ lines?: number; padded?: boolean }> = ({
   lines = 6,
   padded = true,
@@ -1248,7 +1246,7 @@ function App() {
               </div>
 
               {/* Live Preview Panel */}
-              {livePreviewOpen && (
+              {livePreviewOpen && (selectedFile || useSplitView) && (
                 <div style={{ width: '50%', minWidth: '300px', flexShrink: 0 }}>
                   <ErrorBoundary>
                     <Suspense fallback={<LazyPanelFallback lines={5} />}>
@@ -1337,9 +1335,30 @@ function App() {
             onCreateProject={async (projectPath, _template, createResult) => {
               await loadDirectory(projectPath);
               if (createResult?.dependenciesInstalled === false && createResult?.installOutput) {
-                toast.error('Project Created With Setup Warnings', createResult.installOutput);
+                toast.warning('Project Created With Setup Notes', 'Dependencies need attention, but the project files were created.');
               }
               toast.success('Project Created', projectPath);
+            }}
+            onLaunchProject={async (projectPath) => {
+              try {
+                const result = await window.agentAPI.launchProject(projectPath);
+                if (result?.success) {
+                  if (result.url && /^(https?|file):\/\//.test(result.url)) {
+                    setLivePreviewUrl(result.url);
+                    setLivePreviewOpen(true);
+                  }
+                  toast.success('Preview Launched', result.message || 'Project launched successfully.');
+                  return { success: true, message: result.message, url: result.url };
+                }
+
+                const message = result?.error || result?.message || 'Could not launch this project automatically.';
+                toast.warning('Preview Needs Attention', message);
+                return { success: false, error: message, message: result?.message };
+              } catch (error: any) {
+                const message = error?.message || 'Could not launch this project automatically.';
+                toast.warning('Preview Needs Attention', message);
+                return { success: false, error: message };
+              }
             }}
             onSwitchToAIComposer={(request) => {
               setTemplateModalOpen(false);

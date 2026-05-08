@@ -1172,8 +1172,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           .settings-overlay {
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
+            padding: 24px;
+            background: rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(10px);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1193,16 +1194,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
           .settings-panel {
             position: relative;
-            width: 92%;
-            max-width: 860px;
-            height: 80%;
-            max-height: 680px;
-            background: var(--prime-bg);
-            border-radius: 14px;
+            width: min(920px, 100%);
+            height: min(760px, calc(100vh - 64px));
+            background: var(--prime-surface);
+            border-radius: 20px;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.3);
+            box-shadow: var(--prime-shadow-xl, 0 24px 48px -12px rgba(0, 0, 0, 0.3));
             border: 1px solid var(--prime-border);
             animation: settingsSlideIn 0.2s ease;
             color-scheme: light dark;
@@ -1213,24 +1212,25 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             top: 12px;
             right: 12px;
             z-index: 2;
-            width: 40px;
-            height: 40px;
+            width: 34px;
+            height: 34px;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0;
             padding: 0;
-            border: none;
+            border: 1px solid var(--prime-border);
             border-radius: 10px;
-            background: var(--prime-surface-hover);
+            background: var(--prime-surface);
             color: var(--prime-text-secondary);
             cursor: pointer;
-            transition: background 0.12s ease, color 0.12s ease;
+            transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
           }
 
           .settings-close-fab:hover {
-            background: var(--prime-border);
-            color: var(--prime-text);
+            background: rgba(239, 68, 68, 0.1);
+            border-color: var(--prime-error);
+            color: var(--prime-error);
           }
 
           .settings-header {
@@ -1238,9 +1238,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             align-items: center;
             justify-content: space-between;
             gap: 16px;
-            padding: 18px 56px 16px 24px;
+            padding: 18px 58px 16px 24px;
             border-bottom: 1px solid var(--prime-border);
-            background: var(--prime-surface);
+            background: linear-gradient(180deg, var(--prime-surface-elevated), var(--prime-surface));
           }
 
           .settings-header h2 {
@@ -1266,13 +1266,13 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           }
 
           .settings-tabs {
-            width: 190px;
-            padding: 12px;
-            background: var(--prime-surface);
+            width: 208px;
+            padding: 14px 12px;
+            background: var(--prime-bg);
             border-right: 1px solid var(--prime-border);
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            gap: 6px;
             flex-shrink: 0;
           }
 
@@ -1280,35 +1280,39 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             display: flex;
             align-items: center;
             gap: 10px;
-            padding: 9px 14px;
+            padding: 10px 12px;
             background: transparent;
-            border: none;
-            border-radius: 8px;
+            border: 1px solid transparent;
+            border-radius: 10px;
             color: var(--prime-text-secondary);
             font-size: 13px;
-            font-weight: 500;
+            font-weight: 600;
             text-align: left;
             cursor: pointer;
-            transition: all 0.12s ease;
+            transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
           }
 
           .settings-tab:hover {
             background: var(--prime-surface-hover);
+            border-color: var(--prime-border-light, var(--prime-border));
             color: var(--prime-text);
           }
 
           .settings-tab.active {
-            background: var(--prime-accent);
-            color: #ffffff;
-            font-weight: 600;
+            background: var(--prime-accent-light);
+            border-color: color-mix(in srgb, var(--prime-accent) 35%, transparent);
+            color: var(--prime-accent);
+            font-weight: 700;
           }
 
           .settings-content {
             flex: 1;
             min-height: 0;
-            padding: 28px 32px;
+            padding: 28px 34px;
             overflow-y: auto;
             background: var(--prime-bg);
+            scrollbar-width: thin;
+            scrollbar-color: var(--prime-border) transparent;
           }
 
           .settings-content--shortcuts {
@@ -1318,10 +1322,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           }
 
           .settings-section {
-            max-width: 560px;
+            max-width: 620px;
             background: transparent;
             padding: 0;
             border: none;
+            margin-bottom: 28px;
           }
 
           .settings-section * {

@@ -11,6 +11,60 @@ interface Template {
   variables?: Array<{ name: string; label: string; default: string }>;
 }
 
+interface TemplateCreateResult {
+  success?: boolean;
+  projectPath?: string;
+  dependenciesInstalled?: boolean;
+  installOutput?: string;
+  filesCreated?: string[];
+  postCreate?: string[];
+  stepResults?: Array<{ command?: string; success?: boolean; output?: string }>;
+  error?: string;
+}
+
+interface ProjectCreationOutcome {
+  projectPath: string;
+  templateName: string;
+  filesCreated: number;
+  dependenciesInstalled?: boolean;
+  installOutput?: string;
+  openError?: string;
+  launchState: 'idle' | 'launching' | 'running' | 'failed';
+  launchMessage?: string;
+}
+
+interface LaunchProjectResult {
+  success: boolean;
+  message?: string;
+  url?: string;
+  error?: string;
+}
+
+const cleanErrorMessage = (message: unknown): string => {
+  if (typeof message !== 'string' || !message.trim()) {
+    return 'Something went wrong. Try again or choose a different project location.';
+  }
+
+  return message
+    .replace(/^Error:\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const summarizeInstallOutput = (output?: string): string => {
+  if (!output?.trim()) {
+    return 'Dependency setup did not complete. You can still open the project and run install manually.';
+  }
+
+  const meaningfulLines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.toLowerCase().includes('npm notice'));
+
+  return meaningfulLines.slice(-4).join('\n') || 'Dependency setup produced warnings. The project files were still created.';
+};
+
 // Complexity detection for project requests
 const detectComplexity = (description: string): 'simple' | 'complex' => {
   const complexKeywords = [
@@ -105,7 +159,8 @@ const getPrimaryButtonLabel = (loading: boolean, loadingStatus: string): string 
 interface TemplateModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (projectPath: string, template: Template, createResult: any) => Promise<void>;
+  onCreateProject: (projectPath: string, template: Template, createResult: TemplateCreateResult) => Promise<void>;
+  onLaunchProject?: (projectPath: string) => Promise<LaunchProjectResult>;
   onSwitchToAIComposer?: (request: string) => void;
 }
 
@@ -113,6 +168,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
   isOpen,
   onClose,
   onCreateProject,
+  onLaunchProject,
   onSwitchToAIComposer
 }) => {
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
@@ -124,6 +180,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [projectDescription, setProjectDescription] = useState('');
   const [showComplexityCheck, setShowComplexityCheck] = useState(false);
+  const [creationOutcome, setCreationOutcome] = useState<ProjectCreationOutcome | null>(null);
   const workflowStage = getWorkflowStage(selectedTemplate, loading, loadingStatus);
 
   const handleSelectTemplate = (template: Template) => {
@@ -132,6 +189,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
     setAuthorName(template.variables?.find((v: any) => v.name === 'author')?.default || 'Developer');
     setProjectDescription(template.variables?.find((v: any) => v.name === 'description')?.default || template.description || '');
     setError(null);
+    setCreationOutcome(null);
   };
 
   const handleDescriptionSubmit = () => {
@@ -160,6 +218,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
     setLoading(true);
     setLoadingStatus('Preparing workspace...');
     setError(null);
+    setCreationOutcome(null);
 
     try {
       // Get project location
@@ -184,7 +243,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
       setLoadingStatus('Scaffolding starter files...');
 
       // Create project from template
-      const createResult = await (window as any).agentAPI.createFromTemplate(
+      const createResult: TemplateCreateResult = await (window as any).agentAPI.createFromTemplate(
         selectedTemplate.id,
         location,
         variables
@@ -201,41 +260,160 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
         
         // Open the created project
         const projectPath = createResult.projectPath || `${location}/${projectName.trim()}`;
-        await onCreateProject(projectPath, selectedTemplate, createResult);
-        onClose();
-        // Reset state
-        setSelectedTemplate(null);
-        setProjectName('');
-        setProjectLocation('');
-        setAuthorName('');
-        setProjectDescription('');
-        setLoadingStatus('');
+        let openError: string | undefined;
+        try {
+          await onCreateProject(projectPath, selectedTemplate, createResult);
+        } catch (openProjectError: any) {
+          openError = cleanErrorMessage(openProjectError?.message || openProjectError);
+        }
+
+        setCreationOutcome({
+          projectPath,
+          templateName: selectedTemplate.name,
+          filesCreated: createResult.filesCreated?.length || 0,
+          dependenciesInstalled: createResult.dependenciesInstalled,
+          installOutput: createResult.installOutput,
+          openError,
+          launchState: 'idle',
+        });
       } else {
-        setError(createResult.error || 'Failed to create project');
+        setError(cleanErrorMessage(createResult.error || 'Failed to create project'));
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create project');
+      setError(cleanErrorMessage(err?.message || 'Failed to create project'));
     } finally {
       setLoading(false);
       setLoadingStatus('');
     }
   };
 
+  const handleLaunchPreview = async () => {
+    if (!creationOutcome || !onLaunchProject) return;
+
+    setCreationOutcome((prev) => prev ? { ...prev, launchState: 'launching', launchMessage: 'Starting project...' } : prev);
+    try {
+      const result = await onLaunchProject(creationOutcome.projectPath);
+      setCreationOutcome((prev) => prev ? {
+        ...prev,
+        launchState: result.success ? 'running' : 'failed',
+        launchMessage: result.success
+          ? (result.message || 'Project is running. Preview opened when a URL was detected.')
+          : cleanErrorMessage(result.error || result.message || 'Could not launch this project automatically.'),
+      } : prev);
+    } catch (launchError: any) {
+      setCreationOutcome((prev) => prev ? {
+        ...prev,
+        launchState: 'failed',
+        launchMessage: cleanErrorMessage(launchError?.message || launchError),
+      } : prev);
+    }
+  };
+
+  const resetAndClose = () => {
+    onClose();
+    setSelectedTemplate(null);
+    setProjectName('');
+    setProjectLocation('');
+    setAuthorName('');
+    setProjectDescription('');
+    setLoadingStatus('');
+    setError(null);
+    setCreationOutcome(null);
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={loading ? undefined : resetAndClose}>
       <div className="template-modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="template-modal-header">
           <div className="template-modal-title-group">
             <h2>Create New Project</h2>
             <p>{workflowStage.detail}</p>
           </div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={resetAndClose} disabled={loading}>✕</button>
         </div>
 
         <div className="template-modal-body">
-          {showComplexityCheck ? (
+          {creationOutcome ? (
+            <div className="project-create-result">
+              <div className={`project-create-result-card ${creationOutcome.openError ? 'has-warning' : ''}`}>
+                <div className="project-create-result-icon" aria-hidden="true">
+                  {creationOutcome.openError ? '!' : 'OK'}
+                </div>
+                <div className="project-create-result-copy">
+                  <h3>Project created</h3>
+                  <p>
+                    {creationOutcome.templateName} is ready at <code>{creationOutcome.projectPath}</code>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="project-create-summary-grid">
+                <div className="project-create-summary-item">
+                  <span className="project-create-summary-label">Files</span>
+                  <span className="project-create-summary-value">
+                    {creationOutcome.filesCreated > 0 ? `${creationOutcome.filesCreated} created` : 'Created'}
+                  </span>
+                </div>
+                <div className="project-create-summary-item">
+                  <span className="project-create-summary-label">Dependencies</span>
+                  <span className="project-create-summary-value">
+                    {creationOutcome.dependenciesInstalled ? 'Installed' : 'Needs review'}
+                  </span>
+                </div>
+                <div className="project-create-summary-item">
+                  <span className="project-create-summary-label">Workspace</span>
+                  <span className="project-create-summary-value">
+                    {creationOutcome.openError ? 'Created, not opened' : 'Opened'}
+                  </span>
+                </div>
+              </div>
+
+              {creationOutcome.installOutput && !creationOutcome.dependenciesInstalled && (
+                <div className="project-create-notice warning">
+                  <strong>Dependency setup needs attention.</strong>
+                  <pre>{summarizeInstallOutput(creationOutcome.installOutput)}</pre>
+                </div>
+              )}
+
+              {creationOutcome.openError && (
+                <div className="project-create-notice warning">
+                  <strong>The files were created, but AgentPrime could not open the workspace automatically.</strong>
+                  <span>{creationOutcome.openError}</span>
+                </div>
+              )}
+
+              {creationOutcome.launchState !== 'idle' && (
+                <div className={`project-create-notice ${creationOutcome.launchState === 'failed' ? 'warning' : 'success'}`}>
+                  <strong>
+                    {creationOutcome.launchState === 'launching'
+                      ? 'Launching preview...'
+                      : creationOutcome.launchState === 'running'
+                        ? 'Preview launched'
+                        : 'Preview launch needs attention'}
+                  </strong>
+                  {creationOutcome.launchMessage && <span>{creationOutcome.launchMessage}</span>}
+                </div>
+              )}
+
+              <div className="project-create-result-actions">
+                <button type="button" className="complexity-btn secondary" onClick={resetAndClose}>
+                  Done
+                </button>
+                {onLaunchProject && (
+                  <button
+                    type="button"
+                    className="complexity-btn primary"
+                    onClick={handleLaunchPreview}
+                    disabled={creationOutcome.launchState === 'launching'}
+                  >
+                    {creationOutcome.launchState === 'launching' ? 'Launching...' : 'Launch Preview'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : showComplexityCheck ? (
             <div className="complexity-check">
               <div className="complexity-header">
                 <h3>Tell me about your project</h3>
@@ -387,8 +565,9 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
                 </div>
 
                 {error && (
-                  <div className="error-message">
-                    Error: {error}
+                  <div className="error-message template-flow-error">
+                    <strong>Project setup stopped.</strong>
+                    <span>{error}</span>
                   </div>
                 )}
 
@@ -402,7 +581,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
           )}
         </div>
 
-        {selectedTemplate && (
+        {selectedTemplate && !creationOutcome && (
           <div className="template-modal-footer">
             <div className="template-footer-status">
               <span className="template-footer-status-label">{workflowStage.label}</span>
@@ -410,7 +589,7 @@ const TemplateModal: React.FC<TemplateModalProps> = ({
             </div>
             <button 
               type="button" 
-              onClick={onClose}
+              onClick={resetAndClose}
               disabled={loading}
             >
               Cancel

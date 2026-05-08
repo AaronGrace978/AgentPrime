@@ -1236,36 +1236,16 @@ const AIChat: React.FC<AIChatProps> = ({
   const busy = agentRunning || isLoading || isRetrying;
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      background: 'rgba(0, 0, 0, 0.5)',
-      backdropFilter: 'blur(4px)',
-      display: isVisible ? 'flex' : 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-      animation: 'chatOverlayIn 0.15s ease'
-    }} onClick={() => {
+    <div
+      className="ai-chat-overlay"
+      style={{ display: isVisible ? 'flex' : 'none' }}
+      onClick={() => {
       if (busy) return;
       onClose();
     }}>
-      <div style={{
-        background: 'var(--prime-bg)',
-        border: '1px solid var(--prime-border)',
-        borderRadius: '14px',
-        width: '90%',
-        maxWidth: '800px',
-        height: '80%',
-        maxHeight: '700px',
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.3)',
-        overflow: 'hidden',
-        animation: 'chatModalIn 0.2s ease'
-      }} onClick={(e) => e.stopPropagation()}>
+      <div className="ai-chat-panel" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div style={{ background: 'var(--prime-surface)' }}>
+        <div className="ai-chat-panel-header">
           <ChatHeader
             chatMode={chatMode}
             pythonBrainStatus={pythonBrainStatus}
@@ -1274,24 +1254,9 @@ const AIChat: React.FC<AIChatProps> = ({
           />
 
           {/* Toolbar */}
-          <div style={{
-            padding: '8px 18px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            borderTop: '1px solid var(--prime-border)',
-            borderBottom: '1px solid var(--prime-border)',
-            flexWrap: 'wrap',
-            background: 'var(--prime-bg)'
-          }}>
+          <div className="ai-chat-toolbar">
             {/* ── Mode switcher ── */}
-            <div style={{
-              display: 'inline-flex',
-              borderRadius: '8px',
-              border: '1px solid var(--prime-border)',
-              overflow: 'hidden',
-              flexShrink: 0
-            }}>
+            <div className="ai-chat-mode-switcher">
               {([
                 { mode: 'agent' as ChatMode, label: 'Agent' },
                 { mode: 'chat'  as ChatMode, label: 'Chat' },
@@ -1301,22 +1266,9 @@ const AIChat: React.FC<AIChatProps> = ({
                   key={mode}
                   onClick={() => handleModeSwitch(mode)}
                   disabled={isLoading || agentRunning}
-                  style={{
-                    padding: '5px 12px',
-                    border: 'none',
-                    background: chatMode === mode
-                      ? mode === 'dino' ? 'rgba(245, 158, 11, 0.18)' : 'var(--prime-accent)'
-                      : 'transparent',
-                    color: chatMode === mode
-                      ? mode === 'dino' ? 'var(--prime-amber)' : '#fff'
-                      : 'var(--prime-text-muted)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: isLoading || agentRunning ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.12s ease',
-                    borderRight: mode !== 'dino' ? '1px solid var(--prime-border)' : 'none'
-                  }}
+                  className="ai-chat-mode-button"
+                  data-active={chatMode === mode}
+                  data-mode={mode}
                 >
                   {label}
                 </button>

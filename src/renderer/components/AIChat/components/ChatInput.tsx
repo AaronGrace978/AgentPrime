@@ -126,10 +126,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const workspaceHint = getWorkspaceHint(chatMode, workspacePath);
 
   return (
-    <div style={{
-      padding: '12px 16px 14px',
-      borderTop: '1px solid var(--prime-border)',
-      background: 'var(--prime-surface)',
+    <div className="chat-input-shell" style={{
+      padding: '14px 16px 16px',
+      borderTop: '1px solid var(--prime-border-light, var(--prime-border))',
+      background: 'linear-gradient(180deg, var(--prime-surface) 0%, var(--prime-surface-elevated) 100%)',
       position: 'relative'
     }}>
       <MentionAutocomplete
@@ -207,6 +207,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <textarea
+            className="chat-input-textarea"
             ref={textareaRef}
             value={input}
             onChange={handleInputChange}
@@ -215,9 +216,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             rows={1}
             style={{
               width: '100%',
-              padding: '11px 14px',
+              padding: '12px 14px',
               paddingRight: '52px',
-              borderRadius: '10px',
+              borderRadius: '14px',
               border: '1px solid var(--prime-border)',
               background: 'var(--prime-bg)',
               color: 'var(--prime-text)',
@@ -228,7 +229,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               maxHeight: '120px',
               outline: 'none',
               transition: 'border-color 0.12s ease, box-shadow 0.12s ease',
-              lineHeight: '1.5'
+              lineHeight: '1.5',
+              boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.04)'
             }}
             onFocus={(e) => {
               e.currentTarget.style.borderColor = 'var(--prime-accent)';
@@ -276,11 +278,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </button>
           )}
           <button
+            className="chat-primary-action"
             onClick={onSend}
             disabled={isDisabled}
             style={{
               padding: '10px 18px',
-              borderRadius: '8px',
+              borderRadius: '12px',
               border: 'none',
               background: isDisabled ? 'var(--prime-border)' : 'var(--prime-accent)',
               color: isDisabled ? 'var(--prime-text-muted)' : '#fff',

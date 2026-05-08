@@ -57,6 +57,13 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, sy
     ai?.availableModels !== undefined ? `Provider reported ${ai.availableModels} model${ai.availableModels === 1 ? '' : 's'}` : null,
     ai?.connectionError || ai?.reason || null,
   ].filter(Boolean).join('\n');
+  const doctorState = startup
+    ? startup.warningCount > 0
+      ? 'warning'
+      : startup.infoCount > 0
+        ? 'note'
+        : 'healthy'
+    : 'checking';
   const doctorLabel = startup
     ? startup.warningCount > 0
       ? `${startup.warningCount} warning${startup.warningCount === 1 ? '' : 's'}`
@@ -97,16 +104,11 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, sy
         <button
           type="button"
           onClick={onOpenSystemStatus}
-          className="status-item"
+          className={`status-item status-action brain-status ${brain?.enabled ? (brain.connected ? 'connected' : 'offline') : 'desktop-only'}`}
           title={brain?.enabled
             ? `Python Brain is ${brain.connected ? 'connected' : 'offline'}`
             : 'Desktop-only mode active. Python Brain is optional and disabled by default.'}
-          style={{
-            border: '1px solid var(--prime-border)',
-            background: 'transparent',
-            color: 'var(--prime-text-secondary)',
-            cursor: onOpenSystemStatus ? 'pointer' : 'default',
-          }}
+          disabled={!onOpenSystemStatus}
         >
           <span className="status-icon">{brain?.enabled ? 'BR' : 'PC'}</span>
           <span className="status-text">
@@ -116,14 +118,9 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, sy
         <button
           type="button"
           onClick={onOpenSystemStatus}
-          className="status-item"
+          className={`status-item status-action doctor-status ${doctorState}`}
           title={startup ? `${startup.warningCount} warning(s), ${startup.infoCount} info message(s)` : 'Open system status'}
-          style={{
-            border: '1px solid var(--prime-border)',
-            background: 'transparent',
-            color: 'var(--prime-text-secondary)',
-            cursor: onOpenSystemStatus ? 'pointer' : 'default',
-          }}
+          disabled={!onOpenSystemStatus}
         >
           <span className="status-icon">DR</span>
           <span className="status-text">{doctorLabel}</span>

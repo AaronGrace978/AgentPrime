@@ -2,9 +2,17 @@
 
 .welcome-pro {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  scrollbar-width: none;
   padding: 60px 32px 48px;
   background: var(--prime-bg);
+}
+
+.welcome-pro::-webkit-scrollbar,
+.welcome-pro-recent-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .welcome-pro-shell {
@@ -15,7 +23,7 @@
   gap: 36px;
 }
 
-/* ── Hero ── */
+/* Hero */
 
 .welcome-pro-hero {
   text-align: center;
@@ -52,7 +60,7 @@
   color: var(--prime-text-muted);
 }
 
-/* ── Action Cards ── */
+/* Action Cards */
 
 .welcome-pro-actions {
   display: grid;
@@ -84,15 +92,41 @@
   outline-offset: 2px;
 }
 
-.welcome-pro-action[data-variant="create"] .welcome-pro-action-icon { color: #8b5cf6; background: rgba(139, 92, 246, 0.1); }
-.welcome-pro-action[data-variant="open"] .welcome-pro-action-icon { color: var(--prime-accent); background: var(--prime-accent-light); }
-.welcome-pro-action[data-variant="chat"] .welcome-pro-action-icon { color: #10b981; background: rgba(16, 185, 129, 0.1); }
-.welcome-pro-action[data-variant="file"] .welcome-pro-action-icon { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+.welcome-pro-action[data-variant="create"] .welcome-pro-action-icon {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+}
 
-.welcome-pro-action[data-variant="create"]:hover { border-color: rgba(139, 92, 246, 0.4); }
-.welcome-pro-action[data-variant="open"]:hover { border-color: rgba(59, 130, 246, 0.4); }
-.welcome-pro-action[data-variant="chat"]:hover { border-color: rgba(16, 185, 129, 0.4); }
-.welcome-pro-action[data-variant="file"]:hover { border-color: rgba(245, 158, 11, 0.4); }
+.welcome-pro-action[data-variant="open"] .welcome-pro-action-icon {
+  color: var(--prime-accent);
+  background: var(--prime-accent-light);
+}
+
+.welcome-pro-action[data-variant="chat"] .welcome-pro-action-icon {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.welcome-pro-action[data-variant="file"] .welcome-pro-action-icon {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.welcome-pro-action[data-variant="create"]:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+}
+
+.welcome-pro-action[data-variant="open"]:hover {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.welcome-pro-action[data-variant="chat"]:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.welcome-pro-action[data-variant="file"]:hover {
+  border-color: rgba(245, 158, 11, 0.4);
+}
 
 .welcome-pro-action-icon {
   width: 36px;
@@ -136,7 +170,7 @@
   line-height: 1.4;
 }
 
-/* ── Shortcut Tip ── */
+/* Shortcut Tip */
 
 .welcome-pro-tip {
   display: flex;
@@ -174,7 +208,7 @@
   font-weight: 500;
 }
 
-/* ── Recent Projects ── */
+/* Recent Projects */
 
 .welcome-pro-recent {
   border: 1px solid var(--prime-border);
@@ -225,6 +259,7 @@
   gap: 2px;
   max-height: 340px;
   overflow-y: auto;
+  scrollbar-width: none;
   transition: max-height 0.25s ease, opacity 0.15s ease, padding 0.15s ease;
 }
 
@@ -291,7 +326,7 @@
   flex-shrink: 0;
 }
 
-/* ── Empty + Footer ── */
+/* Empty + Footer */
 
 .welcome-pro-empty {
   border: 1px dashed var(--prime-border);
@@ -313,6 +348,14 @@
   flex-direction: column;
   align-items: center;
   gap: 10px;
+}
+
+.welcome-pro-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .welcome-pro-guide-link {
@@ -338,11 +381,310 @@
   outline-offset: 2px;
 }
 
-/* ── Responsive ── */
+/* Optional Launchpad View */
+
+.welcome-pro--launchpad {
+  padding: clamp(28px, 4vw, 56px) clamp(22px, 4vw, 56px) clamp(48px, 7vh, 84px);
+  background:
+    radial-gradient(circle at 18% 12%, var(--prime-accent-glow), transparent 28%),
+    linear-gradient(180deg, var(--prime-bg) 0%, var(--prime-surface) 100%);
+}
+
+.welcome-launchpad-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.welcome-launchpad-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.72fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.welcome-launchpad-copy,
+.welcome-launchpad-command-card,
+.welcome-launchpad-proof-card {
+  border: 1px solid var(--prime-border);
+  background: color-mix(in srgb, var(--prime-surface) 92%, transparent);
+  box-shadow: var(--prime-shadow-sm);
+}
+
+.welcome-launchpad-copy {
+  min-height: 360px;
+  padding: clamp(28px, 5vw, 52px);
+  border-radius: 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-launchpad-copy::after {
+  content: '';
+  position: absolute;
+  right: -78px;
+  bottom: -118px;
+  width: 260px;
+  height: 260px;
+  border-radius: 999px;
+  background: var(--prime-accent-glow);
+  pointer-events: none;
+}
+
+.welcome-launchpad-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  margin-bottom: 22px;
+  padding: 5px 11px 5px 5px;
+  border: 1px solid var(--prime-border-light, var(--prime-border));
+  border-radius: 999px;
+  background: var(--prime-surface-elevated);
+  color: var(--prime-text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.welcome-launchpad-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--prime-accent);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.welcome-launchpad-title {
+  max-width: 760px;
+  margin: 0;
+  color: var(--prime-text);
+  font-size: clamp(34px, 5vw, 58px);
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: -0.065em;
+}
+
+.welcome-launchpad-subtitle {
+  max-width: 650px;
+  margin: 18px 0 0;
+  color: var(--prime-text-secondary);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.welcome-launchpad-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.welcome-launchpad-primary-action,
+.welcome-launchpad-secondary-action {
+  min-height: 38px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 800;
+  transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.welcome-launchpad-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 18px;
+  border: 1px solid var(--prime-accent);
+  background: var(--prime-accent);
+  color: #fff;
+}
+
+.welcome-launchpad-primary-action span {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.welcome-launchpad-secondary-action {
+  padding: 8px 14px;
+  border: 1px solid var(--prime-border);
+  background: var(--prime-surface);
+  color: var(--prime-text-secondary);
+}
+
+.welcome-launchpad-primary-action:hover,
+.welcome-launchpad-secondary-action:hover {
+  transform: translateY(-1px);
+}
+
+.welcome-launchpad-secondary-action:hover {
+  border-color: var(--prime-accent);
+  color: var(--prime-text);
+  background: var(--prime-surface-hover);
+}
+
+.welcome-launchpad-command-card {
+  border-radius: 24px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.welcome-launchpad-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--prime-text);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.welcome-launchpad-live-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--ap-success-soft, rgba(16, 185, 129, 0.12));
+  color: var(--prime-success);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.welcome-launchpad-workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-launchpad-workflow-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--prime-border-light, var(--prime-border));
+  border-radius: 14px;
+  background: var(--prime-surface-elevated);
+  color: var(--prime-text-secondary);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.welcome-launchpad-workflow-index {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--prime-accent-light);
+  color: var(--prime-accent);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.welcome-launchpad-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--prime-border-light, var(--prime-border));
+  border-radius: 14px;
+  background: var(--prime-surface-elevated);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.welcome-launchpad-tip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.welcome-launchpad-actions {
+  gap: 12px;
+}
+
+.welcome-launchpad-actions .welcome-pro-action {
+  min-height: 204px;
+  padding: 18px;
+  border-radius: 18px;
+}
+
+.welcome-launchpad-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.welcome-launchpad-proof-card {
+  min-height: 132px;
+  padding: 18px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.welcome-launchpad-proof-value {
+  color: var(--prime-text);
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+}
+
+.welcome-launchpad-proof-label {
+  color: var(--prime-text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.welcome-launchpad-proof-detail {
+  margin-top: 4px;
+  color: var(--prime-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.welcome-pro--launchpad .welcome-pro-recent-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* Responsive */
 
 @media (max-width: 900px) {
   .welcome-pro-actions {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .welcome-launchpad-hero,
+  .welcome-launchpad-proof-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .welcome-pro--launchpad .welcome-pro-recent-list {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -350,9 +692,11 @@
   .welcome-pro {
     padding: 36px 16px 32px;
   }
+
   .welcome-pro-actions {
     grid-template-columns: 1fr;
   }
+
   .welcome-pro-recent-time {
     display: none;
   }

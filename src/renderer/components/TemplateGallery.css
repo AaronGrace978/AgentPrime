@@ -95,3 +95,151 @@
   border-color: var(--prime-accent-hover);
   box-shadow: var(--prime-shadow-md);
 }
+
+.template-modal-content .project-create-result {
+  max-width: 720px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.template-modal-content .project-create-result-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  border-radius: 16px;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.template-modal-content .project-create-result-card.has-warning {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.template-modal-content .project-create-result-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--prime-surface);
+  border: 1px solid var(--prime-border);
+  color: var(--prime-success);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.template-modal-content .project-create-result-card.has-warning .project-create-result-icon {
+  color: var(--prime-amber);
+}
+
+.template-modal-content .project-create-result-copy h3 {
+  margin: 0 0 4px;
+  color: var(--prime-text);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.template-modal-content .project-create-result-copy p {
+  margin: 0;
+  color: var(--prime-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.template-modal-content .project-create-result-copy code {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--prime-text);
+  word-break: break-all;
+}
+
+.template-modal-content .project-create-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.template-modal-content .project-create-summary-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--prime-border);
+  border-radius: 12px;
+  background: var(--prime-surface);
+}
+
+.template-modal-content .project-create-summary-label {
+  color: var(--prime-text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.template-modal-content .project-create-summary-value {
+  color: var(--prime-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.template-modal-content .project-create-notice {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.template-modal-content .project-create-notice.warning {
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--prime-text-secondary);
+}
+
+.template-modal-content .project-create-notice.success {
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--prime-text-secondary);
+}
+
+.template-modal-content .project-create-notice strong {
+  color: var(--prime-text);
+}
+
+.template-modal-content .project-create-notice pre {
+  max-height: 140px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--prime-text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.template-modal-content .project-create-result-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.template-modal-content .template-flow-error {
+  display: grid;
+  gap: 4px;
+}
+
+.template-modal-content .template-flow-error strong {
+  color: var(--prime-error);
+}
+
+@media (max-width: 720px) {
+  .template-modal-content .project-create-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
