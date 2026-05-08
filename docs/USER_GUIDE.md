@@ -1,132 +1,123 @@
 # AgentPrime User Guide
 
-The same content is available as a styled page at [`user-guide.html`](user-guide.html) (opened from the app via **Open User Guide** on the welcome screen).
+The styled in-app guide lives at [`user-guide.html`](user-guide.html). AgentPrime opens that page from **Open User Guide** on the welcome screen.
 
-## Getting Started
+AgentPrime is a local-first AI development workspace for creating projects, editing code, using Agent Mode, running previews, and keeping the build loop in one place.
 
-### First Launch
+## Start Here
 
-When you first launch AgentPrime, you'll see the Onboarding wizard which will guide you through the initial setup.
+When no file is open, AgentPrime shows the welcome screen.
 
-### Opening a Project
+- **Classic View** is the default daily-use surface: New Project, Open Project, AI Chat, New File, recent projects, and core shortcuts.
+- **Launchpad View** is optional: a larger product-style home screen with Target Loop cards and the same creation actions.
+- Switching views only changes the welcome screen layout. It does not change project creation, Agent Mode, previews, or workspace behavior.
 
-1. Press `Ctrl+O` (Windows/Linux) or `Cmd+O` (macOS)
-2. Or use the Command Palette (`Ctrl+K`) and search for "Open Project"
-3. Select a folder to open as your workspace
+## Create a Project
 
-### Setting Up AI Providers
+Use **New Project** from the welcome screen or press `Ctrl+Shift+N`.
 
-1. Open Settings (`Ctrl+,` or Command Palette > Settings)
-2. Navigate to "AI Providers"
-3. Enter your API keys for the providers you want to use:
-   - **Anthropic**: Get your key from https://console.anthropic.com
-   - **OpenAI**: Get your key from https://platform.openai.com
-   - **Ollama**: Run locally, no key needed
-   - **OpenRouter**: Get your key from https://openrouter.ai
+1. Choose a template from the template gallery.
+2. Configure the project name, destination, author, and description.
+3. Create the project. AgentPrime writes the files and opens the generated workspace.
+4. Let dependency installation run when the template supports it.
+5. Use **Launch Preview** from the success screen when AgentPrime detects a runnable project URL.
 
-## Keyboard Shortcuts
+If dependency installation fails, the files are still created. AgentPrime now shows that as a setup note instead of a scary fatal error. Open the workspace and run the suggested install command in the terminal.
 
-### File Operations
-- `Ctrl+O` - Open Project
-- `Ctrl+S` - Save File
-- `Ctrl+Shift+S` - Save All
-- `Ctrl+W` - Close Tab
+## Agent Mode
 
-### AI Features
-- `Ctrl+Shift+C` - Open AI Composer
-- `Ctrl+J` - Just Chat (casual conversation)
-- `Ctrl+Shift+W` - Words to Code
-- `Ctrl+Shift+M` - Mirror Intelligence
+Open Agent Mode with `Ctrl+L` or the **Ask AI** button.
 
-### Navigation
-- `Ctrl+K` - Command Palette
-- `Ctrl+B` - Toggle File Explorer
-- `Ctrl+\`` - Toggle Terminal
-- `Ctrl+Shift+G` - Git Panel
+Use Agent Mode for:
 
-### Editor
-- `Ctrl+F` - Search & Replace
-- `Tab` - Accept ghost text completion
-- `Escape` - Clear ghost text
+- Implementing features.
+- Refactoring code.
+- Repairing broken flows.
+- Reviewing project structure.
+- Running checks and explaining failures.
 
-## AI Features
+AgentPrime also includes:
 
-### AI Composer
+- **Just Chat** for brainstorming and explanations.
+- **Dino Buddy** for calmer learning-style help.
+- **Review Loop** for checking generated diffs before applying changes.
 
-The AI Composer is your primary interface for interacting with AI. It can:
-- Answer questions about your code
-- Generate new code
-- Refactor existing code
-- Debug issues
-- Explain complex logic
+## Workspace Flow
 
-### Ghost Text Completions
+### Open a Project
 
-As you type, AgentPrime provides inline suggestions. Press `Tab` to accept a suggestion.
+Use `Ctrl+O` or **Open Project** on the welcome screen. The explorer, editor, terminal, Git panel, Live Preview, status bar, and Agent Mode all use the active workspace.
 
-### Mirror Intelligence
+### Run and Preview
 
-Mirror Intelligence learns from your coding patterns and provides personalized suggestions based on your style.
+Press `F5` or use the project run actions. When AgentPrime receives a local URL from the runner, Live Preview opens in the IDE.
 
-### Words to Code
+Some templates need a manual command first, such as:
 
-Describe what you want to build in natural language, and AgentPrime will generate the code structure for you.
+```bash
+npm install
+npm run dev
+```
 
-## Project Management
+### Status Bar
 
-### Task Manager
+The status bar summarizes:
 
-Access the Task Manager with `Ctrl+Shift+T` to:
-- Create and track tasks
-- Organize work with priorities
-- Mark tasks as complete
-
-### Git Integration
-
-The Git Panel (`Ctrl+Shift+G`) provides:
-- File staging
-- Commit creation
-- Branch management
-- Push/pull operations
+- AI provider/model connection.
+- Desktop-only or Python Brain state.
+- Startup doctor warnings and notes.
+- Current language and line count.
+- Shortcut hints and current time.
 
 ## Settings
 
-### Theme
+Open Settings from the top bar or Command Palette.
 
-Switch between light and dark themes in Settings.
+Common areas:
 
-### Font Size
+- **AI Providers**: Configure Ollama, OpenAI, Anthropic, or OpenRouter.
+- **Agent Behavior**: Choose behavior profiles, autonomy level, specialized agents, and model routing.
+- **Editor**: Set font size, tabs, word wrap, minimap, line numbers, auto-save, and inline completions.
+- **Diagnostics**: Review startup health, provider setup, and advanced runtime notes.
 
-Adjust editor font size from 10-24pt.
+## Keyboard Shortcuts
 
-### AI Model Selection
-
-Choose which AI model to use for different tasks:
-- **Fast Model**: Quick tasks, completions
-- **Deep Model**: Complex analysis, refactoring
+| Action | Shortcut |
+| --- | --- |
+| Command Palette | `Ctrl+K` |
+| Agent Mode | `Ctrl+L` |
+| New Project | `Ctrl+Shift+N` |
+| Open Project | `Ctrl+O` |
+| New File | `Ctrl+N` |
+| Toggle Explorer | `Ctrl+B` |
+| Toggle Terminal | ``Ctrl+` `` |
+| Run Current File | `F5` |
+| Switch Tabs | `Ctrl+Tab` |
+| Save File | `Ctrl+S` |
 
 ## Troubleshooting
 
-### AI Not Responding
+### Project created but dependencies did not install
 
-1. Check your API key is correct in Settings
-2. Verify you have internet connection
-3. Check the provider's status page
+The project files are still available. Open the workspace and run the install command from the terminal. This usually means a package manager is missing, a network request failed, or the template needs manual setup.
 
-### Performance Issues
+### Preview did not launch
 
-1. Close unused files and panels
-2. Restart AgentPrime
-3. Check system resources (RAM, CPU)
+Run the project manually first, such as `npm run dev`, then use the preview URL shown in the terminal.
 
-### Files Not Saving
+### AI is not responding
 
-1. Check file permissions
-2. Ensure disk space is available
-3. Try "Save As" to a different location
+1. Open Settings and confirm provider credentials.
+2. Check the status bar for provider/model state.
+3. Open System Status for startup or doctor warnings.
+4. If using Ollama, confirm the Ollama app/server is running.
 
-## Getting Help
+### Workspace looks stale
 
-- Press `F1` to view all keyboard shortcuts
-- Use the Command Palette (`Ctrl+K`) to find features
-- Check the README for technical details
+Reopen the folder, refresh the explorer, or restart AgentPrime if the file watcher falls behind.
+
+## Best First Agent Prompt
+
+Try:
+
+> Review this project, explain what it does, then suggest the smallest useful next improvement.

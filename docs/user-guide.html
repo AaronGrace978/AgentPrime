@@ -4,34 +4,50 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark light" />
-  <title>AgentPrime — User Guide</title>
+  <title>AgentPrime User Guide</title>
   <style>
     :root {
-      --bg: #0c0f14;
-      --bg-elevated: #12171f;
-      --bg-card: #161c27;
-      --border: rgba(120, 160, 220, 0.12);
-      --text: #e8edf5;
-      --text-muted: #8b9bb8;
-      --accent: #6ea8ff;
-      --accent-soft: rgba(110, 168, 255, 0.14);
-      --accent-glow: rgba(110, 168, 255, 0.35);
-      --radius: 14px;
-      --font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      --mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+      --bg: #0f1a13;
+      --bg-2: #142116;
+      --surface: rgba(24, 38, 28, 0.84);
+      --surface-strong: #17251b;
+      --surface-soft: rgba(255, 255, 255, 0.045);
+      --border: rgba(235, 225, 204, 0.13);
+      --border-strong: rgba(235, 225, 204, 0.22);
+      --text: #f6f1e8;
+      --muted: #b6ad9e;
+      --faint: #80796e;
+      --accent: #f28c45;
+      --accent-hover: #ff9d58;
+      --accent-soft: rgba(242, 140, 69, 0.16);
+      --green: #41d596;
+      --green-soft: rgba(65, 213, 150, 0.12);
+      --warning: #f5b84b;
+      --warning-soft: rgba(245, 184, 75, 0.13);
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 26px;
+      --font: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, monospace;
     }
 
     @media (prefers-color-scheme: light) {
       :root {
-        --bg: #f4f6fb;
-        --bg-elevated: #ffffff;
-        --bg-card: #ffffff;
-        --border: rgba(15, 30, 60, 0.1);
-        --text: #0f172a;
-        --text-muted: #475569;
-        --accent: #2563eb;
-        --accent-soft: rgba(37, 99, 235, 0.1);
-        --accent-glow: rgba(37, 99, 235, 0.2);
+        --bg: #fff6eb;
+        --bg-2: #fbefe0;
+        --surface: rgba(255, 255, 255, 0.88);
+        --surface-strong: #ffffff;
+        --surface-soft: rgba(80, 50, 25, 0.045);
+        --border: rgba(92, 61, 32, 0.12);
+        --border-strong: rgba(92, 61, 32, 0.2);
+        --text: #241911;
+        --muted: #655347;
+        --faint: #8e7a68;
+        --accent-soft: rgba(242, 140, 69, 0.13);
+        --green-soft: rgba(20, 184, 116, 0.11);
+        --warning-soft: rgba(217, 139, 20, 0.12);
+        --shadow: 0 24px 64px rgba(85, 52, 22, 0.16);
       }
     }
 
@@ -45,15 +61,15 @@
 
     body {
       margin: 0;
+      min-height: 100vh;
+      color: var(--text);
       font-family: var(--font);
       font-size: 16px;
       line-height: 1.65;
-      color: var(--text);
-      background: var(--bg);
-      background-image:
-        radial-gradient(ellipse 120% 80% at 50% -20%, var(--accent-soft), transparent 55%),
-        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(110, 168, 255, 0.06), transparent 50%);
-      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 10%, rgba(242, 140, 69, 0.24), transparent 26rem),
+        radial-gradient(circle at 88% 2%, rgba(65, 213, 150, 0.12), transparent 22rem),
+        linear-gradient(180deg, var(--bg), var(--bg-2));
     }
 
     a {
@@ -63,386 +79,596 @@
     }
 
     a:hover {
+      color: var(--accent-hover);
       text-decoration: none;
     }
 
-    .wrap {
-      max-width: 1080px;
+    .page {
+      width: min(1180px, calc(100% - 32px));
       margin: 0 auto;
-      padding: 2.5rem 1.25rem 4rem;
+      padding: 32px 0 56px;
     }
 
-    header.hero {
-      text-align: center;
-      padding: 2rem 1rem 2.5rem;
-      margin-bottom: 2rem;
-      border-radius: var(--radius);
+    .hero {
+      position: relative;
+      overflow: hidden;
+      min-height: 360px;
+      padding: clamp(32px, 6vw, 64px);
       border: 1px solid var(--border);
-      background: linear-gradient(145deg, var(--bg-card), var(--bg-elevated));
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 24px 48px -24px var(--accent-glow);
+      border-radius: var(--radius-lg);
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+        var(--surface);
+      box-shadow: var(--shadow);
     }
 
-    .badge {
-      display: inline-block;
-      font-size: 0.72rem;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--accent);
-      background: var(--accent-soft);
-      padding: 0.35rem 0.75rem;
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -92px;
+      bottom: -112px;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: rgba(242, 140, 69, 0.22);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 12px 5px 5px;
+      border: 1px solid var(--border);
       border-radius: 999px;
-      margin-bottom: 1rem;
+      background: var(--surface-strong);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
 
-    header.hero h1 {
-      margin: 0 0 0.5rem;
-      font-size: clamp(1.75rem, 4vw, 2.35rem);
+    .mark {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      color: #fff;
+      background: var(--accent);
+      font-weight: 900;
+    }
+
+    .hero h1 {
+      max-width: 780px;
+      margin: 24px 0 14px;
+      font-size: clamp(42px, 7vw, 74px);
+      line-height: 0.95;
+      letter-spacing: -0.065em;
+      font-weight: 900;
+    }
+
+    .lead {
+      max-width: 680px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .hero-actions {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 9px 16px;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--surface-strong);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0 26px;
+    }
+
+    .stat-card {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+
+    .stat-card strong {
+      display: block;
+      color: var(--text);
+      font-size: 22px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .stat-card span {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
       font-weight: 700;
-      letter-spacing: -0.02em;
-      line-height: 1.2;
-    }
-
-    header.hero p.lead {
-      margin: 0 auto;
-      max-width: 36rem;
-      color: var(--text-muted);
-      font-size: 1.05rem;
     }
 
     .layout {
       display: grid;
-      gap: 2rem;
+      gap: 22px;
+      grid-template-columns: 248px minmax(0, 1fr);
+      align-items: start;
     }
 
-    @media (min-width: 900px) {
-      .layout {
-        grid-template-columns: 220px 1fr;
-        align-items: start;
-      }
-    }
-
-    nav.toc {
+    .toc {
       position: sticky;
-      top: 1rem;
-      padding: 1rem 1.1rem;
-      border-radius: var(--radius);
+      top: 18px;
+      padding: 16px;
       border: 1px solid var(--border);
-      background: var(--bg-card);
-      font-size: 0.88rem;
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
     }
 
-    nav.toc strong {
+    .toc strong {
       display: block;
-      font-size: 0.7rem;
+      margin-bottom: 10px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--text-muted);
-      margin-bottom: 0.75rem;
     }
 
-    nav.toc ul {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-
-    nav.toc li {
-      margin: 0.35rem 0;
-    }
-
-    nav.toc a {
-      color: var(--text-muted);
-      text-decoration: none;
+    .toc a {
       display: block;
-      padding: 0.2rem 0;
-      border-radius: 6px;
-      transition: color 0.15s, background 0.15s;
+      padding: 8px 10px;
+      border-radius: 10px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
     }
 
-    nav.toc a:hover {
-      color: var(--accent);
-      background: var(--accent-soft);
+    .toc a:hover {
+      color: var(--text);
+      background: var(--surface-soft);
     }
 
-    main {
+    .content {
       min-width: 0;
+      display: grid;
+      gap: 18px;
     }
 
     section {
-      margin-bottom: 2.5rem;
-      padding: 1.5rem 1.35rem;
-      border-radius: var(--radius);
+      padding: clamp(22px, 4vw, 32px);
       border: 1px solid var(--border);
-      background: var(--bg-card);
-      scroll-margin-top: 1.2rem;
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      scroll-margin-top: 20px;
     }
 
     section h2 {
-      margin: 0 0 1rem;
-      font-size: 1.35rem;
-      font-weight: 650;
-      letter-spacing: -0.02em;
-      padding-bottom: 0.75rem;
-      border-bottom: 1px solid var(--border);
+      margin: 0 0 14px;
+      color: var(--text);
+      font-size: clamp(24px, 3vw, 32px);
+      line-height: 1.05;
+      letter-spacing: -0.045em;
     }
 
     section h3 {
-      margin: 1.35rem 0 0.65rem;
-      font-size: 1.05rem;
-      font-weight: 600;
+      margin: 22px 0 8px;
       color: var(--text);
-    }
-
-    section h3:first-of-type {
-      margin-top: 0;
+      font-size: 16px;
+      letter-spacing: -0.015em;
     }
 
     p {
-      margin: 0.65rem 0;
-      color: var(--text-muted);
+      margin: 8px 0;
+      color: var(--muted);
     }
 
-    ol, ul {
-      margin: 0.5rem 0 0.75rem;
-      padding-left: 1.35rem;
-      color: var(--text-muted);
+    ul,
+    ol {
+      margin: 10px 0 0;
+      padding-left: 1.25rem;
+      color: var(--muted);
     }
 
     li {
-      margin: 0.35rem 0;
+      margin: 6px 0;
     }
 
-    li strong {
+    li strong,
+    p strong {
       color: var(--text);
+    }
+
+    code,
+    kbd {
+      font-family: var(--mono);
+    }
+
+    code {
+      padding: 2px 6px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface-soft);
+      color: var(--text);
+      font-size: 0.88em;
     }
 
     kbd {
-      font-family: var(--mono);
-      font-size: 0.82em;
-      padding: 0.15em 0.45em;
-      border-radius: 6px;
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 7px;
+      border: 1px solid var(--border-strong);
+      border-radius: 7px;
+      background: var(--surface-strong);
       color: var(--text);
-      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.15);
+      font-size: 11px;
+      font-weight: 800;
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .card {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface-soft);
+    }
+
+    .card h3 {
+      margin-top: 0;
+    }
+
+    .workflow {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+      counter-reset: step;
+    }
+
+    .step {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface-soft);
+    }
+
+    .step::before {
+      content: counter(step);
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .step strong {
+      display: block;
+      color: var(--text);
+    }
+
+    .step span {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .callout {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+    }
+
+    .callout.success {
+      border-color: rgba(65, 213, 150, 0.28);
+      background: var(--green-soft);
+    }
+
+    .callout.warning {
+      border-color: rgba(245, 184, 75, 0.3);
+      background: var(--warning-soft);
     }
 
     .shortcut-grid {
       display: grid;
-      gap: 0.5rem;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 14px;
     }
 
-    @media (min-width: 520px) {
+    .shortcut {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-soft);
+    }
+
+    .shortcut span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .footer {
+      margin-top: 24px;
+      padding-top: 22px;
+      border-top: 1px solid var(--border);
+      color: var(--faint);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .layout,
+      .stats,
+      .cards,
       .shortcut-grid {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
+      }
+
+      .toc {
+        position: static;
       }
     }
 
-    .shortcut-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: baseline;
-      gap: 0.5rem 1rem;
-      padding: 0.45rem 0;
-      border-bottom: 1px dashed var(--border);
-    }
+    @media (max-width: 560px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        padding-top: 18px;
+      }
 
-    .shortcut-row:last-child {
-      border-bottom: none;
-    }
-
-    .shortcut-row span.desc {
-      flex: 1;
-      min-width: 10rem;
-      color: var(--text-muted);
-    }
-
-    footer.meta {
-      text-align: center;
-      margin-top: 3rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid var(--border);
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-
-    footer.meta a {
-      font-weight: 500;
+      .hero {
+        padding: 28px 20px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="page">
     <header class="hero">
-      <span class="badge">Documentation</span>
-      <h1>AgentPrime User Guide</h1>
+      <div class="eyebrow"><span class="mark">A</span>AgentPrime user guide</div>
+      <h1>Build, review, run, and repair from one local-first workspace.</h1>
       <p class="lead">
-        A quick tour of the desktop workspace: projects, AI features, shortcuts, and troubleshooting—formatted for comfortable reading.
+        This guide walks through the current AgentPrime flow: choosing a welcome view, creating projects from templates, using Agent Mode, launching previews, managing settings, and recovering cleanly when setup needs attention.
       </p>
+      <div class="hero-actions">
+        <a class="button primary" href="#create-projects">Create a project</a>
+        <a class="button" href="#agent-mode">Use Agent Mode</a>
+        <a class="button" href="#troubleshooting">Fix setup issues</a>
+      </div>
     </header>
+
+    <div class="stats" aria-label="AgentPrime highlights">
+      <div class="stat-card"><strong>14</strong><span>starter templates</span></div>
+      <div class="stat-card"><strong>4</strong><span>AI providers</span></div>
+      <div class="stat-card"><strong>3</strong><span>chat modes</span></div>
+      <div class="stat-card"><strong>Local</strong><span>desktop-first workflow</span></div>
+    </div>
 
     <div class="layout">
       <nav class="toc" aria-label="On this page">
         <strong>On this page</strong>
-        <ul>
-          <li><a href="#getting-started">Getting started</a></li>
-          <li><a href="#shortcuts">Keyboard shortcuts</a></li>
-          <li><a href="#ai-features">AI features</a></li>
-          <li><a href="#project-management">Project management</a></li>
-          <li><a href="#settings">Settings</a></li>
-          <li><a href="#troubleshooting">Troubleshooting</a></li>
-          <li><a href="#help">Getting help</a></li>
-        </ul>
+        <a href="#start">Start here</a>
+        <a href="#create-projects">Create projects</a>
+        <a href="#agent-mode">Agent Mode</a>
+        <a href="#workspace">Workspace flow</a>
+        <a href="#settings">Settings</a>
+        <a href="#shortcuts">Shortcuts</a>
+        <a href="#troubleshooting">Troubleshooting</a>
       </nav>
 
-      <main>
-        <section id="getting-started">
-          <h2>Getting started</h2>
-
-          <h3>First launch</h3>
-          <p>When you first launch AgentPrime, the onboarding wizard walks you through initial setup.</p>
-
-          <h3>Opening a project</h3>
-          <ol>
-            <li>Press <kbd>Ctrl</kbd>+<kbd>O</kbd> (Windows/Linux) or <kbd>Cmd</kbd>+<kbd>O</kbd> (macOS).</li>
-            <li>Or open the Command Palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>) and search for &ldquo;Open Project&rdquo;.</li>
-            <li>Select a folder to use as your workspace.</li>
-          </ol>
-
-          <h3>Setting up AI providers</h3>
-          <ol>
-            <li>Open Settings (<kbd>Ctrl</kbd>+<kbd>,</kbd> or Command Palette &gt; Settings).</li>
-            <li>Go to <strong>AI Providers</strong>.</li>
-            <li>Add API keys for the providers you use:
-              <ul>
-                <li><strong>Anthropic</strong> — <a href="https://console.anthropic.com" rel="noopener noreferrer">console.anthropic.com</a></li>
-                <li><strong>OpenAI</strong> — <a href="https://platform.openai.com" rel="noopener noreferrer">platform.openai.com</a></li>
-                <li><strong>Ollama</strong> — runs locally; no key required</li>
-                <li><strong>OpenRouter</strong> — <a href="https://openrouter.ai" rel="noopener noreferrer">openrouter.ai</a></li>
-              </ul>
-            </li>
-          </ol>
-        </section>
-
-        <section id="shortcuts">
-          <h2>Keyboard shortcuts</h2>
-
-          <h3>File operations</h3>
-          <div class="shortcut-grid">
-            <div class="shortcut-row"><span class="desc">Open project</span><span><kbd>Ctrl</kbd>+<kbd>O</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Save file</span><span><kbd>Ctrl</kbd>+<kbd>S</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Save all</span><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Close tab</span><span><kbd>Ctrl</kbd>+<kbd>W</kbd></span></div>
+      <main class="content">
+        <section id="start">
+          <h2>Start here</h2>
+          <p>When no file is open, AgentPrime shows the welcome screen. The default <strong>Classic View</strong> is the clean centered launch surface. You can switch to <strong>Launchpad View</strong> if you want the larger product-style home screen.</p>
+          <div class="cards">
+            <div class="card">
+              <h3>Classic View</h3>
+              <p>Best for fast daily use: New Project, Open Project, AI Chat, New File, recent projects, and core shortcuts.</p>
+            </div>
+            <div class="card">
+              <h3>Launchpad View</h3>
+              <p>Best for demos or onboarding: larger hero, Target Loop, proof cards, and the same creation actions.</p>
+            </div>
           </div>
-
-          <h3>AI features</h3>
-          <div class="shortcut-grid">
-            <div class="shortcut-row"><span class="desc">Open AI Composer</span><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Just Chat</span><span><kbd>Ctrl</kbd>+<kbd>J</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Words to Code</span><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>W</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Mirror Intelligence</span><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></span></div>
-          </div>
-
-          <h3>Navigation</h3>
-          <div class="shortcut-grid">
-            <div class="shortcut-row"><span class="desc">Command Palette</span><span><kbd>Ctrl</kbd>+<kbd>K</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Toggle File Explorer</span><span><kbd>Ctrl</kbd>+<kbd>B</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Toggle Terminal</span><span><kbd>Ctrl</kbd>+<kbd>`</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Git Panel</span><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></span></div>
-          </div>
-
-          <h3>Editor</h3>
-          <div class="shortcut-grid">
-            <div class="shortcut-row"><span class="desc">Search &amp; Replace</span><span><kbd>Ctrl</kbd>+<kbd>F</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Accept ghost text</span><span><kbd>Tab</kbd></span></div>
-            <div class="shortcut-row"><span class="desc">Clear ghost text</span><span><kbd>Escape</kbd></span></div>
+          <div class="callout success">
+            <strong>The views are optional.</strong>
+            <p>Switching views does not change project creation, Agent Mode, or workspace behavior. It only changes the welcome screen layout.</p>
           </div>
         </section>
 
-        <section id="ai-features">
-          <h2>AI features</h2>
-
-          <h3>AI Composer</h3>
-          <p>Your main surface for AI: answer questions, generate or refactor code, debug, and explain logic.</p>
-
-          <h3>Ghost text completions</h3>
-          <p>Inline suggestions appear as you type. Press <kbd>Tab</kbd> to accept.</p>
-
-          <h3>Mirror Intelligence</h3>
-          <p>Learns from your patterns and suggests completions aligned with your style.</p>
-
-          <h3>Words to Code</h3>
-          <p>Describe what you want in natural language; AgentPrime scaffolds the structure for you.</p>
+        <section id="create-projects">
+          <h2>Create projects</h2>
+          <p>Use <strong>New Project</strong> from the welcome screen or press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>. AgentPrime opens the template gallery, collects project details, writes files, installs dependencies when supported, then opens the generated workspace.</p>
+          <div class="workflow">
+            <div class="step"><div><strong>Choose a template</strong><span>Pick desktop, full-stack, frontend, backend, or game starters. Complex briefs can route into AI Composer.</span></div></div>
+            <div class="step"><div><strong>Configure the project</strong><span>Set the project name, destination, author, and description. AgentPrime sanitizes project folder names safely.</span></div></div>
+            <div class="step"><div><strong>Scaffold files</strong><span>The template engine writes the starter files and rolls back cleanly if materialization fails.</span></div></div>
+            <div class="step"><div><strong>Install dependencies</strong><span>Post-create commands run when supported. Install warnings are shown as setup notes, not as failed creation.</span></div></div>
+            <div class="step"><div><strong>Open and launch</strong><span>The created workspace opens automatically. The success screen can launch a preview when the project runner detects a URL.</span></div></div>
+          </div>
+          <div class="callout warning">
+            <strong>If dependencies need attention:</strong>
+            <p>The files are still created. Read the setup note, open the workspace, and run the suggested install command in the terminal.</p>
+          </div>
         </section>
 
-        <section id="project-management">
-          <h2>Project management</h2>
+        <section id="agent-mode">
+          <h2>Agent Mode</h2>
+          <p>Agent Mode is the file-aware build lane. Open it with <kbd>Ctrl</kbd>+<kbd>L</kbd> or the <strong>Ask AI</strong> button. It can inspect context, propose changes, run checks, and hand changes to review before applying.</p>
+          <div class="cards">
+            <div class="card">
+              <h3>Agent Mode</h3>
+              <p>Use for edits, refactors, repairs, project generation, and multi-step implementation.</p>
+            </div>
+            <div class="card">
+              <h3>Just Chat</h3>
+              <p>Use for brainstorming, explanations, and non-editing questions.</p>
+            </div>
+            <div class="card">
+              <h3>Dino Buddy</h3>
+              <p>Use for calmer guidance, playful support, and learning-style help.</p>
+            </div>
+            <div class="card">
+              <h3>Review Loop</h3>
+              <p>Review generated diffs, accept or reject files, verify, run, repair, and revert when needed.</p>
+            </div>
+          </div>
+          <div class="pill-row">
+            <span class="pill">Agent</span>
+            <span class="pill">Review</span>
+            <span class="pill">Apply</span>
+            <span class="pill">Verify</span>
+            <span class="pill">Repair</span>
+          </div>
+        </section>
 
-          <h3>Task Manager</h3>
-          <p>Use <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> to create tasks, set priorities, and mark work complete.</p>
-
-          <h3>Git integration</h3>
-          <p>The Git panel (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd>) supports staging, commits, branches, and push/pull.</p>
+        <section id="workspace">
+          <h2>Workspace flow</h2>
+          <h3>Open a project</h3>
+          <p>Use <kbd>Ctrl</kbd>+<kbd>O</kbd> or the welcome screen <strong>Open Project</strong> action. The file explorer, Git panel, editor, terminal, status bar, and Agent Mode all use the active workspace path.</p>
+          <h3>Run and preview</h3>
+          <p>Press <kbd>F5</kbd> or use project run actions. When AgentPrime gets a local URL from the project runner, Live Preview opens in the IDE.</p>
+          <h3>Status bar</h3>
+          <p>The bottom bar summarizes AI connection, current model, desktop/Python Brain status, doctor readiness, file language, line count, shortcuts, and time.</p>
         </section>
 
         <section id="settings">
           <h2>Settings</h2>
+          <p>Open Settings from the top bar or Command Palette. The main areas are editor preferences, appearance, AI provider credentials, Agent Mode behavior, shortcuts, and advanced diagnostics.</p>
+          <div class="cards">
+            <div class="card">
+              <h3>AI providers</h3>
+              <p>Configure Ollama, OpenAI, Anthropic, or OpenRouter. AgentPrime can show provider status and credential setup notes.</p>
+            </div>
+            <div class="card">
+              <h3>Agent behavior</h3>
+              <p>Choose behavior profiles, autonomy level, specialized agents, and model routing preferences.</p>
+            </div>
+            <div class="card">
+              <h3>Editor</h3>
+              <p>Control font size, tab size, word wrap, minimap, line numbers, auto-save, and inline completions.</p>
+            </div>
+            <div class="card">
+              <h3>Diagnostics</h3>
+              <p>Use advanced startup diagnostics when tools, provider setup, or runtime health needs attention.</p>
+            </div>
+          </div>
+        </section>
 
-          <h3>Theme</h3>
-          <p>Switch between light and dark themes in Settings.</p>
-
-          <h3>Font size</h3>
-          <p>Editor font size is adjustable (typically 10&ndash;24pt).</p>
-
-          <h3>AI model selection</h3>
-          <ul>
-            <li><strong>Fast model</strong> — quick tasks and completions</li>
-            <li><strong>Deep model</strong> — deeper analysis and refactors</li>
-          </ul>
+        <section id="shortcuts">
+          <h2>Shortcuts</h2>
+          <div class="shortcut-grid">
+            <div class="shortcut"><span>Command Palette</span><kbd>Ctrl</kbd>+<kbd>K</kbd></div>
+            <div class="shortcut"><span>Agent Mode</span><kbd>Ctrl</kbd>+<kbd>L</kbd></div>
+            <div class="shortcut"><span>New Project</span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></div>
+            <div class="shortcut"><span>Open Project</span><kbd>Ctrl</kbd>+<kbd>O</kbd></div>
+            <div class="shortcut"><span>New File</span><kbd>Ctrl</kbd>+<kbd>N</kbd></div>
+            <div class="shortcut"><span>Toggle Explorer</span><kbd>Ctrl</kbd>+<kbd>B</kbd></div>
+            <div class="shortcut"><span>Toggle Terminal</span><kbd>Ctrl</kbd>+<kbd>`</kbd></div>
+            <div class="shortcut"><span>Run Current File</span><kbd>F5</kbd></div>
+            <div class="shortcut"><span>Switch Tabs</span><kbd>Ctrl</kbd>+<kbd>Tab</kbd></div>
+            <div class="shortcut"><span>Save File</span><kbd>Ctrl</kbd>+<kbd>S</kbd></div>
+          </div>
         </section>
 
         <section id="troubleshooting">
           <h2>Troubleshooting</h2>
-
-          <h3>AI not responding</h3>
+          <h3>Project created but dependencies did not install</h3>
+          <p>This usually means a tool is missing, the package manager failed, or the network blocked install. The project files are still available. Open the workspace and run the install command from the terminal.</p>
+          <h3>Preview did not launch</h3>
+          <p>Some project types need a manual command first, such as <code>npm run dev</code>. Check the template README or terminal output.</p>
+          <h3>AI is not responding</h3>
           <ol>
-            <li>Confirm your API key in Settings.</li>
-            <li>Check your network connection.</li>
-            <li>Review the provider&rsquo;s status page.</li>
+            <li>Open Settings and confirm provider credentials.</li>
+            <li>Check the status bar for provider/model state.</li>
+            <li>Open System Status for startup or doctor warnings.</li>
           </ol>
-
-          <h3>Performance issues</h3>
-          <ol>
-            <li>Close unused files and panels.</li>
-            <li>Restart AgentPrime.</li>
-            <li>Check RAM and CPU usage on your machine.</li>
-          </ol>
-
-          <h3>Files not saving</h3>
-          <ol>
-            <li>Verify file permissions.</li>
-            <li>Ensure you have free disk space.</li>
-            <li>Try <strong>Save As</strong> to another location.</li>
-          </ol>
+          <h3>Workspace looks stale</h3>
+          <p>Reopen the folder, use the explorer refresh path, or restart AgentPrime if the file watcher fell behind.</p>
         </section>
 
         <section id="help">
           <h2>Getting help</h2>
-          <ul>
-            <li>Press <kbd>F1</kbd> for keyboard shortcut reference.</li>
-            <li>Use the Command Palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>) to find commands.</li>
-            <li>See the repository <a href="https://github.com/AaronGrace978/AgentPrime/blob/main/README.md">README</a> for technical details.</li>
-          </ul>
+          <p>Use the Command Palette with <kbd>Ctrl</kbd>+<kbd>K</kbd> to discover commands. For technical details, see the project <a href="https://github.com/AaronGrace978/AgentPrime">GitHub repository</a>.</p>
+          <div class="callout success">
+            <strong>Best first prompt for Agent Mode:</strong>
+            <p>"Review this project, explain what it does, then suggest the smallest useful next improvement."</p>
+          </div>
         </section>
       </main>
     </div>
 
-    <footer class="meta">
-      <p>
-        AgentPrime · <a href="https://BostonAI.io" rel="noopener noreferrer">BostonAI.io</a>
-        · Source: <a href="https://github.com/AaronGrace978/AgentPrime">GitHub</a>
-      </p>
+    <footer class="footer">
+      AgentPrime by Aaron Alexander Grace / BostonAI.io. Private, local-first AI development workspace.
     </footer>
   </div>
 </body>
