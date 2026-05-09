@@ -21,6 +21,14 @@
 </p>
 
 <p align="center">
+  <img alt="Electron" src="https://img.shields.io/badge/Electron-2f3241?style=for-the-badge&logo=electron&logoColor=9feaf9" />
+  <img alt="React" src="https://img.shields.io/badge/React-20232a?style=for-the-badge&logo=react&logoColor=61dafb" />
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-1f5f99?style=for-the-badge&logo=typescript&logoColor=ffffff" />
+  <img alt="Monaco Editor" src="https://img.shields.io/badge/Monaco_Editor-5a1f5f?style=for-the-badge&logo=visualstudiocode&logoColor=ffffff" />
+  <img alt="Python Brain" src="https://img.shields.io/badge/Python_Brain-244b6b?style=for-the-badge&logo=python&logoColor=ffd43b" />
+</p>
+
+<p align="center">
   Owned and maintained by <a href="https://BostonAI.io">BostonAI.io</a>.
 </p>
 
