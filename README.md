@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-<img width="1895" height="949" alt="image" src="https://github.com/user-attachments/assets/9e8ffd6f-b5a9-4b93-b10b-f4f857ce18d9" />
+<img width="1917" height="1033" alt="image" src="https://github.com/user-attachments/assets/38206a8b-7cbb-43b4-bae8-55204fd7fdfb" />
+/>
 </p>
 
 <h1 align="center">AgentPrime</h1>
