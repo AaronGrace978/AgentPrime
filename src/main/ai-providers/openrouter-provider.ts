@@ -98,7 +98,7 @@ export class OpenRouterProvider extends BaseProvider {
         e.response?.data?.message ||
         e.message ||
         'Unknown OpenRouter error';
-      console.error('OpenRouter getModels error:', providerMessage);
+      console.warn('OpenRouter model catalog unavailable:', providerMessage);
 
       if (e.response?.status === 401 || e.response?.status === 403) {
         throw new Error(`OpenRouter authentication failed: ${providerMessage}`);

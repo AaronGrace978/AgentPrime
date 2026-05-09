@@ -200,6 +200,29 @@ describe('SpecializedAgentLoop verification', () => {
     ]);
   });
 
+  it('keeps pipeline specialist for missing dependency repair even when importer is a source file', () => {
+    const workspacePath = createTempDir('agentprime-specialized-dependency-retry-');
+    const loop = new SpecializedAgentLoop({ workspacePath } as any);
+    const verification = {
+      isComplete: false,
+      missingFiles: [],
+      createdFiles: [],
+      errors: ['[Validate] package.json is missing dependency "xterm" imported by src/components/Terminal.tsx'],
+    };
+    const findings = (loop as any).buildVerificationFindings(verification);
+
+    const refined = (loop as any).refineRolesForRetry(
+      ['tool_orchestrator', 'javascript_specialist', 'integration_analyst', 'repair_specialist'],
+      verification,
+      findings
+    );
+
+    expect(findings[0].suggestedOwner).toBe('pipeline_specialist');
+    expect(refined).toEqual(expect.arrayContaining(['pipeline_specialist', 'repair_specialist']));
+    expect(refined).not.toContain('tool_orchestrator');
+    expect(refined).not.toContain('integration_analyst');
+  });
+
   it('adds directly owned security and data-contract specialists from verifier findings', () => {
     const workspacePath = createTempDir('agentprime-specialized-owned-findings-');
     const loop = new SpecializedAgentLoop({ workspacePath } as any);

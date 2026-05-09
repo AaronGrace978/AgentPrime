@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import {
   getProjectRuntimeProfileSync,
@@ -18,6 +18,7 @@ import { getTelemetryService } from '../../core/telemetry-service';
 const log = createLogger('ProjectRunner');
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 export interface ProjectInfo {
   type: 'node' | 'python' | 'html' | 'tauri' | 'unknown';
@@ -39,6 +40,39 @@ export interface ProjectInfo {
 }
 
 export class ProjectRunner {
+  private static runningProcessesByWorkspace = new Map<string, Set<ReturnType<typeof exec>>>();
+  private static activeRunsByWorkspace = new Map<string, {
+    child: ReturnType<typeof exec>;
+    output: string;
+    port?: number;
+    url?: string;
+  }>();
+
+  private static normalizeWorkspaceKey(workspacePath: string): string {
+    return path.resolve(workspacePath).toLowerCase();
+  }
+
+  private static trackProjectProcess(workspacePath: string, child: ReturnType<typeof exec>): void {
+    const workspaceKey = this.normalizeWorkspaceKey(workspacePath);
+    const runningProcesses =
+      this.runningProcessesByWorkspace.get(workspaceKey) || new Set<ReturnType<typeof exec>>();
+    runningProcesses.add(child);
+    this.runningProcessesByWorkspace.set(workspaceKey, runningProcesses);
+
+    const cleanup = () => {
+      runningProcesses.delete(child);
+      if (runningProcesses.size === 0) {
+        this.runningProcessesByWorkspace.delete(workspaceKey);
+      }
+      const activeRun = this.activeRunsByWorkspace.get(workspaceKey);
+      if (activeRun?.child === child) {
+        this.activeRunsByWorkspace.delete(workspaceKey);
+      }
+    };
+    child.once('exit', cleanup);
+    child.once('close', cleanup);
+  }
+
   private static shouldInstallNodeDependencies(workspacePath: string, projectInfo: ProjectInfo): boolean {
     if (projectInfo.type !== 'node' && projectInfo.type !== 'tauri') {
       return false;
@@ -92,8 +126,63 @@ export class ProjectRunner {
       return false;
     }
 
-    const nodeModulesMtime = fs.statSync(nodeModulesPath).mtimeMs;
-    return manifestPaths.some((file) => fs.statSync(file).mtimeMs > nodeModulesMtime);
+    const installMarkerPaths = [
+      path.join(nodeModulesPath, '.package-lock.json'),
+      path.join(nodeModulesPath, '.bin'),
+      nodeModulesPath,
+    ].filter((file) => fs.existsSync(file));
+    const installMtime = Math.max(...installMarkerPaths.map((file) => fs.statSync(file).mtimeMs));
+
+    // File timestamps can land within the same second on Windows/npm installs.
+    // Treat near-equal times as current so verification does not reinstall in a loop.
+    return manifestPaths.some((file) => fs.statSync(file).mtimeMs > installMtime + 1000);
+  }
+
+  private static shouldSkipRuntimeLaunchForProbe(projectInfo: ProjectInfo): boolean {
+    return projectInfo.type === 'tauri';
+  }
+
+  private static getActiveRun(workspacePath: string): {
+    child: ReturnType<typeof exec>;
+    output: string;
+    port?: number;
+    url?: string;
+  } | null {
+    const workspaceKey = this.normalizeWorkspaceKey(workspacePath);
+    const activeRun = this.activeRunsByWorkspace.get(workspaceKey);
+    if (!activeRun) {
+      return null;
+    }
+    if (activeRun.child.exitCode !== null) {
+      this.activeRunsByWorkspace.delete(workspaceKey);
+      return null;
+    }
+    return activeRun;
+  }
+
+  private static logRuntimeChunk(stream: 'stdout' | 'stderr', chunk: string): void {
+    const text = chunk.trim();
+    if (!text) {
+      return;
+    }
+
+    const looksLikeFailure =
+      /\berror(\[[^\]]+\])?:/i.test(text) ||
+      /\bfailed\b/i.test(text) ||
+      text.includes('EADDRINUSE') ||
+      text.includes('address already in use');
+
+    if (looksLikeFailure) {
+      log.error(`[ProjectRunner] ${text}`);
+      return;
+    }
+
+    if (stream === 'stderr') {
+      log.info(`[ProjectRunner] ${text}`);
+      return;
+    }
+
+    log.info(`[ProjectRunner] ${text}`);
   }
 
   private static quoteShellArg(value: string): string {
@@ -254,6 +343,25 @@ export class ProjectRunner {
       return { success: false, output: 'No start command found' };
     }
 
+    if (!options.probeOnly) {
+      const activeRun = this.getActiveRun(workspacePath);
+      if (activeRun) {
+        return {
+          success: true,
+          output: activeRun.output || 'Project is already running',
+          port: activeRun.port,
+          url: activeRun.url,
+        };
+      }
+    }
+
+    if (options.probeOnly && this.shouldSkipRuntimeLaunchForProbe(projectInfo)) {
+      return {
+        success: true,
+        output: `Runtime launch skipped for probe verification. Use ${projectInfo.startCommand} to start the Tauri app.`,
+      };
+    }
+
     if (this.shouldReinstallNodeDependencies(workspacePath, projectInfo)) {
       log.info('[ProjectRunner] 📦 Dependencies missing, stale, or unhealthy; installing...');
       const installResult = await this.installDependencies(workspacePath, projectInfo);
@@ -292,16 +400,17 @@ export class ProjectRunner {
         cwd: workspacePath,
         env,
       });
+      this.trackProjectProcess(workspacePath, child);
 
       let output = '';
       child.stdout?.on('data', (data) => {
         output += data.toString();
-        log.info(`[ProjectRunner] ${data.toString().trim()}`);
+        this.logRuntimeChunk('stdout', data.toString());
       });
 
       child.stderr?.on('data', (data) => {
         output += data.toString();
-        log.error(`[ProjectRunner] ${data.toString().trim()}`);
+        this.logRuntimeChunk('stderr', data.toString());
       });
 
       await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -365,6 +474,13 @@ export class ProjectRunner {
         } catch {
           // Ignore cleanup errors during probe mode.
         }
+      } else {
+        this.activeRunsByWorkspace.set(this.normalizeWorkspaceKey(workspacePath), {
+          child,
+          output: output || 'Project started successfully',
+          port,
+          url: detectedUrl?.url,
+        });
       }
 
       return {
@@ -524,6 +640,112 @@ export class ProjectRunner {
     }
 
     await this.awaitChildExit(child, 5000);
+  }
+
+  private static async stopWindowsProcessesByWorkspacePath(workspacePath: string): Promise<{
+    killedPids: number[];
+    warnings: string[];
+  }> {
+    if (process.platform !== 'win32') {
+      return { killedPids: [], warnings: [] };
+    }
+
+    const workspace = path.resolve(workspacePath).toLowerCase().replace(/'/g, "''");
+    const script = `
+$workspace = '${workspace}'
+$exclude = @($PID, ${process.pid})
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.ProcessId -and
+    ($exclude -notcontains $_.ProcessId) -and
+    $_.CommandLine -and
+    $_.CommandLine.ToLowerInvariant().Contains($workspace)
+  } |
+  ForEach-Object {
+    try {
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop
+      "killed:$($_.ProcessId):$($_.Name)"
+    } catch {
+      "warn:$($_.ProcessId):$($_.Exception.Message)"
+    }
+  }
+`;
+
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+        {
+          timeout: 10000,
+          windowsHide: true,
+          maxBuffer: 1024 * 1024,
+        }
+      );
+      const killedPids: number[] = [];
+      const warnings: string[] = [];
+      for (const line of stdout.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+        if (line.startsWith('killed:')) {
+          const pid = Number(line.split(':')[1]);
+          if (Number.isFinite(pid)) {
+            killedPids.push(pid);
+          }
+        } else if (line.startsWith('warn:')) {
+          warnings.push(line);
+        }
+      }
+      if (stderr.trim()) {
+        warnings.push(stderr.trim());
+      }
+      return { killedPids, warnings };
+    } catch (error: any) {
+      return {
+        killedPids: [],
+        warnings: [error?.stderr || error?.message || 'Failed to stop workspace processes'],
+      };
+    }
+  }
+
+  static async stopProjectProcesses(workspacePath: string): Promise<{
+    success: boolean;
+    killedPids: number[];
+    warnings: string[];
+  }> {
+    const workspaceKey = this.normalizeWorkspaceKey(workspacePath);
+    const killedPids: number[] = [];
+    const warnings: string[] = [];
+
+    for (const [trackedWorkspace, children] of Array.from(this.runningProcessesByWorkspace.entries())) {
+      if (trackedWorkspace === workspaceKey || trackedWorkspace.startsWith(`${workspaceKey}${path.sep}`)) {
+        for (const child of Array.from(children)) {
+          if (child.pid) {
+            killedPids.push(child.pid);
+          }
+          try {
+            await this.terminateChildProcess(child);
+          } catch (error: any) {
+            warnings.push(error?.message || `Failed to stop process ${child.pid || 'unknown'}`);
+          }
+        }
+      }
+    }
+
+    const pathKillResult = await this.stopWindowsProcessesByWorkspacePath(workspacePath);
+    for (const pid of pathKillResult.killedPids) {
+      if (!killedPids.includes(pid)) {
+        killedPids.push(pid);
+      }
+    }
+    warnings.push(...pathKillResult.warnings);
+
+    if (killedPids.length > 0) {
+      log.info(`[ProjectRunner] Stopped ${killedPids.length} project process(es) for ${workspacePath}`);
+    }
+
+    return {
+      success: warnings.length === 0,
+      killedPids,
+      warnings,
+    };
   }
   
   static async runBuild(workspacePath: string, projectInfo: ProjectInfo): Promise<{ success: boolean; output: string }> {
@@ -1373,7 +1595,11 @@ npm run ${npmScript}
     const validation = await runPhase('project_runner:validate', () => this.validateProject(workspacePath, projectInfo));
     
     let installResult;
-    if (projectInfo.requiresInstall) {
+    const shouldInstallDependencies =
+      projectInfo.type === 'node' || projectInfo.type === 'tauri'
+        ? this.shouldReinstallNodeDependencies(workspacePath, projectInfo)
+        : projectInfo.requiresInstall;
+    if (shouldInstallDependencies) {
       installResult = await runPhase('project_runner:install', () => this.installDependencies(workspacePath, projectInfo));
     }
 
@@ -1425,7 +1651,21 @@ npm run ${npmScript}
       };
     }
 
-    if (projectInfo.requiresInstall) {
+    const activeRun = this.getActiveRun(workspacePath);
+    if (activeRun) {
+      return {
+        success: true,
+        message: activeRun.output || 'Project is already running',
+        url: activeRun.url,
+        projectInfo,
+      };
+    }
+
+    const shouldInstallDependencies =
+      projectInfo.type === 'node' || projectInfo.type === 'tauri'
+        ? this.shouldReinstallNodeDependencies(workspacePath, projectInfo)
+        : projectInfo.requiresInstall;
+    if (shouldInstallDependencies) {
       const installResult = await this.installDependencies(workspacePath, projectInfo);
       if (!installResult.success) {
         return {
@@ -1462,7 +1702,9 @@ npm run ${npmScript}
 
     if (projectInfo.kind === 'static' && runResult.url) {
       const { shell } = require('electron');
-      await shell.openExternal(runResult.url);
+      if (typeof shell?.openExternal === 'function') {
+        await shell.openExternal(runResult.url);
+      }
       return {
         success: true,
         message: 'Opened static site in browser',
@@ -1473,9 +1715,11 @@ npm run ${npmScript}
 
     if (runResult.url) {
       const { shell } = require('electron');
-      setTimeout(() => {
-        void shell.openExternal(runResult.url);
-      }, 2000);
+      if (typeof shell?.openExternal === 'function') {
+        setTimeout(() => {
+          void shell.openExternal(runResult.url!);
+        }, 2000);
+      }
     }
 
     return {

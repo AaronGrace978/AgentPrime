@@ -26,6 +26,9 @@ interface BrainResponse {
 
 let brainReady = false;
 let brainReadyPromise: Promise<void> | null = null;
+const BRAIN_READY_REQUEST_TIMEOUT_MS = Number(
+    process.env.AGENTPRIME_BRAIN_REQUEST_READY_TIMEOUT_MS || 1500
+);
 
 /**
  * Wait for the Brain backend to come online (called once at startup).
@@ -48,9 +51,20 @@ function waitForBrain(): Promise<void> {
             await new Promise(r => setTimeout(r, delayMs));
             delayMs = Math.min(delayMs * 2, 4000);
         }
-        log.warn('Backend did not respond after startup polling — requests will use fallbacks');
+        log.warn('Optional Python Brain backend is offline; IDE shell and local fallbacks remain available');
     })();
     return brainReadyPromise;
+}
+
+async function waitForBrainBriefly(): Promise<boolean> {
+    if (brainReady) return true;
+
+    await Promise.race([
+        waitForBrain(),
+        new Promise<void>((resolve) => setTimeout(resolve, BRAIN_READY_REQUEST_TIMEOUT_MS)),
+    ]);
+
+    return brainReady;
 }
 
 /**
@@ -112,8 +126,11 @@ async function brainRequest(
     endpoint: string,
     body?: any
 ): Promise<BrainResponse> {
-    if (!brainReady) {
-        await waitForBrain();
+    if (!await waitForBrainBriefly()) {
+        return {
+            success: false,
+            error: 'Optional Python Brain backend is offline; using desktop fallback behavior'
+        };
     }
     return rawBrainRequest(method, endpoint, body);
 }

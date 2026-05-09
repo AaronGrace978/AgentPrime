@@ -8,6 +8,7 @@ import { reviewSessionManager } from '../src/main/agent/review-session-manager';
 import * as telemetry from '../src/main/core/telemetry-service';
 import * as projectTester from '../src/main/agent/tools/projectTester';
 import { ProjectRunner } from '../src/main/agent/tools/projectRunner';
+import { ProjectAutoFixer } from '../src/main/agent/tools/project-auto-fixer';
 import { TimeoutError } from '../src/main/core/timeout-utils';
 import { resolveVibeCoderExecutionPolicy } from '../src/main/agent/behavior-profile';
 
@@ -171,6 +172,102 @@ describe('SpecializedAgentLoop orchestration retry', () => {
     expect(result).toBe('browser retry succeeded');
     expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(browserSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs deterministic auto-fixer before escalating missing dependency issues to LLM repair', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-autofix-deps-');
+    fs.mkdirSync(path.join(workspacePath, 'src', 'components'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, 'package.json'),
+      JSON.stringify({ scripts: { build: 'vite build' }, dependencies: { react: '^18.2.0' } }, null, 2)
+    );
+    fs.writeFileSync(
+      path.join(workspacePath, 'src', 'components', 'Terminal.tsx'),
+      'import { Terminal } from "xterm";\nexport const terminal = Terminal;\n'
+    );
+
+    const loop = new SpecializedAgentLoop({ workspacePath, model: 'qwen-test' } as any);
+
+    jest.spyOn(specializedAgents, 'routeToSpecialists').mockReturnValue(['javascript_specialist'] as any);
+    const executeSpy = jest.spyOn(specializedAgents, 'executeWithSpecialists').mockResolvedValue({
+      results: [],
+      finalAnalysis: '',
+      executedTools: [],
+      scaffoldApplied: false,
+      scaffoldTemplateId: undefined,
+      skippedGenerativePass: false,
+    } as any);
+    jest.spyOn(loop as any, 'getProjectFiles').mockReturnValue([]);
+    jest.spyOn(loop as any, 'detectLanguage').mockReturnValue('typescript');
+    jest.spyOn(loop as any, 'detectProjectType').mockReturnValue('application');
+    jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: true,
+      missingFiles: [],
+      errors: [],
+      createdFiles: [],
+    });
+    jest.spyOn(loop as any, 'buildResponse').mockReturnValue('autofix succeeded');
+    jest.spyOn(loop as any, 'finalizeProject').mockResolvedValue(undefined);
+    const autoFixSpy = jest.spyOn(ProjectAutoFixer, 'fixProject').mockImplementation(async () => {
+      const packageJsonPath = path.join(workspacePath, 'package.json');
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      packageJson.dependencies.xterm = '^5.3.0';
+      fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+
+      return {
+        success: true,
+        fixes: ['Added missing runtime dependency inferred from imports: xterm@^5.3.0'],
+        errors: [],
+      };
+    });
+    const autoRunSpy = jest.spyOn(ProjectRunner, 'autoRun')
+      .mockResolvedValueOnce({
+        success: false,
+        validation: {
+          issues: ['package.json is missing dependency "xterm" imported by src/components/Terminal.tsx'],
+        },
+        installResult: null,
+        buildResult: null,
+        runResult: null,
+      } as any)
+      .mockResolvedValueOnce({
+        success: true,
+        validation: { issues: [] },
+        installResult: null,
+        buildResult: null,
+        runResult: null,
+      } as any);
+    jest.spyOn(projectTester, 'testProjectInBrowser').mockResolvedValue({
+      passed: true,
+      score: 95,
+      issues: [],
+      suggestions: [],
+      consoleErrors: [],
+      consoleWarnings: [],
+      testedElements: [],
+    });
+
+    jest.spyOn(transactionManager, 'startTransaction').mockReturnValue({
+      getOperationCount: () => 1,
+      getOperations: () => [],
+    } as any);
+    jest.spyOn(transactionManager, 'commitTransaction').mockImplementation(() => undefined);
+    jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    jest.spyOn(reviewSessionManager, 'createSessionFromOperations').mockReturnValue(null);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run('Build a terminal panel');
+
+    expect(result).toBe('autofix succeeded');
+    expect(autoFixSpy).toHaveBeenCalledTimes(1);
+    expect(autoRunSpy).toHaveBeenCalledTimes(2);
+    expect(executeSpy.mock.invocationCallOrder.length).toBeGreaterThan(1);
+    expect(autoFixSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      executeSpy.mock.invocationCallOrder[1]
+    );
   });
 
   it('rolls back to the last checkpoint when a timeout happens after verification succeeds', async () => {

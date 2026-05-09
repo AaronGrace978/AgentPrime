@@ -42,6 +42,7 @@ import {
   scaffoldProjectFromTemplate,
   workspaceNeedsDeterministicScaffold,
 } from './scaffold-resolver';
+import { ProjectAutoFixer } from './tools/project-auto-fixer';
 import {
   LEGACY_SPECIALIST_ROLE_MAP,
   type SpecialistBlackboard,
@@ -93,6 +94,23 @@ function extractFilesFromVerificationIssue(summary: string): string[] {
     return cleaned;
   });
   return [...new Set(normalized)];
+}
+
+function isMissingDependencyIssue(summary: string): boolean {
+  return /package\.json\s+is\s+missing\s+(?:runtime\s+)?(?:dependency|devdependency)|missing dependency|failed to resolve import|could not resolve ['"][^'"]+['"]|cannot find module ['"][^'"]+['"]/i.test(
+    summary
+  );
+}
+
+function isKnownProjectIntegrityIssue(summary: string): boolean {
+  return (
+    isMissingDependencyIssue(summary) ||
+    /invalid json|failed to parse .*json|unexpected token .*json/i.test(summary) ||
+    /missing (?:vite|typescript|tsconfig|postcss|tailwind).*config|vite\.config|tsconfig/i.test(summary) ||
+    /index\.html|html root|root element|script type="module"|stylesheet/i.test(summary) ||
+    /imports missing file|bad import path|cannot find module|module not found/i.test(summary) ||
+    /corrupted node_modules|incomplete node_modules|npm install|install failed/i.test(summary)
+  );
 }
 
 function inferVerificationStage(summary: string): AgentReviewFinding['stage'] {
@@ -165,6 +183,9 @@ function inferSpecialistOwnerForFinding(
   summary: string,
   files: string[]
 ): SpecialistId {
+  if (isMissingDependencyIssue(summary)) {
+    return 'pipeline_specialist';
+  }
   if (
     /(security|auth|authorize|authorization|permission|rbac|secret|token|xss|csrf|injection|csp)/i.test(
       summary
@@ -289,6 +310,9 @@ export class SpecializedAgentLoop extends EventEmitter {
       ...lastVerification.errors.flatMap((error) => extractFilesFromVerificationIssue(error)),
     ]);
     const normalizedRetryFiles = [...retryFiles].map((file) => file.replace(/\\/g, '/'));
+    const hasDependencyFailures =
+      lastVerification.errors.some(isMissingDependencyIssue) ||
+      findings.some((finding) => isMissingDependencyIssue(finding.summary));
     const hasConcreteRetryTargets = normalizedRetryFiles.length > 0;
     const hasSourceTargets = normalizedRetryFiles.some((file) =>
       /^(src|app|pages|components|lib|backend|public)\//.test(file)
@@ -300,7 +324,7 @@ export class SpecializedAgentLoop extends EventEmitter {
       /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig.*\.json|vite\.config\.[^/]+|tailwind\.config\.[^/]+|postcss\.config\.[^/]+|next\.config\.[^/]+|Dockerfile(\.[^/]+)?|Makefile|requirements[^/]*\.txt|pyproject\.toml|\.github\/workflows\/)/i.test(
         file
       )
-    );
+    ) || hasDependencyFailures;
     const hasTestTargets = normalizedRetryFiles.some(
       (file) =>
         /^(tests|__tests__)\//.test(file) || /(playwright|vitest|jest)\.config\./i.test(file)
@@ -358,6 +382,10 @@ export class SpecializedAgentLoop extends EventEmitter {
       lastVerification.errors.some((error) =>
         /imports missing file|cannot find module|missing dependency/i.test(error)
       );
+
+    if ((hasDependencyFailures || hasConfigTargets) && !refined.includes('pipeline_specialist')) {
+      refined.push('pipeline_specialist');
+    }
 
     if (isBuildHeavyRetry && refined.includes('integration_analyst')) {
       refined = refined.filter((role) => role !== 'integration_analyst');
@@ -1016,28 +1044,28 @@ export class SpecializedAgentLoop extends EventEmitter {
           }
 
           const lifecycleResult = await ProjectRunner.autoRun(this.context.workspacePath);
-          if (lifecycleResult.validation.issues.length > 0) {
-            lastVerification.errors.push(
-              ...lifecycleResult.validation.issues.map((issue) => `[Validate] ${issue}`)
-            );
-          }
-          if (lifecycleResult.installResult && !lifecycleResult.installResult.success) {
-            lastVerification.errors.push(
-              `[Install] ${this.compactProcessOutput(lifecycleResult.installResult.output)}`
-            );
-          }
-          if (lifecycleResult.buildResult && !lifecycleResult.buildResult.success) {
-            lastVerification.errors.push(
-              `[Build] ${this.compactProcessOutput(lifecycleResult.buildResult.output)}`
-            );
-          }
-          if (lifecycleResult.runResult && !lifecycleResult.runResult.success) {
-            lastVerification.errors.push(
-              `[Run] ${this.compactProcessOutput(lifecycleResult.runResult.output)}`
-            );
-          }
+          this.applyLifecycleResultToVerification(lastVerification, lifecycleResult);
+
           if (!lifecycleResult.success) {
-            lastVerification.isComplete = false;
+            const shouldAttemptAutoFix = this.shouldRunDeterministicAutoFix(lastVerification);
+            const autoFixApplied = await this.runDeterministicAutoFix(
+              lastVerification,
+              allCreatedFiles
+            );
+
+            if (autoFixApplied || shouldAttemptAutoFix) {
+              lastVerification = await this.verifyProject(allCreatedFiles);
+              const postFixLifecycleResult = await ProjectRunner.autoRun(this.context.workspacePath);
+              this.applyLifecycleResultToVerification(
+                lastVerification,
+                postFixLifecycleResult
+              );
+            }
+          }
+          lastStructuredFindings = this.buildVerificationFindings(lastVerification);
+          if (blackboard && lastStructuredFindings.length > 0) {
+            blackboard.findings = [...lastStructuredFindings];
+            this.emit('blackboard-update', blackboard);
           }
 
           // Step 6: BROWSER TESTING - Test the project in a real browser
@@ -1082,6 +1110,12 @@ export class SpecializedAgentLoop extends EventEmitter {
             } catch (browserTestError: any) {
               log.warn('[SpecializedAgent] Browser testing skipped:', browserTestError.message);
             }
+          }
+
+          lastStructuredFindings = this.buildVerificationFindings(lastVerification);
+          if (blackboard && lastStructuredFindings.length > 0) {
+            blackboard.findings = [...lastStructuredFindings];
+            this.emit('blackboard-update', blackboard);
           }
 
           if (lastVerification.isComplete) {
@@ -1785,6 +1819,150 @@ export class SpecializedAgentLoop extends EventEmitter {
           'React project under src/ has no entrypoint (expected src/main.tsx or src/index.tsx)'
         );
       }
+    }
+  }
+
+  private applyLifecycleResultToVerification(
+    verification: ProjectVerification,
+    lifecycleResult: any
+  ): void {
+    if (lifecycleResult.validation?.issues?.length > 0) {
+      verification.errors.push(
+        ...lifecycleResult.validation.issues.map((issue: string) => `[Validate] ${issue}`)
+      );
+    }
+    if (lifecycleResult.installResult && !lifecycleResult.installResult.success) {
+      verification.errors.push(
+        `[Install] ${this.compactProcessOutput(lifecycleResult.installResult.output)}`
+      );
+    }
+    if (lifecycleResult.buildResult && !lifecycleResult.buildResult.success) {
+      verification.errors.push(
+        `[Build] ${this.compactProcessOutput(lifecycleResult.buildResult.output)}`
+      );
+    }
+    if (lifecycleResult.runResult && !lifecycleResult.runResult.success) {
+      verification.errors.push(
+        `[Run] ${this.compactProcessOutput(lifecycleResult.runResult.output)}`
+      );
+    }
+    if (!lifecycleResult.success) {
+      verification.isComplete = false;
+    }
+  }
+
+  private shouldRunDeterministicAutoFix(verification: ProjectVerification): boolean {
+    return (
+      verification.errors.some(isKnownProjectIntegrityIssue) ||
+      verification.missingFiles.some((file) =>
+        /(^|\/)(package\.json|tsconfig.*\.json|vite\.config\.[^/]+|index\.html|postcss\.config\.[^/]+|tailwind\.config\.[^/]+)/i.test(
+          file.replace(/\\/g, '/')
+        )
+      )
+    );
+  }
+
+  private captureProjectFileSnapshots(): Map<string, string | null> {
+    const snapshots = new Map<string, string | null>();
+    const files = listWorkspaceSourceFilesSync(this.context.workspacePath, 8000);
+
+    for (const file of files) {
+      const normalized = this.normalizePath(file);
+      const fullPath = path.join(this.context.workspacePath, normalized);
+      try {
+        snapshots.set(
+          normalized,
+          fs.existsSync(fullPath) ? fs.readFileSync(fullPath, 'utf-8') : null
+        );
+      } catch {
+        snapshots.set(normalized, null);
+      }
+    }
+
+    return snapshots;
+  }
+
+  private async recordProjectSnapshotDiff(before: Map<string, string | null>): Promise<string[]> {
+    const after = this.captureProjectFileSnapshots();
+    const allPaths = new Set([...before.keys(), ...after.keys()]);
+    const changedFiles: string[] = [];
+
+    for (const file of allPaths) {
+      const beforeContent = before.has(file) ? before.get(file) ?? null : null;
+      const afterContent = after.has(file) ? after.get(file) ?? null : null;
+
+      if (beforeContent === afterContent) {
+        continue;
+      }
+
+      const existedBefore = before.has(file) && beforeContent !== null;
+      await transactionManager.recordFileChange(file, beforeContent, afterContent ?? '', existedBefore);
+      this.emit('file-modified', {
+        path: file,
+        action: afterContent === null ? 'deleted' : existedBefore ? 'modified' : 'created',
+        oldContent: beforeContent,
+        newContent: afterContent ?? '',
+      });
+      changedFiles.push(file);
+    }
+
+    return changedFiles;
+  }
+
+  private async runDeterministicAutoFix(
+    verification: ProjectVerification,
+    allCreatedFiles: string[]
+  ): Promise<boolean> {
+    if (!this.shouldRunDeterministicAutoFix(verification)) {
+      return false;
+    }
+
+    this.emit('step-start', {
+      type: 'deterministic_auto_fix',
+      title: 'deterministic_auto_fix',
+      specialist: 'pipeline_specialist',
+    });
+
+    const before = this.captureProjectFileSnapshots();
+    try {
+      const result = await ProjectAutoFixer.fixProject(this.context.workspacePath);
+      const changedFiles = await this.recordProjectSnapshotDiff(before);
+
+      for (const changedFile of changedFiles) {
+        const fullPath = path.join(this.context.workspacePath, changedFile);
+        if (fs.existsSync(fullPath) && !allCreatedFiles.includes(changedFile)) {
+          allCreatedFiles.push(changedFile);
+        }
+      }
+
+      if (result.errors.length > 0) {
+        verification.errors.push(...result.errors.map((error) => `[AutoFix] ${error}`));
+      }
+
+      log.info(
+        `[SpecializedAgent] Deterministic auto-fixer completed: ${result.fixes.length} fix(es), ${changedFiles.length} file change(s)`
+      );
+      this.emit('step-complete', {
+        type: 'deterministic_auto_fix',
+        title: 'deterministic_auto_fix',
+        specialist: 'pipeline_specialist',
+        success: result.success,
+        error: result.errors.join('; ') || undefined,
+      });
+
+      return result.success || result.fixes.length > 0 || changedFiles.length > 0;
+    } catch (error: any) {
+      const message = error?.message || String(error);
+      verification.errors.push(`[AutoFix] ${message}`);
+      log.warn('[SpecializedAgent] Deterministic auto-fixer failed:', message);
+      this.emit('step-complete', {
+        type: 'deterministic_auto_fix',
+        title: 'deterministic_auto_fix',
+        specialist: 'pipeline_specialist',
+        success: false,
+        error: message,
+      });
+      return false;
     }
   }
 

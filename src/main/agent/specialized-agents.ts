@@ -37,6 +37,7 @@ import { transactionManager } from '../core/transaction-manager';
 import { getBudgetAdjustedMaxTokens, getRecommendedMaxTokens } from '../core/model-output-limits';
 import { getTelemetryService } from '../core/telemetry-service';
 import { createLogger } from '../core/logger';
+import { getFeatureFlags } from '../core/feature-flags';
 import {
   validateToolCall,
   fixToolCall,
@@ -54,6 +55,7 @@ import { spawn } from 'child_process';
 import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
 import { searchWithRipgrep } from '../core/ripgrep-runner';
 import {
+  applyDeterministicTemplateCustomization,
   detectCanonicalTemplateId,
   getExistingTemplateOutputCollisions,
   scaffoldProjectFromTemplate,
@@ -80,7 +82,7 @@ import {
   type VibeCoderIntent,
 } from './behavior-profile';
 
-const log = createLogger('MirrorAgents');
+const log = createLogger('SpecializedAgents');
 
 interface AgentPendingFileChange {
   filePath: string;
@@ -97,6 +99,10 @@ export function shouldSkipGenerativeSpecialistsAfterScaffold(options: {
   return options.scaffoldApplied && options.deterministicScaffoldOnly === true;
 }
 
+function shouldUseTemplateOnlyAfterScaffold(templateId?: string): boolean {
+  return Boolean(templateId);
+}
+
 interface AgentCommandOutputEvent {
   command: string;
   stream: 'stdout' | 'stderr';
@@ -110,6 +116,74 @@ interface AgentCommandOutputEvent {
  */
 function getAllProjectFiles(workspacePath: string, _maxDepth: number = 4): string[] {
   return listWorkspaceSourceFilesSync(workspacePath, 4000);
+}
+
+function readWorkspacePackageJson(workspacePath: string): any | null {
+  try {
+    const packageJsonPath = path.join(workspacePath, 'package.json');
+    if (!fs.existsSync(packageJsonPath)) {
+      return null;
+    }
+    return JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function hasDependency(packageJson: any | null, dependencyName: string): boolean {
+  if (!packageJson) {
+    return false;
+  }
+  return Boolean(packageJson.dependencies?.[dependencyName] || packageJson.devDependencies?.[dependencyName]);
+}
+
+function hasWorkspacePath(workspacePath: string, relativePath: string): boolean {
+  return fs.existsSync(path.join(workspacePath, relativePath));
+}
+
+function hasExistingTemplateAnchor(workspacePath: string, templateId: string): boolean {
+  const packageJson = readWorkspacePackageJson(workspacePath);
+
+  switch (templateId) {
+    case 'threejs-game':
+    case 'threejs-platformer':
+      return (
+        hasWorkspacePath(workspacePath, 'src/game/Game.ts') ||
+        hasDependency(packageJson, 'three') ||
+        hasDependency(packageJson, '@types/three')
+      );
+    case 'tauri-react':
+      return (
+        hasWorkspacePath(workspacePath, 'src-tauri/Cargo.toml') ||
+        hasWorkspacePath(workspacePath, 'src-tauri/tauri.conf.json') ||
+        hasDependency(packageJson, '@tauri-apps/api') ||
+        hasDependency(packageJson, '@tauri-apps/cli')
+      );
+    case 'electron-react':
+      return (
+        hasWorkspacePath(workspacePath, 'src/main/main.ts') ||
+        hasWorkspacePath(workspacePath, 'src/main/preload.ts') ||
+        hasDependency(packageJson, 'electron')
+      );
+    case 'vue-vite':
+      return hasWorkspacePath(workspacePath, 'src/App.vue') || hasDependency(packageJson, 'vue');
+    case 'static-site':
+      return hasWorkspacePath(workspacePath, 'app.js') || hasWorkspacePath(workspacePath, 'styles.css');
+    default:
+      return true;
+  }
+}
+
+function getExistingCanonicalTemplateId(workspacePath: string, task: string): string | null {
+  const templateId = detectCanonicalTemplateId(task);
+  if (!templateId) {
+    return null;
+  }
+
+  const collisions = getExistingTemplateOutputCollisions(templateId, workspacePath);
+  return collisions.length >= 3 && hasExistingTemplateAnchor(workspacePath, templateId)
+    ? templateId
+    : null;
 }
 
 export async function bootstrapDeterministicScaffold(
@@ -330,6 +404,16 @@ let _mirrorCache: {
   patterns: Awaited<ReturnType<typeof getRelevantPatterns>>;
 } | null = null;
 
+function isMirrorGuidanceEnabled(options?: { mirrorGuidanceEnabled?: boolean }): boolean {
+  if (options?.mirrorGuidanceEnabled === false) {
+    return false;
+  }
+  if (options?.mirrorGuidanceEnabled === true) {
+    return true;
+  }
+  return getFeatureFlags().mirror;
+}
+
 async function getMirrorContext(task: string) {
   const taskKey = task.substring(0, 200);
   if (_mirrorCache && _mirrorCache.taskKey === taskKey) {
@@ -338,6 +422,24 @@ async function getMirrorContext(task: string) {
   const patterns = await getRelevantPatterns(task, 5);
   _mirrorCache = { taskKey, patterns };
   return _mirrorCache;
+}
+
+async function storeTaskLearningIfEnabled(
+  task: string,
+  success: boolean,
+  patterns: any[],
+  mistakes: string[],
+  options?: { mirrorGuidanceEnabled?: boolean }
+): Promise<void> {
+  if (!isMirrorGuidanceEnabled(options)) {
+    return;
+  }
+
+  try {
+    await storeTaskLearning(task, success, patterns, mistakes);
+  } catch (error) {
+    log.warn('[MirrorAgents] Optional Mirror learning skipped:', error);
+  }
 }
 
 /**
@@ -353,6 +455,7 @@ async function buildMirrorEnhancedPrompt(
     reflectionQuestionLimit?: number;
     assistantBehaviorProfile?: AssistantBehaviorProfile;
     vibeCoderIntent?: VibeCoderIntent;
+    mirrorGuidanceEnabled?: boolean;
   } = {}
 ): Promise<string> {
   let enhancedPrompt = injectBehaviorProfilePrompt(
@@ -371,6 +474,10 @@ ${basePrompt}`,
     options.assistantBehaviorProfile,
     options.vibeCoderIntent
   );
+
+  if (!isMirrorGuidanceEnabled(options)) {
+    return enhancedPrompt;
+  }
 
   try {
     const mirror = await getMirrorContext(task);
@@ -1729,10 +1836,12 @@ function parseToolCalls(content: string): any[] {
   const toolCalls: any[] = [];
   const seen = new Set<string>();
   let parseFailures = 0;
+  const candidates = collectJsonCandidates(content);
 
-  for (const candidate of collectJsonCandidates(content)) {
+  for (const candidate of candidates) {
     try {
-      pushParsedToolCalls(JSON.parse(candidate), seen, toolCalls);
+      const parsed = JSON.parse(candidate);
+      pushParsedToolCalls(parsed, seen, toolCalls);
     } catch {
       parseFailures++;
     }
@@ -2541,7 +2650,11 @@ export async function executeWithSpecialists(
     }
   }
 
-  log.info('[MirrorAgents] 🧠 Starting mirror-enhanced specialized agent execution');
+  log.info(
+    isMirrorGuidanceEnabled({ mirrorGuidanceEnabled: context.mirrorGuidanceEnabled })
+      ? '[SpecializedAgents] Starting specialized agent execution with optional Mirror guidance'
+      : '[SpecializedAgents] Starting specialized agent execution'
+  );
 
   // Soft health check — warn but don't block if cloud providers are available
   const health = await checkOllamaHealth();
@@ -2569,6 +2682,131 @@ export async function executeWithSpecialists(
     requirements: [],
     implementedFeatures: [],
   };
+
+  beginPhase('deterministic_scaffold');
+  const bootstrappedTools = await bootstrapDeterministicScaffold(
+    context.workspacePath,
+    task,
+    callbacks,
+    executionPolicy
+  );
+  if (bootstrappedTools.length > 0) {
+    scaffoldApplied = true;
+    scaffoldTemplateId = bootstrappedTools[0]?.result?.scaffolded;
+    addBlackboardArtifact(blackboard, {
+      type: 'scaffold_result',
+      author: 'template_scaffold_specialist',
+      summary: `Deterministic scaffold applied with ${bootstrappedTools.length} file(s).`,
+      payload: {
+        templateId: scaffoldTemplateId,
+        files: bootstrappedTools.map((tool) => tool.result?.path).filter(Boolean),
+      },
+    });
+    log.info(
+      `[MirrorAgents] 🧱 Bootstrapped ${bootstrappedTools.length} template file(s) before AI planning`
+    );
+    executedTools.push(...bootstrappedTools);
+    for (const bootstrapped of bootstrappedTools) {
+      if (bootstrapped.result.action === 'write_file' && bootstrapped.result.path) {
+        sharedContext.filesCreated.set(bootstrapped.result.path, 'deterministic_bootstrap');
+      }
+    }
+    context.files = getAllProjectFiles(context.workspacePath);
+    telemetry.track('template_used', {
+      templateId: bootstrappedTools[0]?.result?.scaffolded || 'unknown',
+      mode: 'deterministic_bootstrap',
+      fileCount: bootstrappedTools.length,
+    });
+    endPhase('deterministic_scaffold', 'success', {
+      fileCount: bootstrappedTools.length,
+      templateId: bootstrappedTools[0]?.result?.scaffolded || 'unknown',
+    });
+  } else {
+    endPhase('deterministic_scaffold', 'success', { skipped: true });
+  }
+
+  const existingCanonicalTemplateId =
+    !scaffoldApplied && taskMode === 'enhance'
+      ? getExistingCanonicalTemplateId(context.workspacePath, task)
+      : null;
+  const customizedExistingTemplateFiles = existingCanonicalTemplateId
+    ? applyDeterministicTemplateCustomization(
+        context.workspacePath,
+        task,
+        existingCanonicalTemplateId,
+        { callbacks }
+      )
+    : [];
+  for (const customizedFile of customizedExistingTemplateFiles) {
+    executedTools.push({
+      toolCall: {
+        name: 'write_file',
+        arguments: { path: customizedFile },
+      },
+      result: {
+        action: 'write_file',
+        path: customizedFile,
+        success: true,
+        customized: existingCanonicalTemplateId,
+      },
+      specialist: 'deterministic_customizer',
+    });
+    sharedContext.filesCreated.set(customizedFile, 'deterministic_customizer');
+  }
+  const hasTemplateOwnedProject = scaffoldApplied || Boolean(existingCanonicalTemplateId);
+  if (hasTemplateOwnedProject && roles.includes('tool_orchestrator')) {
+    roles = roles.filter((role) => role !== 'tool_orchestrator');
+    log.info(
+      '[MirrorAgents] 🧱 Template-owned project detected; skipping structure orchestrator for targeted specialist pass'
+    );
+  }
+
+  if (
+    shouldSkipGenerativeSpecialistsAfterScaffold({
+      scaffoldApplied,
+      deterministicScaffoldOnly,
+    })
+  ) {
+    log.info(
+      '[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping AI planning and generative specialists'
+    );
+    return {
+      results,
+      finalAnalysis,
+      executedTools,
+      scaffoldApplied,
+      scaffoldTemplateId,
+      skippedGenerativePass: true,
+    };
+  }
+
+  if (customizedExistingTemplateFiles.length > 0) {
+    log.info(
+      '[SpecializedAgents] Deterministic template customization applied; skipping generative specialists'
+    );
+    return {
+      results,
+      finalAnalysis,
+      executedTools,
+      scaffoldApplied,
+      scaffoldTemplateId,
+      skippedGenerativePass: true,
+    };
+  }
+
+  if (taskMode === 'create' && shouldUseTemplateOnlyAfterScaffold(scaffoldTemplateId)) {
+    log.info(
+      '[SpecializedAgents] Canonical template scaffold applied; returning verified starter before targeted AI edits'
+    );
+    return {
+      results,
+      finalAnalysis,
+      executedTools,
+      scaffoldApplied,
+      scaffoldTemplateId,
+      skippedGenerativePass: true,
+    };
+  }
 
   const requestedModel =
     typeof context.model === 'string' && context.model.trim().length > 0
@@ -2648,16 +2886,23 @@ export async function executeWithSpecialists(
     }
   }
 
+  const shouldSkipSeparatePlanningAfterScaffold =
+    (scaffoldApplied && taskMode === 'create') || Boolean(existingCanonicalTemplateId);
+
   // Step 0: Planning Phase - Break down task into requirements (FAST)
-  if (deterministicScaffoldOnly || planningMode === 'skip') {
+  if (deterministicScaffoldOnly || planningMode === 'skip' || shouldSkipSeparatePlanningAfterScaffold) {
     beginPhase('planning', {
       skipped: true,
       deterministicScaffoldOnly: deterministicScaffoldOnly || undefined,
+      scaffoldApplied: shouldSkipSeparatePlanningAfterScaffold || undefined,
+      existingCanonicalTemplateId: existingCanonicalTemplateId || undefined,
       planningMode,
     });
     endPhase('planning', 'success', {
       skipped: true,
       deterministicScaffoldOnly: deterministicScaffoldOnly || undefined,
+      scaffoldApplied: shouldSkipSeparatePlanningAfterScaffold || undefined,
+      existingCanonicalTemplateId: existingCanonicalTemplateId || undefined,
       planningMode,
     });
   } else {
@@ -2679,6 +2924,7 @@ export async function executeWithSpecialists(
           reflectionQuestionLimit,
           assistantBehaviorProfile: context.assistantBehaviorProfile,
           vibeCoderIntent: context.vibeCoderIntent,
+          mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
         }
       )
     );
@@ -2770,67 +3016,6 @@ Output as a structured list. Be specific and comprehensive.`;
     log.info(`[MirrorAgents] ✅ Checkpoint created: ${planningCheckpoint}`);
   }
 
-  beginPhase('deterministic_scaffold');
-  const bootstrappedTools = await bootstrapDeterministicScaffold(
-    context.workspacePath,
-    task,
-    callbacks,
-    executionPolicy
-  );
-  if (bootstrappedTools.length > 0) {
-    scaffoldApplied = true;
-    scaffoldTemplateId = bootstrappedTools[0]?.result?.scaffolded;
-    addBlackboardArtifact(blackboard, {
-      type: 'scaffold_result',
-      author: 'template_scaffold_specialist',
-      summary: `Deterministic scaffold applied with ${bootstrappedTools.length} file(s).`,
-      payload: {
-        templateId: scaffoldTemplateId,
-        files: bootstrappedTools.map((tool) => tool.result?.path).filter(Boolean),
-      },
-    });
-    log.info(
-      `[MirrorAgents] 🧱 Bootstrapped ${bootstrappedTools.length} template file(s) before specialist generation`
-    );
-    executedTools.push(...bootstrappedTools);
-    for (const bootstrapped of bootstrappedTools) {
-      if (bootstrapped.result.action === 'write_file' && bootstrapped.result.path) {
-        sharedContext.filesCreated.set(bootstrapped.result.path, 'deterministic_bootstrap');
-      }
-    }
-    context.files = getAllProjectFiles(context.workspacePath);
-    telemetry.track('template_used', {
-      templateId: bootstrappedTools[0]?.result?.scaffolded || 'unknown',
-      mode: 'deterministic_bootstrap',
-      fileCount: bootstrappedTools.length,
-    });
-    endPhase('deterministic_scaffold', 'success', {
-      fileCount: bootstrappedTools.length,
-      templateId: bootstrappedTools[0]?.result?.scaffolded || 'unknown',
-    });
-  } else {
-    endPhase('deterministic_scaffold', 'success', { skipped: true });
-  }
-
-  if (
-    shouldSkipGenerativeSpecialistsAfterScaffold({
-      scaffoldApplied,
-      deterministicScaffoldOnly,
-    })
-  ) {
-    log.info(
-      '[MirrorAgents] 🧪 Deterministic scaffold-only mode enabled; skipping generative specialists'
-    );
-    return {
-      results,
-      finalAnalysis,
-      executedTools,
-      scaffoldApplied,
-      scaffoldTemplateId,
-      skippedGenerativePass: true,
-    };
-  }
-
   // Scaffold supplies a runnable skeleton only — orchestrator + specialists MUST run so
   // gameplay matches the user's prompt (otherwise every "three.js game" looks identical).
 
@@ -2853,6 +3038,7 @@ Output as a structured list. Be specific and comprehensive.`;
           reflectionQuestionLimit,
           assistantBehaviorProfile: context.assistantBehaviorProfile,
           vibeCoderIntent: context.vibeCoderIntent,
+          mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
         })
       ),
       scaffoldApplied,
@@ -2939,7 +3125,9 @@ Output as a structured list. Be specific and comprehensive.`;
         throw error;
       }
       mistakes.push(`Orchestrator complete failure: ${error.message}`);
-      await storeTaskLearning(task, false, [], mistakes);
+      await storeTaskLearningIfEnabled(task, false, [], mistakes, {
+        mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
+      });
       endPhase('orchestrator', 'failure', {
         requestedProvider: orchestratorProvider,
         requestedModel: orchestratorModel,
@@ -2961,7 +3149,9 @@ Output as a structured list. Be specific and comprehensive.`;
 
     if (!orchestratorResponse.success) {
       mistakes.push(`Orchestrator failed: ${orchestratorResponse.error}`);
-      await storeTaskLearning(task, false, [], mistakes);
+      await storeTaskLearningIfEnabled(task, false, [], mistakes, {
+        mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
+      });
       throw new Error(`Orchestrator failed: ${orchestratorResponse.error}`);
     }
 
@@ -3131,6 +3321,7 @@ Output as a structured list. Be specific and comprehensive.`;
           reflectionQuestionLimit,
           assistantBehaviorProfile: context.assistantBehaviorProfile,
           vibeCoderIntent: context.vibeCoderIntent,
+          mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
         })
       ),
       scaffoldApplied,
@@ -3381,6 +3572,7 @@ ${buildSharedContext(sharedContext)}`,
           reflectionQuestionLimit,
           assistantBehaviorProfile: context.assistantBehaviorProfile,
           vibeCoderIntent: context.vibeCoderIntent,
+          mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
         })
       ),
       scaffoldApplied,
@@ -3640,7 +3832,9 @@ ${buildSharedContext(sharedContext)}`,
     !analysisContentForSuccess.includes('missing') &&
     !analysisContentForSuccess.includes('incomplete') &&
     !analysisContentForSuccess.includes('error');
-  await storeTaskLearning(task, overallSuccess, successfulPatterns, mistakes);
+  await storeTaskLearningIfEnabled(task, overallSuccess, successfulPatterns, mistakes, {
+    mirrorGuidanceEnabled: context.mirrorGuidanceEnabled,
+  });
   blackboard && (blackboard.status = overallSuccess ? 'completed' : blackboard.status);
 
   log.info(

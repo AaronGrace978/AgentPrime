@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <strong>Now shipping:</strong> explicit review/apply checkpoints, `instant` / `standard` / `deep` reflection budgets, discipline-first specialists, and calmer mode-aware chat.
+  <strong>Now shipping:</strong> deterministic project scaffolds, explicit review/apply checkpoints, `instant` / `standard` / `deep` reflection budgets, discipline-first specialists, and calmer mode-aware chat.
 </p>
 
 <p align="center">
@@ -46,7 +46,7 @@ AgentPrime is beyond the “shell only” phase now. The desktop app, composer, 
 Current status:
 
 - The desktop workspace is real and usable: editor, tabs, terminal, file tree, search, settings, model selection, and runtime status all exist in-app.
-- Agent execution now uses bounded discipline specialists with file ownership, validation, explicit review sessions, and structured repair passes.
+- Agent execution now uses deterministic project routing first, then bounded discipline specialists with file ownership, validation, explicit review sessions, and structured repair passes.
 - Provider setup is safer: API keys stay out of plain settings files, with secure storage and renderer-safe IPC.
 - Chat modes are now treated as distinct experiences instead of a single blended prompt surface.
 - Agent behavior profiles now support an Aaron Grace `VibeCoder` mode with stricter intent discipline and leaner planning/review behavior.
@@ -55,7 +55,7 @@ Current status:
 Recently verified:
 
 - Transactional template materialization with rollback support on failed generation.
-- Deterministic scaffold routing for canonical template requests like `threejs-game` and `threejs-platformer`.
+- Deterministic scaffold routing for canonical template requests like `tauri-react`, `electron-react`, `threejs-game`, `threejs-platformer`, and Minecraft-style voxel games.
 - Specialist-aware tool validation for file, tool, and command boundaries.
 - Review-session plumbing for staged multi-file changes before final apply.
 - Nested Vite path handling, Python shell quoting, and CI install-script parity improvements.
@@ -95,6 +95,21 @@ This is still an active build, but it now behaves much more like an actual AI ID
 - Work with Git actions and repository workflows without leaving the desktop shell
 
 ## Recent Upgrades
+
+### Stabilized IDE shell and deterministic project engine (May 2026)
+
+This patch moves AgentPrime closer to the intended product shape: a stable IDE shell, a deterministic project engine, and targeted AI assistance that only steps in after the project foundation is known.
+
+- **Scaffold-first execution:** Canonical project requests now bootstrap before AI planning, so Tauri, Electron, Three.js, platformer, and voxel-game prompts can start from known-good templates instead of waiting on broad orchestration.
+- **Desktop IDE templates:** Tauri and Electron IDE-style prompts receive deterministic shell customization with explorer, editor, assistant panel, terminal/status surfaces, and syntax-checked React output.
+- **Game routing:** Three.js game prompts route to the generic 3D starter, runner/platformer prompts route to `threejs-platformer`, and Minecraft/voxel/block-world prompts customize the Three.js starter into a block terrain baseline with trees, crosshair UI, and break/place block controls.
+- **Less slow wrong-path planning:** Template-owned create runs can skip generative specialists once the runnable scaffold is applied, while existing-workspace detection now requires stack-specific anchors to avoid false positives from shared files like `package.json`.
+- **Verification without accidental launches:** Probe-only verification avoids starting heavyweight runtimes such as `tauri dev`; dependency installs are skipped when `node_modules` is current.
+- **Project process cleanup:** Launched project processes are tracked by workspace, and deletion now tries to stop tracked and Windows path-associated processes so file locks do not trap generated projects.
+- **Optional intelligence layers:** Mirror guidance is feature-flagged off by default, and the Python Brain check is non-blocking so optional services do not hold up the IDE.
+- **Provider resilience:** Live model lookup failures return labeled fallback catalogs instead of surfacing as app-breaking provider errors.
+
+Verified with focused regression suites and a full app build.
 
 ### Agent loop reliability and static-site repair fixes (April 2026)
 

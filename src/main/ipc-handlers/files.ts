@@ -54,6 +54,11 @@ function buildFinding(
   };
 }
 
+function isLockedFilesystemError(error: any): boolean {
+  return ['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code) ||
+    /busy|locked|in use|access is denied|directory not empty/i.test(error?.message || '');
+}
+
 /**
  * Build directory tree recursively
  */
@@ -233,6 +238,27 @@ export function register(deps: FileHandlersDeps): void {
         : { success: false, message: result.message, url: result.url, error: result.error || result.message };
     } catch (error: any) {
       return { success: false, error: error.message || 'Failed to launch project' };
+    }
+  });
+
+  ipcMain.handle('file:stop-project-processes', async (event, projectPath?: string) => {
+    try {
+      const workspacePath = getWorkspacePath();
+      if (!workspacePath) return { success: false, error: 'No workspace' };
+
+      const requestedPath = projectPath || workspacePath;
+      const pathValidation = resolveValidatedPath(requestedPath, workspacePath, {
+        allowAbsolute: true,
+        sanitizeFilename: false,
+      });
+      if (!pathValidation.valid || !pathValidation.resolvedPath) {
+        return { success: false, error: `Invalid path: ${pathValidation.errors.join('; ')}` };
+      }
+
+      const { ProjectRunner } = require('../agent/tools/projectRunner');
+      return await ProjectRunner.stopProjectProcesses(pathValidation.resolvedPath);
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Failed to stop project processes' };
     }
   });
 
@@ -520,12 +546,33 @@ export function register(deps: FileHandlersDeps): void {
       return { error: `Cannot delete critical file: ${fileName}` };
     }
     
+    let stopResult: any = null;
     try {
+      if (fs.existsSync(fullPath) && fs.statSync(fullPath).isDirectory()) {
+        const { ProjectRunner } = require('../agent/tools/projectRunner');
+        stopResult = await ProjectRunner.stopProjectProcesses(fullPath);
+      }
+
       console.log(`[File Delete] Deleting: ${fullPath}`);
       fs.rmSync(fullPath, { recursive: true, force: true });
       scheduleWorkspaceSymbolIndexRebuildForAgents();
-      return { success: true };
+      return { success: true, stoppedProcesses: stopResult };
     } catch (e: any) {
+      if (isLockedFilesystemError(e)) {
+        try {
+          const { ProjectRunner } = require('../agent/tools/projectRunner');
+          stopResult = stopResult || await ProjectRunner.stopProjectProcesses(fullPath);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          fs.rmSync(fullPath, { recursive: true, force: true });
+          scheduleWorkspaceSymbolIndexRebuildForAgents();
+          return { success: true, stoppedProcesses: stopResult };
+        } catch (retryError: any) {
+          return {
+            error: retryError.message,
+            stoppedProcesses: stopResult,
+          };
+        }
+      }
       return { error: e.message };
     }
   });

@@ -14,6 +14,7 @@ const agentAPI: AgentAPI = {
   createFolder: (folderName: string) => ipcRenderer.invoke('file:create-folder', folderName),
   setWorkspace: (path: string) => ipcRenderer.invoke('file:set-workspace', path),
   launchProject: (projectPath: string) => ipcRenderer.invoke('file:launch-project', projectPath),
+  stopProjectProcesses: (projectPath?: string) => ipcRenderer.invoke('file:stop-project-processes', projectPath),
   verifyProject: (projectPath: string) => ipcRenderer.invoke('file:verify-project', projectPath),
   updateAgentReviewStatus: (sessionId: string, filePath: string, status: 'pending' | 'accepted' | 'rejected') =>
     ipcRenderer.invoke('agent:review-update-status', sessionId, filePath, status),

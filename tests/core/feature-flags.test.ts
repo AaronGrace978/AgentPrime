@@ -19,7 +19,7 @@ describe('Feature Flags', () => {
 
   it('should return defaults when no env vars or overrides set', () => {
     const flags = resolveFeatureFlags();
-    expect(flags.mirror).toBe(true);
+    expect(flags.mirror).toBe(false);
     expect(flags.activatePrime).toBe(true);
     expect(flags.pythonBrain).toBe(false);
     expect(flags.telemetry).toBe(true);
@@ -30,10 +30,10 @@ describe('Feature Flags', () => {
   });
 
   it('should respect environment variable overrides', () => {
-    process.env.AGENTPRIME_ENABLE_MIRROR = 'false';
+    process.env.AGENTPRIME_ENABLE_MIRROR = 'true';
     process.env.AGENTPRIME_ENABLE_TELEMETRY = 'false';
     const flags = resolveFeatureFlags();
-    expect(flags.mirror).toBe(false);
+    expect(flags.mirror).toBe(true);
     expect(flags.telemetry).toBe(false);
   });
 
@@ -54,10 +54,10 @@ describe('Feature Flags', () => {
 
   it('should cache flags after first resolution', () => {
     const flags1 = resolveFeatureFlags();
-    process.env.AGENTPRIME_ENABLE_MIRROR = 'false';
+    process.env.AGENTPRIME_ENABLE_MIRROR = 'true';
     const flags2 = resolveFeatureFlags();
     expect(flags1).toBe(flags2);
-    expect(flags2.mirror).toBe(true);
+    expect(flags2.mirror).toBe(false);
   });
 
   it('should reset cache on resetFeatureFlags()', () => {

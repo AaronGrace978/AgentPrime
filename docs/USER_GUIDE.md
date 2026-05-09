@@ -24,6 +24,17 @@ Use **New Project** from the welcome screen or press `Ctrl+Shift+N`.
 
 If dependency installation fails, the files are still created. AgentPrime now shows that as a setup note instead of a scary fatal error. Open the workspace and run the suggested install command in the terminal.
 
+### Deterministic Starts
+
+For common project types, AgentPrime now builds the foundation before asking AI to customize it:
+
+- Tauri and Electron IDE prompts start from desktop app shells.
+- Three.js game prompts start from a runnable 3D game baseline.
+- Platformer, runner, and Dino-style prompts start from the Three.js platformer template.
+- Minecraft, voxel, and block-world prompts start from a voxel terrain baseline with movement, crosshair UI, and break/place block controls.
+
+This keeps create-mode runs faster and reduces broken project structures from broad AI planning.
+
 ## Agent Mode
 
 Open Agent Mode with `Ctrl+L` or the **Ask AI** button.
@@ -58,6 +69,8 @@ Some templates need a manual command first, such as:
 npm install
 npm run dev
 ```
+
+AgentPrime skips unnecessary reinstalls when dependencies are already current and avoids starting heavyweight dev runtimes during verification probes.
 
 ### Status Bar
 
@@ -115,6 +128,14 @@ Run the project manually first, such as `npm run dev`, then use the preview URL 
 ### Workspace looks stale
 
 Reopen the folder, refresh the explorer, or restart AgentPrime if the file watcher falls behind.
+
+### Folder will not delete
+
+If a generated project is locked by a running dev server, use the project stop/delete flow again. AgentPrime tries to stop tracked project processes and Windows processes associated with that workspace before retrying deletion.
+
+### Provider model list failed
+
+If a provider cannot return live models because of auth or network issues, AgentPrime can still show a labeled fallback model list. Check Settings to fix credentials when you want the live catalog back.
 
 ## Best First Agent Prompt
 

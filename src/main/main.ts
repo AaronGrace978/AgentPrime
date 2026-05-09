@@ -55,6 +55,7 @@ if (configuredSessionDataPath) {
 
 // Import AI router (TypeScript)
 import aiRouter from './ai-providers';
+import { buildProviderModelLookupFallback } from './ai-providers/provider-model-fallbacks';
 
 // Import IPC handlers (TypeScript)
 import { registerAllHandlers } from './ipc-handlers';
@@ -1509,8 +1510,11 @@ ipcMain.handle('get-provider-models', async (event, providerName: string) => {
     const models = await aiRouter.getProviderModels(providerName);
     return models;
   } catch (error: any) {
-    log.error('[IPC] get-provider-models error:', error);
-    throw new Error(error?.message || 'Failed to load provider models');
+    const message = error?.message || 'Failed to load provider models';
+    log.warn(
+      `[IPC] Optional provider model lookup failed for ${providerName}: ${message}`
+    );
+    return buildProviderModelLookupFallback(providerName, message);
   }
 });
 

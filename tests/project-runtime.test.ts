@@ -13,6 +13,7 @@ describe('Project runtime source of truth', () => {
   const tempRoots: string[] = [];
 
   afterEach(() => {
+    jest.restoreAllMocks();
     while (tempRoots.length > 0) {
       const tempRoot = tempRoots.pop();
       if (tempRoot && fs.existsSync(tempRoot)) {
@@ -59,6 +60,21 @@ describe('Project runtime source of truth', () => {
 
   function createPythonApp(workspacePath: string): void {
     fs.writeFileSync(path.join(workspacePath, 'main.py'), 'print("python app")\n');
+  }
+
+  function createTauriShape(workspacePath: string): void {
+    fs.mkdirSync(path.join(workspacePath, 'src-tauri', 'src'), { recursive: true });
+    fs.mkdirSync(path.join(workspacePath, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'tauri-app',
+      scripts: { dev: 'vite', build: 'vite build', 'tauri:dev': 'tauri dev' },
+      dependencies: { '@tauri-apps/api': '^2.0.0' },
+      devDependencies: { vite: '^5.4.0', '@tauri-apps/cli': '^2.0.0' },
+    }, null, 2));
+    fs.writeFileSync(path.join(workspacePath, 'index.html'), '<!doctype html><script type="module" src="/src/main.ts"></script>');
+    fs.writeFileSync(path.join(workspacePath, 'src', 'main.ts'), 'console.log("tauri");');
+    fs.writeFileSync(path.join(workspacePath, 'src-tauri', 'Cargo.toml'), '[package]\nname = "tauri-app"\nversion = "0.1.0"\nedition = "2021"\n');
+    fs.writeFileSync(path.join(workspacePath, 'src-tauri', 'src', 'main.rs'), 'fn main() {}\n');
   }
 
   function createProjectLog(workspacePath: string, files: string[], prompt: string): string {
@@ -167,6 +183,70 @@ describe('Project runtime source of truth', () => {
     expect(projectInfo.startCommand).toContain('main.py');
     expect(response).toContain('main.py');
     expect(log).toContain('python main.py');
+  });
+
+  it('treats Tauri probe verification as ready without launching Cargo dev builds', async () => {
+    const workspacePath = createTempDir('agentprime-runtime-tauri-');
+    createTauriShape(workspacePath);
+
+    const projectInfo = await ProjectRunner.detectProject(workspacePath);
+    const runResult = await ProjectRunner.runProject(workspacePath, projectInfo, { probeOnly: true });
+
+    expect(projectInfo.type).toBe('tauri');
+    expect(projectInfo.startCommand).toBe('npm run tauri:dev');
+    expect(runResult.success).toBe(true);
+    expect(runResult.output).toContain('Runtime launch skipped for probe verification');
+  });
+
+  it('does not reinstall Node dependencies when install markers are current', async () => {
+    const workspacePath = createTempDir('agentprime-runtime-node-modules-');
+    createViteShape(workspacePath);
+    const projectInfo = await ProjectRunner.detectProject(workspacePath);
+    const nodeModulesPath = path.join(workspacePath, 'node_modules');
+    const markerPath = path.join(nodeModulesPath, '.package-lock.json');
+
+    fs.mkdirSync(nodeModulesPath, { recursive: true });
+    fs.writeFileSync(markerPath, '{}');
+    const now = new Date();
+    fs.utimesSync(path.join(workspacePath, 'package.json'), now, now);
+    fs.utimesSync(markerPath, now, now);
+    fs.utimesSync(nodeModulesPath, now, now);
+
+    expect((ProjectRunner as any).shouldReinstallNodeDependencies(workspacePath, projectInfo)).toBe(false);
+
+    const future = new Date(now.getTime() + 3000);
+    fs.utimesSync(path.join(workspacePath, 'package.json'), future, future);
+    expect((ProjectRunner as any).shouldReinstallNodeDependencies(workspacePath, projectInfo)).toBe(true);
+  });
+
+  it('skips install during explicit launch when Node dependencies are already current', async () => {
+    const workspacePath = createTempDir('agentprime-launch-current-deps-');
+    createViteShape(workspacePath);
+    const nodeModulesPath = path.join(workspacePath, 'node_modules');
+    const markerPath = path.join(nodeModulesPath, '.package-lock.json');
+    fs.mkdirSync(nodeModulesPath, { recursive: true });
+    fs.writeFileSync(markerPath, '{}');
+    const now = new Date();
+    fs.utimesSync(path.join(workspacePath, 'package.json'), now, now);
+    fs.utimesSync(markerPath, now, now);
+    fs.utimesSync(nodeModulesPath, now, now);
+
+    const installSpy = jest.spyOn(ProjectRunner, 'installDependencies');
+    jest.spyOn(ProjectRunner, 'runBuild').mockResolvedValue({
+      success: true,
+      output: 'Build skipped in launch test',
+    });
+    jest.spyOn(ProjectRunner, 'runProject').mockResolvedValue({
+      success: true,
+      output: 'Project started',
+      url: 'http://localhost:4173',
+      port: 4173,
+    });
+
+    const launchResult = await ProjectRunner.launchProject(workspacePath);
+
+    expect(launchResult.success).toBe(true);
+    expect(installSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -350,6 +430,54 @@ http.createServer((_req, res) => {
     expect(buildResult.output).toContain('node build ok');
     expect(runResult.success).toBe(true);
     expect(runResult.url).toContain(`http://localhost:${nodePort}`);
+  });
+
+  it('tracks and stops launched project processes so workspace cleanup can proceed', async () => {
+    const workspacePath = createTempDir('agentprime-stop-process-');
+    writeJson(path.join(workspacePath, 'package.json'), {
+      name: 'stop-process-smoke',
+      scripts: {
+        start: 'node server.js',
+      },
+    });
+    fs.writeFileSync(path.join(workspacePath, 'server.js'), `
+console.log('long-running project process ready');
+setInterval(() => {}, 1000);
+`, 'utf-8');
+
+    const projectInfo = await ProjectRunner.detectProject(workspacePath);
+    const runResult = await ProjectRunner.runProject(workspacePath, projectInfo, { waitMs: 300 });
+    const stopResult = await ProjectRunner.stopProjectProcesses(workspacePath);
+
+    expect(runResult.success).toBe(true);
+    expect(stopResult.killedPids.length).toBeGreaterThan(0);
+  });
+
+  it('reuses an active project launch instead of spawning duplicate servers', async () => {
+    const workspacePath = createTempDir('agentprime-dedupe-launch-');
+    const nodePort = await ProjectRunner.findAvailablePort(4521) || 4521;
+    writeJson(path.join(workspacePath, 'package.json'), {
+      name: 'dedupe-launch-smoke',
+      scripts: {
+        start: 'node server.js',
+      },
+    });
+    fs.writeFileSync(path.join(workspacePath, 'server.js'), `
+const http = require('http');
+const port = ${nodePort};
+http.createServer((_req, res) => res.end('ok')).listen(port, () => {
+  console.log('http://localhost:' + port);
+});
+`, 'utf-8');
+
+    const firstLaunch = await ProjectRunner.launchProject(workspacePath);
+    const secondLaunch = await ProjectRunner.launchProject(workspacePath);
+    const stopResult = await ProjectRunner.stopProjectProcesses(workspacePath);
+
+    expect(firstLaunch.success).toBe(true);
+    expect(secondLaunch.success).toBe(true);
+    expect(secondLaunch.url).toBe(firstLaunch.url);
+    expect(stopResult.killedPids.length).toBe(1);
   });
 
   it('verifies a Python app fixture through run verification', async () => {

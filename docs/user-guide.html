@@ -497,7 +497,7 @@
       <div class="eyebrow"><span class="mark">A</span>AgentPrime user guide</div>
       <h1>Build, review, run, and repair from one local-first workspace.</h1>
       <p class="lead">
-        This guide walks through the current AgentPrime flow: choosing a welcome view, creating projects from templates, using Agent Mode, launching previews, managing settings, and recovering cleanly when setup needs attention.
+        This guide walks through the current AgentPrime flow: choosing a welcome view, creating projects from deterministic starters, using Agent Mode, launching previews, managing settings, and recovering cleanly when setup needs attention.
       </p>
       <div class="hero-actions">
         <a class="button primary" href="#create-projects">Create a project</a>
@@ -518,6 +518,7 @@
         <strong>On this page</strong>
         <a href="#start">Start here</a>
         <a href="#create-projects">Create projects</a>
+        <a href="#deterministic-starts">Deterministic starts</a>
         <a href="#agent-mode">Agent Mode</a>
         <a href="#workspace">Workspace flow</a>
         <a href="#settings">Settings</a>
@@ -561,6 +562,29 @@
           </div>
         </section>
 
+        <section id="deterministic-starts">
+          <h2>Deterministic starts</h2>
+          <p>For common project types, AgentPrime builds the known-good foundation before asking AI to customize it. This makes create-mode runs faster and reduces broken project structures from broad planning.</p>
+          <div class="cards">
+            <div class="card">
+              <h3>Desktop IDEs</h3>
+              <p>Tauri and Electron IDE prompts start from desktop shells with explorer, editor, assistant, terminal, and status surfaces.</p>
+            </div>
+            <div class="card">
+              <h3>Three.js games</h3>
+              <p>Generic 3D game prompts start from a runnable Three.js baseline, while runner and platformer prompts use the platformer starter.</p>
+            </div>
+            <div class="card">
+              <h3>Voxel worlds</h3>
+              <p>Minecraft, voxel, and block-world prompts create terrain blocks, trees, crosshair UI, and left/right click break/place controls.</p>
+            </div>
+            <div class="card">
+              <h3>Optional intelligence</h3>
+              <p>Mirror guidance and the Python Brain are optional layers, so missing optional services do not block the core IDE flow.</p>
+            </div>
+          </div>
+        </section>
+
         <section id="agent-mode">
           <h2>Agent Mode</h2>
           <p>Agent Mode is the file-aware build lane. Open it with <kbd>Ctrl</kbd>+<kbd>L</kbd> or the <strong>Ask AI</strong> button. It can inspect context, propose changes, run checks, and hand changes to review before applying.</p>
@@ -597,6 +621,7 @@
           <p>Use <kbd>Ctrl</kbd>+<kbd>O</kbd> or the welcome screen <strong>Open Project</strong> action. The file explorer, Git panel, editor, terminal, status bar, and Agent Mode all use the active workspace path.</p>
           <h3>Run and preview</h3>
           <p>Press <kbd>F5</kbd> or use project run actions. When AgentPrime gets a local URL from the project runner, Live Preview opens in the IDE.</p>
+          <p>AgentPrime skips unnecessary reinstalls when dependencies are current and avoids starting heavyweight dev runtimes during verification probes.</p>
           <h3>Status bar</h3>
           <p>The bottom bar summarizes AI connection, current model, desktop/Python Brain status, doctor readiness, file language, line count, shortcuts, and time.</p>
         </section>
@@ -654,6 +679,10 @@
           </ol>
           <h3>Workspace looks stale</h3>
           <p>Reopen the folder, use the explorer refresh path, or restart AgentPrime if the file watcher fell behind.</p>
+          <h3>Folder will not delete</h3>
+          <p>If a generated project is locked by a running dev server, use the project stop/delete flow again. AgentPrime tries to stop tracked project processes and Windows processes associated with that workspace before retrying deletion.</p>
+          <h3>Provider model list failed</h3>
+          <p>If a provider cannot return live models because of auth or network issues, AgentPrime can still show a labeled fallback model list. Check Settings to fix credentials when you want the live catalog back.</p>
         </section>
 
         <section id="help">

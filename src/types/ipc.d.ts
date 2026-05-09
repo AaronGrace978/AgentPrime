@@ -43,6 +43,12 @@ export interface AgentAPI {
   createFolder: (folderName: string) => Promise<{ success: boolean; path?: string; error?: string; cancelled?: boolean }>;
   setWorkspace: (path: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   launchProject: (projectPath: string) => Promise<{ success: boolean; message?: string; url?: string; error?: string }>;
+  stopProjectProcesses: (projectPath?: string) => Promise<{
+    success: boolean;
+    killedPids?: number[];
+    warnings?: string[];
+    error?: string;
+  }>;
   verifyProject: (projectPath: string) => Promise<{
     success: boolean;
     projectKind: string;
@@ -85,7 +91,7 @@ export interface AgentAPI {
   writeFile: (path: string, content: string) => Promise<any>;
   saveFileDialog: (defaultPath?: string, suggestedExtension?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   createItem: (path: string, isDir: boolean) => Promise<{ success: boolean; error?: string }>;
-  deleteItem: (path: string) => Promise<{ success: boolean; error?: string }>;
+  deleteItem: (path: string) => Promise<{ success: boolean; error?: string; stoppedProcesses?: any }>;
   setFolderFocus: (folderPath: string | null) => Promise<any>;
   getFolderFocus: () => Promise<any>;
   getFolderContext: (folderPath: string) => Promise<any>;

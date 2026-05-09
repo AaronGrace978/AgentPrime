@@ -121,7 +121,7 @@ export class OpenAIProvider extends BaseProvider {
         e.response?.data?.message ||
         e.message ||
         'Unknown OpenAI error';
-      console.error('OpenAI getModels error:', providerMessage);
+      console.warn('OpenAI model catalog unavailable:', providerMessage);
 
       if (e.response?.status === 401 || e.response?.status === 403) {
         throw new Error(`OpenAI authentication failed: ${providerMessage}`);
