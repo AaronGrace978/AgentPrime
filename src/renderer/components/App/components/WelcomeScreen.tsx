@@ -322,6 +322,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         </div>
       </div>
       )}
+      <div className="welcome-pro-signature" aria-label="Aaron Grace signature">
+        Aaron Grace
+      </div>
     </div>
   );
 };
