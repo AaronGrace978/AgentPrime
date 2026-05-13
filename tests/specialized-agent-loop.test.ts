@@ -160,6 +160,30 @@ describe('SpecializedAgentLoop verification', () => {
     expect(createdFiles).toEqual(expect.arrayContaining(['src/main.tsx', 'src/App.tsx', 'package.json', 'index.html']));
   });
 
+  it('rejects generic static starter copy for branded sales website requests', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-generic-starter-');
+    fs.writeFileSync(
+      path.join(workspacePath, 'index.html'),
+      '<!doctype html><html><head><link rel="stylesheet" href="./styles.css"></head><body><p class="eyebrow">AgentPrime Static Starter</p><h1>Chocolate Supreme Cookie website</h1><section class="status-panel"><p id="status-message">Ready for customization.</p></section><script src="./app.js"></script></body></html>'
+    );
+    fs.writeFileSync(path.join(workspacePath, 'styles.css'), 'body { color: white; }\n');
+    fs.writeFileSync(
+      path.join(workspacePath, 'app.js'),
+      "document.body.addEventListener('click', () => console.log('Launch sequence confirmed.'));\n"
+    );
+
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      userMessage:
+        'Create a modern landing page with responsive design for a premium cookie brand called Chocolate Supreme with flavor cards, testimonials, pricing, and order CTA.',
+    } as any);
+    const verification = await (loop as any).verifyProject(['index.html', 'styles.css', 'app.js']);
+
+    expect(verification.isComplete).toBe(false);
+    expect(verification.errors.join('\n')).toContain('generic starter copy');
+    expect(verification.errors.join('\n')).toContain('premium sales website');
+  });
+
   it('refuses deterministic scaffold review when VibeCoder policy blocks scaffold/create work', async () => {
     const workspacePath = createTempDir('agentprime-specialized-vibecoder-scaffold-block-');
     const loop = new SpecializedAgentLoop({

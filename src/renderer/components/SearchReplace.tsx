@@ -22,7 +22,7 @@ interface SearchMatch {
 interface SearchReplaceProps {
   isOpen: boolean;
   onClose: () => void;
-  onFileSelect?: (filePath: string, line: number) => void;
+  onFileSelect?: (filePath: string, line: number, column?: number) => void;
   workspacePath?: string;
 }
 
@@ -103,7 +103,7 @@ const SearchReplace: React.FC<SearchReplaceProps> = ({
   useEffect(() => {
     if (selectedMatchIndex >= 0 && selectedMatchIndex < matches.length && onFileSelect) {
       const match = matches[selectedMatchIndex];
-      onFileSelect(match.file, match.line);
+      onFileSelect(match.file, match.line, match.column || 1);
     }
   }, [selectedMatchIndex, matches, onFileSelect]);
 

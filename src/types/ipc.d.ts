@@ -14,6 +14,7 @@ import type {
   AgentReviewVerificationState,
 } from './agent-review';
 import type { AIStatusSnapshot, AIRuntimeSnapshot } from './ai-providers';
+import type { AgentRoutePlan } from './agent-routing';
 import type { StartupPreflightReport, SystemDoctorReport, SystemStatusSummary } from './system-health';
 import type { ChatIpcContext } from '../main/security/chat-ipc-context';
 
@@ -145,6 +146,10 @@ export interface AgentAPI {
   removeCommandError: () => void;
   onModelSelectionInfo: (callback: (data: AIRuntimeSnapshot & { requestId?: string }) => void) => void;
   removeModelSelectionInfo: () => void;
+  onChatError: (callback: (data: { requestId?: string; error?: string; model?: string; provider?: string }) => void) => void;
+  removeChatError: () => void;
+  onDinoReaction: (callback: (data: { expression: string; message: string }) => void) => void;
+  removeDinoReaction: () => void;
 
   // Agent progress events
   onAgentTaskStart: (callback: (data: { task: string }) => void) => (() => void) | void;
@@ -152,6 +157,9 @@ export interface AgentAPI {
   onAgentStepComplete: (callback: (data: { type: string; title: string; success: boolean }) => void) => (() => void) | void;
   onAgentFileModified: (callback: (data: { path: string; action: string; oldContent?: string; newContent?: string }) => void) => (() => void) | void;
   onAgentCritiqueComplete: (callback: (data: any) => void) => (() => void) | void;
+  onAgentRoutePlan: (callback: (data: AgentRoutePlan) => void) => (() => void) | void;
+  onAgentCommandOutput: (callback: (data: any) => void) => (() => void) | void;
+  onAgentRuntimeEvent: (callback: (data: any) => void) => (() => void) | void;
   removeAgentListeners: () => void;
 
   // Generic listeners
@@ -229,6 +237,26 @@ export interface AgentAPI {
   globalSearch: (query: string, options?: any) => Promise<any>;
   searchSymbols: (query: string, maxResults?: number) => Promise<any>;
   refreshSymbolIndex: () => Promise<{ success: boolean; error?: string }>;
+  getLanguageDiagnostics: (params: {
+    filePath: string;
+    content: string;
+    language?: string;
+    workspacePath?: string;
+  }) => Promise<{
+    success: boolean;
+    diagnostics: Array<{
+      line: number;
+      column: number;
+      endLine?: number;
+      endColumn?: number;
+      message: string;
+      severity: 'error' | 'warning';
+      ruleId: string;
+      source: 'typescript' | 'python' | 'json' | 'css' | 'html' | 'yaml' | 'markdown' | 'agentprime';
+    }>;
+    language: string;
+    error?: string;
+  }>;
   findDefinition: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) => Promise<any>;
   findReferences: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) => Promise<any>;
 

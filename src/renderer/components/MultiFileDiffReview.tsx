@@ -104,6 +104,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
   const [statusFilter, setStatusFilter] = useState<FileStatusFilter>('all');
   const [fileQuery, setFileQuery] = useState('');
   const [showPlanSummary, setShowPlanSummary] = useState(true);
+  const [codeFocus, setCodeFocus] = useState(false);
 
   const toggleFile = useCallback((filePath: string) => {
     setExpandedFiles(prev => {
@@ -346,6 +347,15 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
     };
   };
 
+  const getProcessStepDescription = (stage: string, state: string) => {
+    if (stage === 'plan') return plan ? 'Agent prepared the intended files and rationale.' : 'Waiting for a generated plan.';
+    if (stage === 'review') return state === 'complete' ? 'Every file has a review decision.' : 'Inspect code and accept or reject each file.';
+    if (stage === 'apply') return applied ? 'Accepted files are written to disk.' : isStaged ? 'Apply accepted files after review.' : 'Changes are already in the workspace.';
+    if (stage === 'repair') return 'Verification found issues; send accepted files back to the agent.';
+    if (stage === 'verify') return verification?.status === 'passed' ? 'Build/run checks passed.' : 'Run verification after applying or accepting changes.';
+    return 'Process step';
+  };
+
   return (
     <div style={{
       display: 'flex',
@@ -354,7 +364,7 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
       border: '1px solid var(--prime-border)',
       borderRadius: '18px',
       overflow: 'hidden',
-      maxHeight: '70vh',
+      maxHeight: codeFocus ? '88vh' : '82vh',
       boxShadow: 'var(--prime-shadow-xl), 0 0 0 1px rgba(255,255,255,0.04)',
     }}>
       {/* Header */}
@@ -499,35 +509,70 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          {checkpoints.map((checkpoint) => (
-            <span
-              key={checkpoint.label}
-              style={{
-                padding: '5px 9px',
-                borderRadius: '999px',
-                fontSize: '10px',
-                fontWeight: 700,
-                border: '1px solid var(--prime-border)',
-                color:
-                  checkpoint.state === 'complete'
-                    ? '#3fb950'
-                    : checkpoint.state === 'current'
-                      ? '#58a6ff'
-                      : 'var(--prime-text-muted)',
-                background:
-                  checkpoint.state === 'complete'
-                    ? 'rgba(63, 185, 80, 0.10)'
-                    : checkpoint.state === 'current'
-                      ? 'rgba(88, 166, 255, 0.10)'
-                      : 'transparent',
-              }}
-            >
-              {checkpoint.label}
-            </span>
-          ))}
-        </div>
-        {plan && (
+        {!codeFocus && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: '8px',
+          }}>
+            {checkpoints.map((checkpoint, index) => {
+              const isComplete = checkpoint.state === 'complete';
+              const isCurrent = checkpoint.state === 'current';
+              return (
+                <div
+                  key={`${checkpoint.label}-${index}`}
+                  style={{
+                    padding: '10px 11px',
+                    borderRadius: '12px',
+                    border: `1px solid ${
+                      isComplete
+                        ? 'rgba(63, 185, 80, 0.24)'
+                        : isCurrent
+                          ? 'rgba(88, 166, 255, 0.28)'
+                          : 'var(--prime-border)'
+                    }`,
+                    background:
+                      isComplete
+                        ? 'rgba(63, 185, 80, 0.08)'
+                        : isCurrent
+                          ? 'rgba(88, 166, 255, 0.08)'
+                          : 'rgba(148, 163, 184, 0.04)',
+                    boxShadow: isCurrent ? '0 0 0 1px rgba(88, 166, 255, 0.08)' : 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '5px' }}>
+                    <span style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '999px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      color: isComplete ? '#3fb950' : isCurrent ? '#58a6ff' : 'var(--prime-text-muted)',
+                      background: 'var(--prime-surface)',
+                      border: '1px solid var(--prime-border)',
+                    }}>
+                      {isComplete ? '✓' : index + 1}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      color: isCurrent ? '#58a6ff' : isComplete ? '#3fb950' : 'var(--prime-text)',
+                    }}>
+                      {checkpoint.label}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '10.5px', lineHeight: 1.45, color: 'var(--prime-text-secondary)' }}>
+                    {getProcessStepDescription(checkpoint.stage, checkpoint.state)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {plan && !codeFocus && (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -646,6 +691,16 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
             {visibleChanges.length > 0 && visibleChanges.every((change) => expandedFiles.has(change.filePath))
               ? 'Collapse Visible'
               : 'Expand Visible'}
+          </button>
+          <button
+            onClick={() => setCodeFocus((prev) => !prev)}
+            style={{
+              ...getButtonStyle(codeFocus ? 'primary' : 'secondary', codeFocus ? 'solid' : 'soft'),
+              padding: '7px 12px',
+              fontSize: '11px',
+            }}
+          >
+            {codeFocus ? 'Exit Code Focus' : 'Code Focus'}
           </button>
           <span style={{ fontSize: '11px', color: 'var(--prime-text-muted)' }}>
             Showing {visibleChanges.length} of {changes.length} files
@@ -825,9 +880,43 @@ const MultiFileDiffReview: React.FC<MultiFileDiffReviewProps> = ({
                 <div style={{
                   background: '#0d1117',
                   borderTop: '1px solid var(--prime-border)',
-                  maxHeight: '280px',
+                  maxHeight: codeFocus ? '62vh' : '44vh',
                   overflow: 'auto',
                 }}>
+                  <div style={{
+                    position: 'sticky',
+                    top: 0,
+                    zIndex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    borderBottom: '1px solid rgba(139, 148, 158, 0.22)',
+                    background: 'rgba(13, 17, 23, 0.96)',
+                    backdropFilter: 'blur(8px)',
+                  }}>
+                    <span style={{
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: '11px',
+                      color: '#c9d1d9',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {change.filePath}
+                    </span>
+                    <span style={{
+                      flexShrink: 0,
+                      fontFamily: '"JetBrains Mono", monospace',
+                      fontSize: '11px',
+                      color: '#8b949e',
+                    }}>
+                      <span style={{ color: '#3fb950' }}>+{diffStats.added}</span>
+                      {' '}
+                      <span style={{ color: '#ff7b72' }}>-{diffStats.removed}</span>
+                    </span>
+                  </div>
                   <FileDiff oldContent={change.oldContent} newContent={change.newContent} />
                 </div>
               )}
@@ -1311,43 +1400,50 @@ const FileDiff: React.FC<{ oldContent: string; newContent: string }> = ({ oldCon
   return (
     <pre style={{
       margin: 0,
-      padding: '4px 0',
+      padding: '8px 0 12px',
       fontFamily: '"JetBrains Mono", monospace',
-      fontSize: '11px',
-      lineHeight: '1.5',
+      fontSize: '12.5px',
+      lineHeight: '1.65',
+      minWidth: 'max-content',
     }}>
       {lines.map((line, i) => (
         <div key={i} style={{
-          padding: '0 12px',
+          padding: '0 16px 0 0',
           background: line.type === 'add' ? 'rgba(63, 185, 80, 0.12)'
             : line.type === 'remove' ? 'rgba(255, 123, 114, 0.12)'
             : 'transparent',
           display: 'flex',
+          borderLeft: line.type === 'add' ? '3px solid rgba(63, 185, 80, 0.75)'
+            : line.type === 'remove' ? '3px solid rgba(255, 123, 114, 0.75)'
+            : '3px solid transparent',
         }}>
           <span style={{
-            width: '40px',
+            width: '56px',
             textAlign: 'right',
-            paddingRight: '12px',
-            color: '#484f58',
+            paddingRight: '14px',
+            color: '#6e7681',
             userSelect: 'none',
             flexShrink: 0,
+            background: 'rgba(22, 27, 34, 0.78)',
           }}>
             {line.lineNo}
           </span>
           <span style={{
-            width: '16px',
+            width: '24px',
             textAlign: 'center',
             color: line.type === 'add' ? '#3fb950' : line.type === 'remove' ? '#ff7b72' : '#484f58',
             fontWeight: line.type !== 'same' ? 700 : 400,
             userSelect: 'none',
             flexShrink: 0,
+            background: 'rgba(22, 27, 34, 0.78)',
           }}>
             {line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '}
           </span>
           <span style={{
             flex: 1,
             whiteSpace: 'pre',
-            color: '#c9d1d9',
+            color: line.type === 'add' ? '#d6f6df' : line.type === 'remove' ? '#ffd6d2' : '#c9d1d9',
+            paddingLeft: '12px',
           }}>
             {line.content}
           </span>

@@ -347,6 +347,40 @@ describe('scaffold_project validation', () => {
 
     expect(validation).toEqual({ valid: true });
   });
+
+  it('blocks game scaffolds for plain website requests', () => {
+    const validation = validateToolCall(
+      {
+        name: 'scaffold_project',
+        arguments: {
+          project_type: 'threejs_platformer',
+          project_name: 'Chocolate Supreme Cookie website',
+        },
+      },
+      'G:/AgentPrime',
+      'Build me a beautiful Sales website please'
+    );
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toContain('does not match');
+    expect(validation.error).toContain('static_site');
+  });
+
+  it('accepts static-site scaffolds for plain website requests', () => {
+    const validation = validateToolCall(
+      {
+        name: 'scaffold_project',
+        arguments: {
+          project_type: 'static_site',
+          project_name: 'Chocolate Supreme Cookie website',
+        },
+      },
+      'G:/AgentPrime',
+      'Build me a beautiful Sales website please'
+    );
+
+    expect(validation).toEqual({ valid: true });
+  });
 });
 
 describe('VibeCoder execution policy validation', () => {

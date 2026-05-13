@@ -54,6 +54,16 @@ export interface AIChatProps {
   onClose: () => void;
   openFiles?: OpenFile[];
   activeFileIndex?: number;
+  diagnostics?: Array<{
+    filePath?: string;
+    line: number;
+    column: number;
+    message: string;
+    severity: 'error' | 'warning';
+    source?: string;
+    ruleId?: string;
+    origin?: string;
+  }>;
   getSelectedText?: () => string | undefined;
   getCursorPosition?: () => { lineNumber: number; column: number } | undefined;
   onOpenFolder?: () => void;

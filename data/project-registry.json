@@ -1819,6 +1819,694 @@
           "prompt": "organize please"
         }
       ]
+    },
+    {
+      "id": "proj_1777064076786_50yx5vazm",
+      "name": "Website",
+      "path": "G:\\Website",
+      "type": "node",
+      "description": "Can you build me a website that highlights idk Dino Buddy's abilities",
+      "createdAt": "2026-04-24T20:54:36.786Z",
+      "updatedAt": "2026-05-02T00:18:10.907Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "styles.css",
+        "script.js",
+        "README.md",
+        "vite.config.js",
+        "app.js"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-04-24T20:54:36.786Z",
+          "action": "create",
+          "description": "Can you build me a website that highlights idk Dino Buddy's abilities",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "styles.css",
+            "script.js",
+            "README.md"
+          ],
+          "prompt": "Can you build me a website that highlights idk Dino Buddy's abilities?"
+        },
+        {
+          "timestamp": "2026-05-02T00:18:10.907Z",
+          "action": "update",
+          "description": "Can you build me the official Dino Buddy Website",
+          "filesChanged": [
+            "package.json",
+            "vite.config.js",
+            "index.html",
+            "app.js",
+            "styles.css",
+            "README.md"
+          ],
+          "prompt": "Can you build me the official Dino Buddy Website? "
+        }
+      ]
+    },
+    {
+      "id": "proj_1778299035500_zop4ql36t",
+      "name": "DiamondPrime",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\DiamondPrime",
+      "type": "other",
+      "description": "Build me a VS coding tool unique in it's own right, a Dino Buddy Themed one - lets use tauri",
+      "createdAt": "2026-05-09T03:57:15.500Z",
+      "updatedAt": "2026-05-09T05:04:41.988Z",
+      "files": [
+        "package.json",
+        "Cargo.toml",
+        "tauri.conf.json",
+        "src-tauri/src/main.rs",
+        "src-tauri/build.rs",
+        "index.html",
+        "src/main.js",
+        "src/styles.css",
+        "src/dino.svg",
+        "vite.config.js",
+        "README.md",
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico",
+        "src/app.js",
+        "src/fileTree.js",
+        "src/dinoBuddy.js",
+        "src/commandPalette.js",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.toml",
+        "src-tauri/icons/README.md",
+        ".gitignore",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat",
+        "src-tauri/icons/32x32.png",
+        "src-tauri/icons/128x128.png",
+        "src-tauri/icons/128x128@2x.png",
+        "src-tauri/icons/icon.ico"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Vite",
+        "TypeScript",
+        "React"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-09T03:57:15.500Z",
+          "action": "create",
+          "description": "Build me a VS coding tool unique in it's own right, a Dino Buddy Themed one - lets use tauri",
+          "filesChanged": [
+            "package.json",
+            "Cargo.toml",
+            "tauri.conf.json",
+            "src-tauri/src/main.rs",
+            "src-tauri/build.rs",
+            "index.html",
+            "src/main.js",
+            "src/styles.css",
+            "src/dino.svg",
+            "vite.config.js",
+            "README.md",
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.icns",
+            "icons/icon.ico",
+            "src/app.js",
+            "src/fileTree.js",
+            "src/dinoBuddy.js",
+            "src/commandPalette.js"
+          ],
+          "prompt": "Build me a VS coding tool unique in it's own right, a Dino Buddy Themed one - lets use tauri"
+        },
+        {
+          "timestamp": "2026-05-09T04:52:03.029Z",
+          "action": "update",
+          "description": "Build me a Tauri IDE",
+          "filesChanged": [],
+          "prompt": "Build me a Tauri IDE"
+        },
+        {
+          "timestamp": "2026-05-09T05:04:41.988Z",
+          "action": "create",
+          "description": "Build me a Tauri IDE please",
+          "filesChanged": [
+            "package.json",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "vite.config.ts",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "index.html",
+            "src-tauri/tauri.conf.json",
+            "src-tauri/Cargo.toml",
+            "src-tauri/build.rs",
+            "src-tauri/src/main.rs",
+            "src-tauri/icons/README.md",
+            ".gitignore",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat",
+            "src-tauri/icons/32x32.png",
+            "src-tauri/icons/128x128.png",
+            "src-tauri/icons/128x128@2x.png",
+            "src-tauri/icons/icon.ico"
+          ],
+          "prompt": "Build me a Tauri IDE please"
+        }
+      ]
+    },
+    {
+      "id": "proj_1778305192714_llil2ee0s",
+      "name": "DinoPrime",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\DinoPrime",
+      "type": "web",
+      "description": "Build me a MineCraft Game please",
+      "createdAt": "2026-05-09T05:39:52.714Z",
+      "updatedAt": "2026-05-09T05:45:08.117Z",
+      "files": [
+        "package.json",
+        "vite.config.js",
+        "index.html",
+        "src/styles.css",
+        "src/main.js",
+        "src/game.js",
+        "src/renderer.js",
+        "src/player.js",
+        "src/controls.js",
+        "src/world.js",
+        "src/block.js",
+        "README.md",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        ".gitignore",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "Three.js",
+        "Vite",
+        "TypeScript",
+        "React"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-09T05:39:52.714Z",
+          "action": "create",
+          "description": "Build me a MineCraft Game please",
+          "filesChanged": [
+            "package.json",
+            "vite.config.js",
+            "index.html",
+            "src/styles.css",
+            "src/main.js",
+            "src/game.js",
+            "src/renderer.js",
+            "src/player.js",
+            "src/controls.js",
+            "src/world.js",
+            "src/block.js",
+            "README.md"
+          ],
+          "prompt": "Build me a MineCraft Game please"
+        },
+        {
+          "timestamp": "2026-05-09T05:45:08.117Z",
+          "action": "create",
+          "description": "Build me a voxel Minecraft type game",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a voxel Minecraft type game"
+        }
+      ]
+    },
+    {
+      "id": "proj_1778306505218_j0ofnsvdv",
+      "name": "New folder",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\New folder",
+      "type": "web",
+      "description": "Build me a Chicken Website",
+      "createdAt": "2026-05-09T06:01:45.218Z",
+      "updatedAt": "2026-05-09T06:01:45.218Z",
+      "files": [
+        "index.html",
+        "styles.css",
+        "app.js",
+        "README.md"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-09T06:01:45.218Z",
+          "action": "create",
+          "description": "Build me a Chicken Website",
+          "filesChanged": [
+            "index.html",
+            "styles.css",
+            "app.js",
+            "README.md"
+          ],
+          "prompt": "Build me a Chicken Website"
+        }
+      ]
+    },
+    {
+      "id": "proj_1778451652346_at1r456j2",
+      "name": "Prime",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\Prime",
+      "type": "other",
+      "description": "Can you create a word document on HOW you perform tasks, like how do you do things as an IDE, make i...",
+      "createdAt": "2026-05-10T22:20:52.346Z",
+      "updatedAt": "2026-05-10T22:20:52.346Z",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "index.html",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.toml",
+        "src-tauri/build.rs",
+        "src-tauri/src/main.rs",
+        "src-tauri/icons/README.md",
+        ".gitignore",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat",
+        "src-tauri/icons/32x32.png",
+        "src-tauri/icons/128x128.png",
+        "src-tauri/icons/128x128@2x.png",
+        "src-tauri/icons/icon.ico"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-10T22:20:52.346Z",
+          "action": "create",
+          "description": "Can you create a word document on HOW you perform tasks, like how do you do things as an IDE, make i...",
+          "filesChanged": [
+            "package.json",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "vite.config.ts",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "index.html",
+            "src-tauri/tauri.conf.json",
+            "src-tauri/Cargo.toml",
+            "src-tauri/build.rs",
+            "src-tauri/src/main.rs",
+            "src-tauri/icons/README.md",
+            ".gitignore",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat",
+            "src-tauri/icons/32x32.png",
+            "src-tauri/icons/128x128.png",
+            "src-tauri/icons/128x128@2x.png",
+            "src-tauri/icons/icon.ico"
+          ],
+          "prompt": "Can you create a word document on HOW you perform tasks, like how do you do things as an IDE, make it a word or .md file if youd like "
+        }
+      ]
+    },
+    {
+      "id": "proj_1778458155035_072cjamp0",
+      "name": "BuildPrime",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\BuildPrime",
+      "type": "node",
+      "description": "Build me a card game please",
+      "createdAt": "2026-05-11T00:09:15.035Z",
+      "updatedAt": "2026-05-11T00:09:15.035Z",
+      "files": [
+        "package.json",
+        "index.html",
+        "styles.css",
+        "script.js",
+        "README.md"
+      ],
+      "technologies": [
+        "JavaScript",
+        "HTML",
+        "CSS"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-11T00:09:15.035Z",
+          "action": "create",
+          "description": "Build me a card game please",
+          "filesChanged": [
+            "package.json",
+            "index.html",
+            "styles.css",
+            "script.js",
+            "README.md"
+          ],
+          "prompt": "Build me a card game please "
+        }
+      ]
+    },
+    {
+      "id": "proj_1778458842501_en4k19u5p",
+      "name": "Chocolate Crunch Game",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\Chocolate Crunch Game",
+      "type": "web",
+      "description": "Build me a side scroller beat em up game please with cool graphics",
+      "createdAt": "2026-05-11T00:20:42.501Z",
+      "updatedAt": "2026-05-11T00:20:42.501Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-11T00:20:42.501Z",
+          "action": "create",
+          "description": "Build me a side scroller beat em up game please with cool graphics",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a side scroller beat em up game please with cool graphics"
+        }
+      ]
+    },
+    {
+      "id": "proj_1778462214427_1cxy1lvoh",
+      "name": "Chocolate Supreme Cookie website",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\Chocolate Supreme Cookie website",
+      "type": "web",
+      "description": "Build me a beautiful Sales website please",
+      "createdAt": "2026-05-11T01:16:54.427Z",
+      "updatedAt": "2026-05-11T01:27:21.198Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-11T01:16:54.427Z",
+          "action": "create",
+          "description": "Build me a beautiful Sales website please",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a beautiful Sales website please "
+        },
+        {
+          "timestamp": "2026-05-11T01:18:35.374Z",
+          "action": "create",
+          "description": "Build me a website please",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a website please"
+        },
+        {
+          "timestamp": "2026-05-11T01:27:21.198Z",
+          "action": "create",
+          "description": "Create a modern landing page with responsive design",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Create a modern landing page with responsive design"
+        }
+      ]
+    },
+    {
+      "id": "proj_1778710201672_65q1mkcy2",
+      "name": "Side scroller game",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\Side scroller game",
+      "type": "web",
+      "description": "Build me a side scroller game basically a beat em up  take your time",
+      "createdAt": "2026-05-13T22:10:01.672Z",
+      "updatedAt": "2026-05-13T22:18:26.320Z",
+      "files": [
+        "package.json",
+        "vite.config.ts",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "index.html",
+        ".gitignore",
+        "README.md",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/styles.css",
+        "src/game/Game.ts",
+        "src/game/world/World.ts",
+        "src/game/entities/Player.ts",
+        "src/game/utils/Controls.ts",
+        "dev.bat",
+        "build.bat",
+        "preview.bat",
+        "run.bat"
+      ],
+      "technologies": [
+        "TypeScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Three.js",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-13T22:10:01.672Z",
+          "action": "create",
+          "description": "Build me a side scroller game basically a beat em up  take your time",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "Build me a side scroller game basically a beat em up  take your time"
+        },
+        {
+          "timestamp": "2026-05-13T22:18:26.320Z",
+          "action": "create",
+          "description": "can you build me a flight simulator three",
+          "filesChanged": [
+            "package.json",
+            "vite.config.ts",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "index.html",
+            ".gitignore",
+            "README.md",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/styles.css",
+            "src/game/Game.ts",
+            "src/game/world/World.ts",
+            "src/game/entities/Player.ts",
+            "src/game/utils/Controls.ts",
+            "dev.bat",
+            "build.bat",
+            "preview.bat",
+            "run.bat"
+          ],
+          "prompt": "can you build me a flight simulator three.js game?"
+        }
+      ]
     }
   ]
 }

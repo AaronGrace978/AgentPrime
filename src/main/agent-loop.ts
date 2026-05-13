@@ -9,18 +9,19 @@ import { spawn } from 'child_process';
 import aiRouter from './ai-providers';
 import { getRelevantPatterns, getAntiPatterns, storeTaskLearning } from './mirror/mirror-singleton';
 import { validateProjectCompleteness, formatValidationFeedback, CompletenessValidation } from './agent/validators/projectCompleteness';
-import { withAITimeoutAndRetry, TimeoutError } from './core/timeout-utils';
+import { withAITimeoutAndRetry, TimeoutError, sharedToolCallCooldown } from './core/timeout-utils';
 import { transactionManager } from './core/transaction-manager';
 import { reviewSessionManager } from './agent/review-session-manager';
 import type { AgentReviewSessionSnapshot } from '../types/agent-review';
 import { retryWithRecovery } from './core/error-recovery';
 import { createLogger, createOperationId } from './core/logger';
 import { stateManager } from './core/state-manager';
-import { sanitizeFileName } from './security/ipcValidation';
+import { isPathInsideWorkspace, sanitizeFileName } from './security/ipcValidation';
 import { validateToolCall } from './agent/tool-validation';
 import { TaskMaster } from './agent/task-master';
 import { getBudgetManager } from './core/budget-manager';
 import { getOpusReasoningEngine } from './mirror/opus-reasoning-engine';
+import { ALL_OLLAMA_CLOUD_MODEL_OPTIONS } from '../types/ollama-cloud-models';
 import { scaffoldProjectFromTemplate } from './agent/scaffold-resolver';
 import { organizeFolder, undoOrganize, type OrganizeStrategy } from './agent/tools/folder-organizer';
 import {
@@ -47,6 +48,12 @@ import { parseToolCallsContent } from './agent/tool-call-parser';
 import { toCanonicalTools, toolUseBlocksToParsedCalls } from './agent/canonical-tools';
 import { finalizeAgentTransactionForReview } from './agent/transaction-finalization';
 import { buildReviewCheckpointSummary } from './agent/reflection-policy';
+import {
+  createRouteBudgetUsage,
+  getRouteBudgetBlockReason,
+  recordRouteBudgetUsage,
+  type RouteBudgetUsage,
+} from './agent/route-budget';
 
 const log = createLogger('AgentLoop');
 
@@ -1006,6 +1013,8 @@ import {
 } from './agent/behavior-profile';
 import { PromptSanitizer } from './security/prompt-sanitizer';
 import type { IdeContextSnapshot } from '../types/agent-ide-context';
+import type { AgentRoutePlan } from '../types/agent-routing';
+import { recordAgentTrace } from './agent/agent-trace-recorder';
 import {
   formatIdeContextForModel,
   type TerminalStructuredError,
@@ -1028,12 +1037,14 @@ export interface AgentContext {
   ideContext?: IdeContextSnapshot;
   gitStatus?: string;
   model?: string;
+  provider?: string;
   runtimeBudget?: 'instant' | 'standard' | 'deep';
   assistantBehaviorProfile?: AssistantBehaviorProfile;
   vibeCoderIntent?: VibeCoderIntent;
   vibeCoderExecutionPolicy?: VibeCoderExecutionPolicy;
   autonomyLevel?: 1 | 2 | 3 | 4 | 5;
   deterministicScaffoldOnly?: boolean;
+  agentRoutePlan?: AgentRoutePlan;
   /** When true, skip staged review and commit monolithic agent file writes immediately (settings-driven). */
   monolithicApplyImmediately?: boolean;
   repairScope?: {
@@ -1052,6 +1063,34 @@ export interface AgentContext {
   userMessage?: string;
   onFileWrite?: (change: { path: string; oldContent: string; newContent: string; action: 'created' | 'modified' }) => void;
   isCancellationRequested?: () => boolean;
+}
+
+function formatAgentRoutePlanForPrompt(plan?: AgentRoutePlan): string {
+  if (!plan) return '';
+
+  return `## ROUTE_PLAN (system-enforced)
+- Intent: ${plan.intent} (${Math.round(plan.confidence * 100)}% confidence)
+- Branch: ${plan.branch}
+- Risk: ${plan.risk.level} (${plan.risk.score}/100)
+- Allowed tools: ${plan.allowedTools.join(', ') || 'none'}
+- Blocked tools: ${plan.blockedTools.join(', ') || 'none'}
+- Verification: ${plan.verificationPlan.strategy}${plan.verificationPlan.skipProjectVerification ? ' (skip project verification)' : ''}
+- Confirmation: ${plan.confirmationRequired ? plan.confirmationReason || 'required' : 'not required'}
+
+Follow this route plan exactly. If the user's request conflicts with blocked tools or verification rules, ask one clarifying question instead of improvising.`;
+}
+
+function isProviderAuthenticationError(message: string): boolean {
+  return /(?:status code\s*)?(401|403)\b|unauthori[sz]ed|authentication failed|invalid api key|api key.*(?:invalid|expired|revoked|deactivated)|account.*deactivated/i.test(message);
+}
+
+function inferProviderLabelFromModel(model: string): string {
+  const normalized = model.toLowerCase();
+  if (normalized.includes('claude')) return 'Anthropic';
+  if (normalized.includes('gpt-') || normalized.includes('o3') || normalized.includes('o4')) return 'OpenAI';
+  if (normalized.includes('openrouter/')) return 'OpenRouter';
+  if (normalized.includes(':cloud') || normalized.includes('ollama/')) return 'Ollama Cloud';
+  return 'selected AI provider';
 }
 
 interface Message {
@@ -1925,13 +1964,13 @@ Use read_file first to see the exact content you want to replace.`,
 
   scaffold_project: {
     name: 'scaffold_project',
-    description: 'Initialize a project with proper structure, files, and dependencies based on detected type. Use this FIRST when creating games or complex projects to ensure proper setup.',
+    description: 'Initialize a project with proper structure, files, and dependencies based on detected type. Use static_site for ordinary websites/landing pages. Use game scaffolds only when the user explicitly asks for a game, canvas, Three.js, Phaser, or Pixi project.',
     parameters: {
       type: 'object',
       properties: {
         project_type: {
           type: 'string',
-          enum: ['phaser_game', 'html_game', 'pixi_game', 'threejs_viewer', 'threejs_platformer', 'express_api', 'python_fastapi', 'python_script'],
+          enum: ['static_site', 'phaser_game', 'html_game', 'pixi_game', 'threejs_viewer', 'threejs_platformer', 'express_api', 'python_fastapi', 'python_script'],
           description: 'Type of project to scaffold'
         },
         project_name: {
@@ -2877,6 +2916,102 @@ ${instructions.length > 0 ? instructions.map(i => `- ${i}`).join('\n') : 'Start 
         missing: result.missing.map((m) => m.to),
       };
     }
+  },
+
+  delete_path: {
+    name: 'delete_path',
+    description: 'Delete a file or folder inside the current workspace when the user explicitly asks to delete/remove/trash it. This is a file-management tool, not a repair tool. Requires confirm="DELETE" for files/subfolders and confirm="DELETE_WORKSPACE" for deleting the workspace root.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Absolute path or workspace-relative path to delete. Use "." only when the user explicitly wants the current workspace folder deleted.'
+        },
+        recursive: {
+          type: 'boolean',
+          description: 'Required for deleting directories.',
+          default: false
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'When true, report what would be deleted without deleting it.',
+          default: false
+        },
+        confirm: {
+          type: 'string',
+          enum: ['DELETE', 'DELETE_WORKSPACE'],
+          description: 'Explicit confirmation token. Use DELETE_WORKSPACE only for the workspace root.'
+        }
+      },
+      required: ['path', 'confirm']
+    },
+    execute: async ({ path: targetPath, recursive = false, dry_run = false, confirm }, context) => {
+      if (typeof targetPath !== 'string' || targetPath.trim().length === 0) {
+        throw new Error('delete_path requires a target path.');
+      }
+
+      const rawTarget = targetPath.trim();
+      const resolvedTarget = path.isAbsolute(rawTarget)
+        ? path.resolve(rawTarget)
+        : path.resolve(context.workspacePath, rawTarget);
+      const workspaceRoot = path.resolve(context.workspacePath);
+      const pathKey = (value: string) => process.platform === 'win32'
+        ? path.resolve(value).toLowerCase()
+        : path.resolve(value);
+      const isWorkspaceRoot = pathKey(resolvedTarget) === pathKey(workspaceRoot);
+
+      if (!isPathInsideWorkspace(resolvedTarget, workspaceRoot)) {
+        throw new Error(`delete_path blocked: target is outside the current workspace: ${resolvedTarget}`);
+      }
+
+      if (isWorkspaceRoot && confirm !== 'DELETE_WORKSPACE') {
+        throw new Error('delete_path blocked: deleting the workspace root requires confirm="DELETE_WORKSPACE".');
+      }
+
+      if (!isWorkspaceRoot && confirm !== 'DELETE') {
+        throw new Error('delete_path blocked: deleting a file or subfolder requires confirm="DELETE".');
+      }
+
+      if (!fs.existsSync(resolvedTarget)) {
+        return {
+          success: true,
+          deleted: false,
+          path: resolvedTarget,
+          message: `Nothing to delete; path does not exist: ${resolvedTarget}`
+        };
+      }
+
+      const stats = fs.statSync(resolvedTarget);
+      if (stats.isDirectory() && !recursive) {
+        throw new Error('delete_path blocked: target is a directory, so recursive=true is required.');
+      }
+
+      if (dry_run) {
+        return {
+          success: true,
+          dryRun: true,
+          wouldDelete: true,
+          path: resolvedTarget,
+          kind: stats.isDirectory() ? 'directory' : 'file',
+          requiresRecursive: stats.isDirectory()
+        };
+      }
+
+      fs.rmSync(resolvedTarget, {
+        recursive: stats.isDirectory(),
+        force: true,
+        maxRetries: process.platform === 'win32' ? 3 : 0,
+        retryDelay: 100
+      });
+
+      return {
+        success: true,
+        deleted: true,
+        path: resolvedTarget,
+        kind: stats.isDirectory() ? 'directory' : 'file'
+      };
+    }
   }
 };
 
@@ -2888,13 +3023,40 @@ interface ModelTier {
   tier: 'current' | 'fast' | 'deep' | 'premium' | 'fallback';
 }
 
+function inferOllamaRuntimeTier(model: string): ModelTier['tier'] {
+  if (model.includes('pro') || model.includes('480b') || model.includes('671b') || model.includes('675b')) {
+    return 'premium';
+  }
+  if (model.includes('flash') || model.includes('small') || model.includes('nano') || model.includes('ministral')) {
+    return 'fast';
+  }
+  return 'deep';
+}
+
+function buildOllamaRuntimeChain(): ModelTier[] {
+  const preferredModels: ModelTier[] = [
+    { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
+    { name: 'Deep', provider: 'ollama', model: 'kimi-k2.6:cloud', tier: 'deep' },
+    { name: 'DeepSeek V4 Flash', provider: 'ollama', model: 'deepseek-v4-flash:cloud', tier: 'deep' },
+    { name: 'DeepSeek V4 Pro', provider: 'ollama', model: 'deepseek-v4-pro:cloud', tier: 'premium' },
+    { name: 'MiniMax M2.7', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'deep' },
+    { name: 'Gemma 4 31B Cloud', provider: 'ollama', model: 'gemma4:31b-cloud', tier: 'deep' },
+    { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' },
+  ];
+  const preferredIds = new Set(preferredModels.map((model) => model.model));
+  const catalogModels = ALL_OLLAMA_CLOUD_MODEL_OPTIONS
+    .filter((model) => !preferredIds.has(model.value))
+    .map((model) => ({
+      name: model.label,
+      provider: 'ollama',
+      model: model.value,
+      tier: inferOllamaRuntimeTier(model.value),
+    }));
+  return [...preferredModels, ...catalogModels];
+}
+
 // Default escalation chain - will be overridden by settings
-const DEFAULT_MODEL_CHAIN: ModelTier[] = [
-  { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
-  { name: 'Deep', provider: 'ollama', model: 'kimi-k2.6:cloud', tier: 'deep' },
-  { name: 'DeepSeek V4 Flash', provider: 'ollama', model: 'deepseek-v4-flash:cloud', tier: 'deep' },
-  { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
-];
+const DEFAULT_MODEL_CHAIN: ModelTier[] = buildOllamaRuntimeChain();
 
 // Agent Loop Class
 export class AgentLoop extends EventEmitter {
@@ -3025,6 +3187,8 @@ export class AgentLoop extends EventEmitter {
   private readonly MAX_ESCALATIONS = 4; // Cap escalations to prevent infinite loops
   private consecutiveModelFailures = 0;
   private currentActiveModel: string = '';
+  private currentActiveProvider: string | undefined;
+  private routeBudgetUsage: RouteBudgetUsage = createRouteBudgetUsage();
   private apiErrorCount = 0; // Track API errors for circuit breaker
 
   constructor(context: AgentContext) {
@@ -3043,11 +3207,13 @@ export class AgentLoop extends EventEmitter {
 
 WORKSPACE: ${context.workspacePath}
 
+${formatAgentRoutePlanForPrompt(context.agentRoutePlan)}
+
 ## INTENT DISCIPLINE — READ THIS FIRST
 Classify the user's request BEFORE picking any tool. Match output to the ask.
 
-- **file-chore**: "organize", "move", "rename", "sort", "tidy", "put X in a folder", "clean up files", "group these videos/photos/docs"
-  → Use ONLY list_dir, create_directory, run_command (for mv/move/rename). DO NOT write code. DO NOT create package.json, README.md, index.html, src/, configs, or any project scaffold. A folder of videos is NOT a software project.
+- **file-chore**: "organize", "move", "rename", "sort", "tidy", "put X in a folder", "clean up files", "group these videos/photos/docs", "delete/remove this folder"
+  → Use ONLY list_dir, create_directory, organize_folder, undo_organize_folder, delete_path, or run_command (for mv/move/rename). DO NOT write code. DO NOT create package.json, README.md, index.html, src/, configs, or any project scaffold. A folder of videos or a folder being deleted is NOT a software project.
 - **plan-only**: "analyze", "architect", "compare", "strategy", "best approach", "design"
   → Return a plan in a {"done": true, "message": "..."} response. DO NOT create or write files.
 - **review-only**: "review", "audit", "inspect", "look for issues"
@@ -3059,7 +3225,8 @@ Classify the user's request BEFORE picking any tool. Match output to the ask.
 
 Hard rules:
 - NEVER scaffold a project, initialize a framework, or create package.json / vite.config.* / tailwind.config.* / index.html / src/App.* unless the user's words clearly request a coding project.
-- "Organize these videos" is a file-chore, not a code-generation task. The correct response is create_directory + move, then {"done": true}.
+- "Organize these videos" is a file-chore, not a code-generation task. The correct response is organize_folder, then {"done": true}.
+- "Delete/remove this folder/project/workspace" is a file-chore, not a repair task. The correct response is delete_path, then {"done": true}. Do not run project verification after deleting.
 - If the request's intent is ambiguous, ask ONE clarifying question via {"done": true, "message": "Quick check: ..."} instead of guessing.
 - Solve exactly what was asked. No unrequested extras, no "nice to haves", no widening scope.
 
@@ -3266,6 +3433,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     
     // Initialize with context model
     this.currentActiveModel = context.model || 'kimi-k2.6:cloud';
+    this.currentActiveProvider = context.provider;
 
     // Initialize validation pipeline
     this.initializeValidationPipeline();
@@ -3336,6 +3504,14 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     return this.currentActiveModel;
   }
 
+  getCurrentProvider(): string | undefined {
+    return (
+      this.currentActiveProvider ||
+      this.modelChain.find((model) => model.model === this.currentActiveModel)?.provider ||
+      this.context.provider
+    );
+  }
+
   /**
    * Configure model chain based on starting provider
    * Ensures escalation stays within the same provider family first, then falls back
@@ -3375,12 +3551,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
       log.info('[Agent] 📋 Configured OpenAI model escalation chain');
     } else {
       // Default to Ollama chain
-      this.modelChain = [
-        { name: 'Fast', provider: 'ollama', model: 'devstral-small-2:24b-cloud', tier: 'fast' },
-        { name: 'Deep', provider: 'ollama', model: 'kimi-k2.6:cloud', tier: 'deep' },
-        { name: 'DeepSeek V4 Flash', provider: 'ollama', model: 'deepseek-v4-flash:cloud', tier: 'deep' },
-        { name: 'Fallback', provider: 'ollama', model: 'deepseek-v3.1:671b-cloud', tier: 'fallback' }
-      ];
+      this.modelChain = buildOllamaRuntimeChain();
       log.info('[Agent] 📋 Configured Ollama model escalation chain');
     }
     
@@ -3430,6 +3601,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     const nextModel = this.modelChain[nextIndex];
     
     this.currentActiveModel = nextModel.model;
+    this.currentActiveProvider = nextModel.provider;
     this.currentModelIndex = nextIndex;
     this.escalationCount++;
     this.consecutiveModelFailures = 0; // Reset failures for new model
@@ -3545,15 +3717,26 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
 
   /**
    * Tools exposed to the model. ORGANIZE mode strips codegen/scaffold tools so weak
-   * models cannot hallucinate package.json / Vite scaffolds for "sort my videos" tasks.
+   * models cannot hallucinate package.json / Vite scaffolds for file-management tasks.
    */
   private getToolsForModel(): Record<string, Tool> {
+    const routeAllowedTools = this.context.agentRoutePlan?.allowedTools;
+    if (routeAllowedTools?.length) {
+      const filteredTools: Record<string, Tool> = {};
+      for (const toolName of routeAllowedTools) {
+        const tool = tools[toolName as keyof typeof tools];
+        if (tool) filteredTools[toolName] = tool;
+      }
+      return filteredTools;
+    }
+
     if (this.taskMode === TaskMode.ORGANIZE) {
       return {
         list_dir: tools.list_dir,
         run_command: tools.run_command,
         organize_folder: tools.organize_folder,
-        undo_organize_folder: tools.undo_organize_folder
+        undo_organize_folder: tools.undo_organize_folder,
+        delete_path: tools.delete_path
       };
     }
     return tools;
@@ -3636,6 +3819,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     this.outputConfidence = 0.5;
     this.validationHistory = [];
     this.selfHealingAttempts.clear();
+    this.routeBudgetUsage = createRouteBudgetUsage();
     
     // 🦖 DINO BUDDY: Reset improvement tracking
     this.filesGeneratedThisSession = [];
@@ -3671,6 +3855,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
     if (this.context.model) {
       this.currentActiveModel = this.context.model;
     }
+    this.currentActiveProvider = this.context.provider;
     
     // 💰 BUDGET-AWARE MODEL SELECTION
     // Check budget and switch to cost-saving mode if needed
@@ -3691,6 +3876,7 @@ OUTPUT JSON ONLY. NO EXPLANATIONS.`
         log.info(`[Agent] 💰 Budget mode: ${budgetMode}, using ${recommended.model} (${recommended.reason})`);
         aiRouter.setActiveProvider(recommended.provider, recommended.model);
         this.currentActiveModel = recommended.model;
+        this.currentActiveProvider = recommended.provider;
       }
     } else {
       log.info(`[Agent] Starting task with model: ${this.currentActiveModel}`);
@@ -4082,13 +4268,14 @@ ${this.taskMode === TaskMode.ENHANCE ? `
 3. Create backups before major changes
 ` : ''}
 ${this.taskMode === TaskMode.ORGANIZE ? `
-🗂️ ORGANIZE MODE RULES:
-1. The user wants their FILES sorted — not a new project.
+🗂️ FILE MANAGEMENT MODE RULES:
+1. The user wants files/folders managed — not a new project and not a project repair.
 2. Prefer organize_folder({ path, strategy: "by-type" | "by-date", dry_run: true }) to preview, then dry_run: false to apply.
-3. Never call scaffold_project, write_file, patch_file, str_replace, or search_codebase for organizing.
-4. list_dir, organize_folder, undo_organize_folder, and run_command (only for move/rename/mkdir) are allowed.
-5. If the target folder is ambiguous, ASK which folder to organize before acting.
-6. To reverse, call undo_organize_folder with the same path.
+3. For explicit delete/remove/trash requests, use delete_path. Use confirm: "DELETE_WORKSPACE" only when deleting the workspace root; otherwise use confirm: "DELETE".
+4. Never call scaffold_project, write_file, patch_file, str_replace, or search_codebase for file-management tasks.
+5. list_dir, organize_folder, undo_organize_folder, delete_path, and run_command (only for move/rename/mkdir) are allowed.
+6. If the target folder is ambiguous, ASK which folder to manage before acting.
+7. To reverse an organize action, call undo_organize_folder with the same path. Delete actions are not reversible.
 ` : ''}
 `;
         
@@ -4150,12 +4337,19 @@ ${this.taskMode === TaskMode.ORGANIZE ? `
     const MAX_PARSE_ERRORS = 5;
     const MAX_NO_TOOL_STREAK = 5;
     
-    // 🛡️ TOTAL TASK TIMEOUT - Prevents infinite hangs
-    // 10 minutes for standard tasks, 20 minutes for complex projects
+    // Runtime-budgeted hard stop. Model calls use idle timeouts separately, so
+    // this is only the outer guard against runaway multi-turn loops.
     const taskStartTime = Date.now();
-    const isComplexTask = /game|full.*stack|complete|enterprise|dashboard|e-commerce/i.test(userMessage);
-    const MAX_TASK_DURATION_MS = isComplexTask ? 20 * 60 * 1000 : 10 * 60 * 1000; // 20 or 10 minutes
-    log.info(`[Agent] ⏱️ Task timeout: ${MAX_TASK_DURATION_MS / 60000} minutes (complex: ${isComplexTask})`);
+    const runtimeBudget = this.context.runtimeBudget || 'standard';
+    const MAX_TASK_DURATION_MS =
+      runtimeBudget === 'deep'
+        ? 20 * 60 * 1000
+        : runtimeBudget === 'instant'
+          ? 5 * 60 * 1000
+          : 12 * 60 * 1000;
+    log.info(
+      `[Agent] ⏱️ Task hard timeout: ${MAX_TASK_DURATION_MS / 60000} minutes (budget: ${runtimeBudget})`
+    );
 
     while (iteration < this.maxIterations) {
       if (this.isCancellationRequested()) {
@@ -4258,7 +4452,14 @@ ${this.taskMode === TaskMode.ORGANIZE ? `
           }),
           'complex', // Agent operations are complex multi-step tasks
           modelToUse, // Model name for adaptive timeout
-          2 // Retry up to 2 times on timeout
+          2, // Retry up to 2 times on timeout
+          runtimeBudget,
+          {
+            label: `Agent model call (${modelToUse})`,
+            phase: 'agent_model',
+            signal: this.abortController?.signal,
+            onEvent: (event) => this.emit('runtime-event', event),
+          }
         );
 
         if (this.isCancellationRequested()) {
@@ -4476,6 +4677,30 @@ We'll add more features after this core version works.`;
                 throw new Error(`Invalid tool arguments JSON: ${toolCall.function.arguments}`);
               }
 
+              const routePlan = this.context.agentRoutePlan;
+              if (routePlan) {
+                const toolAllowed = routePlan.allowedTools.includes(toolCall.function.name);
+                const toolBlocked = routePlan.blockedTools.includes(toolCall.function.name);
+                if (!toolAllowed || toolBlocked) {
+                  const blockReason = toolBlocked
+                    ? `blocked by route plan for ${routePlan.intent}`
+                    : `not included in allowed tools for ${routePlan.intent}`;
+                  log.info(`[Agent] 🧭 Route plan blocked ${toolCall.function.name}: ${blockReason}`);
+                  recordAgentTrace('tool_call_blocked', {
+                    tool: toolCall.function.name,
+                    reason: blockReason,
+                    routeIntent: routePlan.intent,
+                  });
+                  toolResults.push(`❌ ${toolCall.function.name}: BLOCKED - ${blockReason}`);
+                  this.messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: `🧭 ROUTE PLAN ACTIVE\n\n${toolCall.function.name} is ${blockReason}.\nAllowed tools: ${routePlan.allowedTools.join(', ') || 'none'}.\nUse the route plan instead of improvising.`
+                  });
+                  continue;
+                }
+              }
+
               const vibeCoderBlock = getVibeCoderToolPolicyError(
                 this.context.vibeCoderExecutionPolicy,
                 toolCall.function.name,
@@ -4490,6 +4715,55 @@ We'll add more features after this core version works.`;
                   content: `🧭 VIBECODER POLICY ACTIVE\n\n${vibeCoderBlock}\n\nStay inside the current request shape instead of mutating the workspace.`
                 });
                 continue;
+              }
+
+              const budgetBlock = getRouteBudgetBlockReason(
+                toolCall.function.name,
+                args,
+                routePlan?.budgets,
+                this.routeBudgetUsage
+              );
+              if (budgetBlock) {
+                log.info(`[Agent] 🧭 Route budget blocked ${toolCall.function.name}: ${budgetBlock}`);
+                recordAgentTrace('tool_call_blocked', {
+                  tool: toolCall.function.name,
+                  reason: budgetBlock,
+                  routeIntent: routePlan?.intent,
+                });
+                toolResults.push(`❌ ${toolCall.function.name}: BLOCKED - ${budgetBlock}`);
+                this.messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: `🧭 ROUTE BUDGET ACTIVE\n\n${toolCall.function.name} is blocked because ${budgetBlock}.\nCurrent usage: ${this.routeBudgetUsage.toolCalls} tool(s), ${this.routeBudgetUsage.commandCalls} command(s), ${this.routeBudgetUsage.deleteCalls} delete(s), ${this.routeBudgetUsage.writeTargets.size} write target(s).\nFinish within the route plan instead of expanding scope.`
+                });
+                continue;
+              }
+
+              if (toolCall.function.name !== 'write_file') {
+                const validation = validateToolCall(
+                  { name: toolCall.function.name, arguments: args },
+                  this.context.workspacePath,
+                  this.currentTask,
+                  undefined,
+                  this.context.vibeCoderExecutionPolicy
+                );
+                if (!validation.valid) {
+                  log.info(`[Agent] 🛡️ Tool validation blocked ${toolCall.function.name}: ${validation.error}`);
+                  recordAgentTrace('tool_call_blocked', {
+                    tool: toolCall.function.name,
+                    reason: validation.error || 'validation failed',
+                  });
+                  toolResults.push(`❌ ${toolCall.function.name}: BLOCKED - ${validation.error}`);
+                  this.messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: `🛡️ TOOL VALIDATION\n\n${validation.error}`
+                  });
+                  continue;
+                }
+                if (validation.fixedPath) {
+                  args.path = validation.fixedPath;
+                }
               }
 
               // === SMART TIMEOUT DETECTION ===
@@ -4514,6 +4788,11 @@ We'll add more features after this core version works.`;
               // === END SMART TIMEOUT DETECTION ===
 
               log.info(`[Agent] Executing: ${toolCall.function.name}`, args?.path || args?.command || '');
+              recordAgentTrace('tool_call_start', {
+                tool: toolCall.function.name,
+                path: args?.path,
+                command: args?.command,
+              });
               
               // === REPETITIVE FILE READ DETECTION ===
               // Prevents infinite loops where agent reads same file over and over without progress
@@ -5072,7 +5351,23 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
                 }
               }
 
+              await sharedToolCallCooldown.waitForTurn(
+                `agent-loop:${toolCall.function.name}`,
+                toolCall.function.name === 'run_command' ? 250 : 50,
+                (event) => this.emit('runtime-event', event),
+                { toolName: toolCall.function.name, path: args?.path, command: args?.command }
+              );
+              this.emit('step-start', {
+                type: toolCall.function.name,
+                title: `${toolCall.function.name}(${args.path || args.command || '...'})`,
+              });
+              recordRouteBudgetUsage(toolCall.function.name, args, this.routeBudgetUsage);
               const result = await tool.execute(args, this.context);
+              recordAgentTrace('tool_call_success', {
+                tool: toolCall.function.name,
+                path: args?.path,
+                command: args?.command,
+              });
               
               // 🛡️ POST-WRITE VALIDATION: Verify file matches project type and existing files
               if (toolCall.function.name === 'write_file' && args.path && args.content) {
@@ -5277,6 +5572,10 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
             } catch (error: any) {
               const errorMsg = error.message || String(error);
               log.error(`[Agent] Tool error:`, errorMsg);
+              recordAgentTrace('tool_call_error', {
+                tool: toolCall.function.name,
+                error: errorMsg,
+              });
               
               // === ERROR KNOWLEDGE & PACING ===
               const { ErrorKnowledge } = await import('./agent/tools/errorKnowledge');
@@ -5460,6 +5759,25 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           break;
         }
 
+        if (isProviderAuthenticationError(error.message || '')) {
+          this.apiErrorCount++;
+          log.error(`[Agent] 🛑 PROVIDER AUTH ERROR - Stopping without retry loop: ${error.message}`);
+          const providerLabel = inferProviderLabelFromModel(this.currentActiveModel);
+          finalAnswer = this.buildFinalAnswer(
+            `🛑 **AI Provider Authentication Failed**\n\n` +
+            `This is not a TypeScript/build problem in the project. ${providerLabel} rejected the active model request before the agent could edit files.\n\n` +
+            `**Active model:** \`${this.currentActiveModel}\`\n` +
+            `**Provider response:** ${error.message}\n\n` +
+            `No files were changed. The run was stopped immediately so it would not sit in a retry loop.\n\n` +
+            `**What to do:**\n` +
+            `1. Open Settings → AI Providers\n` +
+            `2. Replace the API key for ${providerLabel}\n` +
+            `3. If this is Ollama Cloud, confirm the key has access to \`${this.currentActiveModel}\`\n` +
+            `4. Try again after the provider test/model lookup succeeds`
+          );
+          break;
+        }
+
         // Check for credit/billing errors that require immediate stop
         if (error.message.includes('credit') || error.message.includes('billing') ||
             error.message.includes('insufficient') || error.message.includes('quota')) {
@@ -5483,6 +5801,7 @@ QUALITY > COMPLEXITY. Write something small that's EXCELLENT.`
           if (ollamaFallback && this.currentActiveModel !== ollamaFallback.model) {
             log.info(`[Agent] 🔄 Switching to Ollama: ${ollamaFallback.model}`);
             this.currentActiveModel = ollamaFallback.model;
+            this.currentActiveProvider = 'ollama';
             aiRouter.setActiveProvider('ollama', ollamaFallback.model);
             continue;
           }

@@ -16,6 +16,11 @@ describe('detectTaskMode', () => {
     expect(result.mode).toBe(TaskMode.CREATE);
   });
 
+  it('should detect CREATE for generic "build me a thing" requests', () => {
+    const result = detectTaskMode('Can you build me a cern?');
+    expect(result.mode).toBe(TaskMode.CREATE);
+  });
+
   it('should detect FIX mode for bug fix requests', () => {
     const result = detectTaskMode('Fix the login bug that crashes on submit');
     expect(result.mode).toBe(TaskMode.FIX);
@@ -24,6 +29,11 @@ describe('detectTaskMode', () => {
 
   it('should detect FIX mode for error resolution', () => {
     const result = detectTaskMode('Debug this error: TypeError undefined is not a function');
+    expect(result.mode).toBe(TaskMode.FIX);
+  });
+
+  it('should keep build error requests in FIX mode', () => {
+    const result = detectTaskMode('Fix the build error');
     expect(result.mode).toBe(TaskMode.FIX);
   });
 
@@ -39,6 +49,27 @@ describe('detectTaskMode', () => {
     expect(result.confidence).toBeGreaterThanOrEqual(0.8);
   });
 
+  it('should detect ENHANCE mode for visual polish requests', () => {
+    const result = detectTaskMode('can you make it look beautiful?');
+    expect(result.mode).toBe(TaskMode.ENHANCE);
+  });
+
+  it('should keep explicit look-at requests in REVIEW mode', () => {
+    const result = detectTaskMode('look at this app for security issues');
+    expect(result.mode).toBe(TaskMode.REVIEW);
+  });
+
+  it('should detect ORGANIZE mode for explicit delete-folder requests', () => {
+    const result = detectTaskMode('Delete this folder, I do not need the old Prime project anymore');
+    expect(result.mode).toBe(TaskMode.ORGANIZE);
+    expect(result.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('should detect ORGANIZE mode for pronoun delete requests', () => {
+    const result = detectTaskMode('delete it');
+    expect(result.mode).toBe(TaskMode.ORGANIZE);
+  });
+
   it('should default to low-confidence REVIEW for ambiguous messages', () => {
     const result = detectTaskMode('hello world');
     expect(result.mode).toBe(TaskMode.REVIEW);
@@ -52,6 +83,11 @@ describe('detectTaskMode', () => {
 
   it('should prefer FIX when only fix keywords are present', () => {
     const result = detectTaskMode('The API is broken, please repair it');
+    expect(result.mode).toBe(TaskMode.FIX);
+  });
+
+  it('should detect make it work as FIX mode', () => {
+    const result = detectTaskMode('make it work');
     expect(result.mode).toBe(TaskMode.FIX);
   });
 });

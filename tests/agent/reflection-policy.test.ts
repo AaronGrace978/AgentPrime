@@ -5,15 +5,28 @@ describe('reflection policy', () => {
     expect(looksSimpleStaticWebsiteTask('Make a basic website with HTML and CSS')).toBe(true);
   });
 
-  it('keeps simple static website creation on the instant path', () => {
+  it('respects standard budget for simple static website creation', () => {
     const plan = resolveReflectionBudget({
-      requestedBudget: 'deep',
+      requestedBudget: 'standard',
+      userMessage: 'Build me a Cookie website that helps me sell cookies',
+      isUpdate: false,
+      retryCount: 0,
+    });
+
+    expect(looksSimpleStaticWebsiteTask('Build me a Cookie website that helps me sell cookies')).toBe(true);
+    expect(plan.budget).toBe('standard');
+    expect(plan.planningMode).toBe('compact');
+    expect(plan.maxRepairPasses).toBe(2);
+  });
+
+  it('keeps simple static website creation on instant only when instant is requested', () => {
+    const plan = resolveReflectionBudget({
+      requestedBudget: 'instant',
       userMessage: 'Build a simple website for Dino Buddy',
       isUpdate: false,
       retryCount: 0,
     });
 
-    expect(looksSimpleStaticWebsiteTask('Build a simple website for Dino Buddy')).toBe(true);
     expect(plan.budget).toBe('instant');
     expect(plan.planningMode).toBe('skip');
   });

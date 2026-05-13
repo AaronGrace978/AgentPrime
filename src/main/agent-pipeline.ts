@@ -19,6 +19,7 @@ import type {
   AgentReviewPlanSummary,
   AgentReviewVerificationState,
 } from '../types/agent-review';
+import { validateRouteModifiedFiles } from './agent/route-verification';
 
 // ── Pipeline Stages ──────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ export interface PipelineResult {
   taskMode: TaskMode;
   durationMs: number;
   filesModified: string[];
+  actualModel?: string;
+  actualProvider?: string;
   error?: string;
   /** Present when the agent loop staged file writes for review/apply instead of committing immediately. */
   reviewSessionId?: string;
@@ -102,7 +105,13 @@ export class AgentPipeline extends EventEmitter {
     this.cancelled = false;
     this.steps = [];
 
-    const taskModeResult = detectTaskMode(userMessage);
+    const taskModeResult = this.context.agentRoutePlan
+      ? {
+          mode: this.context.agentRoutePlan.taskMode as TaskMode,
+          confidence: this.context.agentRoutePlan.confidence,
+          reason: this.context.agentRoutePlan.explanation.summary,
+        }
+      : detectTaskMode(userMessage);
     const maxRetries = options.maxRetries ?? 1;
 
     try {
@@ -116,6 +125,7 @@ export class AgentPipeline extends EventEmitter {
         reason: taskModeResult.reason,
         message: userMessage,
         model: options.model,
+        routePlan: this.context.agentRoutePlan,
       };
 
       this.completeStep(planStep, true, { plan });
@@ -169,11 +179,34 @@ export class AgentPipeline extends EventEmitter {
       const responseText = this.normalizeAgentRunResult(result);
       const filesModified = this.filesModifiedFromAgent();
       const reviewSession = this.agent.consumePendingReviewSession();
+      const actualModel = this.agent.getCurrentModel();
+      const actualProvider = this.agent.getCurrentProvider();
 
       // ── Stage 3: Validation ──
       const validateStep = this.beginStep('validating', 'Verifying output quality');
       this.transition(PipelineStage.VALIDATING, validateStep, options);
-      this.completeStep(validateStep, true);
+      const validation = this.validateModifiedFiles(filesModified);
+      this.completeStep(validateStep, validation.success, validation);
+      if (!validation.success) {
+        this.transition(PipelineStage.FAILED, validateStep, options);
+        return {
+          success: false,
+          response: `${responseText}\n\nValidation failed: ${validation.error}`,
+          stage: PipelineStage.FAILED,
+          steps: this.steps,
+          taskMode: taskModeResult.mode,
+          durationMs: Date.now() - startTime,
+          filesModified,
+          actualModel,
+          actualProvider,
+          error: validation.error,
+          reviewSessionId: reviewSession?.sessionId,
+          reviewChanges: reviewSession?.changes,
+          reviewVerification: reviewSession?.initialVerification,
+          reviewPlan: reviewSession?.plan,
+          reviewCheckpoint: reviewSession?.checkpoint,
+        };
+      }
 
       // ── Stage 4: Complete ──
       this.transition(PipelineStage.COMPLETE, validateStep, options);
@@ -186,6 +219,8 @@ export class AgentPipeline extends EventEmitter {
         taskMode: taskModeResult.mode,
         durationMs: Date.now() - startTime,
         filesModified,
+        actualModel,
+        actualProvider,
         reviewSessionId: reviewSession?.sessionId,
         reviewChanges: reviewSession?.changes,
         reviewVerification: reviewSession?.initialVerification,
@@ -229,6 +264,10 @@ export class AgentPipeline extends EventEmitter {
   updateContext(updates: Partial<AgentContext>): void {
     this.context = { ...this.context, ...updates };
     this.agent.updateContext(updates);
+  }
+
+  private validateModifiedFiles(filesModified: string[]): { success: boolean; error?: string; diagnosticCount: number } {
+    return validateRouteModifiedFiles(this.context.agentRoutePlan, this.context.ideContext, filesModified);
   }
 
   // ── Internal helpers ──

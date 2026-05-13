@@ -45,9 +45,10 @@ AgentPrime is now in alpha stage. This document outlines known issues, limitatio
    - Main chat component logic moved into `AIChat/index.tsx` with focused hooks/components
    - Lazy loading is implemented for heavy panels (AI chat and git)
 
-2. **TypeScript Strict Mode Disabled**
-   - Some `any` types exist in codebase
-   - Working: Gradual migration in progress
+2. **TypeScript Strict Mode Enabled**
+   - `tsconfig.json` runs with strict checking enabled
+   - Some `any` types remain in integration-heavy surfaces
+   - Working: Gradual migration toward stronger local contracts is in progress
 
 3. **Memory Usage**
    - Main in-memory chat history is capped to recent messages

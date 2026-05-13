@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import Editor, { Monaco, OnMount } from '@monaco-editor/react';
-import type { editor, languages } from 'monaco-editor';
+import type { editor } from 'monaco-editor';
 import { CompletionService } from '../services/CompletionService';
 import '../styles/ghost-text.css';
 
@@ -10,6 +10,17 @@ interface EditorSettings {
   wordWrap?: 'on' | 'off' | 'wordWrapColumn';
   minimap?: boolean;
   lineNumbers?: 'on' | 'off' | 'relative';
+}
+
+interface EditorIssue {
+  line: number;
+  column: number;
+  endLine?: number;
+  endColumn?: number;
+  message: string;
+  severity: 'error' | 'warning';
+  ruleId: string;
+  source?: string;
 }
 
 interface MonacoEditorProps {
@@ -24,20 +35,38 @@ interface MonacoEditorProps {
   workspacePath?: string;
   editorSettings?: EditorSettings;
   inlineCompletions?: boolean;
-  issues?: Array<{
-    line: number;
-    column: number;
-    message: string;
-    severity: 'error' | 'warning';
-    ruleId: string;
-  }>;
+  issues?: EditorIssue[];
+  onDiagnosticsChange?: (filePath: string, diagnostics: EditorIssue[]) => void;
 }
 
 export interface MonacoEditorRef {
   getSelectedText: () => string | undefined;
   getCursorPosition: () => { lineNumber: number; column: number } | undefined;
+  revealPosition: (lineNumber: number, column?: number) => void;
 }
 
+function supportsLanguageDiagnostics(language: string, filePath?: string): boolean {
+  const normalizedLanguage = language.toLowerCase();
+  if ([
+    'typescript',
+    'typescriptreact',
+    'javascript',
+    'javascriptreact',
+    'python',
+    'json',
+    'jsonc',
+    'css',
+    'scss',
+    'less',
+    'html',
+    'yaml',
+    'markdown'
+  ].includes(normalizedLanguage)) {
+    return true;
+  }
+
+  return /\.(tsx?|jsx?|pyw?|jsonc?|s?css|less|html?|ya?ml|mdx?)$/i.test(filePath || '');
+}
 
 const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
   value,
@@ -51,11 +80,17 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
   workspacePath,
   editorSettings = {},
   inlineCompletions = true,
-  issues = []
+  issues = [],
+  onDiagnosticsChange
 }, ref) => {
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const completionServiceRef = useRef<CompletionService | null>(null);
+  const [languageDiagnostics, setLanguageDiagnostics] = useState<EditorIssue[]>([]);
+  const combinedIssues = useMemo(
+    () => [...issues, ...languageDiagnostics],
+    [issues, languageDiagnostics]
+  );
 
   useImperativeHandle(ref, () => ({
     getSelectedText: () => {
@@ -71,6 +106,12 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
       const position = editorRef.current.getPosition();
       if (!position) return undefined;
       return { lineNumber: position.lineNumber, column: position.column };
+    },
+    revealPosition: (lineNumber: number, column: number = 1) => {
+      if (!editorRef.current) return;
+      editorRef.current.setPosition({ lineNumber, column });
+      editorRef.current.revealLineInCenter(lineNumber);
+      editorRef.current.focus();
     }
   }));
 
@@ -258,23 +299,28 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
       const model = editorRef.current.getModel();
       if (model) {
         // Clear existing markers
-        monacoRef.current.editor.setModelMarkers(model, 'eslint', []);
+        monacoRef.current.editor.setModelMarkers(model, 'agentprime-diagnostics', []);
 
         // Add new markers
-        const markers = issues.map((issue: any) => ({
-          startLineNumber: issue.line,
-          startColumn: issue.column,
-          endLineNumber: issue.line,
-          endColumn: issue.column + 1,
-          message: issue.message,
-          severity: issue.severity === 'error' 
-            ? monacoRef.current!.MarkerSeverity.Error 
-            : monacoRef.current!.MarkerSeverity.Warning,
-          source: 'ESLint',
-          code: issue.ruleId
-        }));
+        const markers = combinedIssues.map((issue: EditorIssue) => {
+          const endLineNumber = issue.endLine ?? issue.line;
+          const endColumn = issue.endColumn ?? issue.column + 1;
 
-        monacoRef.current.editor.setModelMarkers(model, 'eslint', markers);
+          return {
+            startLineNumber: issue.line,
+            startColumn: issue.column,
+            endLineNumber,
+            endColumn: endLineNumber === issue.line ? Math.max(endColumn, issue.column + 1) : endColumn,
+            message: issue.message,
+            severity: issue.severity === 'error'
+              ? monacoRef.current!.MarkerSeverity.Error
+              : monacoRef.current!.MarkerSeverity.Warning,
+            source: issue.source || 'AgentPrime',
+            code: issue.ruleId
+          };
+        });
+
+        monacoRef.current.editor.setModelMarkers(model, 'agentprime-diagnostics', markers);
       }
     }
   };
@@ -282,7 +328,46 @@ const MonacoEditor = forwardRef<MonacoEditorRef, MonacoEditorProps>(({
   // Update markers when issues change
   useEffect(() => {
     updateMarkers();
-  }, [issues]);
+  }, [combinedIssues]);
+
+  useEffect(() => {
+    if (!filePath || !workspacePath || !supportsLanguageDiagnostics(language, filePath)) {
+      setLanguageDiagnostics([]);
+      if (filePath) {
+        onDiagnosticsChange?.(filePath, []);
+      }
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      try {
+        const result = await window.agentAPI.getLanguageDiagnostics({
+          filePath,
+          content: value,
+          language,
+          workspacePath
+        });
+
+        if (!cancelled) {
+          const diagnostics = result?.success ? result.diagnostics || [] : [];
+          setLanguageDiagnostics(diagnostics);
+          onDiagnosticsChange?.(filePath, diagnostics);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[MonacoEditor] Language diagnostics failed:', error);
+          setLanguageDiagnostics([]);
+          onDiagnosticsChange?.(filePath, []);
+        }
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [filePath, language, value, workspacePath, onDiagnosticsChange]);
 
   // Toggle completion service when the setting changes at runtime
   useEffect(() => {

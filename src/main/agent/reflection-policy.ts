@@ -49,7 +49,7 @@ export function resolveReflectionBudget(options: ReflectionBudgetOptions): Refle
 
   let budget: RuntimeBudgetMode = requestedBudget;
   if (simpleStaticWebsite) {
-    budget = escalated ? 'standard' : 'instant';
+    budget = escalated ? 'standard' : requestedBudget;
   } else if (escalated) {
     budget = 'deep';
   } else if (requestedBudget === 'instant') {

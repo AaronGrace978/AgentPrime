@@ -15,13 +15,30 @@ describe('resolveDeterministicScaffoldOnlyFlag', () => {
     fs.rmSync(workspacePath, { recursive: true, force: true });
   });
 
-  it('enables scaffold-only for static-site prompts in near-empty workspaces (production)', () => {
+  it('keeps normal static-site build prompts out of scaffold-only mode', () => {
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     try {
       expect(
         resolveDeterministicScaffoldOnlyFlag({
           message: 'Build a simple website for my project',
+          workspacePath,
+          allowScaffold: true,
+          explicitFromContext: false,
+        })
+      ).toBe(false);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('enables scaffold-only for explicit static-site starter requests in near-empty workspaces', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(
+        resolveDeterministicScaffoldOnlyFlag({
+          message: 'Scaffold a static website starter template',
           workspacePath,
           allowScaffold: true,
           explicitFromContext: false,

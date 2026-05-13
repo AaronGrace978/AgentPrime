@@ -20,11 +20,17 @@ export interface OpenFile {
 }
 
 export interface CodeIssue {
+  id?: string;
+  filePath?: string;
   line: number;
   column: number;
+  endLine?: number;
+  endColumn?: number;
   message: string;
   severity: 'error' | 'warning';
   ruleId: string;
+  source?: string;
+  origin?: 'language' | 'terminal' | 'verification' | 'task' | 'eslint' | 'agentprime';
 }
 
 export interface RunOutput {

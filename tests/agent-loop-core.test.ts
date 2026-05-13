@@ -2,12 +2,29 @@ import * as path from 'path';
 import { AgentLoop, createAgent } from '../src/main/agent-loop';
 import { parseToolCallsContent } from '../src/main/agent/tool-call-parser';
 import { finalizeAgentTransactionForReview } from '../src/main/agent/transaction-finalization';
+import { buildAgentRoutePlan } from '../src/main/agent/agent-router';
+import {
+  createRouteBudgetUsage,
+  getRouteBudgetBlockReason,
+  recordRouteBudgetUsage,
+} from '../src/main/agent/route-budget';
 
 const baseContext = {
   workspacePath: path.resolve('G:/AgentPrime'),
   openFiles: [],
   terminalHistory: [],
 };
+
+function testRoutePlan(message = 'review this app') {
+  return buildAgentRoutePlan({
+    message,
+    workspacePath: baseContext.workspacePath,
+    requestedBranch: 'monolithic',
+    runtimeBudget: 'standard',
+    selectedProvider: 'ollama',
+    selectedModel: 'deepseek-v4-flash:cloud',
+  });
+}
 
 describe('AgentLoop core paths', () => {
   it('creates an agent instance and merges context updates', () => {
@@ -141,6 +158,48 @@ describe('AgentLoop core paths', () => {
 
     expect(stopMessage).toContain('Agent Stopped');
     expect(stopMessage).toContain('Paused by user');
+  });
+
+  it('filters model tools to the active route plan allowlist', () => {
+    const agent = new AgentLoop({
+      ...baseContext,
+      agentRoutePlan: testRoutePlan(),
+    } as any);
+
+    const exposedTools = (agent as any).getToolsForModel();
+
+    expect(Object.keys(exposedTools).sort()).toEqual(['list_dir', 'read_file', 'search_codebase']);
+    expect(exposedTools.write_file).toBeUndefined();
+  });
+});
+
+describe('Route budget accounting', () => {
+  it('blocks tool calls when route maxToolCalls is exhausted', () => {
+    const usage = createRouteBudgetUsage();
+    const budgets = { maxToolCalls: 1, maxWriteFiles: 5, maxCommandCalls: 5, maxDeleteCalls: 5, maxRepairPasses: 0 };
+
+    expect(getRouteBudgetBlockReason('read_file', { path: 'a.ts' }, budgets, usage)).toBeNull();
+    recordRouteBudgetUsage('read_file', { path: 'a.ts' }, usage);
+
+    expect(getRouteBudgetBlockReason('list_dir', { path: '.' }, budgets, usage)).toContain('maxToolCalls');
+  });
+
+  it('counts unique write targets against maxWriteFiles', () => {
+    const usage = createRouteBudgetUsage();
+    const budgets = { maxToolCalls: 10, maxWriteFiles: 1, maxCommandCalls: 5, maxDeleteCalls: 5, maxRepairPasses: 0 };
+
+    recordRouteBudgetUsage('write_file', { path: 'src/a.ts' }, usage);
+
+    expect(getRouteBudgetBlockReason('write_file', { path: 'src/a.ts' }, budgets, usage)).toBeNull();
+    expect(getRouteBudgetBlockReason('write_file', { path: 'src/b.ts' }, budgets, usage)).toContain('maxWriteFiles');
+  });
+
+  it('applies command and delete budgets separately', () => {
+    const usage = createRouteBudgetUsage();
+    const budgets = { maxToolCalls: 10, maxWriteFiles: 5, maxCommandCalls: 0, maxDeleteCalls: 0, maxRepairPasses: 0 };
+
+    expect(getRouteBudgetBlockReason('run_command', { command: 'npm test' }, budgets, usage)).toContain('maxCommandCalls');
+    expect(getRouteBudgetBlockReason('delete_path', { path: 'tmp' }, budgets, usage)).toContain('maxDeleteCalls');
   });
 });
 

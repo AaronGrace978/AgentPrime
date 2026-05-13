@@ -41,12 +41,16 @@ export function buildIdeContextSnapshotFromChatIpc(ctx: ChatIpcContext): IdeCont
   }
 
   const folderTree = arc?.folder_tree;
+  const diagnostics = arc?.diagnostics;
+  const gitStatus = arc?.git_status;
 
   if (
     !arc?.workspace_path_relay &&
     !openTabs?.length &&
     !activeFile &&
     folderTree == null &&
+    !diagnostics?.length &&
+    !gitStatus &&
     !focusedFolder
   ) {
     return undefined;
@@ -58,6 +62,8 @@ export function buildIdeContextSnapshotFromChatIpc(ctx: ChatIpcContext): IdeCont
     activeFile,
     folderTree,
     focusedFolder,
+    diagnostics,
+    gitStatus,
   };
 }
 

@@ -6,7 +6,7 @@
  * Design note (2026-04): the previous classifier silently defaulted to CREATE
  * on any ambiguous input, which caused "organize please" to scaffold a whole
  * Vite app in a folder of screen recordings. The classifier now:
- *   1. Detects file-management intents (organize/sort/clean up/rename/move)
+ *   1. Detects file-management intents (organize/sort/clean up/rename/move/delete)
  *      and returns TaskMode.ORGANIZE.
  *   2. Requires CREATE to be explicitly matched — ambiguous input now falls
  *      back to REVIEW (non-destructive), not CREATE.
@@ -38,18 +38,32 @@ export function detectTaskMode(userMessage: string): TaskModeResult {
 
   const organizePatterns = /\b(organize|organise|tidy|sort|categorize|categorise|clean\s?up|declutter|rename\s+files?|move\s+files?|group\s+files?)\b/i;
   const putInFolderPatterns = /(put|place|move)\s+.+\s+(in|into)\s+(a\s+)?(folder|directory)\b/i;
-  const isOrganizing = organizePatterns.test(message) || putInFolderPatterns.test(message);
+  const deletePathPatterns =
+    /\b(delete|remove|trash|wipe|rmdir)\b.+\b(file|files|folder|directory|workspace|project|repo|repository)\b/i;
+  const deletePronounPatterns =
+    /\b(delete|remove|trash|wipe)\s+(it|this|that|the\s+folder|the\s+workspace|the\s+project|old\s+prime|prime\s+folder)\b/i;
+  const isOrganizing =
+    organizePatterns.test(message) ||
+    putInFolderPatterns.test(message) ||
+    deletePathPatterns.test(message) ||
+    deletePronounPatterns.test(message);
 
-  const createPatterns = /\b(create|build|make|generate|new|start|scaffold|bootstrap|initialize|init)\b.*\b(project|app|application|website|game|api|server)\b/i;
-  const explicitCreate = createPatterns.test(message);
+  const createPatterns = /\b(create|build|make|generate|new|start|scaffold|bootstrap|initialize|init)\b.*\b(project|app|application|website|site|page|game|api|server|tool|dashboard|simulator|prototype)\b/i;
+  const genericBuildRequest =
+    /\b(?:build|create|generate)\s+(?:me\s+)?(?:(?:a|an|the|new)\s+)?[a-z0-9][\w-]*(?:\s+[a-z0-9][\w-]*){0,5}\b/i.test(message) ||
+    /\bmake\s+(?:me\s+)?(?:a|an|the|new)\s+[a-z0-9][\w-]*(?:\s+[a-z0-9][\w-]*){0,5}\b/i.test(message);
+  const buildErrorContext =
+    /\b(build|compile|typecheck|test)\s+(?:error|errors|failure|failed|failing|broken)\b/i.test(message) ||
+    /\bmake\s+it\s+work\b/i.test(message);
+  const explicitCreate = createPatterns.test(message) || (genericBuildRequest && !buildErrorContext);
 
-  const fixPatterns = /\b(fix|debug|repair|solve|resolve|patch|correct|bug|error|broken|issue|problem|crash|failing|failed)\b/i;
+  const fixPatterns = /\b(fix|debug|repair|solve|resolve|patch|correct|bug|error|broken|issue|problem|crash|failing|failed)\b|\bmake\s+it\s+work\b/i;
   const isFixing = fixPatterns.test(message);
 
-  const reviewPatterns = /\b(check|review|look|examine|inspect|audit|analyze|analyse|assess|evaluate|verify|validate)\b/i;
+  const reviewPatterns = /\b(check|review|examine|inspect|audit|analyze|analyse|assess|evaluate|verify|validate)\b|\blook\s+(?:at|over|into|for)\b|\btake\s+a\s+look\b/i;
   const isReviewing = reviewPatterns.test(message);
 
-  const enhancePatterns = /\b(add|improve|enhance|upgrade|extend|expand|update|modify|change|implement|feature)\b/i;
+  const enhancePatterns = /\b(add|improve|enhance|upgrade|extend|expand|update|modify|change|implement|feature|beautify|polish|style|restyle|redesign|modernize|modernise|prettier|sleek|visual|visuals|ui|ux)\b|\bmake\s+(?:it|this|that|the\s+(?:app|site|website|page|project))\s+look\b|\blook\s+(?:beautiful|better|good|great|professional|modern|clean|sleek|polished)\b/i;
   const isEnhancing = enhancePatterns.test(message);
 
   // Organize wins before CREATE — "organize my folder" is never a scaffold request.

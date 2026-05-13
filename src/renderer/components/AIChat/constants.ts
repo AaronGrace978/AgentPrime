@@ -3,6 +3,7 @@
  */
 
 import { ModelOption } from './types';
+import { ALL_OLLAMA_CLOUD_MODEL_OPTIONS } from '../../../types/ollama-cloud-models';
 
 export type ModelProvider = 'ollama' | 'anthropic' | 'openai' | 'openrouter';
 
@@ -32,37 +33,14 @@ export const PROVIDER_LABELS: Record<ModelProvider, string> = {
 // Model options for dropdown by provider
 export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   ollama: [
-    { value: 'minimax-m2.7:cloud', label: 'MiniMax M2.7 - New Frontier' },
-    { value: 'glm-5.1:cloud', label: 'GLM 5.1 - Agentic Coding' },
-    { value: 'gemma4:31b-cloud', label: 'Gemma 4 31B - Cloud' },
+    ...ALL_OLLAMA_CLOUD_MODEL_OPTIONS,
     { value: 'gemma4', label: 'Gemma 4 - Local/Direct API (128K, multimodal)' },
     { value: 'gemma4:31b', label: 'Gemma 4 31B - Cloud/Local (256K)' },
     { value: 'gemma4:26b', label: 'Gemma 4 26B MoE - Cloud/Local (256K)' },
     { value: 'gemma4:e4b', label: 'Gemma 4 E4B - Edge (128K)' },
     { value: 'gemma4:e2b', label: 'Gemma 4 E2B - Edge (128K)' },
-    { value: 'qwen3.5:cloud', label: 'Qwen 3.5 - Multimodal Latest' },
-    { value: 'qwen3-coder-next:cloud', label: 'Qwen 3 Coder Next - Agentic' },
-    { value: 'qwen3-coder:480b-cloud', label: 'Qwen 3 Coder - Frontier' },
-    { value: 'qwen3-vl:cloud', label: 'Qwen 3 VL - Vision + Tools' },
-    { value: 'qwen3-next:cloud', label: 'Qwen 3 Next - Efficient Reasoning' },
-    { value: 'deepseek-v4-flash:cloud', label: 'DeepSeek V4 Flash - 1M Context' },
-    { value: 'deepseek-v3.2:cloud', label: 'DeepSeek v3.2 - Latest' },
-    { value: 'deepseek-v3.1:671b-cloud', label: 'DeepSeek v3.1 - Large Context' },
-    { value: 'devstral-2:123b-cloud', label: 'Devstral 2 - Coding' },
-    { value: 'devstral-small-2:24b-cloud', label: 'Devstral Small - Fast Coding' },
-    { value: 'ministral-3:cloud', label: 'Ministral 3 - Edge Friendly' },
-    { value: 'nemotron-3-super:cloud', label: 'Nemotron 3 Super - Thinking' },
-    { value: 'nemotron-3-nano:30b-cloud', label: 'Nemotron 3 Nano - Lightweight Agentic' },
-    { value: 'glm-5:cloud', label: 'GLM-5 - Strong Reasoning' },
-    { value: 'glm-4.7:cloud', label: 'GLM-4.7 - New' },
-    { value: 'rnj-1:cloud', label: 'RNJ-1 - Code and STEM' },
     { value: 'gemini-3-pro-preview:latest', label: 'Gemini 3 Pro Preview' },
-    { value: 'gemini-3-flash-preview:cloud', label: 'Gemini 3 Flash - Fast' },
-    { value: 'kimi-k2.6:cloud', label: 'Kimi K2.6 - Cloud' },
     { value: 'kimi-k2.5:cloud', label: 'Kimi K2.5 - Vision + 256K' },
-    { value: 'minimax-m2.5:cloud', label: 'MiniMax M2.5' },
-    { value: 'minimax-m2.1:cloud', label: 'MiniMax M2.1 - New' },
-    { value: 'mistral-large-3:675b-cloud', label: 'Mistral Large 3' },
     { value: 'qwen2.5-coder:32b', label: 'Qwen 2.5 Coder 32B - Local' },
     { value: 'qwen2.5-coder:7b', label: 'Qwen 2.5 Coder 7B - Local' },
   ],

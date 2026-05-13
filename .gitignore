@@ -134,6 +134,7 @@ userData/
 # Mirror memory data (contains learned patterns)
 data/mirror-memory.json
 data/agentprime-state.json
+data/project-registry.json
 data/opus-examples/
 data/fine-tuning/
 
@@ -152,6 +153,9 @@ training-corpus/
 docs/AGENTPRIME_SYSTEM_ANALYSIS/
 docs/CURSOR_REPLICATION_ANALYSIS.md
 pitch-deck/
+
+# Local playground/generated projects, not product source
+PrimeProjects/
 
 # Local artifacts
 crash-log.txt

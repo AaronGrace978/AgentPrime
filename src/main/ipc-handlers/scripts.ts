@@ -13,6 +13,8 @@ import { resolveValidatedPath } from '../security/ipcValidation';
 // Store running processes
 const runningProcesses = new Map<number, { process: any; filePath: string }>();
 const log = createLogger('ScriptIPC');
+const MAX_SCRIPT_OUTPUT_BYTES = 1024 * 1024;
+const MAX_SCRIPT_CHUNK_BYTES = 64 * 1024;
 
 /**
  * Get interpreter for file extension
@@ -83,6 +85,32 @@ export function register(deps: ScriptHandlersDeps): void {
       const pid = child.pid!;
       runningProcesses.set(pid, { process: child, filePath });
       log.info(`Started script ${filePath} (pid ${pid})`);
+      let outputBytes = 0;
+
+      const sendOutput = (type: 'stdout' | 'stderr', data: Buffer) => {
+        if (outputBytes >= MAX_SCRIPT_OUTPUT_BYTES) {
+          return;
+        }
+
+        const remaining = MAX_SCRIPT_OUTPUT_BYTES - outputBytes;
+        const chunk = data.subarray(0, Math.min(data.length, remaining, MAX_SCRIPT_CHUNK_BYTES));
+        outputBytes += chunk.length;
+
+        window.webContents.send('script:output', {
+          pid,
+          type,
+          data: chunk.toString()
+        });
+
+        if (outputBytes >= MAX_SCRIPT_OUTPUT_BYTES) {
+          window.webContents.send('script:output', {
+            pid,
+            type: 'system',
+            data: `\n[AgentPrime] Output limit reached (${MAX_SCRIPT_OUTPUT_BYTES} bytes); stopping script.\n`
+          });
+          child.kill();
+        }
+      };
 
       window.webContents.send('script:output', {
         pid,
@@ -91,19 +119,11 @@ export function register(deps: ScriptHandlersDeps): void {
       });
 
       child.stdout.on('data', (data: Buffer) => {
-        window.webContents.send('script:output', {
-          pid,
-          type: 'stdout',
-          data: data.toString()
-        });
+        sendOutput('stdout', data);
       });
 
       child.stderr.on('data', (data: Buffer) => {
-        window.webContents.send('script:output', {
-          pid,
-          type: 'stderr',
-          data: data.toString()
-        });
+        sendOutput('stderr', data);
       });
 
       child.on('close', (code: number | null) => {

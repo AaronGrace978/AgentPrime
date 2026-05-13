@@ -7,6 +7,7 @@ import type { IdeContextSnapshot } from '../../types/agent-ide-context';
 const MAX_FOLDER_TREE_CHARS = 120_000;
 const MAX_SELECTION_CHARS = 8_000;
 const MAX_BUFFER_PREVIEW_CHARS = 24_000;
+const MAX_DIAGNOSTIC_ENTRIES = 80;
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
@@ -53,6 +54,23 @@ export function formatIdeContextForModel(snapshot: IdeContextSnapshot | undefine
       parts.push('Folder tree (JSON):', s);
     } catch {
       parts.push('Folder tree: (unserializable — omitted)');
+    }
+  }
+  if (snapshot.gitStatus?.trim()) {
+    parts.push('Git status:', truncate(snapshot.gitStatus.trim(), 16_000));
+  }
+  if (snapshot.diagnostics?.length) {
+    parts.push('Workbench diagnostics:');
+    for (const diagnostic of snapshot.diagnostics.slice(0, MAX_DIAGNOSTIC_ENTRIES)) {
+      const file = diagnostic.filePath || 'Workspace';
+      const source = diagnostic.source || diagnostic.origin || 'agentprime';
+      parts.push(
+        `  - [${diagnostic.severity}] ${file}:${diagnostic.line}:${diagnostic.column} ${source}/${diagnostic.ruleId || 'diagnostic'}: ${diagnostic.message}`
+      );
+    }
+    const omitted = snapshot.diagnostics.length - MAX_DIAGNOSTIC_ENTRIES;
+    if (omitted > 0) {
+      parts.push(`  … (${omitted} more diagnostic(s) omitted)`);
     }
   }
 

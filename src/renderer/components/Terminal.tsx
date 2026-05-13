@@ -31,16 +31,19 @@ interface DetectedError {
 interface TerminalProps {
   onClose?: () => void;
   onFixError?: (error: DetectedError) => void;
+  onErrorsDetected?: (errors: DetectedError[]) => void;
 }
 
-const TerminalComponent: React.FC<TerminalProps> = ({ onClose, onFixError }) => {
+const TerminalComponent: React.FC<TerminalProps> = ({ onClose, onFixError, onErrorsDetected }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [detectedErrors, setDetectedErrors] = useState<DetectedError[]>([]);
   const tabsRef = useRef<TerminalTab[]>([]);
+  const activeTabIdRef = useRef<string | null>(null);
 
   tabsRef.current = tabs;
+  activeTabIdRef.current = activeTabId;
 
   const createTab = useCallback(async () => {
     try {
@@ -128,8 +131,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({ onClose, onFixError }) => 
     };
 
     const handleErrorDetected = (_event: any, { id, errors }: { id: string; errors: DetectedError[] }) => {
-      if (id === activeTabId || tabsRef.current.some(t => t.id === id)) {
+      if (id === activeTabIdRef.current || tabsRef.current.some(t => t.id === id)) {
         setDetectedErrors(prev => [...prev.slice(-4), ...errors]);
+        onErrorsDetected?.(errors);
       }
     };
 
@@ -146,7 +150,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({ onClose, onFixError }) => 
         (window as any).agentAPI.terminalKill(tab.id);
       });
     };
-  }, []);
+  }, [createTab, onErrorsDetected]);
 
   useEffect(() => {
     if (!containerRef.current || !activeTabId) return;

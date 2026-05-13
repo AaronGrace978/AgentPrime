@@ -7,6 +7,16 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { AgentAPI } from '../types/ipc';
 import type { ChatIpcContext } from './security/chat-ipc-context';
 
+const allowedRendererEventChannels = new Set([
+  'dual-model-routing',
+  'settings-changed',
+  'terminal:data',
+  'terminal:exit',
+  'terminal:error-detected',
+  'deploy:output',
+  'theme-changed',
+]);
+
 const agentAPI: AgentAPI = {
   // Workspace and files
   openFolder: () => ipcRenderer.invoke('file:open-folder'),
@@ -79,6 +89,14 @@ const agentAPI: AgentAPI = {
     ipcRenderer.on('model-selection-info', (_event, data) => callback(data));
   },
   removeModelSelectionInfo: () => ipcRenderer.removeAllListeners('model-selection-info'),
+  onChatError: (callback: (data: any) => void) => {
+    ipcRenderer.on('chat-error', (_event, data) => callback(data));
+  },
+  removeChatError: () => ipcRenderer.removeAllListeners('chat-error'),
+  onDinoReaction: (callback: (data: { expression: string; message: string }) => void) => {
+    ipcRenderer.on('dino:reaction', (_event, data) => callback(data));
+  },
+  removeDinoReaction: () => ipcRenderer.removeAllListeners('dino:reaction'),
 
   // Agent progress events
   onAgentTaskStart: (callback: (data: { task: string }) => void) => {
@@ -106,19 +124,45 @@ const agentAPI: AgentAPI = {
     ipcRenderer.on('agent:critique-complete', listener);
     return () => ipcRenderer.removeListener('agent:critique-complete', listener);
   },
+  onAgentRoutePlan: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:route-plan', listener);
+    return () => ipcRenderer.removeListener('agent:route-plan', listener);
+  },
+  onAgentCommandOutput: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:command-output', listener);
+    return () => ipcRenderer.removeListener('agent:command-output', listener);
+  },
+  onAgentRuntimeEvent: (callback: (data: any) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:runtime-event', listener);
+    return () => ipcRenderer.removeListener('agent:runtime-event', listener);
+  },
   removeAgentListeners: () => {
     ipcRenderer.removeAllListeners('agent:task-start');
     ipcRenderer.removeAllListeners('agent:step-start');
     ipcRenderer.removeAllListeners('agent:step-complete');
     ipcRenderer.removeAllListeners('agent:file-modified');
     ipcRenderer.removeAllListeners('agent:critique-complete');
+    ipcRenderer.removeAllListeners('agent:route-plan');
+    ipcRenderer.removeAllListeners('agent:command-output');
+    ipcRenderer.removeAllListeners('agent:runtime-event');
   },
 
   // Generic listeners
   on: (channel: string, callback: (event: any, ...args: any[]) => void) => {
+    if (!allowedRendererEventChannels.has(channel)) {
+      throw new Error(`Renderer event channel is not allowed: ${channel}`);
+    }
     ipcRenderer.on(channel, (event, ...args) => callback(event, ...args));
   },
-  removeListener: (channel: string) => ipcRenderer.removeAllListeners(channel),
+  removeListener: (channel: string) => {
+    if (!allowedRendererEventChannels.has(channel)) {
+      throw new Error(`Renderer event channel is not allowed: ${channel}`);
+    }
+    ipcRenderer.removeAllListeners(channel);
+  },
 
   // Git
   gitStatus: () => ipcRenderer.invoke('git-status'),
@@ -196,6 +240,8 @@ const agentAPI: AgentAPI = {
   searchSymbols: (query: string, maxResults?: number) =>
     ipcRenderer.invoke('analysis:symbol-search', query, maxResults),
   refreshSymbolIndex: () => ipcRenderer.invoke('analysis:refresh-symbol-index'),
+  getLanguageDiagnostics: (params: { filePath: string; content: string; language?: string; workspacePath?: string }) =>
+    ipcRenderer.invoke('analysis:language-diagnostics', params),
   findDefinition: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) =>
     ipcRenderer.invoke('find-definition', params),
   findReferences: (params: { word: string; filePath?: string; workspacePath?: string; language?: string }) =>

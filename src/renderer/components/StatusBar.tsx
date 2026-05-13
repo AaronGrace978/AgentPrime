@@ -11,10 +11,24 @@ interface StatusBarProps {
   gitBranch?: string | null;
   theme: 'light' | 'dark';
   systemStatus?: SystemStatusSummary | null;
+  problemCounts?: { errors: number; warnings: number };
+  taskStatus?: 'running' | 'passed' | 'failed' | null;
   onOpenSystemStatus?: () => void;
+  onOpenProblems?: () => void;
+  onOpenTasks?: () => void;
 }
 
-const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, systemStatus, onOpenSystemStatus }) => {
+const StatusBar: React.FC<StatusBarProps> = ({
+  currentFile,
+  gitBranch,
+  theme,
+  systemStatus,
+  problemCounts,
+  taskStatus,
+  onOpenSystemStatus,
+  onOpenProblems,
+  onOpenTasks
+}) => {
   const [time, setTime] = useState(new Date());
 
   // Update time every minute
@@ -83,6 +97,30 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentFile, gitBranch, theme, sy
             <span className="status-text">{gitBranch}</span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={onOpenProblems}
+          className="status-item status-action problems-status"
+          disabled={!onOpenProblems}
+          title="Open Problems"
+        >
+          <span className="status-icon">PB</span>
+          <span className="status-text">
+            {problemCounts ? `${problemCounts.errors}E ${problemCounts.warnings}W` : '0E 0W'}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenTasks}
+          className={`status-item status-action task-status ${taskStatus || 'idle'}`}
+          disabled={!onOpenTasks}
+          title="Open Tasks"
+        >
+          <span className="status-icon">TSK</span>
+          <span className="status-text">{taskStatus || 'Idle'}</span>
+        </button>
 
         {/* Connection Status */}
         <div 

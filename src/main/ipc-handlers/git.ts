@@ -11,6 +11,7 @@ import { resolveValidatedPath, validateCommand } from '../security/ipcValidation
 
 const log = createLogger('GitIPC');
 const SAFE_GIT_REF_PATTERN = /^(?!-)(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._/\-]+$/;
+const MAX_GIT_OUTPUT_BYTES = 2 * 1024 * 1024;
 
 interface GitStatusResult {
   success: boolean;
@@ -127,15 +128,42 @@ async function runGit(workspacePath: string, args: string[]): Promise<GitExecRes
 
     let stdout = '';
     let stderr = '';
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let outputTruncated = false;
+
+    const appendBounded = (current: string, data: Buffer, currentBytes: number): { value: string; bytes: number } => {
+      if (currentBytes >= MAX_GIT_OUTPUT_BYTES) {
+        outputTruncated = true;
+        return { value: current, bytes: currentBytes };
+      }
+
+      const remaining = MAX_GIT_OUTPUT_BYTES - currentBytes;
+      const chunk = data.subarray(0, remaining);
+      if (chunk.length < data.length) {
+        outputTruncated = true;
+      }
+      return {
+        value: current + chunk.toString(),
+        bytes: currentBytes + chunk.length,
+      };
+    };
 
     child.stdout.on('data', (data) => {
-      stdout += data.toString();
+      const next = appendBounded(stdout, data, stdoutBytes);
+      stdout = next.value;
+      stdoutBytes = next.bytes;
     });
     child.stderr.on('data', (data) => {
-      stderr += data.toString();
+      const next = appendBounded(stderr, data, stderrBytes);
+      stderr = next.value;
+      stderrBytes = next.bytes;
     });
 
     child.on('close', (code) => {
+      if (outputTruncated) {
+        stderr += `\n[AgentPrime] git output truncated at ${MAX_GIT_OUTPUT_BYTES} bytes per stream.\n`;
+      }
       if (code === 0) {
         resolve({ success: true, output: stdout, stderr });
         return;

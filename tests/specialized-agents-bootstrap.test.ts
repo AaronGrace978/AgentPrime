@@ -68,9 +68,97 @@ describe('deterministic Three.js bootstrap', () => {
     ).toBe('threejs-game');
   });
 
-  it('detects simple website and homepage wording as static-site template', () => {
-    expect(detectCanonicalTemplateId('Build a simple website for my brand')).toBe('static-site');
-    expect(detectCanonicalTemplateId('Create a homepage for my portfolio')).toBe('static-site');
+  it('detects explicit simple website starter wording as static-site template', () => {
+    expect(detectCanonicalTemplateId('Scaffold a static website starter template')).toBe('static-site');
+    expect(detectCanonicalTemplateId('Create a landing page starter')).toBe('static-site');
+  });
+
+  it('does not let appended IDE context force a deterministic scaffold for normal website builds', async () => {
+    const taskWithIdeContext =
+      'Create a modern landing page with responsive design\n\n' +
+      '## IDE_CONTEXT (from UI)\n' +
+      'Available templates include Three.js Game, Three.js Platformer, desktop, frontend, backend, and games.\n';
+
+    expect(detectCanonicalTemplateId(taskWithIdeContext)).toBe('static-site');
+
+    const bootstrapped = await bootstrapDeterministicScaffold(workspacePath, taskWithIdeContext);
+
+    expect(bootstrapped).toEqual([]);
+    expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(false);
+    expect(fs.existsSync(path.join(workspacePath, 'src', 'game', 'Game.ts'))).toBe(false);
+  });
+
+  it('ignores negated game and template terms in normal website build prompts', async () => {
+    const chocolateSupremePrompt = `Create a modern landing page with responsive design for a premium cookie brand called Chocolate Supreme.
+
+Build exactly what I asked for, model-first. Do not use a starter template unless I explicitly ask for one. Do not create game files, canvas code, Three.js, Phaser, or anything under src/game.
+
+Make it polished and sales-focused with:
+- Hero section
+- Strong headline and subheadline
+- Product highlights
+- Cookie flavor cards
+- Customer testimonials
+- Pricing or order CTA section
+- Mobile responsive layout
+- Smooth buttons/interactions
+
+Use whatever simple file structure you think is best for this website, then verify it runs.`;
+
+    expect(detectCanonicalTemplateId(chocolateSupremePrompt)).toBe('static-site');
+
+    const bootstrapped = await bootstrapDeterministicScaffold(workspacePath, chocolateSupremePrompt);
+
+    expect(bootstrapped).toEqual([]);
+    expect(fs.existsSync(path.join(workspacePath, 'src', 'game', 'Game.ts'))).toBe(false);
+  });
+
+  it('allows deterministic static-site bootstrap only for explicit starter requests', async () => {
+    const bootstrapped = await bootstrapDeterministicScaffold(
+      workspacePath,
+      'Scaffold a static website starter template'
+    );
+
+    expect(bootstrapped.length).toBeGreaterThan(0);
+    expect(bootstrapped[0]?.result?.scaffolded).toBe('static-site');
+    expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(workspacePath, 'styles.css'))).toBe(true);
+    expect(fs.existsSync(path.join(workspacePath, 'src', 'game', 'Game.ts'))).toBe(false);
+  });
+
+  it('builds a normal landing page model-first without game scaffold files', async () => {
+    jest.spyOn(aiRouter, 'chat')
+      .mockResolvedValueOnce({
+        success: true,
+        content: '- Build a responsive landing page\n- Touch index.html, styles.css, app.js',
+      } as any)
+      .mockResolvedValueOnce({
+        success: true,
+        content: [
+          '{"name":"write_file","arguments":{"path":"index.html","content":"<!doctype html><html><head><link rel=\\"stylesheet\\" href=\\"./styles.css\\"></head><body><main class=\\"hero\\"><h1>Modern Landing Page</h1><button id=\\"cta\\">Start</button></main><script src=\\"./app.js\\"></script></body></html>"}}',
+          '{"name":"write_file","arguments":{"path":"styles.css","content":"body{margin:0;font-family:Inter,Arial,sans-serif}.hero{min-height:100vh;display:grid;place-items:center;text-align:center}"}}',
+          '{"name":"write_file","arguments":{"path":"app.js","content":"document.getElementById(\\"cta\\")?.addEventListener(\\"click\\",()=>document.body.classList.toggle(\\"active\\"));"}}',
+        ].join('\n'),
+      } as any);
+
+    const result = await executeWithSpecialists(
+      'Create a modern landing page with responsive design\n\n## IDE_CONTEXT (from UI)\nAvailable templates include Three.js Game and games.',
+      ['tool_orchestrator'],
+      {
+        workspacePath,
+        files: [],
+        rawUserMessage:
+          'Create a modern landing page with responsive design. Do not use a starter template. Do not create game files, canvas code, Three.js, Phaser, or anything under src/game.',
+        planningMode: 'full',
+      },
+      'create'
+    );
+
+    expect(result.scaffoldApplied).toBe(false);
+    expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(true);
+    expect(fs.existsSync(path.join(workspacePath, 'styles.css'))).toBe(true);
+    expect(fs.existsSync(path.join(workspacePath, 'app.js'))).toBe(true);
+    expect(fs.existsSync(path.join(workspacePath, 'src', 'game', 'Game.ts'))).toBe(false);
   });
 
   it('detects desktop IDE-style prompts as the canonical Tauri React template', () => {
@@ -218,10 +306,10 @@ describe('deterministic Three.js bootstrap', () => {
     expect(fs.existsSync(path.join(workspacePath, 'src-tauri', 'Cargo.toml'))).toBe(true);
   });
 
-  it('skips the separate AI planning pass after applying a create-mode scaffold', async () => {
+  it('continues into AI planning after applying a create-mode scaffold', async () => {
     const chatSpy = jest.spyOn(aiRouter, 'chat').mockResolvedValue({
       success: true,
-      content: 'This planning call should be skipped',
+      content: 'Planning ran after the scaffold seed',
     } as any);
 
     const result = await executeWithSpecialists(
@@ -237,13 +325,14 @@ describe('deterministic Three.js bootstrap', () => {
 
     expect(result.scaffoldApplied).toBe(true);
     expect(result.scaffoldTemplateId).toBe('tauri-react');
-    expect(chatSpy).not.toHaveBeenCalled();
+    expect(result.skippedGenerativePass).toBeFalsy();
+    expect(chatSpy).toHaveBeenCalled();
   });
 
-  it('skips planning after applying a create-mode Three.js canonical scaffold', async () => {
+  it('continues into AI planning after applying a create-mode Three.js canonical scaffold', async () => {
     const chatSpy = jest.spyOn(aiRouter, 'chat').mockResolvedValue({
       success: true,
-      content: 'This planning call should be skipped',
+      content: 'Planning ran after the scaffold seed',
     } as any);
 
     const result = await executeWithSpecialists(
@@ -259,15 +348,15 @@ describe('deterministic Three.js bootstrap', () => {
 
     expect(result.scaffoldApplied).toBe(true);
     expect(result.scaffoldTemplateId).toBe('threejs-game');
-    expect(result.skippedGenerativePass).toBe(true);
-    expect(chatSpy).not.toHaveBeenCalled();
+    expect(result.skippedGenerativePass).toBeFalsy();
+    expect(chatSpy).toHaveBeenCalled();
     expect(fs.existsSync(path.join(workspacePath, 'src', 'game', 'Game.ts'))).toBe(true);
   });
 
   it('customizes Minecraft-style prompts into a deterministic voxel block world', async () => {
     const chatSpy = jest.spyOn(aiRouter, 'chat').mockResolvedValue({
       success: true,
-      content: 'This planning call should be skipped',
+      content: 'Planning ran after the scaffold seed',
     } as any);
 
     const result = await executeWithSpecialists(
@@ -283,8 +372,8 @@ describe('deterministic Three.js bootstrap', () => {
 
     expect(result.scaffoldApplied).toBe(true);
     expect(result.scaffoldTemplateId).toBe('threejs-game');
-    expect(result.skippedGenerativePass).toBe(true);
-    expect(chatSpy).not.toHaveBeenCalled();
+    expect(result.skippedGenerativePass).toBeFalsy();
+    expect(chatSpy).toHaveBeenCalled();
 
     const appTsx = fs.readFileSync(path.join(workspacePath, 'src', 'App.tsx'), 'utf-8');
     const gameTs = fs.readFileSync(path.join(workspacePath, 'src', 'game', 'Game.ts'), 'utf-8');
@@ -314,7 +403,7 @@ describe('deterministic Three.js bootstrap', () => {
   it('uses deterministic platformer scaffold for generic dino runner game prompts', async () => {
     const chatSpy = jest.spyOn(aiRouter, 'chat').mockResolvedValue({
       success: true,
-      content: 'This planning call should be skipped',
+      content: 'Planning ran after the scaffold seed',
     } as any);
 
     const result = await executeWithSpecialists(
@@ -330,8 +419,8 @@ describe('deterministic Three.js bootstrap', () => {
 
     expect(result.scaffoldApplied).toBe(true);
     expect(result.scaffoldTemplateId).toBe('threejs-platformer');
-    expect(result.skippedGenerativePass).toBe(true);
-    expect(chatSpy).not.toHaveBeenCalled();
+    expect(result.skippedGenerativePass).toBeFalsy();
+    expect(chatSpy).toHaveBeenCalled();
     expect(fs.existsSync(path.join(workspacePath, 'src', 'game', 'Game.ts'))).toBe(true);
   });
 

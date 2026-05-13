@@ -17,6 +17,17 @@ export interface IdeActiveFile {
   selectedText?: string;
 }
 
+export interface IdeDiagnostic {
+  filePath?: string;
+  line: number;
+  column: number;
+  message: string;
+  severity: 'error' | 'warning';
+  source?: string;
+  ruleId?: string;
+  origin?: string;
+}
+
 export interface IdeContextSnapshot {
   /** Optional cross-check against main workspace path (UI relay). */
   workspacePathRelay?: string;
@@ -25,6 +36,8 @@ export interface IdeContextSnapshot {
   /** Raw tree payload from readTree (shape varies); formatted with a size cap on main. */
   folderTree?: unknown;
   focusedFolder?: string;
+  diagnostics?: IdeDiagnostic[];
+  gitStatus?: string;
 }
 
 /**
@@ -46,4 +59,6 @@ export interface AgentRunContextPayload {
     selected_text?: string;
   };
   folder_tree?: unknown;
+  diagnostics?: IdeDiagnostic[];
+  git_status?: string;
 }

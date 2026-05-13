@@ -4,7 +4,7 @@ import { app } from 'electron';
 
 import TemplateEngine from '../legacy/template-engine';
 import { listWorkspaceSourceFilesSync } from '../core/workspace-glob';
-import { looksSimpleStaticWebsiteTask } from './static-site-classifier';
+import { looksSimpleStaticWebsiteTask, stripNegatedIntentClauses } from './static-site-classifier';
 
 interface TemplateDefinitionFile {
   template: string;
@@ -103,8 +103,9 @@ const REQUIRED_TEMPLATE_OUTPUTS: Record<string, string[]> = {
 };
 
 export function detectCanonicalTemplateId(task: string, projectType?: string): string | null {
-  const lower = task.toLowerCase();
-  const isVoxelGameTask = looksVoxelGameTask(task);
+  const normalizedTask = normalizeTemplateDetectionTask(task);
+  const lower = normalizedTask.toLowerCase();
+  const isVoxelGameTask = looksVoxelGameTask(normalizedTask);
   const mentionsThreeJs = lower.includes('three.js') || lower.includes('threejs');
   const isPlatformerLikeTask =
     lower.includes('side scroller') ||
@@ -200,11 +201,20 @@ export function detectCanonicalTemplateId(task: string, projectType?: string): s
     return 'vue-vite';
   }
 
-  if (looksSimpleStaticWebsiteTask(task)) {
+  if (looksSimpleStaticWebsiteTask(normalizedTask)) {
     return 'static-site';
   }
 
   return null;
+}
+
+export function normalizeTemplateDetectionTask(task: string): string {
+  const withoutContext = task
+    .split(/\n## IDE_CONTEXT\b/i)[0]
+    .split(/\n<!--\s*IDE_CONTEXT/i)[0]
+    .split(/\n## TERMINAL_PARSER\b/i)[0]
+    .trim();
+  return stripNegatedIntentClauses(withoutContext).trim();
 }
 
 // File extensions that indicate the folder is a user media/document library,
@@ -285,10 +295,31 @@ export function getExistingTemplateOutputCollisions(
   );
 }
 
+export function asksForTemplateOnlyScaffold(message: string): boolean {
+  return /\b(starter|scaffold|template|boilerplate|skeleton)\b/i.test(message);
+}
+
+export function shouldUseDeterministicBootstrap(task: string, templateId: string): boolean {
+  const normalizedTask = normalizeTemplateDetectionTask(task);
+  if (templateId === 'static-site') {
+    return asksForTemplateOnlyScaffold(normalizedTask);
+  }
+  return true;
+}
+
+export function validateScaffoldTemplateForTask(task: string, templateId: string): string | null {
+  const normalizedTask = normalizeTemplateDetectionTask(task);
+  const isGameTemplate = templateId === 'threejs-game' || templateId === 'threejs-platformer';
+  if (isGameTemplate && looksSimpleStaticWebsiteTask(normalizedTask)) {
+    return `Template "${templateId}" does not match the user's website/landing-page request.`;
+  }
+  return null;
+}
+
 /**
  * Whether specialized-agent runs should stop after deterministic template materialization.
- * Production: near-empty workspace + static-site template only (fast path for plain sites).
- * Tests: any canonical template in a near-empty workspace (broader coverage).
+ * Normal build/create prompts should continue into generative specialists so the user gets
+ * prompt-specific content instead of only the stock starter template.
  */
 export function resolveDeterministicScaffoldOnlyFlag(options: {
   message: string;
@@ -321,7 +352,7 @@ export function resolveDeterministicScaffoldOnlyFlag(options: {
   ) {
     return true;
   }
-  return templateId === 'static-site';
+  return templateId === 'static-site' && asksForTemplateOnlyScaffold(options.message);
 }
 
 function getTemplatesRoot(): string {
@@ -1220,6 +1251,16 @@ export async function scaffoldProjectFromTemplate(
       projectPath: workspacePath,
       createdFiles: [],
       error: 'No canonical template available for this scaffold request',
+    };
+  }
+  const mismatchReason = validateScaffoldTemplateForTask(task, templateId);
+  if (mismatchReason) {
+    return {
+      success: false,
+      templateId,
+      projectPath: workspacePath,
+      createdFiles: [],
+      error: mismatchReason,
     };
   }
 

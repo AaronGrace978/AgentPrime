@@ -22,6 +22,8 @@ export interface PromptContext {
     selectedText?: string;
   };
   focusedFolder?: string;
+  diagnostics?: AgentRunContextPayload['diagnostics'];
+  gitStatus?: string;
 }
 
 // Detect project type from file structure
@@ -312,6 +314,8 @@ export function buildAgentRunContextPayload(builder: PromptBuilder): AgentRunCon
         }
       : undefined,
     folder_tree: ctx.folderTree,
+    diagnostics: ctx.diagnostics,
+    git_status: ctx.gitStatus,
   };
 }
 

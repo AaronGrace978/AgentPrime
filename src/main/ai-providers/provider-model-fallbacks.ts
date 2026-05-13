@@ -1,5 +1,6 @@
 import type { ModelInfo } from '../../types/ai-providers';
 import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
+import { ALL_OLLAMA_CLOUD_MODEL_OPTIONS } from '../../types/ollama-cloud-models';
 
 const FALLBACK_MODELS: Record<string, Array<{ id: string; name: string }>> = {
   openai: [
@@ -13,12 +14,7 @@ const FALLBACK_MODELS: Record<string, Array<{ id: string; name: string }>> = {
     { id: 'claude-opus-4-7', name: 'claude-opus-4-7' },
     { id: 'claude-3-5-haiku-20241022', name: 'claude-3-5-haiku-20241022' },
   ],
-  ollama: [
-    { id: DEFAULT_MODEL_IDS.ollamaChat, name: DEFAULT_MODEL_IDS.ollamaChat },
-    { id: DEFAULT_MODEL_IDS.ollamaLongContext, name: DEFAULT_MODEL_IDS.ollamaLongContext },
-    { id: DEFAULT_MODEL_IDS.ollamaAgent, name: DEFAULT_MODEL_IDS.ollamaAgent },
-    { id: DEFAULT_MODEL_IDS.ollamaSpecialist, name: DEFAULT_MODEL_IDS.ollamaSpecialist },
-  ],
+  ollama: ALL_OLLAMA_CLOUD_MODEL_OPTIONS.map((model) => ({ id: model.value, name: model.value })),
   openrouter: [
     { id: DEFAULT_MODEL_IDS.openrouter, name: DEFAULT_MODEL_IDS.openrouter },
     { id: 'anthropic/claude-opus-4-7', name: 'anthropic/claude-opus-4-7' },

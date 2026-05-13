@@ -3,8 +3,8 @@ const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
-module.exports = {
-  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+module.exports = (_env, argv = {}) => ({
+  mode: argv.mode || (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
   entry: './src/renderer/js/app.ts',
   target: 'web',  // Use 'web' instead of 'electron-renderer' for better compatibility
   module: {
@@ -62,4 +62,4 @@ module.exports = {
     })
   ],
   devtool: 'source-map'
-};
+});

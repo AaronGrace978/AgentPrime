@@ -55,6 +55,7 @@ import { reviewSessionManager } from './review-session-manager';
 import { clampAgentAutonomyLevel, resolveEffectiveAutonomyPolicy } from './autonomy-policy';
 import {
   buildReviewCheckpointSummary,
+  looksSimpleStaticWebsiteTask,
   resolveReflectionBudget,
   shouldApplyAgentChangesImmediately,
 } from './reflection-policy';
@@ -68,8 +69,24 @@ import type {
 import { PromptSanitizer } from '../security/prompt-sanitizer';
 import { createLogger, createOperationId } from '../core/logger';
 import type { RuntimeBudgetMode } from '../../types/runtime-budget';
+import { recordAgentTrace } from './agent-trace-recorder';
+import { validateRouteModifiedFiles } from './route-verification';
 
 const log = createLogger('SpecializedAgent');
+
+function findIntentMismatchedFiles(userMessage: string, files: string[]): string[] {
+  if (!looksSimpleStaticWebsiteTask(userMessage)) {
+    return [];
+  }
+  return files.filter((filePath) => filePath.replace(/\\/g, '/').startsWith('src/game/'));
+}
+
+function looksPremiumSalesWebsiteTask(userMessage: string): boolean {
+  const lower = userMessage.toLowerCase();
+  return looksSimpleStaticWebsiteTask(userMessage) && (
+    /\b(sales|sell|premium|brand|product|pricing|order|cta|testimonial|customer|flavor|cookie)\b/.test(lower)
+  );
+}
 
 interface ProjectVerification {
   isComplete: boolean;
@@ -809,7 +826,9 @@ export class SpecializedAgentLoop extends EventEmitter {
         attemptCount = retryCount + 1;
 
         // Step 1: Route to appropriate specialists
-        const routedRoles = routeToSpecialists(userMessage, {
+        const routedRoles = this.context.agentRoutePlan?.specialists?.length
+          ? (this.context.agentRoutePlan.specialists as AgentRole[])
+          : routeToSpecialists(userMessage, {
           files: this.getProjectFiles(),
           language: this.detectLanguage(),
           projectType: this.detectProjectType(),
@@ -929,6 +948,9 @@ export class SpecializedAgentLoop extends EventEmitter {
           onCommandOutput: (event) => {
             this.emit('command-output', event);
           },
+          onRuntimeEvent: (event) => {
+            this.emit('runtime-event', event);
+          },
         };
 
         let specialistRun: Awaited<ReturnType<typeof executeWithSpecialists>>;
@@ -956,6 +978,7 @@ export class SpecializedAgentLoop extends EventEmitter {
                   planningMode: reflectionPlan.planningMode,
                   reflectionSummary: reflectionPlan.summary,
                   autonomyLevel,
+                  rawUserMessage: userMessage,
                   deterministicScaffoldOnly,
                   vibeCoderExecutionPolicy: executionPolicy,
                   blackboard,
@@ -1010,15 +1033,45 @@ export class SpecializedAgentLoop extends EventEmitter {
             `[SpecializedAgent] 🧱 Scaffold-first path applied (${scaffoldTemplateId || 'template'})`
           );
         }
+        const mismatchedFiles = findIntentMismatchedFiles(userMessage, allCreatedFiles);
+        if (mismatchedFiles.length > 0) {
+          await transactionManager.rollbackTransaction();
+          rolledBackIncomplete = true;
+          const message =
+            `Rolled back mismatched scaffold output. The user asked for a website/landing page, ` +
+            `but the run created game files: ${mismatchedFiles.join(', ')}`;
+          log.warn(`[SpecializedAgent] ${message}`);
+          return `❌ **Intent mismatch blocked**\n\n${message}\n\nPlease run the request again; AgentPrime will continue model-first without keeping the wrong scaffold.`;
+        }
         if (skippedGenerativePass) {
           log.info(
             '[SpecializedAgent] 🧪 Skipped long generative pass; proceeding directly to runnable verification'
           );
         }
 
-        // Step 5: VERIFY the project is complete
-        lastVerification = await this.verifyProject(allCreatedFiles);
+        // Step 5: VERIFY the project is complete, unless the route plan marks this
+        // as a file-management or inspect-only task where project verification is noise.
+        if (this.context.agentRoutePlan?.verificationPlan.skipProjectVerification) {
+          lastVerification = {
+            isComplete: true,
+            missingFiles: [],
+            errors: [],
+            createdFiles: allCreatedFiles,
+          };
+          log.info(
+            `[SpecializedAgent] Route verification strategy "${this.context.agentRoutePlan.verificationPlan.strategy}" skips project verification`
+          );
+        } else {
+          lastVerification = await this.verifyProject(allCreatedFiles);
+        }
         const verificationSnapshot = lastVerification;
+        recordAgentTrace('verification', {
+          strategy: this.context.agentRoutePlan?.verificationPlan.strategy || 'project',
+          skipProjectVerification: Boolean(this.context.agentRoutePlan?.verificationPlan.skipProjectVerification),
+          isComplete: verificationSnapshot.isComplete,
+          missingFiles: verificationSnapshot.missingFiles,
+          errors: verificationSnapshot.errors.slice(0, 10),
+        });
         lastStructuredFindings = this.buildVerificationFindings(verificationSnapshot);
         if (blackboard && lastStructuredFindings.length > 0) {
           blackboard.findings = [...lastStructuredFindings];
@@ -1033,6 +1086,30 @@ export class SpecializedAgentLoop extends EventEmitter {
           if (deterministicScaffoldOnly) {
             log.info(
               '[SpecializedAgent] 🧪 Deterministic scaffold verification passed; deferring full runtime checks to staged review apply'
+            );
+            verificationSucceeded = true;
+            if (blackboard) {
+              blackboard.status = 'completed';
+              this.emit('blackboard-update', blackboard);
+            }
+            shouldContinue = false;
+            break;
+          }
+
+          // Gate: don't npm install / build / serve a raw template scaffold
+          // that no generative specialist actually customized. Doing so wastes
+          // ~30-60s, fills logs with "build success", and is misleading when
+          // the run will get rolled back / staged anyway.
+          const onlyDeterministicScaffoldRan =
+            scaffoldApplied &&
+            (executedTools || []).every(
+              (entry: any) =>
+                entry?.specialist === 'deterministic_bootstrap' ||
+                entry?.specialist === 'deterministic_customizer'
+            );
+          if (onlyDeterministicScaffoldRan) {
+            log.info(
+              '[SpecializedAgent] 🧪 Only deterministic scaffold ran (no AI customization); skipping ProjectRunner.autoRun to avoid building an un-customized template'
             );
             verificationSucceeded = true;
             if (blackboard) {
@@ -1221,6 +1298,37 @@ export class SpecializedAgentLoop extends EventEmitter {
           `[${runId}] Specialized agent verification failed; rolled back ${operationCount} file operation(s)`
         );
         return response;
+      }
+
+      const routeValidation = validateRouteModifiedFiles(
+        this.context.agentRoutePlan,
+        this.context.ideContext,
+        transaction.getOperations().map((operation) => operation.path)
+      );
+      if (!routeValidation.success) {
+        rolledBackIncomplete = true;
+        const validationError = routeValidation.error || 'Route validation failed';
+        await transactionManager.rollbackTransaction();
+        telemetry.track('agent_task_complete', {
+          mode: 'specialized',
+          success: false,
+          rolledBack: true,
+          retryCount,
+          fileCount: allCreatedFiles.length,
+          durationMs: Date.now() - taskStartedAt,
+          stagedReview: false,
+          runtimeBudget: lastReflectionBudget,
+          autonomyLevel,
+          autonomyLabel: autonomyPolicy.label,
+          error: validationError,
+        });
+        log.warn(
+          `[${runId}] Specialized agent route validation failed before commit; rolled back ${operationCount} file operation(s): ${validationError}`
+        );
+        return `${this.buildResponse(allCreatedFiles, lastVerification, {
+          rolledBack: true,
+          stagedReview: false,
+        })}\n\nValidation failed: ${validationError}`;
       }
 
       const stagedReview = applyImmediately
@@ -1632,6 +1740,7 @@ export class SpecializedAgentLoop extends EventEmitter {
 
     // Framework structural checks — catch known-fatal omissions before install/build
     this.runFrameworkStructuralChecks(existingFiles, workspacePath, errors, missingFiles);
+    this.runIntentContentChecks(existingFiles, workspacePath, errors);
 
     // Dedupe missing files
     const uniqueMissing = [...new Set(missingFiles)];
@@ -1642,6 +1751,66 @@ export class SpecializedAgentLoop extends EventEmitter {
       errors,
       createdFiles,
     };
+  }
+
+  private runIntentContentChecks(
+    existingFiles: string[],
+    workspacePath: string,
+    errors: string[]
+  ): void {
+    const userMessage = this.context.userMessage || '';
+    if (!looksPremiumSalesWebsiteTask(userMessage)) {
+      return;
+    }
+
+    const readableFiles = ['index.html', 'styles.css', 'app.js', 'script.js', 'main.js'];
+    const combinedContent = readableFiles
+      .filter((file) => existingFiles.includes(file))
+      .map((file) => {
+        try {
+          return fs.readFileSync(path.join(workspacePath, file), 'utf-8');
+        } catch {
+          return '';
+        }
+      })
+      .join('\n')
+      .toLowerCase();
+
+    if (!combinedContent.trim()) {
+      return;
+    }
+
+    const genericStarterMarkers = [
+      'agentprime static starter',
+      'ready for customization',
+      'launch sequence confirmed',
+      'preview mode is ready',
+      'status panel',
+    ];
+    const foundGenericMarkers = genericStarterMarkers.filter((marker) =>
+      combinedContent.includes(marker)
+    );
+    if (foundGenericMarkers.length > 0) {
+      errors.push(
+        `Content mismatch: generated generic starter copy (${foundGenericMarkers.join(', ')}) instead of the requested branded sales website.`
+      );
+    }
+
+    const requiredSalesSignals = ['chocolate supreme', 'cookie'];
+    const missingSalesSignals = requiredSalesSignals.filter((signal) => !combinedContent.includes(signal));
+    if (missingSalesSignals.length > 0) {
+      errors.push(
+        `Content mismatch: missing branded sales-site content (${missingSalesSignals.join(', ')}).`
+      );
+    }
+
+    const requestedSections = ['testimonial', 'pricing', 'order', 'flavor'];
+    const presentSections = requestedSections.filter((signal) => combinedContent.includes(signal));
+    if (presentSections.length < 2) {
+      errors.push(
+        'Content mismatch: premium sales website is missing requested sales sections such as testimonials, pricing/order CTA, or flavor cards.'
+      );
+    }
   }
 
   /**

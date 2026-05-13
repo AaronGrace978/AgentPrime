@@ -89,6 +89,7 @@ import {
   type ProviderApiKeyPreference,
   type SupportedProviderApiKey,
 } from './security/providerApiKeys';
+import { validateSettings } from './security/ipcValidation';
 
 // Import State Manager
 import { stateManager } from './core/state-manager';
@@ -282,6 +283,7 @@ const OLLAMA_URL = process.env.OLLAMA_URL || (isCloudModel(OLLAMA_MODEL) ? getCl
 const OLLAMA_URL_SECONDARY = process.env.OLLAMA_URL_SECONDARY || (isCloudModel(OLLAMA_MODEL_FALLBACK) ? getCloudUrl(OLLAMA_MODEL_FALLBACK) : 'http://127.0.0.1:11435');
 
 let mainWindow: BrowserWindow | null = null;
+let previewWindow: BrowserWindow | null = null;
 let workspacePath: string | null = null;
 let focusedFolderPath: string | null = null;
 let activeFilePath: string | null = null; // Track currently active file for completion context
@@ -601,7 +603,7 @@ function initializeAIProviders(): void {
   settings.ollamaCloudOutputLimits = normalizeOllamaCloudOutputLimits(settings.ollamaCloudOutputLimits);
   setOllamaCloudOutputLimits(settings.ollamaCloudOutputLimits);
 
-  const activeSelectionChanged = normalizeActiveSelection();
+  let activeSelectionChanged = normalizeActiveSelection();
   if (settings.dualModelConfig) {
     settings.dualModelConfig.fastModel.provider = normalizeProviderFromModel(
       settings.dualModelConfig.fastModel.model,
@@ -621,6 +623,22 @@ function initializeAIProviders(): void {
         settings.dualModelConfig.deepModel.provider,
         settings.dualModelConfig.deepModel.model
       ) || settings.dualModelConfig.deepModel.model;
+
+    const fast = settings.dualModelConfig.fastModel;
+    const deep = settings.dualModelConfig.deepModel;
+    if (
+      settings.dualModelEnabled &&
+      settings.dualModelConfig.autoRoute === false &&
+      fast.enabled &&
+      deep.enabled &&
+      fast.provider === deep.provider &&
+      fast.model === deep.model &&
+      (settings.activeProvider !== fast.provider || settings.activeModel !== fast.model)
+    ) {
+      settings.activeProvider = fast.provider;
+      settings.activeModel = fast.model;
+      activeSelectionChanged = true;
+    }
   }
 
   const preferredDualOllamaModel =
@@ -1419,6 +1437,12 @@ ipcMain.handle('credentials:clear-provider-api-key', async (_event, providerName
 });
 
 ipcMain.handle('update-settings', async (event, newSettings: Partial<Settings>) => {
+  const settingsValidation = validateSettings(newSettings);
+  if (!settingsValidation.valid) {
+    log.warn('[IPC] update-settings rejected:', settingsValidation.errors.join('; '));
+    throw new Error(`Invalid settings update: ${settingsValidation.errors.join('; ')}`);
+  }
+
   const providerApiKeyUpdates = extractProviderApiKeyUpdates(newSettings.providers as Record<string, any> | undefined);
   await Promise.all(
     Object.entries(providerApiKeyUpdates).map(([providerName, apiKey]) =>
@@ -1593,11 +1617,79 @@ ipcMain.handle('get-app-version', () => {
   return getAppVersion();
 });
 
-// Open External URL/File Handler
+function isSafeExternalUrl(rawUrl: string): { safe: boolean; normalized?: string; error?: string } {
+  if (typeof rawUrl !== 'string' || rawUrl.length > 2048) {
+    return { safe: false, error: 'Invalid URL' };
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol === 'https:') {
+      return { safe: true, normalized: parsed.toString() };
+    }
+
+    const localhostHosts = new Set(['localhost', '127.0.0.1', '::1']);
+    if (parsed.protocol === 'http:' && localhostHosts.has(parsed.hostname)) {
+      return { safe: true, normalized: parsed.toString() };
+    }
+
+    return { safe: false, error: `Blocked unsupported URL protocol or host: ${parsed.protocol}` };
+  } catch {
+    return { safe: false, error: 'URL is malformed' };
+  }
+}
+
+ipcMain.handle('preview:open', async (_event, url: string) => {
+  const validation = isSafeExternalUrl(url);
+  if (!validation.safe || !validation.normalized) {
+    return { success: false, error: validation.error || 'Unsafe preview URL' };
+  }
+
+  try {
+    if (!previewWindow || previewWindow.isDestroyed()) {
+      previewWindow = new BrowserWindow({
+        width: 1200,
+        height: 800,
+        title: 'AgentPrime Preview',
+        parent: mainWindow || undefined,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      });
+      previewWindow.on('closed', () => {
+        previewWindow = null;
+      });
+    }
+
+    await previewWindow.loadURL(validation.normalized);
+    previewWindow.show();
+    return { success: true };
+  } catch (error: any) {
+    log.error('[IPC] preview:open error:', error);
+    return { success: false, error: error.message || 'Failed to open preview' };
+  }
+});
+
+ipcMain.handle('preview:close', async () => {
+  if (previewWindow && !previewWindow.isDestroyed()) {
+    previewWindow.close();
+  }
+  previewWindow = null;
+  return { success: true };
+});
+
+// Open External URL Handler
 ipcMain.handle('open-external', async (event, url: string) => {
   try {
+    const validation = isSafeExternalUrl(url);
+    if (!validation.safe || !validation.normalized) {
+      return { success: false, error: validation.error || 'Unsafe external URL' };
+    }
+
     const { shell } = require('electron');
-    await shell.openExternal(url);
+    await shell.openExternal(validation.normalized);
     return { success: true };
   } catch (error: any) {
     log.error('[IPC] open-external error:', error);

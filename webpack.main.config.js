@@ -1,7 +1,7 @@
 const path = require('path');
 
-module.exports = {
-  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+module.exports = (_env, argv = {}) => ({
+  mode: argv.mode || (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
   entry: {
     main: './src/main/main.ts',
     preload: './src/main/preload.ts'
@@ -55,4 +55,4 @@ module.exports = {
     'typescript': 'commonjs typescript'
   },
   devtool: 'source-map'
-};
+});

@@ -34,6 +34,66 @@ const DEFAULT_ALLOWED_SHELLS = [
   'sh',
   'zsh',
 ];
+const BLOCKED_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+const ALLOWED_SETTINGS_KEYS = new Set([
+  'theme',
+  'themeId',
+  'fontSize',
+  'tabSize',
+  'wordWrap',
+  'minimap',
+  'lineNumbers',
+  'autoSave',
+  'inlineCompletions',
+  'dinoBuddyMode',
+  'chatMode',
+  'chatProvider',
+  'chatModel',
+  'dinoProvider',
+  'dinoModel',
+  'activeProvider',
+  'activeModel',
+  'dualOllamaEnabled',
+  'assistantBehaviorProfile',
+  'useSpecializedAgents',
+  'agentAutonomyLevel',
+  'agentMonolithicApplyImmediately',
+  'pythonBrainEnabled',
+  'telemetryEnabled',
+  'developerMode',
+  'autoLockMinutes',
+  'confirmOnClose',
+  'collaboration',
+  'plugins',
+  'system',
+  'cloudSync',
+  'edgeAI',
+  'dualModelEnabled',
+  'dualModelConfig',
+  'ollamaCloudOutputLimits',
+  'webSearch',
+  'providers',
+]);
+
+function normalizeForContainment(targetPath: string): string {
+  const resolved = path.resolve(targetPath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+export function isPathInsideWorkspace(targetPath: string, workspacePath: string): boolean {
+  if (!targetPath || !workspacePath) {
+    return false;
+  }
+
+  const normalizedTarget = normalizeForContainment(targetPath);
+  const normalizedWorkspace = normalizeForContainment(workspacePath);
+  const relative = path.relative(normalizedWorkspace, normalizedTarget);
+
+  return (
+    relative === '' ||
+    (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative))
+  );
+}
 
 /**
  * Validation result
@@ -198,18 +258,13 @@ export function validateFilePath(
     }
   }
   
-  // Check for path traversal attempts
-  const traversalMatches = sanitized.match(/\.\.\//g);
-  if (traversalMatches && traversalMatches.length > 3) {
-    errors.push('Excessive path traversal sequences detected');
-  }
-  
   // Resolve and check if within workspace
   if (workspacePath) {
-    const resolvedPath = path.resolve(workspacePath, sanitized);
-    const normalizedWorkspace = path.normalize(workspacePath);
-    
-    if (!resolvedPath.startsWith(normalizedWorkspace)) {
+    const resolvedPath = path.isAbsolute(sanitized)
+      ? path.resolve(sanitized)
+      : path.resolve(workspacePath, sanitized);
+
+    if (!isPathInsideWorkspace(resolvedPath, workspacePath)) {
       errors.push('Path resolves outside of workspace');
     }
   }
@@ -286,11 +341,10 @@ export function resolveValidatedPath(
 
   const sanitizedPath = validation.sanitized || targetPath;
   const resolvedPath = path.isAbsolute(sanitizedPath)
-    ? path.normalize(sanitizedPath)
+    ? path.resolve(sanitizedPath)
     : path.resolve(workspacePath, sanitizedPath);
-  const normalizedWorkspace = path.normalize(workspacePath);
 
-  if (!resolvedPath.startsWith(normalizedWorkspace)) {
+  if (!isPathInsideWorkspace(resolvedPath, workspacePath)) {
     return {
       valid: false,
       errors: ['Path resolves outside of workspace'],
@@ -388,7 +442,7 @@ export function validateChatMessage(message: string): ValidationResult {
 export function validateSettings(settings: any): ValidationResult {
   const errors: string[] = [];
   
-  if (typeof settings !== 'object' || settings === null) {
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) {
     return { valid: false, errors: ['Settings must be an object'] };
   }
   
@@ -398,6 +452,16 @@ export function validateSettings(settings: any): ValidationResult {
     errors.push(`Settings exceed maximum size (${MAX_PAYLOAD_SIZES.settings} bytes)`);
   }
   
+  for (const key of Object.keys(settings)) {
+    if (BLOCKED_OBJECT_KEYS.has(key)) {
+      errors.push(`Settings key "${key}" is not allowed`);
+      continue;
+    }
+    if (!ALLOWED_SETTINGS_KEYS.has(key)) {
+      errors.push(`Unknown settings key: ${key}`);
+    }
+  }
+
   // Validate specific settings fields
   if (settings.fontSize !== undefined) {
     if (typeof settings.fontSize !== 'number' || settings.fontSize < 8 || settings.fontSize > 72) {
@@ -406,9 +470,37 @@ export function validateSettings(settings: any): ValidationResult {
   }
   
   if (settings.theme !== undefined) {
-    const validThemes = ['vs-dark', 'vs-light', 'hc-black', 'hc-light'];
+    const validThemes = ['vs-dark', 'vs-light', 'vs', 'hc-black', 'hc-light', 'dark', 'light'];
     if (!validThemes.includes(settings.theme)) {
       errors.push(`theme must be one of: ${validThemes.join(', ')}`);
+    }
+  }
+
+  if (settings.tabSize !== undefined) {
+    if (typeof settings.tabSize !== 'number' || settings.tabSize < 1 || settings.tabSize > 16) {
+      errors.push('tabSize must be a number between 1 and 16');
+    }
+  }
+
+  if (settings.wordWrap !== undefined && !['on', 'off', 'wordWrapColumn'].includes(settings.wordWrap)) {
+    errors.push('wordWrap must be one of: on, off, wordWrapColumn');
+  }
+
+  if (settings.lineNumbers !== undefined && !['on', 'off', 'relative'].includes(settings.lineNumbers)) {
+    errors.push('lineNumbers must be one of: on, off, relative');
+  }
+
+  if (settings.chatMode !== undefined && !['agent', 'chat', 'dino'].includes(settings.chatMode)) {
+    errors.push('chatMode must be one of: agent, chat, dino');
+  }
+
+  if (settings.agentAutonomyLevel !== undefined) {
+    if (
+      typeof settings.agentAutonomyLevel !== 'number' ||
+      settings.agentAutonomyLevel < 1 ||
+      settings.agentAutonomyLevel > 5
+    ) {
+      errors.push('agentAutonomyLevel must be a number between 1 and 5');
     }
   }
   
@@ -557,6 +649,7 @@ export default {
   sanitizeFolderName,
   sanitizeFileName,
   validateFilePath,
+  isPathInsideWorkspace,
   resolveValidatedPath,
   validateCommand,
   validateShellExecutable,

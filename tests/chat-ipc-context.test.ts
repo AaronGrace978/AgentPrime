@@ -22,12 +22,37 @@ describe('parseChatIpcContext', () => {
     expect(parsed.agent_run_context?.active_file?.path).toBe('a.ts');
   });
 
-  it('rejects oversized folder_tree', () => {
+  it('drops oversized folder_tree without discarding safe agent flags', () => {
     const huge = { x: 'y'.repeat(500_000) };
     const parsed = parseChatIpcContext({
+      use_agent_loop: true,
+      agent_mode: true,
       agent_run_context: { folder_tree: huge },
     });
-    expect(parsed.agent_run_context).toBeUndefined();
+    expect(parsed.use_agent_loop).toBe(true);
+    expect(parsed.agent_mode).toBe(true);
+    expect(parsed.agent_run_context?.folder_tree).toBeUndefined();
+  });
+
+  it('accepts diagnostics and git status in agent_run_context', () => {
+    const parsed = parseChatIpcContext({
+      agent_run_context: {
+        diagnostics: [{
+          filePath: 'src/app.ts',
+          line: 4,
+          column: 2,
+          message: 'Type mismatch',
+          severity: 'error',
+          source: 'typescript',
+          ruleId: '2322',
+          origin: 'language',
+        }],
+        git_status: 'branch: main, modified: 1',
+      },
+    });
+
+    expect(parsed.agent_run_context?.diagnostics?.[0].message).toBe('Type mismatch');
+    expect(parsed.agent_run_context?.git_status).toContain('branch: main');
   });
 });
 
@@ -42,6 +67,24 @@ describe('ide-context-bridge', () => {
     const snap = buildIdeContextSnapshotFromChatIpc(ctx);
     expect(snap?.openTabs?.[0].path).toBe('src/x.tsx');
     expect(snap?.activeFile?.content).toBe('export {}');
+  });
+
+  it('maps diagnostics and git status to IdeContextSnapshot', () => {
+    const ctx = parseChatIpcContext({
+      agent_run_context: {
+        diagnostics: [{
+          filePath: 'src/x.ts',
+          line: 1,
+          column: 1,
+          message: 'Broken',
+          severity: 'error',
+        }],
+        git_status: 'branch: feature',
+      },
+    });
+    const snap = buildIdeContextSnapshotFromChatIpc(ctx);
+    expect(snap?.diagnostics?.[0].message).toBe('Broken');
+    expect(snap?.gitStatus).toBe('branch: feature');
   });
 
   it('resolveOpenFilesForAgent prefers open_files then tabs', () => {
@@ -70,5 +113,22 @@ describe('appendIdeContextToUserTask', () => {
     expect(out).toContain('do thing');
     expect(out).toContain('IDE_CONTEXT');
     expect(out).toContain('p.ts');
+  });
+
+  it('includes diagnostics and git status in the IDE block', () => {
+    const out = appendIdeContextToUserTask('fix this', {
+      gitStatus: 'branch: main',
+      diagnostics: [{
+        filePath: 'src/app.ts',
+        line: 2,
+        column: 3,
+        message: 'Cannot find name',
+        severity: 'error',
+        source: 'typescript',
+        ruleId: '2304',
+      }],
+    });
+    expect(out).toContain('Git status');
+    expect(out).toContain('Cannot find name');
   });
 });

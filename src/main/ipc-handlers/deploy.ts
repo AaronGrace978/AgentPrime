@@ -19,6 +19,9 @@ interface DeployResult {
 }
 
 type DeployProvider = 'vercel' | 'netlify' | 'auto';
+const MAX_DEPLOY_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MAX_DEPLOY_CHUNK_BYTES = 64 * 1024;
+const DEPLOY_TIMEOUT_MS = 10 * 60 * 1000;
 
 function detectProjectType(workspacePath: string): { type: string; framework?: string } {
   const hasFile = (f: string) => fs.existsSync(path.join(workspacePath, f));
@@ -64,45 +67,71 @@ function runDeploy(
   return new Promise((resolve) => {
     let output = '';
     let url = '';
+    let outputBytes = 0;
+    let settled = false;
 
     const child = spawn(command, args, {
       cwd,
-      shell: true,
+      shell: false,
       env: { ...process.env, FORCE_COLOR: '0' },
+      windowsHide: true,
     });
 
-    child.stdout.on('data', (data: Buffer) => {
-      const text = data.toString();
+    const finish = (result: DeployResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(result);
+    };
+
+    const appendOutput = (data: Buffer, type: 'stdout' | 'stderr') => {
+      if (outputBytes >= MAX_DEPLOY_OUTPUT_BYTES) {
+        return;
+      }
+
+      const remaining = MAX_DEPLOY_OUTPUT_BYTES - outputBytes;
+      const chunk = data.subarray(0, Math.min(data.length, remaining, MAX_DEPLOY_CHUNK_BYTES));
+      const text = chunk.toString();
+      outputBytes += chunk.length;
       output += text;
-      window?.webContents.send('deploy:output', { text, type: 'stdout' });
+      window?.webContents.send('deploy:output', { text, type });
 
       const urlMatch = text.match(/https?:\/\/[^\s\]]+\.(?:vercel\.app|netlify\.app)[^\s\]]*/);
       if (urlMatch) {
         url = urlMatch[0];
       }
+
+      if (outputBytes >= MAX_DEPLOY_OUTPUT_BYTES) {
+        const message = `\n[AgentPrime] Deploy output limit reached (${MAX_DEPLOY_OUTPUT_BYTES} bytes); stopping deploy.\n`;
+        output += message;
+        window?.webContents.send('deploy:output', { text: message, type: 'stderr' });
+        child.kill();
+      }
+    };
+
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish({ success: false, error: 'Deploy timed out', output });
+    }, DEPLOY_TIMEOUT_MS);
+
+    child.stdout.on('data', (data: Buffer) => {
+      appendOutput(data, 'stdout');
     });
 
     child.stderr.on('data', (data: Buffer) => {
-      const text = data.toString();
-      output += text;
-      window?.webContents.send('deploy:output', { text, type: 'stderr' });
-
-      const urlMatch = text.match(/https?:\/\/[^\s\]]+\.(?:vercel\.app|netlify\.app)[^\s\]]*/);
-      if (urlMatch) {
-        url = urlMatch[0];
-      }
+      appendOutput(data, 'stderr');
     });
 
     child.on('close', (code) => {
       if (code === 0) {
-        resolve({ success: true, url: url || undefined, output });
+        finish({ success: true, url: url || undefined, output });
       } else {
-        resolve({ success: false, error: `Deploy exited with code ${code}`, output });
+        finish({ success: false, error: `Deploy exited with code ${code}`, output });
       }
     });
 
     child.on('error', (err) => {
-      resolve({ success: false, error: err.message, output });
+      finish({ success: false, error: err.message, output });
     });
   });
 }

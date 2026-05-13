@@ -18,6 +18,7 @@
 import aiRouter from '../ai-providers';
 import type { ChatMessage, ChatOptions } from '../../types/ai-providers';
 import { DEFAULT_MODEL_IDS } from '../../types/model-defaults';
+import { OLLAMA_CLOUD_MODEL_OPTIONS } from '../../types/ollama-cloud-models';
 import {
   getRelevantPatterns,
   storeTaskLearning,
@@ -31,6 +32,8 @@ import {
   withSmartFallback,
   FALLBACK_MODEL_CHAIN,
   detectModelSize,
+  sharedToolCallCooldown,
+  type RuntimeHeartbeatEvent,
   type RuntimeBudgetMode,
 } from '../core/timeout-utils';
 import { transactionManager } from '../core/transaction-manager';
@@ -58,7 +61,10 @@ import {
   applyDeterministicTemplateCustomization,
   detectCanonicalTemplateId,
   getExistingTemplateOutputCollisions,
+  normalizeTemplateDetectionTask,
   scaffoldProjectFromTemplate,
+  shouldUseDeterministicBootstrap,
+  validateScaffoldTemplateForTask,
   workspaceNeedsDeterministicScaffold,
 } from './scaffold-resolver';
 import { looksSimpleStaticWebsiteTask } from './static-site-classifier';
@@ -81,6 +87,7 @@ import {
   type VibeCoderExecutionPolicy,
   type VibeCoderIntent,
 } from './behavior-profile';
+import { recordAgentTrace } from './agent-trace-recorder';
 
 const log = createLogger('SpecializedAgents');
 
@@ -97,10 +104,6 @@ export function shouldSkipGenerativeSpecialistsAfterScaffold(options: {
   deterministicScaffoldOnly?: boolean;
 }): boolean {
   return options.scaffoldApplied && options.deterministicScaffoldOnly === true;
-}
-
-function shouldUseTemplateOnlyAfterScaffold(templateId?: string): boolean {
-  return Boolean(templateId);
 }
 
 interface AgentCommandOutputEvent {
@@ -175,7 +178,8 @@ function hasExistingTemplateAnchor(workspacePath: string, templateId: string): b
 }
 
 function getExistingCanonicalTemplateId(workspacePath: string, task: string): string | null {
-  const templateId = detectCanonicalTemplateId(task);
+  const rawTask = normalizeTemplateDetectionTask(task);
+  const templateId = detectCanonicalTemplateId(rawTask);
   if (!templateId) {
     return null;
   }
@@ -198,15 +202,18 @@ export async function bootstrapDeterministicScaffold(
     );
     return [];
   }
-  const templateId = detectCanonicalTemplateId(task);
+  const rawTask = normalizeTemplateDetectionTask(task);
+  const templateId = detectCanonicalTemplateId(rawTask);
   if (
     !templateId ||
+    !shouldUseDeterministicBootstrap(rawTask, templateId) ||
+    validateScaffoldTemplateForTask(rawTask, templateId) ||
     !workspaceNeedsDeterministicScaffold(workspacePath) ||
     getExistingTemplateOutputCollisions(templateId, workspacePath).length > 0
   ) {
     return [];
   }
-  const scaffolded = await scaffoldProjectFromTemplate(workspacePath, task, {
+  const scaffolded = await scaffoldProjectFromTemplate(workspacePath, rawTask, {
     callbacks,
     runPostCreate: false,
   });
@@ -257,32 +264,163 @@ async function checkOllamaHealth(): Promise<{
   healthy: boolean;
   models: string[];
   error?: string;
+  errorCode?: string;
+  baseUrl?: string;
+  isCloud?: boolean;
 }> {
+  let baseUrlForCatch = 'http://127.0.0.1:11434';
+  let isCloudForCatch = false;
   try {
     const axios = require('axios');
-    // Get the configured Ollama provider to use its baseUrl
     const ollamaProvider = aiRouter.getProvider('ollama') as any;
     const baseUrl = ollamaProvider?.baseUrl || 'http://127.0.0.1:11434';
+    baseUrlForCatch = baseUrl;
+    const lowered = String(baseUrl).toLowerCase();
+    const isCloud = lowered.includes('ollama.com') || lowered.includes('deepseek.com');
+    isCloudForCatch = isCloud;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
-    // Add API key for cloud endpoints
     if (ollamaProvider?.apiKey) {
       headers['Authorization'] = `Bearer ${ollamaProvider.apiKey}`;
     }
 
     const response = await axios.get(`${baseUrl}/api/tags`, {
       headers,
-      timeout: 5000, // Slightly longer timeout for cloud
+      timeout: 5000,
     });
     const models = response.data?.models?.map((m: any) => m.name) || [];
-    return { healthy: true, models };
+    return { healthy: true, models, baseUrl, isCloud };
   } catch (error: any) {
     return {
       healthy: false,
       models: [],
       error: error.code === 'ECONNREFUSED' ? 'Ollama not running' : error.message,
+      errorCode: error.code,
+      baseUrl: baseUrlForCatch,
+      isCloud: isCloudForCatch,
     };
   }
+}
+
+/**
+ * Categorized diagnosis of why no AI provider is reachable.
+ * Used to (a) abort blind template scaffolding when nothing can customize it,
+ * and (b) produce accurate user-facing error messages (DNS vs local daemon
+ * vs billing vs missing keys), instead of always blaming local Ollama.
+ */
+export type ProviderConnectivityCategory =
+  | 'reachable'
+  | 'cloud_dns'
+  | 'local_down'
+  | 'missing_keys'
+  | 'unknown';
+
+export interface ProviderConnectivityDiagnosis {
+  category: ProviderConnectivityCategory;
+  hasReachableProvider: boolean;
+  ollama: {
+    healthy: boolean;
+    isCloud: boolean;
+    baseUrl: string;
+    errorCode?: string;
+    error?: string;
+  };
+  hasAnthropicKey: boolean;
+  hasOpenAIKey: boolean;
+  message: string;
+}
+
+function hasEnvKey(...names: string[]): boolean {
+  for (const name of names) {
+    const value = process.env[name];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function diagnoseProviderConnectivity(): Promise<ProviderConnectivityDiagnosis> {
+  const health = await checkOllamaHealth();
+  const hasAnthropicKey = hasEnvKey('ANTHROPIC_API_KEY');
+  const hasOpenAIKey = hasEnvKey('OPENAI_API_KEY');
+  const baseUrl = health.baseUrl || 'http://127.0.0.1:11434';
+  const isCloud = Boolean(health.isCloud);
+
+  if (health.healthy) {
+    return {
+      category: 'reachable',
+      hasReachableProvider: true,
+      ollama: { healthy: true, isCloud, baseUrl },
+      hasAnthropicKey,
+      hasOpenAIKey,
+      message: '',
+    };
+  }
+
+  // Ollama is unreachable. If at least one cloud key exists, treat that as a
+  // reachable provider for the purpose of allowing the run to proceed; the
+  // smart-fallback loop will surface concrete failures (e.g. billing) later.
+  const hasReachableProvider = hasAnthropicKey || hasOpenAIKey;
+
+  const code = (health.errorCode || '').toUpperCase();
+  let category: ProviderConnectivityCategory = 'unknown';
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    category = 'cloud_dns';
+  } else if (code === 'ECONNREFUSED' && !isCloud) {
+    category = 'local_down';
+  } else if (!hasAnthropicKey && !hasOpenAIKey) {
+    category = 'missing_keys';
+  }
+
+  const reasons: string[] = [];
+  if (category === 'cloud_dns') {
+    reasons.push(
+      `Cloud DNS / network failure for ${baseUrl} (code ${code || 'unknown'}). The hostname did not resolve. This is usually a restrictive Wi-Fi, captive portal, VPN, or proxy.`
+    );
+  } else if (category === 'local_down') {
+    reasons.push(
+      `Local Ollama is not running at ${baseUrl}. Start it with: ollama serve`
+    );
+  } else {
+    reasons.push(
+      `Ollama unreachable at ${baseUrl}: ${health.error || code || 'unknown error'}`
+    );
+  }
+  if (!hasAnthropicKey) {
+    reasons.push('No ANTHROPIC_API_KEY configured.');
+  }
+  if (!hasOpenAIKey) {
+    reasons.push('No OPENAI_API_KEY configured.');
+  }
+  if (hasAnthropicKey || hasOpenAIKey) {
+    reasons.push(
+      'Cloud API keys are present but may be unfunded or revoked; the smart-fallback loop will report exact provider errors.'
+    );
+  }
+
+  const message =
+    `No AI provider is currently reachable.\n\n` +
+    reasons.map((r) => `• ${r}`).join('\n') +
+    `\n\nFixes:\n` +
+    `• Move to a network where ${baseUrl} resolves, OR\n` +
+    `• Switch the active model in Settings to a local Ollama model (e.g. \`qwen2.5:7b\`) and run \`ollama serve\`, OR\n` +
+    `• Add a working Anthropic / OpenAI key in Settings.`;
+
+  return {
+    category,
+    hasReachableProvider,
+    ollama: {
+      healthy: false,
+      isCloud,
+      baseUrl,
+      errorCode: health.errorCode,
+      error: health.error,
+    },
+    hasAnthropicKey,
+    hasOpenAIKey,
+    message,
+  };
 }
 
 /**
@@ -382,15 +520,27 @@ function appendScaffoldCustomizationInstructions(
     return basePrompt;
   }
   const tid = scaffoldTemplateId || 'template';
+  const scaffoldDescription =
+    tid === 'static-site'
+      ? 'A plain website scaffold was already written to the workspace (index.html, styles.css, app.js, README.md).'
+      : tid === 'threejs-game' || tid === 'threejs-platformer'
+        ? 'A Vite + React + Three.js project was already written to the workspace (package.json, vite.config, src/game/*, etc.).'
+        : 'A starter project was already written to the workspace.';
+  const scaffoldShapeGuidance =
+    tid === 'static-site'
+      ? '- Keep the site focused on the user request. Do not add game folders, canvas/gameplay code, or unrelated demo mechanics.\n'
+      : tid === 'threejs-game' || tid === 'threejs-platformer'
+        ? '- The template may include **generic demo gameplay** (block worlds, chunk loaders, placeholder mechanics). Replace it with what the user asked for.\n' +
+          '- Reuse the scaffold\'s exact folder structure. If the workspace has `src/game/world/World.ts`, do **not** invent `src/game/World.ts`.\n'
+        : '';
   return (
     `${basePrompt}\n\n` +
     `## SCAFFOLD ALREADY ON DISK (${tid})\n` +
-    `A Vite + React + Three.js project was already written to the workspace (package.json, vite.config, src/game/*, etc.).\n` +
+    `${scaffoldDescription}\n` +
     `- Do **not** call \`scaffold_project\` again or regenerate the whole repository from scratch.\n` +
-    `- The template may include **generic demo gameplay** (block worlds, chunk loaders, placeholder mechanics). Replace it with what the user asked for.\n` +
-    `- The user's **task text** defines theme, mechanics, camera, controls, and art direction.\n` +
+    scaffoldShapeGuidance +
+    `- The user's **task text** defines the product, content, theme, interactions, and visual direction.\n` +
     `- Prefer \`write_file\` JSON tool lines targeting the files that already exist on disk so \`npm run build\` still passes.\n` +
-    `- Reuse the scaffold's exact folder structure. If the workspace has \`src/game/world/World.ts\`, do **not** invent \`src/game/World.ts\`.\n` +
     `- Keep cross-file contracts compatible: preserve inherited method signatures and existing call-site APIs unless you update every affected file in the same pass.\n`
   );
 }
@@ -1905,6 +2055,7 @@ export interface SpecialistExecutionCallbacks {
   }) => void;
   onFileChange?: (change: AgentPendingFileChange) => void;
   onCommandOutput?: (event: AgentCommandOutputEvent) => void;
+  onRuntimeEvent?: (event: RuntimeHeartbeatEvent) => void;
 }
 
 function resolveBlackboardSpecialistId(role: AgentRole): SpecialistId {
@@ -2040,10 +2191,22 @@ async function executeTool(
   }
 
   const { name, arguments: args } = normalizedToolCall;
+  recordAgentTrace('tool_call_start', {
+    tool: name,
+    path: args.path,
+    command: args.command,
+  });
 
   if (callbacks?.shouldCancel?.()) {
     throw new Error('Specialized agent cancelled by user');
   }
+
+  await sharedToolCallCooldown.waitForTurn(
+    `specialized:${name}`,
+    name === 'run_command' ? 250 : 50,
+    callbacks?.onRuntimeEvent,
+    { toolName: name, path: args.path, command: args.command }
+  );
 
   switch (name) {
     case 'create_file':
@@ -2509,6 +2672,10 @@ export async function executeWithSpecialists(
     context.planningMode === 'skip' || context.planningMode === 'full'
       ? context.planningMode
       : 'compact';
+  const rawTask =
+    typeof context.rawUserMessage === 'string' && context.rawUserMessage.trim().length > 0
+      ? normalizeTemplateDetectionTask(context.rawUserMessage)
+      : normalizeTemplateDetectionTask(task);
   const executionPolicy: VibeCoderExecutionPolicy | undefined = context.vibeCoderExecutionPolicy;
   const reflectionSummary =
     typeof context.reflectionSummary === 'string' && context.reflectionSummary.trim().length > 0
@@ -2631,7 +2798,7 @@ export async function executeWithSpecialists(
     type: 'user_intent',
     author: 'executive_router',
     summary: 'User goal received by specialized execution loop.',
-    payload: { task, roles, runtimeBudget, autonomyPolicy },
+    payload: { task: rawTask, promptWithContext: task, roles, runtimeBudget, autonomyPolicy },
   });
 
   // 🛡️ FILE TRACKER MODE - Behavior depends on task type
@@ -2656,15 +2823,31 @@ export async function executeWithSpecialists(
       : '[SpecializedAgents] Starting specialized agent execution'
   );
 
-  // Soft health check — warn but don't block if cloud providers are available
-  const health = await checkOllamaHealth();
-  if (health.healthy) {
-    log.info(`[MirrorAgents] ✅ Ollama healthy with ${health.models.length} models available`);
+  // Preflight: probe every provider path BEFORE we scaffold a deterministic
+  // template from a keyword match. If nothing is reachable we abort with a
+  // categorized diagnosis so we don't keep regurgitating the same template
+  // on every prompt while the AI is down (DNS / billing / missing keys).
+  const connectivity = await diagnoseProviderConnectivity();
+  if (connectivity.ollama.healthy) {
+    log.info(
+      `[MirrorAgents] ✅ Ollama reachable at ${connectivity.ollama.baseUrl} (${connectivity.ollama.isCloud ? 'cloud' : 'local'})`
+    );
   } else {
     log.warn(
-      `[MirrorAgents] ⚠️ Ollama not reachable (${health.error}). Will use cloud providers if available.`
+      `[MirrorAgents] ⚠️ Ollama unreachable (${connectivity.category}) at ${connectivity.ollama.baseUrl}: ${connectivity.ollama.error || connectivity.ollama.errorCode || 'unknown'}; ` +
+        `keys available — anthropic=${connectivity.hasAnthropicKey}, openai=${connectivity.hasOpenAIKey}`
     );
   }
+  if (!connectivity.hasReachableProvider) {
+    log.warn('[MirrorAgents] ⛔ No reachable AI provider — aborting before deterministic scaffold to avoid template regurgitation');
+    throw new Error(connectivity.message);
+  }
+  // Preserve previous variable name for downstream callers
+  const health = {
+    healthy: connectivity.ollama.healthy,
+    models: [] as string[],
+    error: connectivity.ollama.error,
+  };
 
   // Shared context for agent coordination
   const sharedContext: {
@@ -2686,7 +2869,7 @@ export async function executeWithSpecialists(
   beginPhase('deterministic_scaffold');
   const bootstrappedTools = await bootstrapDeterministicScaffold(
     context.workspacePath,
-    task,
+    rawTask,
     callbacks,
     executionPolicy
   );
@@ -2727,12 +2910,12 @@ export async function executeWithSpecialists(
 
   const existingCanonicalTemplateId =
     !scaffoldApplied && taskMode === 'enhance'
-      ? getExistingCanonicalTemplateId(context.workspacePath, task)
+      ? getExistingCanonicalTemplateId(context.workspacePath, rawTask)
       : null;
   const customizedExistingTemplateFiles = existingCanonicalTemplateId
     ? applyDeterministicTemplateCustomization(
         context.workspacePath,
-        task,
+        rawTask,
         existingCanonicalTemplateId,
         { callbacks }
       )
@@ -2794,20 +2977,6 @@ export async function executeWithSpecialists(
     };
   }
 
-  if (taskMode === 'create' && shouldUseTemplateOnlyAfterScaffold(scaffoldTemplateId)) {
-    log.info(
-      '[SpecializedAgents] Canonical template scaffold applied; returning verified starter before targeted AI edits'
-    );
-    return {
-      results,
-      finalAnalysis,
-      executedTools,
-      scaffoldApplied,
-      scaffoldTemplateId,
-      skippedGenerativePass: true,
-    };
-  }
-
   const requestedModel =
     typeof context.model === 'string' && context.model.trim().length > 0
       ? context.model.trim()
@@ -2819,6 +2988,23 @@ export async function executeWithSpecialists(
   // Get best available model for planning.
   // Ollama cloud models listed first so the agent works out of the box
   // without requiring paid API credits.
+  const seededOllamaModelIds = new Set([
+    DEFAULT_MODEL_IDS.ollamaChat,
+    DEFAULT_MODEL_IDS.ollamaLongContext,
+    DEFAULT_MODEL_IDS.ollamaPremium,
+    'minimax-m2.7:cloud',
+    'glm-5.1:cloud',
+    DEFAULT_MODEL_IDS.ollamaGemmaCloud,
+  ]);
+  const remainingOllamaCloudModels = OLLAMA_CLOUD_MODEL_OPTIONS
+    .filter((model) => !seededOllamaModelIds.has(model.value))
+    .map((model) => ({
+      name: model.label,
+      provider: 'ollama',
+      model: model.value,
+      tier: model.value.includes('flash') || model.value.includes('small') || model.value.includes('nano') ? 'fast' : 'deep',
+    }));
+
   const defaultModelChain = orderBudgetChain([
     {
       name: 'Kimi K2.6 Cloud',
@@ -2832,9 +3018,16 @@ export async function executeWithSpecialists(
       model: DEFAULT_MODEL_IDS.ollamaLongContext,
       tier: 'deep',
     },
+    {
+      name: 'DeepSeek V4 Pro Cloud',
+      provider: 'ollama',
+      model: DEFAULT_MODEL_IDS.ollamaPremium,
+      tier: 'premium',
+    },
     { name: 'MiniMax M2.7 Cloud', provider: 'ollama', model: 'minimax-m2.7:cloud', tier: 'fast' },
     { name: 'GLM 5.1 Cloud', provider: 'ollama', model: 'glm-5.1:cloud', tier: 'deep' },
-    { name: 'Gemma 4 31B Cloud', provider: 'ollama', model: 'gemma4:31b-cloud', tier: 'deep' },
+    { name: 'Gemma 4 31B Cloud', provider: 'ollama', model: DEFAULT_MODEL_IDS.ollamaGemmaCloud, tier: 'deep' },
+    ...remainingOllamaCloudModels,
     {
       name: 'Claude Sonnet 4.6',
       provider: 'anthropic',
@@ -2873,21 +3066,11 @@ export async function executeWithSpecialists(
   assertNotCancelled();
 
   if (!planningModel) {
-    // Instead of failing, provide helpful guidance
-    const health = await checkOllamaHealth();
-    if (!health.healthy) {
-      throw new Error(
-        '❌ Ollama is not running!\n\nStart Ollama with:\n  ollama serve\n\nThen pull a model:\n  ollama pull deepseek-coder:6.7b'
-      );
-    } else {
-      throw new Error(
-        `❌ No suitable models found!\n\nAgentPrime prioritizes CLOUD models for power and reliability.\nYour cloud models should work without local installation.\n\nAvailable models: ${health.models.join(', ') || 'none'}\n\nIf you see connection errors, check your Ollama Cloud API keys in Settings.`
-      );
-    }
+    const diagnosis = await diagnoseProviderConnectivity();
+    throw new Error(`❌ No planning model available.\n\n${diagnosis.message}`);
   }
 
-  const shouldSkipSeparatePlanningAfterScaffold =
-    (scaffoldApplied && taskMode === 'create') || Boolean(existingCanonicalTemplateId);
+  const shouldSkipSeparatePlanningAfterScaffold = Boolean(existingCanonicalTemplateId);
 
   // Step 0: Planning Phase - Break down task into requirements (FAST)
   if (deterministicScaffoldOnly || planningMode === 'skip' || shouldSkipSeparatePlanningAfterScaffold) {
@@ -2969,8 +3152,15 @@ Output as a structured list. Be specific and comprehensive.`;
           ),
         'analysis',
         planningModel.model,
-        1,
-        runtimeBudget
+        detectModelSize(planningModel.model) === 'cloud' ? 0 : 1,
+        runtimeBudget,
+        {
+          label: 'Planning model call',
+          phase: 'planning',
+          provider: planningModel.provider,
+          signal: aiAbortController.signal,
+          onEvent: callbacks?.onRuntimeEvent,
+        }
       );
     } catch (error) {
       if (isAbortError(error)) {
@@ -3101,7 +3291,13 @@ Output as a structured list. Be specific and comprehensive.`;
       orchestratorProvider,
       orchestratorModel,
       scaffoldApplied ? 'project' : 'complex',
-      runtimeBudget
+      runtimeBudget,
+      {
+        label: 'Orchestrator model call',
+        phase: 'orchestrator',
+        onEvent: callbacks?.onRuntimeEvent,
+        signal: aiAbortController.signal,
+      }
     );
 
     orchestratorResponse = result.result;
@@ -3134,15 +3330,9 @@ Output as a structured list. Be specific and comprehensive.`;
         error: error.message,
       });
 
-      // Check what models are actually available for better error message
-      const health = await checkOllamaHealth();
-      let errorMessage = `❌ All models failed! Error: ${error.message}\n\n`;
-
-      if (!health.healthy) {
-        errorMessage += `Ollama is not running!\n\nStart Ollama with:\n  ollama serve\n\nThen pull a model:\n  ollama pull deepseek-coder:6.7b`;
-      } else {
-        errorMessage += `Make sure Ollama has compatible models installed:\n\nAvailable: ${health.models.join(', ') || 'none'}\n\nRecommended models:\n  ollama pull deepseek-coder:6.7b  (fast & reliable)\n  ollama pull llama3.2:8b          (good balance)\n  ollama pull qwen2.5:7b            (smaller qwen)`;
-      }
+      const diagnosis = await diagnoseProviderConnectivity();
+      const errorMessage =
+        `❌ All models failed! Underlying error: ${error.message}\n\n${diagnosis.message}`;
 
       throw new Error(errorMessage);
     }
@@ -3176,7 +3366,7 @@ Output as a structured list. Be specific and comprehensive.`;
       const validation = validateToolCall(
         normalizedToolCall,
         context.workspacePath,
-        task,
+        rawTask,
         {
           specialist: 'tool_orchestrator',
           claimedFiles: getClaimedFilesForRole(blackboard, 'tool_orchestrator'),
@@ -3223,7 +3413,7 @@ Output as a structured list. Be specific and comprehensive.`;
         title: toolTitle,
         specialist: 'tool_orchestrator',
       });
-      const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
+      const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, rawTask);
       captureAutonomyWriteTargets(toolName, toolArgs, result);
       const toolSuccess = result?.success !== false;
       callbacks?.onToolComplete?.({
@@ -3376,7 +3566,13 @@ ${buildSharedContext(sharedContext)}`,
         requestedRoleProvider,
         requestedRoleModel,
         scaffoldApplied ? 'project' : 'complex',
-        runtimeBudget
+        runtimeBudget,
+        {
+          label: `${role} model call`,
+          phase: `specialist:${role}`,
+          onEvent: callbacks?.onRuntimeEvent,
+          signal: aiAbortController.signal,
+        }
       );
 
       const response = specialistResult.result;
@@ -3417,7 +3613,7 @@ ${buildSharedContext(sharedContext)}`,
             const validation = validateToolCall(
               normalizedToolCall,
               context.workspacePath,
-              task,
+              rawTask,
               {
                 specialist: role,
                 claimedFiles: getClaimedFilesForRole(blackboard, role),
@@ -3460,7 +3656,7 @@ ${buildSharedContext(sharedContext)}`,
             }
             reserveAutonomyBudget(toolName);
             callbacks?.onToolStart?.({ type: toolName, title: toolTitle, specialist: role });
-            const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
+            const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, rawTask);
             captureAutonomyWriteTargets(toolName, toolArgs, result);
             const toolSuccess = result?.success !== false;
             callbacks?.onToolComplete?.({
@@ -3616,7 +3812,13 @@ ${buildSharedContext(sharedContext)}`,
         analyst.provider,
         analyst.model,
         'analysis',
-        runtimeBudget
+        runtimeBudget,
+        {
+          label: 'Integration analysis model call',
+          phase: 'integration_analysis',
+          onEvent: callbacks?.onRuntimeEvent,
+          signal: aiAbortController.signal,
+        }
       );
 
       analysis = analysisResult.result;
@@ -3666,7 +3868,7 @@ ${buildSharedContext(sharedContext)}`,
           const validation = validateToolCall(
             normalizedToolCall,
             context.workspacePath,
-            task,
+            rawTask,
             {
               specialist: 'integration_analyst',
               claimedFiles: getClaimedFilesForRole(blackboard, 'integration_analyst'),
@@ -3712,7 +3914,7 @@ ${buildSharedContext(sharedContext)}`,
             title: toolTitle,
             specialist: 'integration_analyst',
           });
-          const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, task);
+      const result = await executeTool(fixedToolCall, context.workspacePath, callbacks, rawTask);
           captureAutonomyWriteTargets(toolName, toolArgs, result);
           const toolSuccess = result?.success !== false;
           callbacks?.onToolComplete?.({

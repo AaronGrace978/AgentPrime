@@ -147,6 +147,22 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
       });
     };
 
+    const handleRuntimeEvent = (data: any) => {
+      const eventType = String(data?.type || 'progress');
+      if (eventType === 'heartbeat' && Number(data?.elapsedMs || 0) < 5000) return;
+      const isFailure = eventType === 'idle_timeout' || eventType === 'total_timeout' || eventType === 'error';
+      const isDone = eventType === 'success' || eventType === 'fallback_success';
+      setCurrentStep({
+        id: `runtime-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        type: eventType.includes('fallback') ? 'review' : 'thinking',
+        status: isFailure ? 'failed' : isDone ? 'completed' : 'in_progress',
+        title: data?.message || data?.label || 'Agent runtime update',
+        description: data?.modelName || data?.phase,
+        startTime: Date.now(),
+        endTime: isFailure || isDone ? Date.now() : undefined,
+      });
+    };
+
     const removeTaskStart = window.agentAPI?.onAgentTaskStart?.((_data) => {
       setCurrentStep({
         id: `step-${Date.now()}`,
@@ -159,12 +175,14 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
     const removeStepStart = window.agentAPI?.onAgentStepStart?.(handleStepStart);
     const removeStepComplete = window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
     const removeFileModified = window.agentAPI?.onAgentFileModified?.(handleFileModified);
+    const removeRuntimeEvent = window.agentAPI?.onAgentRuntimeEvent?.(handleRuntimeEvent);
 
     return () => {
       if (typeof removeTaskStart === 'function') removeTaskStart();
       if (typeof removeStepStart === 'function') removeStepStart();
       if (typeof removeStepComplete === 'function') removeStepComplete();
       if (typeof removeFileModified === 'function') removeFileModified();
+      if (typeof removeRuntimeEvent === 'function') removeRuntimeEvent();
     };
   }, []);
 

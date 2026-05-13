@@ -330,6 +330,92 @@ describe('SpecializedAgentLoop orchestration retry', () => {
     expect(rollbackToCheckpointSpy).toHaveBeenCalledWith('checkpoint_1');
   });
 
+  it('rolls back before commit when route verification rejects modified files', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-route-rollback-');
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      model: 'qwen-test',
+      agentRoutePlan: {
+        verificationPlan: {
+          strategy: 'diagnostics',
+          skipProjectVerification: false,
+        },
+      },
+      ideContext: {
+        diagnostics: [
+          {
+            filePath: 'src/main.tsx',
+            line: 3,
+            column: 8,
+            message: 'Type error remains',
+            severity: 'error',
+          },
+        ],
+      },
+    } as any);
+
+    jest.spyOn(specializedAgents, 'routeToSpecialists').mockReturnValue(['javascript_specialist'] as any);
+    jest.spyOn(specializedAgents, 'executeWithSpecialists').mockResolvedValue({
+      results: [],
+      finalAnalysis: '',
+      executedTools: [
+        {
+          toolCall: { name: 'write_file', arguments: { path: 'src/main.tsx' } },
+          result: { action: 'write_file', path: 'src/main.tsx', success: true },
+          specialist: 'javascript_specialist',
+        },
+      ],
+      scaffoldApplied: false,
+      scaffoldTemplateId: undefined,
+      skippedGenerativePass: false,
+    } as any);
+    jest.spyOn(loop as any, 'getProjectFiles').mockReturnValue([]);
+    jest.spyOn(loop as any, 'detectLanguage').mockReturnValue('typescript');
+    jest.spyOn(loop as any, 'detectProjectType').mockReturnValue('application');
+    jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: true,
+      missingFiles: [],
+      errors: [],
+      createdFiles: ['src/main.tsx'],
+    });
+    jest.spyOn(loop as any, 'buildResponse').mockReturnValue('route validation failed response');
+    jest.spyOn(loop as any, 'finalizeProject').mockResolvedValue(undefined);
+    jest.spyOn(ProjectRunner, 'autoRun').mockResolvedValue({
+      success: true,
+      validation: { issues: [] },
+      installResult: null,
+      buildResult: null,
+      runResult: null,
+    } as any);
+    jest.spyOn(projectTester, 'testProjectInBrowser').mockResolvedValue({
+      passed: true,
+      score: 92,
+      issues: [],
+      suggestions: [],
+      consoleErrors: [],
+      consoleWarnings: [],
+      testedElements: [],
+    });
+
+    jest.spyOn(transactionManager, 'startTransaction').mockReturnValue({
+      getOperationCount: () => 1,
+      getOperations: () => [{ path: 'src/main.tsx' }],
+    } as any);
+    const commitSpy = jest.spyOn(transactionManager, 'commitTransaction').mockImplementation(() => undefined);
+    const rollbackSpy = jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    jest.spyOn(reviewSessionManager, 'createSessionFromOperations').mockReturnValue(null);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run('Fix the remaining TypeScript error');
+
+    expect(result).toContain('Validation failed');
+    expect(rollbackSpy).toHaveBeenCalled();
+    expect(commitSpy).not.toHaveBeenCalled();
+  });
+
   it('falls back to deterministic scaffold review after scaffold-first create retries still fail', async () => {
     const workspacePath = createTempDir('agentprime-specialized-scaffold-fallback-');
     const loop = new SpecializedAgentLoop({ workspacePath, model: 'qwen-test' } as any);

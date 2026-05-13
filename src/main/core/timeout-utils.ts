@@ -1,3 +1,6 @@
+import { recordAgentTrace, type AgentTraceEventType } from '../agent/agent-trace-recorder';
+import { ALL_OLLAMA_CLOUD_MODEL_IDS } from '../../types/ollama-cloud-models';
+
 /**
  * Timeout Utilities for AgentPrime
  * Provides timeout wrappers for operations to prevent infinite hangs
@@ -16,6 +19,14 @@ export class TimeoutError extends Error {
     super(message);
     this.name = 'TimeoutError';
     this.shouldFallback = shouldFallback;
+  }
+}
+
+function trace(type: AgentTraceEventType, data: Record<string, unknown>): void {
+  try {
+    recordAgentTrace(type, data);
+  } catch {
+    // Timeout utilities must work outside agent runs and tests.
   }
 }
 
@@ -57,6 +68,71 @@ export type RuntimeBudgetMode = 'instant' | 'standard' | 'deep';
  */
 export type ModelSize = 'tiny' | 'small' | 'medium' | 'large' | 'xlarge' | 'cloud';
 type OperationType = 'chat' | 'completion' | 'analysis' | 'complex' | 'project';
+
+export type RuntimeEventType =
+  | 'start'
+  | 'heartbeat'
+  | 'progress'
+  | 'success'
+  | 'error'
+  | 'idle_timeout'
+  | 'total_timeout'
+  | 'abort'
+  | 'cooldown'
+  | 'fallback_start'
+  | 'fallback_success'
+  | 'fallback_failure';
+
+export interface RuntimeHeartbeatEvent {
+  type: RuntimeEventType;
+  label: string;
+  phase?: string;
+  provider?: string;
+  modelName?: string;
+  operationType?: OperationType;
+  runtimeBudget?: RuntimeBudgetMode;
+  elapsedMs: number;
+  idleMs?: number;
+  timeoutMs?: number;
+  message?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type RuntimeEventSink = (event: RuntimeHeartbeatEvent) => void;
+
+export interface RuntimeGuardHandle {
+  signal: AbortSignal;
+  markProgress: (message?: string, metadata?: Record<string, unknown>) => void;
+  elapsedMs: () => number;
+}
+
+export interface RuntimeGuardOptions {
+  label: string;
+  phase?: string;
+  totalTimeoutMs: number;
+  idleTimeoutMs?: number;
+  heartbeatIntervalMs?: number;
+  shouldFallback?: boolean;
+  timeoutMessage?: string;
+  signal?: AbortSignal;
+  onEvent?: RuntimeEventSink;
+  provider?: string;
+  modelName?: string;
+  operationType?: OperationType;
+  runtimeBudget?: RuntimeBudgetMode;
+}
+
+export interface RuntimeOperationOptions {
+  label?: string;
+  phase?: string;
+  provider?: string;
+  modelName?: string;
+  signal?: AbortSignal;
+  totalTimeoutMs?: number;
+  idleTimeoutMs?: number;
+  heartbeatIntervalMs?: number;
+  onEvent?: RuntimeEventSink;
+}
 
 /**
  * Detect model size from model name for adaptive timeouts
@@ -162,6 +238,201 @@ export async function withTimeout<T>(
   }
 }
 
+function safeEmitRuntimeEvent(
+  sink: RuntimeEventSink | undefined,
+  event: RuntimeHeartbeatEvent
+): void {
+  if (!sink) return;
+  try {
+    sink(event);
+  } catch {
+    // Runtime progress must never break the operation it observes.
+  }
+}
+
+export async function withRuntimeGuard<T>(
+  operation: (handle: RuntimeGuardHandle) => Promise<T>,
+  options: RuntimeGuardOptions
+): Promise<T> {
+  const startedAt = Date.now();
+  let lastProgressAt = startedAt;
+  let settled = false;
+  let internalTimeoutAbort = false;
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let totalTimer: NodeJS.Timeout | null = null;
+  const controller = new AbortController();
+
+  const elapsedMs = () => Date.now() - startedAt;
+  const baseEvent = (
+    type: RuntimeEventType,
+    extra: Partial<RuntimeHeartbeatEvent> = {}
+  ): RuntimeHeartbeatEvent => ({
+    type,
+    label: options.label,
+    phase: options.phase,
+    provider: options.provider,
+    modelName: options.modelName,
+    operationType: options.operationType,
+    runtimeBudget: options.runtimeBudget,
+    elapsedMs: elapsedMs(),
+    idleMs: Date.now() - lastProgressAt,
+    ...extra,
+  });
+
+  const abortFromParent = () => {
+    try {
+      controller.abort();
+    } catch {
+      // ignore
+    }
+  };
+
+  if (options.signal?.aborted) {
+    throw new AbortError('Request aborted');
+  }
+  options.signal?.addEventListener('abort', abortFromParent, { once: true });
+
+  const cleanup = () => {
+    settled = true;
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (totalTimer) clearTimeout(totalTimer);
+    options.signal?.removeEventListener('abort', abortFromParent);
+  };
+
+  const markProgress = (message?: string, metadata?: Record<string, unknown>) => {
+    lastProgressAt = Date.now();
+    safeEmitRuntimeEvent(options.onEvent, baseEvent('progress', { message, metadata }));
+  };
+
+  safeEmitRuntimeEvent(options.onEvent, baseEvent('start', {
+    timeoutMs: options.totalTimeoutMs,
+    metadata: {
+      idleTimeoutMs: options.idleTimeoutMs,
+      heartbeatIntervalMs: options.heartbeatIntervalMs,
+    },
+  }));
+
+  const guardedPromise = operation({
+    signal: controller.signal,
+    markProgress,
+    elapsedMs,
+  });
+
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    totalTimer = setTimeout(() => {
+      if (settled) return;
+      internalTimeoutAbort = true;
+      const message =
+        options.timeoutMessage ||
+        `${options.label} timed out after ${Math.round(options.totalTimeoutMs / 1000)}s`;
+      safeEmitRuntimeEvent(options.onEvent, baseEvent('total_timeout', {
+        timeoutMs: options.totalTimeoutMs,
+        message,
+      }));
+      reject(new TimeoutError(message, options.totalTimeoutMs, options.shouldFallback ?? true));
+      try {
+        controller.abort();
+      } catch {
+        // ignore
+      }
+    }, options.totalTimeoutMs);
+
+    const idleTimeoutMs = options.idleTimeoutMs;
+    const heartbeatIntervalMs =
+      options.heartbeatIntervalMs ||
+      Math.max(1000, Math.min(30000, Math.floor((idleTimeoutMs || 30000) / 2)));
+    heartbeatTimer = setInterval(() => {
+      if (settled) return;
+      const idleMs = Date.now() - lastProgressAt;
+      safeEmitRuntimeEvent(options.onEvent, baseEvent('heartbeat', {
+        idleMs,
+        timeoutMs: idleTimeoutMs,
+        message: idleTimeoutMs
+          ? `Waiting for progress (${Math.round(idleMs / 1000)}s idle)`
+          : `Waiting (${Math.round(elapsedMs() / 1000)}s elapsed)`,
+      }));
+      if (idleTimeoutMs && idleMs >= idleTimeoutMs) {
+        internalTimeoutAbort = true;
+        const message = `${options.label} made no progress for ${Math.round(idleTimeoutMs / 1000)}s`;
+        safeEmitRuntimeEvent(options.onEvent, baseEvent('idle_timeout', {
+          idleMs,
+          timeoutMs: idleTimeoutMs,
+          message,
+        }));
+        reject(new TimeoutError(message, idleTimeoutMs, options.shouldFallback ?? true));
+        try {
+          controller.abort();
+        } catch {
+          // ignore
+        }
+      }
+    }, heartbeatIntervalMs);
+
+    controller.signal.addEventListener(
+      'abort',
+      () => {
+        if (settled) return;
+        if (internalTimeoutAbort) return;
+        safeEmitRuntimeEvent(options.onEvent, baseEvent('abort', {
+          message: 'Operation aborted',
+        }));
+        reject(new AbortError('Request aborted'));
+      },
+      { once: true }
+    );
+  });
+
+  try {
+    const result = await Promise.race([guardedPromise, timeoutPromise]);
+    safeEmitRuntimeEvent(options.onEvent, baseEvent('success'));
+    return result;
+  } catch (error) {
+    if (!isAbortError(error) && !(error instanceof TimeoutError)) {
+      safeEmitRuntimeEvent(options.onEvent, baseEvent('error', {
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+    throw error;
+  } finally {
+    cleanup();
+  }
+}
+
+export class RuntimeCooldown {
+  private nextAvailableAt = new Map<string, number>();
+
+  async waitForTurn(
+    key: string,
+    minIntervalMs: number,
+    onEvent?: RuntimeEventSink,
+    metadata: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (minIntervalMs <= 0) return;
+    const now = Date.now();
+    const availableAt = this.nextAvailableAt.get(key) || 0;
+    const waitMs = Math.max(0, availableAt - now);
+    this.nextAvailableAt.set(key, Math.max(now, availableAt) + minIntervalMs);
+    if (waitMs > 0) {
+      safeEmitRuntimeEvent(onEvent, {
+        type: 'cooldown',
+        label: key,
+        elapsedMs: 0,
+        timeoutMs: waitMs,
+        message: `Cooling down ${key} for ${waitMs}ms`,
+        metadata,
+      });
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+
+  reset(): void {
+    this.nextAvailableAt.clear();
+  }
+}
+
+export const sharedModelCallCooldown = new RuntimeCooldown();
+export const sharedToolCallCooldown = new RuntimeCooldown();
+
 /**
  * Base timeouts for different operation types (in ms)
  * These are multiplied by model size factor
@@ -188,16 +459,40 @@ const MAX_TIMEOUTS: Record<OperationType, number> = {
 };
 
 /**
- * Additional caps for cloud models so fallback engages sooner.
- * These values are intentionally lower than MAX_TIMEOUTS but still high enough
- * for large model responses under normal network conditions.
+ * Budget-aware cloud caps keep the IDE interactive. "Deep" remains patient for
+ * serious builds; "standard" should fail over quickly enough that the UI does
+ * not feel jammed when a cloud model stalls.
  */
-const CLOUD_TIMEOUT_CAPS: Partial<Record<OperationType, number>> = {
-  chat: 120000, // 2 minutes
-  analysis: 180000, // 3 minutes
-  complex: 240000, // 4 minutes
-  project: 300000, // 5 minutes
+const CLOUD_TIMEOUT_CAPS_BY_BUDGET: Record<RuntimeBudgetMode, Partial<Record<OperationType, number>>> = {
+  instant: {
+    chat: 30000,
+    analysis: 45000,
+    complex: 60000,
+    project: 90000,
+  },
+  standard: {
+    chat: 90000,
+    analysis: 120000,
+    complex: 240000,
+    project: 300000,
+  },
+  deep: {
+    chat: 180000,
+    analysis: 300000,
+    complex: 360000,
+    project: 480000,
+  },
 };
+
+function getCloudIdleTimeout(operationType: OperationType, runtimeBudget: RuntimeBudgetMode): number | undefined {
+  return CLOUD_TIMEOUT_CAPS_BY_BUDGET[runtimeBudget]?.[operationType];
+}
+
+function getModelCallCooldownMs(operationType: OperationType, modelSize: ModelSize): number {
+  if (operationType === 'completion') return 0;
+  if (modelSize === 'cloud') return 250;
+  return 75;
+}
 
 /**
  * Wrap AI operations with ADAPTIVE timeouts based on model size
@@ -210,7 +505,8 @@ export async function withAITimeout<T>(
   aiPromise: Promise<T>,
   operationType: OperationType = 'chat',
   modelName?: string,
-  runtimeBudget: RuntimeBudgetMode = 'standard'
+  runtimeBudget: RuntimeBudgetMode = 'standard',
+  options: RuntimeOperationOptions = {}
 ): Promise<T> {
   const baseTimeout = BASE_TIMEOUTS[operationType];
 
@@ -220,21 +516,76 @@ export async function withAITimeout<T>(
     getModelTimeoutMultiplier(modelSize) * getRuntimeBudgetTimeoutMultiplier(runtimeBudget);
   const adaptiveTimeout = Math.round(baseTimeout * multiplier);
   const genericCap = MAX_TIMEOUTS[operationType];
-  const cloudCap = modelSize === 'cloud' ? CLOUD_TIMEOUT_CAPS[operationType] : undefined;
-  const timeout = Math.min(adaptiveTimeout, genericCap, cloudCap ?? Number.POSITIVE_INFINITY);
+  const timeout = options.totalTimeoutMs ?? Math.min(adaptiveTimeout, genericCap);
+  const cloudIdleTimeout =
+    modelSize === 'cloud' ? getCloudIdleTimeout(operationType, runtimeBudget) : undefined;
+  const idleTimeout =
+    options.idleTimeoutMs ??
+    (cloudIdleTimeout ? Math.min(cloudIdleTimeout, timeout) : Math.min(timeout, baseTimeout));
 
   const errorMsg = `${operationType} operation timed out after ${Math.round(timeout / 1000)}s (model: ${modelName || 'unknown'}, size: ${modelSize}, budget: ${runtimeBudget}). Falling back to faster model...`;
 
   const timeoutParts = [
     `${operationType} ${modelSize}/${runtimeBudget}`,
-    `timeout=${Math.round(timeout / 1000)}s`,
+    `total=${Math.round(timeout / 1000)}s`,
+    `idle=${Math.round(idleTimeout / 1000)}s`,
   ];
-  if (timeout < adaptiveTimeout) {
+  if (timeout < adaptiveTimeout || timeout < genericCap) {
     timeoutParts.push(`adaptive=${Math.round(adaptiveTimeout / 1000)}s capped for fallback`);
   }
   console.log(`[Timeout] ${timeoutParts.join(' ')}`);
+  trace('model_call_start', {
+    operationType,
+    modelName,
+    modelSize,
+    runtimeBudget,
+    timeoutMs: timeout,
+    idleTimeoutMs: idleTimeout,
+    adaptiveTimeoutMs: adaptiveTimeout,
+  });
 
-  return withTimeout(aiPromise, timeout, errorMsg);
+  try {
+    const result = await withRuntimeGuard(() => aiPromise, {
+      label: options.label || `${operationType} model call`,
+      phase: options.phase || 'model',
+      provider: options.provider,
+      modelName,
+      operationType,
+      runtimeBudget,
+      totalTimeoutMs: timeout,
+      idleTimeoutMs: idleTimeout,
+      heartbeatIntervalMs: options.heartbeatIntervalMs,
+      signal: options.signal,
+      onEvent: options.onEvent,
+      timeoutMessage: errorMsg,
+      shouldFallback: true,
+    });
+    trace('model_call_success', {
+      operationType,
+      modelName,
+      runtimeBudget,
+      timeoutMs: timeout,
+    });
+    return result;
+  } catch (error) {
+    if (error instanceof TimeoutError) {
+      trace('model_call_timeout', {
+        operationType,
+        modelName,
+        runtimeBudget,
+        timeoutMs: timeout,
+        error: error.message,
+      });
+    } else {
+      trace('model_call_error', {
+        operationType,
+        modelName,
+        runtimeBudget,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
+  }
 }
 
 /**
@@ -265,15 +616,9 @@ export async function withFileTimeout<T>(
  * Using Anthropic/OpenAI since they're confirmed working!
  */
 export const FALLBACK_MODEL_CHAIN = [
-  // Prefer faster interactive models before deeper long-running fallbacks.
-  { provider: 'ollama', model: 'kimi-k2.6:cloud', size: 'cloud' as ModelSize },
-  { provider: 'ollama', model: 'deepseek-v4-flash:cloud', size: 'cloud' as ModelSize },
-  { provider: 'ollama', model: 'minimax-m2.7:cloud', size: 'cloud' as ModelSize },
-  { provider: 'ollama', model: 'gemma4', size: 'cloud' as ModelSize },
+  ...ALL_OLLAMA_CLOUD_MODEL_IDS.map((model) => ({ provider: 'ollama', model, size: 'cloud' as ModelSize })),
   { provider: 'anthropic', model: 'claude-3-5-haiku-20241022', size: 'fast' as ModelSize },
   { provider: 'openai', model: 'gpt-4o-mini', size: 'fast' as ModelSize },
-  { provider: 'ollama', model: 'qwen3-coder-next:cloud', size: 'cloud' as ModelSize },
-  { provider: 'ollama', model: 'qwen3-coder:480b-cloud', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-sonnet-4-6', size: 'cloud' as ModelSize },
   { provider: 'openai', model: 'gpt-4o', size: 'cloud' as ModelSize },
   { provider: 'anthropic', model: 'claude-opus-4-7', size: 'cloud' as ModelSize },
@@ -372,6 +717,11 @@ export async function withRetry<T>(
       // Shorter backoff: 500ms, 1s (don't waste time on slow models)
       const delay = baseDelay * Math.pow(2, attempt);
       console.log(`[Timeout] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+      trace('model_call_retry', {
+        attempt: attempt + 1,
+        delayMs: delay,
+        error: lastError.message,
+      });
 
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
@@ -394,10 +744,21 @@ export async function withAITimeoutAndRetry<T>(
   operationType: OperationType = 'chat',
   modelName?: string,
   maxRetries: number = 1,
-  runtimeBudget: RuntimeBudgetMode = 'standard'
+  runtimeBudget: RuntimeBudgetMode = 'standard',
+  options: RuntimeOperationOptions = {}
 ): Promise<T> {
+  const modelSize = modelName ? detectModelSize(modelName) : 'medium';
+  const cooldownMs = getModelCallCooldownMs(operationType, modelSize);
   return withRetry(
-    () => withAITimeout(aiOperation(), operationType, modelName, runtimeBudget),
+    async () => {
+      await sharedModelCallCooldown.waitForTurn(
+        `${operationType}:${modelName || 'unknown'}`,
+        cooldownMs,
+        options.onEvent,
+        { operationType, modelName, runtimeBudget }
+      );
+      return withAITimeout(aiOperation(), operationType, modelName, runtimeBudget, options);
+    },
     maxRetries,
     500
   );
@@ -412,7 +773,8 @@ export async function withSmartFallback<T>(
   primaryProvider: string,
   primaryModel: string,
   operationType: OperationType = 'chat',
-  runtimeBudget: RuntimeBudgetMode = 'standard'
+  runtimeBudget: RuntimeBudgetMode = 'standard',
+  options: RuntimeOperationOptions = {}
 ): Promise<RetryResult<T>> {
   let attempts = 0;
 
@@ -431,12 +793,29 @@ export async function withSmartFallback<T>(
   try {
     attempts++;
     console.log(`[SmartFallback] Trying primary: ${primaryProvider}/${primaryModel}`);
+    safeEmitRuntimeEvent(options.onEvent, {
+      type: 'start',
+      label: options.label || `${operationType} primary model`,
+      phase: options.phase || 'model',
+      provider: primaryProvider,
+      modelName: primaryModel,
+      operationType,
+      runtimeBudget,
+      elapsedMs: 0,
+      message: `Trying primary model ${primaryProvider}/${primaryModel}`,
+    });
     const result = await withAITimeoutAndRetry(
       () => operation(primaryProvider, primaryModel),
       operationType,
       primaryModel,
       primaryRetries,
-      runtimeBudget
+      runtimeBudget,
+      {
+        ...options,
+        provider: primaryProvider,
+        modelName: primaryModel,
+        label: options.label || `${operationType} primary model`,
+      }
     );
     const servedBy = (result as any)?.servedBy;
     return {
@@ -455,6 +834,17 @@ export async function withSmartFallback<T>(
     }
 
     console.log(`[SmartFallback] Primary model failed: ${(primaryError as Error).message}`);
+    safeEmitRuntimeEvent(options.onEvent, {
+      type: 'fallback_start',
+      label: options.label || `${operationType} fallback`,
+      phase: options.phase || 'fallback',
+      provider: primaryProvider,
+      modelName: primaryModel,
+      operationType,
+      runtimeBudget,
+      elapsedMs: 0,
+      message: `Primary model failed: ${(primaryError as Error).message}`,
+    });
 
     recordProviderFailure(primaryProvider);
 
@@ -472,14 +862,44 @@ export async function withSmartFallback<T>(
       try {
         attempts++;
         console.log(`[SmartFallback] Trying fallback: ${fallback.provider}/${fallback.model}`);
+        safeEmitRuntimeEvent(options.onEvent, {
+          type: 'fallback_start',
+          label: options.label || `${operationType} fallback`,
+          phase: options.phase || 'fallback',
+          provider: fallback.provider,
+          modelName: fallback.model,
+          operationType,
+          runtimeBudget,
+          elapsedMs: 0,
+          message: `Trying fallback model ${fallback.provider}/${fallback.model}`,
+          metadata: { attempts },
+        });
         const result = await withAITimeoutAndRetry(
           () => operation(fallback.provider, fallback.model),
           operationType,
           fallback.model,
           0,
-          runtimeBudget
+          runtimeBudget,
+          {
+            ...options,
+            provider: fallback.provider,
+            modelName: fallback.model,
+            label: options.label || `${operationType} fallback model`,
+          }
         );
         console.log(`[SmartFallback] ✅ Fallback succeeded: ${fallback.model}`);
+        safeEmitRuntimeEvent(options.onEvent, {
+          type: 'fallback_success',
+          label: options.label || `${operationType} fallback`,
+          phase: options.phase || 'fallback',
+          provider: fallback.provider,
+          modelName: fallback.model,
+          operationType,
+          runtimeBudget,
+          elapsedMs: 0,
+          message: `Fallback succeeded: ${fallback.provider}/${fallback.model}`,
+          metadata: { attempts },
+        });
         const servedBy = (result as any)?.servedBy;
         return {
           result,
@@ -497,6 +917,18 @@ export async function withSmartFallback<T>(
         console.log(
           `[SmartFallback] Fallback ${fallback.model} failed: ${errMsg.substring(0, 200)}`
         );
+        safeEmitRuntimeEvent(options.onEvent, {
+          type: 'fallback_failure',
+          label: options.label || `${operationType} fallback`,
+          phase: options.phase || 'fallback',
+          provider: fallback.provider,
+          modelName: fallback.model,
+          operationType,
+          runtimeBudget,
+          elapsedMs: 0,
+          message: errMsg,
+          metadata: { attempts },
+        });
         recordProviderFailure(fallback.provider);
         continue;
       }

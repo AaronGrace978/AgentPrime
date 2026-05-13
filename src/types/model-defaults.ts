@@ -4,6 +4,8 @@ export const DEFAULT_MODEL_IDS = {
   ollamaSpecialist: 'minimax-m2.7:cloud',
   ollamaAnalysis: 'deepseek-v3.1:671b-cloud',
   ollamaLongContext: 'deepseek-v4-flash:cloud',
+  ollamaPremium: 'deepseek-v4-pro:cloud',
+  ollamaGemmaCloud: 'gemma4:31b-cloud',
   anthropic: 'claude-sonnet-4-6',
   openai: 'gpt-5.4',
   openaiFast: 'gpt-5.4-mini',

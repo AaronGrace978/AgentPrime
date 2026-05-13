@@ -74,6 +74,7 @@ Confidence snapshot:
 
 - Typecheck, targeted regression coverage, and template/browser smoke work are part of the normal hardening path.
 - The riskiest active areas are now less about “can the app render?” and more about tightening the agent runtime, verification loop, and UX polish.
+- Release hygiene is tracked in `docs/RELEASE_READINESS.md`, including local data policy, backend packaging preflight, and dependency update expectations.
 
 This is still an active build, but it now behaves much more like an actual AI IDE product than a prototype with good intentions.
 

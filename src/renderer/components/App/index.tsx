@@ -8,7 +8,7 @@
  * - Optional git sidebar
  */
 
-import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
 import MonacoEditor, { MonacoEditorRef } from '../MonacoEditor';
 import CreateModal from '../CreateModal';
 import TemplateModal from '../TemplateModal';
@@ -21,6 +21,7 @@ import SettingsPanel from '../SettingsPanel';
 import StatusBar from '../StatusBar';
 import CommandPalette from '../CommandPalette';
 import FileTree from '../FileTree';
+import ProblemsPanel from '../ProblemsPanel';
 import { PanelSkeleton, PageSkeleton } from '../Skeleton';
 import { ToastContainer, useToast } from '../Toast';
 import { getLanguage } from '../../utils';
@@ -63,7 +64,7 @@ import {
   type ReviewVerificationState,
 } from './reviewFlow';
 
-import { OpenFile, FileItem, Command } from './types';
+import { OpenFile, FileItem, Command, CodeIssue } from './types';
 import {
   useFileOperations,
   useTabManagement,
@@ -87,9 +88,22 @@ const LazyPanelFallback: React.FC<{ lines?: number; padded?: boolean }> = ({
   </div>
 );
 
+type WorkbenchTaskKind = 'install' | 'build' | 'test' | 'run' | 'verify' | 'stop';
+type WorkbenchTaskRun = {
+  id: string;
+  kind: WorkbenchTaskKind;
+  status: 'running' | 'passed' | 'failed';
+  startedAt: number;
+  finishedAt?: number;
+  summary: string;
+  output?: string;
+};
+
 function App() {
   const toast = useToast();
   const editorRef = useRef<MonacoEditorRef | null>(null);
+  const pendingNavigationRef = useRef<{ filePath: string; line: number; column: number } | null>(null);
+  const restoredWorkspaceRef = useRef<string | null>(null);
 
   const {
     openFiles,
@@ -163,7 +177,11 @@ function App() {
   const [systemDoctorLoading, setSystemDoctorLoading] = useState(false);
   const [systemDoctorError, setSystemDoctorError] = useState<string | null>(null);
   const [systemPanelOpen, setSystemPanelOpen] = useState(false);
-  const [codeIssues] = useState<any[]>([]);
+  const [codeIssues, setCodeIssues] = useState<CodeIssue[]>([]);
+  const [gitBranch, setGitBranch] = useState<string | null>(null);
+  const [referenceResults, setReferenceResults] = useState<{ word: string; references: any[] } | null>(null);
+  const [activeBottomPanel, setActiveBottomPanel] = useState<'terminal' | 'problems' | 'output' | 'tasks'>('terminal');
+  const [taskRuns, setTaskRuns] = useState<WorkbenchTaskRun[]>([]);
   const [appSettings, setAppSettings] = useState<any>({
     theme: 'dark',
     fontSize: 14,
@@ -181,6 +199,16 @@ function App() {
   const fileContent = activeFile?.content || '';
   const hasChanges = activeFile?.isDirty || false;
   const workspaceName = currentPath ? currentPath.split(/[/\\]/).pop() || 'Workspace' : 'AgentPrime';
+  const selectedFileIssues = useMemo(() => {
+    if (!selectedFile) return [];
+    return codeIssues.filter((issue) => issue.filePath === selectedFile.path && issue.origin !== 'language');
+  }, [codeIssues, selectedFile]);
+  const problemCounts = useMemo(() => ({
+    errors: codeIssues.filter((issue) => issue.severity === 'error').length,
+    warnings: codeIssues.filter((issue) => issue.severity === 'warning').length,
+  }), [codeIssues]);
+  const latestTaskStatus = taskRuns[0]?.status || null;
+  const workspaceStorageKey = currentPath ? `agentprime:workspace:${currentPath}` : null;
 
   // Keep backend in sync with the active file for completion context
   useEffect(() => {
@@ -271,6 +299,111 @@ function App() {
     initWorkspace();
   }, [loadDirectory]);
 
+  useEffect(() => {
+    if (!workspaceStorageKey || restoredWorkspaceRef.current === currentPath) return;
+    restoredWorkspaceRef.current = currentPath;
+
+    const restoreWorkspaceState = async () => {
+      try {
+        const raw = window.localStorage.getItem(workspaceStorageKey);
+        if (!raw) return;
+        const saved = JSON.parse(raw) as {
+          openFiles?: string[];
+          activeFilePath?: string;
+          activeBottomPanel?: typeof activeBottomPanel;
+          fileExplorerOpen?: boolean;
+          gitPanelOpen?: boolean;
+        };
+
+        if (saved.activeBottomPanel) setActiveBottomPanel(saved.activeBottomPanel);
+        if (typeof saved.fileExplorerOpen === 'boolean') setFileExplorerOpen(saved.fileExplorerOpen);
+        if (typeof saved.gitPanelOpen === 'boolean') setGitPanelOpen(saved.gitPanelOpen);
+
+        const paths = Array.isArray(saved.openFiles) ? saved.openFiles.slice(0, 20) : [];
+        if (paths.length === 0 || openFiles.length > 0) return;
+
+        const restoredFiles = await Promise.all(paths.map(async (filePath): Promise<OpenFile | null> => {
+          try {
+            const result = await window.agentAPI.readFile(filePath);
+            if (typeof result?.content !== 'string') return null;
+            const restoredFile: OpenFile = {
+              file: {
+                name: filePath.split(/[/\\]/).pop() || filePath,
+                path: filePath,
+                is_dir: false,
+                extension: filePath.includes('.') ? filePath.split('.').pop() || null : null,
+              },
+              content: result.content,
+              originalContent: result.content,
+              isDirty: false,
+            };
+            return restoredFile;
+          } catch {
+            return null;
+          }
+        }));
+
+        const validFiles = restoredFiles.filter((file): file is OpenFile => Boolean(file));
+        if (validFiles.length > 0) {
+          setOpenFiles(validFiles);
+          const activeIndex = validFiles.findIndex((file) => file.file.path === saved.activeFilePath);
+          setActiveFileIndex(activeIndex >= 0 ? activeIndex : 0);
+        }
+      } catch (error) {
+        console.warn('Failed to restore workspace state:', error);
+      }
+    };
+
+    void restoreWorkspaceState();
+  }, [activeBottomPanel, currentPath, openFiles.length, setActiveFileIndex, setOpenFiles, workspaceStorageKey]);
+
+  useEffect(() => {
+    if (!workspaceStorageKey) return;
+    const payload = {
+      openFiles: openFiles.map((file) => file.file.path),
+      activeFilePath: activeFile?.file.path,
+      activeBottomPanel,
+      fileExplorerOpen,
+      gitPanelOpen,
+    };
+    try {
+      window.localStorage.setItem(workspaceStorageKey, JSON.stringify(payload));
+    } catch (error) {
+      console.warn('Failed to persist workspace state:', error);
+    }
+  }, [activeBottomPanel, activeFile?.file.path, fileExplorerOpen, gitPanelOpen, openFiles, workspaceStorageKey]);
+
+  useEffect(() => {
+    if (!appSettings.autoSave || !activeFile?.isDirty) return;
+    const timeout = window.setTimeout(() => {
+      void saveFile();
+    }, 1200);
+    return () => window.clearTimeout(timeout);
+  }, [activeFile?.content, activeFile?.isDirty, appSettings.autoSave, saveFile]);
+
+  useEffect(() => {
+    const refreshCleanActiveFile = async () => {
+      if (!activeFile || activeFile.isDirty) return;
+      try {
+        const result = await window.agentAPI.readFile(activeFile.file.path);
+        const latestContent = result?.content;
+        if (typeof latestContent === 'string' && latestContent !== activeFile.originalContent) {
+          setOpenFiles((prev) => prev.map((file, index) => (
+            index === activeFileIndex
+              ? { ...file, content: latestContent, originalContent: latestContent, isDirty: false }
+              : file
+          )));
+          toast.info('File Refreshed', activeFile.file.name);
+        }
+      } catch {
+        // Ignore focus refresh errors; the file may have been removed.
+      }
+    };
+
+    window.addEventListener('focus', refreshCleanActiveFile);
+    return () => window.removeEventListener('focus', refreshCleanActiveFile);
+  }, [activeFile, activeFileIndex, setOpenFiles, toast]);
+
   const handleSettingsChange = useCallback(async (newSettings: any) => {
     try {
       const brainToggleChanged =
@@ -297,6 +430,7 @@ function App() {
 
   const runScript = useCallback(() => {
     if (selectedFile) {
+      setActiveBottomPanel('output');
       executeScript(selectedFile);
     }
   }, [selectedFile, executeScript]);
@@ -374,6 +508,76 @@ function App() {
     };
   }, [activeFile]);
 
+  const handleLanguageDiagnosticsChange = useCallback((filePath: string, diagnostics: CodeIssue[]) => {
+    const normalizedDiagnostics = diagnostics.map((diagnostic, index) => ({
+      ...diagnostic,
+      id: `language:${filePath}:${diagnostic.line}:${diagnostic.column}:${diagnostic.ruleId || index}`,
+      filePath,
+      origin: 'language' as const,
+      source: diagnostic.source || 'language',
+    }));
+
+    setCodeIssues((prev) => [
+      ...prev.filter((issue) => !(issue.filePath === filePath && issue.origin === 'language')),
+      ...normalizedDiagnostics,
+    ]);
+  }, []);
+
+  const handleTerminalErrorsDetected = useCallback((errors: Array<{ type: string; message: string; line: string }>) => {
+    const diagnostics = errors.map((error, index) => ({
+      id: `terminal:${Date.now()}:${index}`,
+      filePath: selectedFile?.path || currentPath || 'Terminal',
+      line: 1,
+      column: 1,
+      message: error.message || error.line,
+      severity: 'error' as const,
+      ruleId: error.type || 'terminal-error',
+      source: 'terminal',
+      origin: 'terminal' as const,
+    }));
+
+    setCodeIssues((prev) => [
+      ...prev.filter((issue) => issue.origin !== 'terminal').slice(-100),
+      ...diagnostics,
+    ]);
+  }, [currentPath, selectedFile?.path]);
+
+  const handleVerificationDiagnostics = useCallback((verification: ReviewVerificationState, workspace: string) => {
+    const findings = verification.findings || [];
+    const findingDiagnostics: CodeIssue[] = findings.flatMap((finding, findingIndex) => {
+      const files = finding.files?.length ? finding.files : [workspace];
+      return files.map((filePath, fileIndex) => ({
+        id: `verification:${finding.stage}:${findingIndex}:${fileIndex}`,
+        filePath,
+        line: 1,
+        column: 1,
+        message: finding.summary,
+        severity: finding.severity === 'info' ? 'warning' : (finding.severity === 'warning' ? 'warning' : 'error'),
+        ruleId: finding.command || finding.stage || 'verification',
+        source: 'verification',
+        origin: 'verification',
+      }));
+    });
+
+    const issueDiagnostics: CodeIssue[] = (verification.issues || []).map((issue, index) => ({
+      id: `verification:issue:${index}`,
+      filePath: workspace,
+      line: 1,
+      column: 1,
+      message: issue,
+      severity: 'error',
+      ruleId: 'project-verification',
+      source: 'verification',
+      origin: 'verification',
+    }));
+
+    setCodeIssues((prev) => [
+      ...prev.filter((issue) => issue.origin !== 'verification'),
+      ...findingDiagnostics,
+      ...issueDiagnostics,
+    ]);
+  }, []);
+
   const syncOpenFileFromDisk = useCallback(async (filePath: string) => {
     try {
       const readResult = await window.agentAPI.readFile(filePath);
@@ -399,6 +603,165 @@ function App() {
       console.warn(`Failed to sync open file after review change: ${filePath}`, error);
     }
   }, [setOpenFiles]);
+
+  const openFileAtLocation = useCallback(async (filePath: string, line: number = 1, column: number = 1) => {
+    if (!filePath) return;
+
+    pendingNavigationRef.current = { filePath, line, column };
+    await openFile({
+      name: filePath.split(/[/\\]/).pop() || filePath,
+      path: filePath,
+      is_dir: false,
+      extension: filePath.includes('.') ? filePath.split('.').pop() || null : null
+    });
+
+    if (activeFile?.file.path === filePath) {
+      window.setTimeout(() => editorRef.current?.revealPosition(line, column), 0);
+      pendingNavigationRef.current = null;
+    }
+  }, [activeFile?.file.path, openFile]);
+
+  const handleOpenProblem = useCallback((issue: CodeIssue) => {
+    if (issue.filePath && issue.filePath !== 'Terminal' && issue.filePath !== currentPath) {
+      void openFileAtLocation(issue.filePath, issue.line || 1, issue.column || 1);
+    }
+  }, [currentPath, openFileAtLocation]);
+
+  const handleFixProblem = useCallback((issue: CodeIssue) => {
+    setComposerOpen(true);
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('agentprime:prefill-message', {
+        detail: `Fix this problem:\n\nFile: ${issue.filePath || 'Workspace'}\nLocation: ${issue.line}:${issue.column}\nSource: ${issue.source || issue.origin || 'agentprime'}\nRule: ${issue.ruleId}\nSeverity: ${issue.severity}\n\n${issue.message}`
+      }));
+    }, 200);
+  }, []);
+
+  const recordTaskFailure = useCallback((taskId: string, kind: WorkbenchTaskKind, message: string) => {
+    const diagnostic: CodeIssue = {
+      id: `task:${taskId}`,
+      filePath: currentPath || 'Workspace',
+      line: 1,
+      column: 1,
+      message,
+      severity: 'error',
+      ruleId: `task:${kind}`,
+      source: 'task-runner',
+      origin: 'task',
+    };
+    setCodeIssues((prev) => [
+      ...prev.filter((issue) => issue.id !== diagnostic.id),
+      diagnostic,
+    ]);
+  }, [currentPath]);
+
+  const runWorkbenchTask = useCallback(async (kind: WorkbenchTaskKind) => {
+    const workspace = currentPath || await window.agentAPI.getWorkspace();
+    if (!workspace) {
+      toast.error('Task Failed', 'Open a workspace before running tasks.');
+      return;
+    }
+
+    setTerminalVisible(true);
+    setActiveBottomPanel('tasks');
+
+    const taskId = `${kind}:${Date.now()}`;
+    const runningTask: WorkbenchTaskRun = {
+      id: taskId,
+      kind,
+      status: 'running',
+      startedAt: Date.now(),
+      summary: `${kind} started`,
+    };
+    setTaskRuns((prev) => [runningTask, ...prev].slice(0, 20));
+
+    const finishTask = (status: WorkbenchTaskRun['status'], summary: string, output?: string) => {
+      setTaskRuns((prev) => prev.map((task) => (
+        task.id === taskId
+          ? { ...task, status, summary, output, finishedAt: Date.now() }
+          : task
+      )));
+      if (status === 'failed') {
+        recordTaskFailure(taskId, kind, summary);
+      }
+    };
+
+    try {
+      if (kind === 'verify') {
+        const result = await window.agentAPI.verifyProject(workspace);
+        const verification: ReviewVerificationState = {
+          status: result.success ? 'passed' : 'failed',
+          projectTypeLabel: result.projectTypeLabel,
+          readinessSummary: result.readinessSummary,
+          startCommand: result.startCommand,
+          buildCommand: result.buildCommand,
+          installCommand: result.installCommand,
+          url: result.url,
+          issues: Array.isArray(result.issues) ? result.issues : [],
+          findings: Array.isArray(result.findings) ? result.findings : [],
+        };
+        handleVerificationDiagnostics(verification, workspace);
+        finishTask(result.success ? 'passed' : 'failed', result.readinessSummary || (result.success ? 'Verification passed' : 'Verification failed'));
+        return;
+      }
+
+      if (kind === 'run') {
+        const result = await window.agentAPI.launchProject(workspace);
+        finishTask(result?.success ? 'passed' : 'failed', result?.message || result?.error || 'Run finished');
+        if (result?.url) {
+          setLivePreviewUrl(result.url);
+          setLivePreviewOpen(true);
+        }
+        return;
+      }
+
+      if (kind === 'stop') {
+        const result = await window.agentAPI.stopProjectProcesses(workspace);
+        finishTask(result?.success ? 'passed' : 'failed', result?.success ? 'Stopped running project processes' : result?.error || 'Stop failed');
+        return;
+      }
+
+      const commands: Record<Exclude<WorkbenchTaskKind, 'run' | 'verify' | 'stop'>, string> = {
+        install: 'npm install',
+        build: 'npm run build',
+        test: 'npm test',
+      };
+      const result = await window.agentAPI.agentRunCommand(commands[kind], workspace, 180);
+      const output = [result?.stdout, result?.stderr, result?.output, result?.error].filter(Boolean).join('\n');
+      finishTask(result?.success ? 'passed' : 'failed', result?.success ? `${kind} passed` : result?.error || `${kind} failed`, output);
+    } catch (error: any) {
+      finishTask('failed', error?.message || `${kind} failed`);
+    }
+  }, [currentPath, handleVerificationDiagnostics, recordTaskFailure, toast]);
+
+  useEffect(() => {
+    const pending = pendingNavigationRef.current;
+    if (!pending || activeFile?.file.path !== pending.filePath) return;
+
+    window.setTimeout(() => editorRef.current?.revealPosition(pending.line, pending.column), 0);
+    pendingNavigationRef.current = null;
+  }, [activeFile?.file.path]);
+
+  useEffect(() => {
+    const refreshGitBranch = async () => {
+      if (!currentPath) {
+        setGitBranch(null);
+        return;
+      }
+      try {
+        const status = await window.agentAPI.gitStatus();
+        setGitBranch(status?.success ? status.branch || null : null);
+      } catch {
+        setGitBranch(null);
+      }
+    };
+
+    void refreshGitBranch();
+    const interval = window.setInterval(() => {
+      void refreshGitBranch();
+    }, 120000);
+
+    return () => window.clearInterval(interval);
+  }, [currentPath]);
 
   const applyReviewSessionSnapshot = useCallback((snapshot?: AgentReviewSessionSnapshot) => {
     if (!snapshot) return;
@@ -687,6 +1050,7 @@ function App() {
         findings: Array.isArray(result.findings) ? result.findings : [],
       };
       setAgentReviewVerification(nextState);
+      handleVerificationDiagnostics(nextState, workspaceToVerify);
 
       if (result.success) {
         toast.success('Verification Passed', result.projectTypeLabel || 'Accepted changes are runnable.');
@@ -699,9 +1063,10 @@ function App() {
         status: 'failed',
         issues: [message],
       });
+      handleVerificationDiagnostics({ status: 'failed', issues: [message] }, workspaceToVerify);
       toast.error('Verification Failed', message);
     }
-  }, [agentReviewApplied, currentPath, loadDirectory, toast]);
+  }, [agentReviewApplied, currentPath, handleVerificationDiagnostics, loadDirectory, toast]);
 
   const handleRunReviewedProject = useCallback(async () => {
     if (!agentReviewApplied) {
@@ -791,6 +1156,37 @@ function App() {
     return () => window.removeEventListener('agentprime:inlineEdit', handleInlineEdit);
   }, []);
 
+  useEffect(() => {
+    const handleOpenFileAtLine = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      void openFileAtLocation(detail.filePath, detail.line || 1, detail.column || 1);
+    };
+
+    const handleShowReferences = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const references = Array.isArray(detail.references) ? detail.references : [];
+      setReferenceResults({ word: detail.word || 'symbol', references });
+      if (references.length > 0) {
+        toast.info('References Found', `${references.length} reference${references.length === 1 ? '' : 's'} for ${detail.word || 'symbol'}`);
+      }
+    };
+
+    const handleOpenSymbolSearch = () => {
+      setCommandPaletteOpen(true);
+      toast.info('Symbol Search', 'Use the command palette search to find workspace commands and symbols.');
+    };
+
+    window.addEventListener('agentprime:openFileAtLine', handleOpenFileAtLine);
+    window.addEventListener('agentprime:showReferences', handleShowReferences);
+    window.addEventListener('agentprime:openSymbolSearch', handleOpenSymbolSearch);
+
+    return () => {
+      window.removeEventListener('agentprime:openFileAtLine', handleOpenFileAtLine);
+      window.removeEventListener('agentprime:showReferences', handleShowReferences);
+      window.removeEventListener('agentprime:openSymbolSearch', handleOpenSymbolSearch);
+    };
+  }, [openFileAtLocation, toast]);
+
   const handleInlineEditSubmit = useCallback(async (instruction: string, request: any) => {
     setInlineEditProcessing(true);
     try {
@@ -870,6 +1266,7 @@ function App() {
 
       if (mod && e.key === '`') {
         consume();
+        setActiveBottomPanel('terminal');
         setTerminalVisible(!terminalVisible);
         return;
       }
@@ -911,6 +1308,12 @@ function App() {
         return;
       }
 
+      if (mod && key === 'p' && !e.shiftKey && !e.altKey) {
+        consume();
+        setCommandPaletteOpen(true);
+        return;
+      }
+
       if (mod && e.shiftKey && key === 'f') {
         consume();
         setSearchReplaceOpen((prev) => !prev);
@@ -924,6 +1327,12 @@ function App() {
       }
 
       if (mod && e.shiftKey && key === 'p') {
+        consume();
+        setCommandPaletteOpen(true);
+        return;
+      }
+
+      if (mod && e.altKey && key === 'p') {
         consume();
         setLivePreviewOpen((prev) => !prev);
         return;
@@ -1014,12 +1423,53 @@ function App() {
     },
     {
       id: 'toggle-terminal',
-      title: 'Toggle Output',
-      description: 'Show or hide run output',
+      title: 'Toggle Terminal',
+      description: 'Show or hide the bottom terminal panel',
       icon: <IconTerminal size="sm" />,
       category: 'view',
       shortcut: 'Ctrl+`',
-      action: () => setTerminalVisible(!terminalVisible)
+      action: () => {
+        setActiveBottomPanel('terminal');
+        setTerminalVisible(!terminalVisible);
+      }
+    },
+    {
+      id: 'show-problems',
+      title: 'Show Problems',
+      description: 'Open workbench diagnostics',
+      icon: <IconSearch size="sm" />,
+      category: 'view',
+      action: () => {
+        setActiveBottomPanel('problems');
+        setTerminalVisible(true);
+      }
+    },
+    {
+      id: 'show-tasks',
+      title: 'Show Tasks',
+      description: 'Open install/build/test/run/verify tasks',
+      icon: <IconPlay size="sm" />,
+      category: 'view',
+      action: () => {
+        setActiveBottomPanel('tasks');
+        setTerminalVisible(true);
+      }
+    },
+    {
+      id: 'verify-project',
+      title: 'Verify Project',
+      description: 'Run project verification',
+      icon: <IconPlay size="sm" />,
+      category: 'navigation',
+      action: () => { void runWorkbenchTask('verify'); }
+    },
+    {
+      id: 'run-build',
+      title: 'Run Build',
+      description: 'Run npm build task',
+      icon: <IconPlay size="sm" />,
+      category: 'navigation',
+      action: () => { void runWorkbenchTask('build'); }
     },
     {
       id: 'git-panel',
@@ -1070,6 +1520,7 @@ function App() {
       description: 'Open live preview panel for web projects',
       icon: <IconPlay size="sm" />,
       category: 'view',
+      shortcut: 'Ctrl+Alt+P',
       action: () => setLivePreviewOpen(true)
     },
     {
@@ -1128,7 +1579,11 @@ function App() {
                       setModalType('folder');
                       setModalOpen(true);
                     }}
-                    onRefresh={() => undefined}
+                    onRefresh={() => {
+                      if (currentPath) {
+                        void loadDirectory(currentPath);
+                      }
+                    }}
                     selectedPath={selectedFile?.path}
                     workspacePath={currentPath}
                   />
@@ -1202,7 +1657,8 @@ function App() {
                               lineNumbers: appSettings.lineNumbers
                             }}
                             inlineCompletions={appSettings.inlineCompletions !== false}
-                            issues={codeIssues}
+                            issues={selectedFileIssues}
+                            onDiagnosticsChange={handleLanguageDiagnosticsChange}
                           />
                         </ErrorBoundary>
                       </div>
@@ -1210,22 +1666,148 @@ function App() {
                   )}
 
                   {terminalVisible && (
-                    <div style={{ height: '280px', flexShrink: 0 }}>
-                      <ErrorBoundary>
-                        <Suspense fallback={<LazyPanelFallback lines={6} />}>
-                          <Terminal
-                            onClose={() => setTerminalVisible(false)}
-                            onFixError={(error) => {
-                              setComposerOpen(true);
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent('agentprime:prefill-message', {
-                                  detail: `Fix this terminal error:\n\`\`\`\n${error.line}\n\`\`\`\n\nError type: ${error.type}\nMessage: ${error.message}`
-                                }));
-                              }, 200);
-                            }}
+                    <div style={{
+                      height: '300px',
+                      flexShrink: 0,
+                      borderTop: '1px solid var(--color-border)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      background: 'var(--color-surface)'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '4px var(--spacing-sm)',
+                        borderBottom: '1px solid var(--color-border)',
+                        background: 'var(--color-surface-subtle)'
+                      }}>
+                        {(['terminal', 'problems', 'output', 'tasks'] as const).map((panel) => (
+                          <button
+                            key={panel}
+                            type="button"
+                            className={activeBottomPanel === panel ? 'btn-primary' : 'btn-secondary'}
+                            onClick={() => setActiveBottomPanel(panel)}
+                          >
+                            {panel === 'problems'
+                              ? `Problems (${problemCounts.errors}/${problemCounts.warnings})`
+                              : panel.charAt(0).toUpperCase() + panel.slice(1)}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ marginLeft: 'auto' }}
+                          onClick={() => setTerminalVisible(false)}
+                          title="Close panel"
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                        <div style={{ display: activeBottomPanel === 'terminal' ? 'block' : 'none', height: '100%' }}>
+                          <ErrorBoundary>
+                            <Suspense fallback={<LazyPanelFallback lines={6} />}>
+                              <Terminal
+                                onClose={() => setTerminalVisible(false)}
+                                onFixError={(error) => {
+                                  setComposerOpen(true);
+                                  setTimeout(() => {
+                                    window.dispatchEvent(new CustomEvent('agentprime:prefill-message', {
+                                      detail: `Fix this terminal error:\n\`\`\`\n${error.line}\n\`\`\`\n\nError type: ${error.type}\nMessage: ${error.message}`
+                                    }));
+                                  }, 200);
+                                }}
+                                onErrorsDetected={handleTerminalErrorsDetected}
+                              />
+                            </Suspense>
+                          </ErrorBoundary>
+                        </div>
+
+                        {activeBottomPanel === 'problems' && (
+                          <ProblemsPanel
+                            issues={codeIssues}
+                            onOpenIssue={handleOpenProblem}
+                            onFixIssue={handleFixProblem}
                           />
-                        </Suspense>
-                      </ErrorBoundary>
+                        )}
+
+                        {activeBottomPanel === 'output' && (
+                          <OutputPanel
+                            runOutput={runOutput}
+                            onClose={() => setTerminalVisible(false)}
+                          />
+                        )}
+
+                        {activeBottomPanel === 'tasks' && (
+                          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{
+                              display: 'flex',
+                              gap: 6,
+                              padding: 'var(--spacing-sm)',
+                              borderBottom: '1px solid var(--color-border)',
+                              flexWrap: 'wrap'
+                            }}>
+                              {(['install', 'build', 'test', 'run', 'verify', 'stop'] as WorkbenchTaskKind[]).map((task) => (
+                                <button
+                                  key={task}
+                                  type="button"
+                                  className="btn-secondary"
+                                  onClick={() => { void runWorkbenchTask(task); }}
+                                >
+                                  {task.charAt(0).toUpperCase() + task.slice(1)}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ overflow: 'auto', flex: 1 }}>
+                              {taskRuns.length === 0 ? (
+                                <div style={{ padding: 'var(--spacing-lg)', color: 'var(--color-text-muted)' }}>
+                                  Run install, build, test, preview, verify, or stop from here.
+                                </div>
+                              ) : (
+                                taskRuns.map((task) => (
+                                  <div
+                                    key={task.id}
+                                    style={{
+                                      padding: 'var(--spacing-sm) var(--spacing-md)',
+                                      borderBottom: '1px solid var(--color-border-subtle)'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                                      <strong>{task.kind}</strong>
+                                      <span style={{
+                                        color: task.status === 'failed'
+                                          ? 'var(--color-danger)'
+                                          : task.status === 'passed'
+                                            ? 'var(--color-success)'
+                                            : 'var(--color-text-muted)'
+                                      }}>
+                                        {task.status}
+                                      </span>
+                                    </div>
+                                    <div style={{ color: 'var(--color-text-muted)', fontSize: 12, marginTop: 4 }}>
+                                      {task.summary}
+                                    </div>
+                                    {task.output && (
+                                      <pre style={{
+                                        marginTop: 8,
+                                        maxHeight: 120,
+                                        overflow: 'auto',
+                                        whiteSpace: 'pre-wrap',
+                                        fontSize: 12,
+                                        color: 'var(--color-text-muted)'
+                                      }}>
+                                        {task.output}
+                                      </pre>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1282,6 +1864,7 @@ function App() {
                   onClose={() => setComposerOpen(false)}
                   openFiles={openFiles}
                   activeFileIndex={activeFileIndex}
+                  diagnostics={codeIssues}
                   getSelectedText={getSelectedText}
                   getCursorPosition={() => editorRef.current?.getCursorPosition?.()}
                   onOpenFolder={openFolder}
@@ -1401,24 +1984,94 @@ function App() {
         <SearchReplace
           isOpen={searchReplaceOpen}
           onClose={() => setSearchReplaceOpen(false)}
-          onFileSelect={(filePath, _line) => {
-            openFile({
-              name: filePath.split(/[/\\]/).pop() || filePath,
-              path: filePath,
-              is_dir: false,
-              extension: filePath.split('.').pop() || null
-            });
+          onFileSelect={(filePath, line, column) => {
+            void openFileAtLocation(filePath, line, column || 1);
           }}
           workspacePath={currentPath}
         />
 
+        {referenceResults && (
+          <div style={{
+            position: 'fixed',
+            right: composerOpen ? '420px' : '24px',
+            bottom: '44px',
+            width: '420px',
+            maxHeight: '360px',
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            background: 'var(--color-surface-elevated)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-lg)',
+            boxShadow: 'var(--shadow-lg)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: 'var(--spacing-sm) var(--spacing-md)',
+              borderBottom: '1px solid var(--color-border)',
+              fontWeight: 600
+            }}>
+              <span>References: {referenceResults.word}</span>
+              <button className="icon-button" onClick={() => setReferenceResults(null)} title="Close references">
+                ×
+              </button>
+            </div>
+            <div style={{ overflow: 'auto' }}>
+              {referenceResults.references.length === 0 ? (
+                <div style={{ padding: 'var(--spacing-md)', color: 'var(--color-text-muted)' }}>
+                  No references found.
+                </div>
+              ) : (
+                referenceResults.references.slice(0, 100).map((reference, index) => {
+                  const referencePath = reference.filePath || reference.file || '';
+                  const line = reference.line || 1;
+                  const column = reference.column || 1;
+                  return (
+                    <button
+                      key={`${referencePath}:${line}:${column}:${index}`}
+                      type="button"
+                      className="reference-result"
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: 'var(--spacing-sm) var(--spacing-md)',
+                        border: 0,
+                        borderBottom: '1px solid var(--color-border-subtle)',
+                        background: 'transparent',
+                        color: 'var(--color-text)',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => {
+                        void openFileAtLocation(referencePath, line, column);
+                      }}
+                    >
+                      <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                        {referencePath}:{line}:{column}
+                      </div>
+                      {reference.context && (
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', marginTop: 4 }}>
+                          {reference.context}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
         {agentReviewChanges.length > 0 && (
           <div style={{
             position: 'fixed',
-            top: '72px',
+            top: '36px',
             left: '50%',
             transform: 'translateX(-50%)',
-            width: 'min(1000px, 92vw)',
+            width: 'min(1280px, 96vw)',
             zIndex: 1001,
           }}>
             <ErrorBoundary>
@@ -1450,10 +2103,20 @@ function App() {
 
         <StatusBar
           currentFile={getCurrentFileInfo()}
-          gitBranch={null}
+          gitBranch={gitBranch}
           theme={themeType}
           systemStatus={systemStatusSummary}
+          problemCounts={problemCounts}
+          taskStatus={latestTaskStatus}
           onOpenSystemStatus={() => setSystemPanelOpen(true)}
+          onOpenProblems={() => {
+            setActiveBottomPanel('problems');
+            setTerminalVisible(true);
+          }}
+          onOpenTasks={() => {
+            setActiveBottomPanel('tasks');
+            setTerminalVisible(true);
+          }}
         />
 
         {/* Inline Edit Dialog (Cmd+K) */}

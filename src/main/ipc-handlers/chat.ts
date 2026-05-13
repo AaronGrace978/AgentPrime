@@ -8,6 +8,7 @@
  */
 
 import { IpcMain, WebContents } from 'electron';
+import { randomUUID } from 'crypto';
 import aiRouter from '../ai-providers';
 import { CommandExecutor } from '../core/command-executor';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
@@ -159,6 +160,27 @@ let commandExecutor: CommandExecutor | null = null;
  * too — not just inside agent runs.
  */
 const activeChatControllers = new Map<string, AbortController>();
+
+export function createChatRequestId(): string {
+  return `chat_${randomUUID()}`;
+}
+
+export async function runWithTrackedChatController<T>(
+  requestId: string,
+  controller: AbortController,
+  run: () => Promise<T>
+): Promise<T> {
+  activeChatControllers.set(requestId, controller);
+  try {
+    return await run();
+  } finally {
+    activeChatControllers.delete(requestId);
+  }
+}
+
+export function getActiveChatControllerCountForTest(): number {
+  return activeChatControllers.size;
+}
 
 function getExecutor(): CommandExecutor {
   if (!commandExecutor) {
@@ -419,9 +441,7 @@ export function register(deps: ChatHandlerDeps): void {
   });
 
   ipcMain.handle('chat', async (event: any, message: string, contextRaw: unknown) => {
-    const requestId = Date.now().toString();
-    const chatAbortController = new AbortController();
-    activeChatControllers.set(requestId, chatAbortController);
+    const requestId = createChatRequestId();
 
     // === SECURITY: Rate limiting ===
     const rateCheck = ipcRateLimiter.check('chat', 30); // 30 messages per minute max
@@ -448,14 +468,16 @@ export function register(deps: ChatHandlerDeps): void {
     // Use sanitized message
     message = messageValidation.sanitized || message;
 
-    const context = parseChatIpcContext(contextRaw);
-    const conversationMode = resolveConversationMode(context);
-    const runtimeBudget =
-      context.runtime_budget ||
-      dualModeToRuntimeBudget(context.dual_mode) ||
-      DEFAULT_RUNTIME_BUDGET_MODE;
+    const chatAbortController = new AbortController();
+    return runWithTrackedChatController(requestId, chatAbortController, async () => {
+      const context = parseChatIpcContext(contextRaw);
+      const conversationMode = resolveConversationMode(context);
+      const runtimeBudget =
+        context.runtime_budget ||
+        dualModeToRuntimeBudget(context.dual_mode) ||
+        DEFAULT_RUNTIME_BUDGET_MODE;
 
-    try {
+      try {
       // Check if agent mode is enabled
       const useAgentLoop = context.use_agent_loop || context.agent_mode || false;
       const useSpecializedAgents =
@@ -1196,8 +1218,7 @@ Separate files with blank lines.
         provider: runtime.displayProvider,
         runtime,
       };
-    } finally {
-      activeChatControllers.delete(requestId);
     }
+    });
   });
 }

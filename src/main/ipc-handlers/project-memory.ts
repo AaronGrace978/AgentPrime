@@ -32,6 +32,53 @@ interface ProjectMemory {
   conventions: string[];
 }
 
+const MAX_MEMORY_VALUE_BYTES = 64 * 1024;
+const MAX_STRING_VALUE_LENGTH = 2000;
+const ALLOWED_UPDATE_KEYS = new Set(['preferences', 'conventions', 'techStack', 'corrections']);
+const BLOCKED_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function isPlainRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateMemoryValue(value: unknown): string | null {
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized.length > MAX_MEMORY_VALUE_BYTES) {
+      return `Value exceeds maximum size (${MAX_MEMORY_VALUE_BYTES} bytes)`;
+    }
+  } catch {
+    return 'Value must be JSON serializable';
+  }
+  return null;
+}
+
+function sanitizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => item.slice(0, MAX_STRING_VALUE_LENGTH));
+}
+
+function sanitizePreferencePatch(value: unknown): Record<string, any> {
+  if (!isPlainRecord(value)) {
+    return {};
+  }
+
+  const patch: Record<string, any> = {};
+  for (const [key, preferenceValue] of Object.entries(value)) {
+    if (BLOCKED_OBJECT_KEYS.has(key) || key.length > 100) {
+      continue;
+    }
+    patch[key] = preferenceValue;
+  }
+  return patch;
+}
+
 function getMemoryPath(workspacePath: string): string {
   return path.join(workspacePath, '.agentprime', 'memory.json');
 }
@@ -146,20 +193,32 @@ export function registerProjectMemoryHandlers(deps: ProjectMemoryDeps): void {
     const wp = getWorkspacePath();
     if (!wp) return { success: false, error: 'No workspace' };
 
+    if (typeof key !== 'string' || !ALLOWED_UPDATE_KEYS.has(key)) {
+      return { success: false, error: `Unsupported project memory key: ${String(key)}` };
+    }
+
+    const valueError = validateMemoryValue(value);
+    if (valueError) {
+      return { success: false, error: valueError };
+    }
+
     const memory = loadMemory(wp);
 
     if (key === 'preferences') {
-      memory.preferences = { ...memory.preferences, ...value };
+      memory.preferences = { ...memory.preferences, ...sanitizePreferencePatch(value) };
     } else if (key === 'conventions') {
-      if (Array.isArray(value)) {
-        memory.conventions = [...new Set([...memory.conventions, ...value])];
-      }
+      memory.conventions = [...new Set([...memory.conventions, ...sanitizeStringArray(value)])];
     } else if (key === 'techStack') {
-      if (Array.isArray(value)) {
-        memory.techStack = [...new Set([...memory.techStack, ...value])];
-      }
-    } else {
-      (memory as any)[key] = value;
+      memory.techStack = [...new Set([...memory.techStack, ...sanitizeStringArray(value)])];
+    } else if (key === 'corrections' && Array.isArray(value)) {
+      const corrections = value
+        .filter((item) => isPlainRecord(item) && typeof item.original === 'string' && typeof item.corrected === 'string')
+        .map((item) => ({
+          original: item.original.slice(0, MAX_STRING_VALUE_LENGTH),
+          corrected: item.corrected.slice(0, MAX_STRING_VALUE_LENGTH),
+          timestamp: typeof item.timestamp === 'number' ? item.timestamp : Date.now(),
+        }));
+      memory.corrections = [...memory.corrections, ...corrections].slice(-200);
     }
 
     saveMemory(wp, memory);

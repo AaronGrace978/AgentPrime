@@ -21,6 +21,8 @@ import {
   type SpecialistId,
 } from './specialist-contracts';
 import { getVibeCoderToolPolicyError, type VibeCoderExecutionPolicy } from './behavior-profile';
+import { scoreToolRisk } from './risk-scoring';
+import { looksSimpleStaticWebsiteTask } from './static-site-classifier';
 
 export interface ValidationResult {
   valid: boolean;
@@ -850,6 +852,14 @@ export function validateToolCall(
     return toolBoundary;
   }
 
+  const risk = scoreToolRisk({ name: toolCall.name, arguments: toolCall.arguments || {} });
+  if (risk.level === 'critical' && toolCall.name === 'run_command') {
+    return {
+      valid: false,
+      error: `run_command: critical-risk command blocked by route risk scoring (${risk.reasons.join('; ')})`,
+    };
+  }
+
   // Validate read_file tool
   if (toolCall.name === 'read_file') {
     return validateReadFile(toolCall, workspacePath, specialistContext);
@@ -869,9 +879,13 @@ export function validateToolCall(
     return validateRunCommand(toolCall, specialistContext);
   }
 
+  if (toolCall.name === 'delete_path') {
+    return validateDeletePath(toolCall);
+  }
+
   // Validate scaffold_project tool
   if (toolCall.name === 'scaffold_project') {
-    return validateScaffoldProject(toolCall, workspacePath, specialistContext);
+    return validateScaffoldProject(toolCall, workspacePath, taskContext, specialistContext);
   }
 
   if (toolCall.name === 'search_codebase') {
@@ -953,6 +967,40 @@ function validateReadFile(
   }
 
   return { valid: true };
+}
+
+function validateDeletePath(toolCall: any): ValidationResult {
+  const args = toolCall.arguments || {};
+  const targetPath = args.path;
+  const confirm = args.confirm;
+  const risk = scoreToolRisk({ name: 'delete_path', arguments: args });
+
+  if (!targetPath || typeof targetPath !== 'string') {
+    return { valid: false, error: 'delete_path: missing path argument' };
+  }
+
+  if (confirm !== 'DELETE' && confirm !== 'DELETE_WORKSPACE') {
+    return {
+      valid: false,
+      error: 'delete_path: explicit confirm token required (DELETE or DELETE_WORKSPACE)',
+    };
+  }
+
+  if ((targetPath === '.' || targetPath === './') && confirm !== 'DELETE_WORKSPACE') {
+    return {
+      valid: false,
+      error: 'delete_path: workspace root deletion requires confirm="DELETE_WORKSPACE"',
+    };
+  }
+
+  if (risk.requiresConfirmation && args.dry_run !== true && confirm === 'DELETE_WORKSPACE') {
+    return {
+      valid: true,
+      warning: `delete_path: ${risk.level}-risk operation (${risk.reasons.join('; ')})`,
+    };
+  }
+
+  return { valid: true, warning: risk.level === 'high' ? risk.reasons.join('; ') : undefined };
 }
 
 /**
@@ -1619,6 +1667,7 @@ function validateRunCommand(
 function validateScaffoldProject(
   toolCall: any,
   workspacePath: string,
+  taskContext?: string,
   specialistContext?: SpecialistValidationContext
 ): ValidationResult {
   const args = toolCall.arguments || {};
@@ -1632,6 +1681,21 @@ function validateScaffoldProject(
 
   if (!projectName) {
     return { valid: false, error: 'scaffold_project: missing project_name argument' };
+  }
+
+  const normalizedProjectType = projectType.toLowerCase();
+  const isGameScaffold =
+    normalizedProjectType.includes('game') ||
+    normalizedProjectType.includes('threejs') ||
+    normalizedProjectType.includes('phaser') ||
+    normalizedProjectType.includes('pixi');
+  if (taskContext && looksSimpleStaticWebsiteTask(taskContext) && isGameScaffold) {
+    return {
+      valid: false,
+      error:
+        `scaffold_project: project_type "${projectType}" does not match the user's website request. ` +
+        `Use project_type "static_site" for a starter, or write the website files directly.`,
+    };
   }
 
   const specialistId = resolveValidationSpecialist(specialistContext?.specialist);

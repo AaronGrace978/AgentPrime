@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { promptBuilder, buildAgentRunContextPayload } from '../../agent';
 import type { AIRuntimeSnapshot, ModelInfo } from '../../../types/ai-providers';
+import type { AgentRoutePlan } from '../../../types/agent-routing';
 import type { ProviderApiKeyStatus } from '../../../types/ipc';
 import type { Settings } from '../../../types';
 import { DEFAULT_MODEL_IDS, DEFAULT_PROVIDER_SELECTIONS } from '../../../types/model-defaults';
@@ -198,6 +199,7 @@ const AIChat: React.FC<AIChatProps> = ({
   onClose,
   openFiles = [],
   activeFileIndex = -1,
+  diagnostics = [],
   getSelectedText,
   getCursorPosition,
   onOpenFolder,
@@ -233,6 +235,7 @@ const AIChat: React.FC<AIChatProps> = ({
   const [isRetrying, setIsRetrying] = useState(false);
   const [lastFailedInput, setLastFailedInput] = useState('');
   const [runtimeStatus, setRuntimeStatus] = useState<AIRuntimeSnapshot | null>(null);
+  const [agentRoutePlan, setAgentRoutePlan] = useState<AgentRoutePlan | null>(null);
   const [providerSetupNeeded, setProviderSetupNeeded] = useState(false);
 
   // Progress tracking state
@@ -649,17 +652,111 @@ const AIChat: React.FC<AIChatProps> = ({
       });
     };
 
+    const handleRoutePlan = (data: AgentRoutePlan) => {
+      if (!data) return;
+      setAgentRoutePlan(data);
+    };
+
+    const handleCommandOutput = (data: any) => {
+      if (!agentRunning) return;
+      const output = String(data?.output || data?.message || data?.chunk || '').trim();
+      if (!output) return;
+
+      setMessages(prev => {
+        const workingIdx = prev.findIndex(m => m.content.includes('Working on your request'));
+        if (workingIdx < 0) return prev;
+        const updated = [...prev];
+        const current = updated[workingIdx].content;
+        const commandLine = `\n[command] ${output.slice(0, 240)}`;
+        if (!current.includes(commandLine)) {
+          updated[workingIdx] = {
+            ...updated[workingIdx],
+            content: current + commandLine
+          };
+        }
+        return updated;
+      });
+    };
+
+    const handleRuntimeEvent = (data: any) => {
+      if (!agentRunning) return;
+      const type = String(data?.type || 'progress');
+      if (type === 'heartbeat' && Number(data?.elapsedMs || 0) < 5000) return;
+      const phase = String(data?.phase || data?.operationType || 'runtime').replace(/_/g, ' ');
+      const model = data?.modelName ? ` (${data.modelName})` : '';
+      const elapsed = Number.isFinite(Number(data?.elapsedMs))
+        ? `${Math.max(0, Math.round(Number(data.elapsedMs) / 1000))}s`
+        : '';
+      const tags: Record<string, string> = {
+        start: '[waiting]',
+        heartbeat: '[waiting]',
+        progress: '[status]',
+        cooldown: '[cooldown]',
+        fallback_start: '[fallback]',
+        fallback_success: '[fallback ok]',
+        fallback_failure: '[fallback warn]',
+        idle_timeout: '[idle]',
+        total_timeout: '[timeout]',
+        abort: '[stopped]',
+        error: '[error]',
+        success: '[ok]',
+      };
+      const tag = tags[type] || '[status]';
+      const message = String(data?.message || `${phase}${model}`).trim();
+      const progressLine = `\n${tag} ${message}${elapsed ? ` (${elapsed})` : ''}`;
+
+      setMessages(prev => {
+        const workingIdx = prev.findIndex(m => m.content.includes('Working on your request'));
+        if (workingIdx < 0) return prev;
+        const updated = [...prev];
+        const current = updated[workingIdx].content;
+        const alreadyShown = current.includes(progressLine) || current.includes(message);
+        if (!alreadyShown) {
+          updated[workingIdx] = {
+            ...updated[workingIdx],
+            content: `${current}${progressLine}`
+          };
+        }
+        return updated;
+      });
+    };
+
     // Attach listeners
     const removeTaskStart = window.agentAPI?.onAgentTaskStart?.(handleTaskStart);
     const removeStepComplete = window.agentAPI?.onAgentStepComplete?.(handleStepComplete);
     const removeFileModified = window.agentAPI?.onAgentFileModified?.(handleFileModified);
+    const removeRoutePlan = window.agentAPI?.onAgentRoutePlan?.(handleRoutePlan);
+    const removeCommandOutput = window.agentAPI?.onAgentCommandOutput?.(handleCommandOutput);
+    const removeRuntimeEvent = window.agentAPI?.onAgentRuntimeEvent?.(handleRuntimeEvent);
 
     return () => {
       if (typeof removeTaskStart === 'function') removeTaskStart();
       if (typeof removeStepComplete === 'function') removeStepComplete();
       if (typeof removeFileModified === 'function') removeFileModified();
+      if (typeof removeRoutePlan === 'function') removeRoutePlan();
+      if (typeof removeCommandOutput === 'function') removeCommandOutput();
+      if (typeof removeRuntimeEvent === 'function') removeRuntimeEvent();
     };
   }, [agentRunning]);
+
+  useEffect(() => {
+    const handleChatError = (data: { error?: string }) => {
+      if (!data?.error) return;
+      setLastError(classifyAIError(data.error));
+    };
+
+    const handleDinoReaction = (_data: { expression: string; message: string }) => {
+      // Dino reactions are decorative; the streamed assistant reply owns visible chat text.
+    };
+
+    window.agentAPI?.onChatError?.(handleChatError);
+    window.agentAPI?.onDinoReaction?.(handleDinoReaction);
+
+    return () => {
+      window.agentAPI?.removeChatError?.();
+      window.agentAPI?.removeDinoReaction?.();
+    };
+  }, []);
 
   // Initialize agent loop
   useEffect(() => {
@@ -1019,6 +1116,7 @@ const AIChat: React.FC<AIChatProps> = ({
     setAgentRunning(true);
     setIsLoading(true);
     setCurrentTask(currentInput);
+    setAgentRoutePlan(null);
     agentFileChangesRef.current.clear();
 
     // Agent file generation must honor Runtime Budget model selectors.
@@ -1073,6 +1171,35 @@ const AIChat: React.FC<AIChatProps> = ({
         console.warn('Failed to gather terminal history for agent context:', historyError);
       }
 
+      let gitStatusSummary: string | undefined;
+      try {
+        const gitStatus = await window.agentAPI.gitStatus?.();
+        if (gitStatus?.success) {
+          gitStatusSummary = [
+            `branch: ${gitStatus.branch || 'unknown'}`,
+            `staged: ${(gitStatus.staged || []).length}`,
+            `modified: ${(gitStatus.modified || []).length}`,
+            `untracked: ${(gitStatus.untracked || []).length}`,
+            `deleted: ${(gitStatus.deleted || []).length}`,
+          ].join(', ');
+        }
+      } catch (gitError) {
+        console.warn('Failed to gather git status for agent context:', gitError);
+      }
+
+      const agentRunContext = buildAgentRunContextPayload(promptBuilder);
+      agentRunContext.diagnostics = diagnostics.slice(0, 300).map((diagnostic) => ({
+        filePath: diagnostic.filePath,
+        line: diagnostic.line,
+        column: diagnostic.column,
+        message: diagnostic.message,
+        severity: diagnostic.severity,
+        source: diagnostic.source,
+        ruleId: diagnostic.ruleId,
+        origin: diagnostic.origin,
+      }));
+      agentRunContext.git_status = gitStatusSummary;
+
       const result = await window.agentAPI.chat(currentInput, {
         agent_mode: true,
         use_agent_loop: true,
@@ -1087,7 +1214,8 @@ const AIChat: React.FC<AIChatProps> = ({
         file_path: activeFilePath,
         open_files: openFiles.map(file => file.file.path),
         terminal_history: terminalHistory,
-        agent_run_context: buildAgentRunContextPayload(promptBuilder),
+        has_errors: diagnostics.some((diagnostic) => diagnostic.severity === 'error'),
+        agent_run_context: agentRunContext,
       });
 
       if (result.runtime) {
@@ -1462,6 +1590,22 @@ const AIChat: React.FC<AIChatProps> = ({
             currentModel={statusBarModel}
             chatMode={chatMode}
           />
+          {chatMode === 'agent' && agentRoutePlan && (
+            <div className="agent-route-plan">
+              <div className="agent-route-plan-main">
+                <span className="agent-route-plan-label">Route</span>
+                <strong>{agentRoutePlan.explanation.userVisibleLabel}</strong>
+                <span>{agentRoutePlan.verificationPlan.strategy}</span>
+              </div>
+              <div className="agent-route-plan-details">
+                <span>Tools: {agentRoutePlan.allowedTools.slice(0, 5).join(', ')}</span>
+                <span>Verify: {agentRoutePlan.verificationPlan.gates.join(', ') || 'none'}</span>
+                {agentRoutePlan.confirmationRequired && (
+                  <span>Confirm: {agentRoutePlan.confirmationReason || 'required'}</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Messages */}

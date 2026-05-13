@@ -8,7 +8,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { IpcMain } from 'electron';
 import * as os from 'os';
-import { completionOptimizer } from '../core/completion-optimizer';
+import { getLanguageDiagnostics, LanguageDiagnosticsRequest } from '../language/typescript-diagnostics';
 
 interface AnalysisHandlersDeps {
   ipcMain: IpcMain;
@@ -270,6 +270,13 @@ export function register(deps: AnalysisHandlersDeps): void {
       return { success: false, error: e?.message || 'symbol index refresh failed' };
     }
   });
+
+  ipcMain.handle(
+    'analysis:language-diagnostics',
+    async (_event, request: LanguageDiagnosticsRequest) => {
+      return getLanguageDiagnostics(request, getWorkspacePath());
+    }
+  );
 
   // Semantic search using vector embeddings
   ipcMain.handle('semantic-search', async (event, query: string, limit: number = 10) => {

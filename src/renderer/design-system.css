@@ -892,6 +892,39 @@ input[type='range'],
   background: var(--prime-bg);
 }
 
+.agent-route-plan {
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--prime-border-light);
+  background: var(--prime-surface);
+  color: var(--prime-text-secondary);
+  font-size: 11px;
+}
+
+.agent-route-plan-main,
+.agent-route-plan-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agent-route-plan-main {
+  margin-bottom: 3px;
+}
+
+.agent-route-plan-label {
+  padding: 2px 6px;
+  border: 1px solid var(--prime-border);
+  border-radius: 999px;
+  color: var(--prime-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-route-plan strong {
+  color: var(--prime-text);
+}
+
 .quick-prompts {
   padding: 10px 16px 12px;
   border-top: 1px solid var(--prime-border-light);
