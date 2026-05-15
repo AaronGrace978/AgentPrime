@@ -1,6 +1,6 @@
 # AgentPrime Runtime Architecture Guide
 
-This guide explains what runs where, how startup works, and which toggles control optional subsystems.
+This guide explains what runs where, how startup works, and which toggles control optional subsystems. For day-to-day setup, provider configuration, and troubleshooting, use `docs/OPERATOR_GUIDE.md` as the canonical operator guide.
 
 ## 1) Runtime Map
 
@@ -66,7 +66,7 @@ Env loading behavior for backend (`backend/run.py`):
 
 1. Packaging still depends on local PyInstaller toolchain availability for backend artifacts.
 2. Optional subsystem ergonomics: Brain is default-enabled and can confuse first-run flow.
-3. Docs fragmentation across many files; one canonical "operator guide" is still needed.
+3. Keep `docs/OPERATOR_GUIDE.md` current as the canonical setup and troubleshooting guide.
 4. Startup diagnostics are in Settings but not yet promoted to an always-visible status signal.
 
 ## 6) Practical Next Hardening Steps
@@ -74,4 +74,4 @@ Env loading behavior for backend (`backend/run.py`):
 1. Add explicit "Desktop-only mode" first-run toggle in Settings.
 2. Add backend artifact build telemetry/log persistence for CI troubleshooting.
 3. Expose startup preflight diagnostics in a lightweight status bar badge.
-4. Consolidate setup + troubleshooting into one canonical operator doc.
+4. Keep provider setup, Brain/Witness notes, and troubleshooting edits centralized in `docs/OPERATOR_GUIDE.md`.

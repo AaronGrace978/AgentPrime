@@ -9,6 +9,7 @@
 
 import { IpcMain, WebContents } from 'electron';
 import { randomUUID } from 'crypto';
+import * as fs from 'fs';
 import aiRouter from '../ai-providers';
 import { CommandExecutor } from '../core/command-executor';
 import { validateChatMessage, ipcRateLimiter } from '../security/ipcValidation';
@@ -489,6 +490,13 @@ export function register(deps: ChatHandlerDeps): void {
           return {
             success: false,
             error: 'No workspace folder open. Please open a folder first to use Agent Mode.',
+            requestId,
+          };
+        }
+        if (!fs.existsSync(workspacePath)) {
+          return {
+            success: false,
+            error: `Workspace folder no longer exists: ${workspacePath}. Please reopen an existing project folder before running Agent Mode.`,
             requestId,
           };
         }

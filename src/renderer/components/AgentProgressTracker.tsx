@@ -77,6 +77,37 @@ function formatSpecialistLabel(value?: string): string | undefined {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatRuntimeTraceDetails(metadata: any): string | undefined {
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  const details: string[] = [];
+
+  if (Array.isArray(metadata.selectedSpecialists) && metadata.selectedSpecialists.length > 0) {
+    details.push(`Specialists: ${metadata.selectedSpecialists.map(formatSpecialistLabel).join(', ')}`);
+  }
+  if (metadata.failedCommand) {
+    details.push(`Failed command: ${metadata.failedCommand}`);
+  }
+  if (Array.isArray(metadata.implicatedFiles) && metadata.implicatedFiles.length > 0) {
+    details.push(`Files: ${metadata.implicatedFiles.slice(0, 6).join(', ')}`);
+  }
+  if (Array.isArray(metadata.suggestedOwners) && metadata.suggestedOwners.length > 0) {
+    details.push(`Suggested owner: ${metadata.suggestedOwners.join(', ')}`);
+  }
+
+  const allowedFilesBySpecialist = metadata.allowedFilesBySpecialist;
+  if (allowedFilesBySpecialist && typeof allowedFilesBySpecialist === 'object') {
+    const allowlist = Object.entries(allowedFilesBySpecialist as Record<string, string[]>)
+      .filter(([, files]) => Array.isArray(files) && files.length > 0)
+      .slice(0, 3)
+      .map(([owner, files]) => `${formatSpecialistLabel(owner)} may touch ${files.slice(0, 4).join(', ')}`);
+    if (allowlist.length > 0) {
+      details.push(allowlist.join(' | '));
+    }
+  }
+
+  return details.length > 0 ? details.join(' | ') : undefined;
+}
+
 export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
   isRunning,
   currentTask,
@@ -152,15 +183,20 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
       if (eventType === 'heartbeat' && Number(data?.elapsedMs || 0) < 5000) return;
       const isFailure = eventType === 'idle_timeout' || eventType === 'total_timeout' || eventType === 'error';
       const isDone = eventType === 'success' || eventType === 'fallback_success';
-      setCurrentStep({
+      const runtimeStep: AgentStep = {
         id: `runtime-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         type: eventType.includes('fallback') ? 'review' : 'thinking',
         status: isFailure ? 'failed' : isDone ? 'completed' : 'in_progress',
         title: data?.message || data?.label || 'Agent runtime update',
         description: data?.modelName || data?.phase,
+        result: formatRuntimeTraceDetails(data?.metadata),
         startTime: Date.now(),
         endTime: isFailure || isDone ? Date.now() : undefined,
-      });
+      };
+      setCurrentStep(runtimeStep);
+      if (data?.phase === 'specialist_trace' || isFailure || isDone) {
+        setSteps(prev => [...prev, runtimeStep].slice(-20));
+      }
     };
 
     const removeTaskStart = window.agentAPI?.onAgentTaskStart?.((_data) => {
@@ -527,6 +563,11 @@ export const AgentProgressTracker: React.FC<AgentProgressTrackerProps> = ({
                       {step.error && (
                         <div style={{ color: 'var(--prime-error)', fontSize: '10px', marginTop: '4px', lineHeight: 1.4 }}>
                           {step.error}
+                        </div>
+                      )}
+                      {step.result && (
+                        <div style={{ color: 'var(--prime-text-secondary)', fontSize: '10px', marginTop: '4px', lineHeight: 1.4 }}>
+                          {step.result}
                         </div>
                       )}
                     </div>

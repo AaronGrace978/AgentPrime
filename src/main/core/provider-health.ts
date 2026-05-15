@@ -18,5 +18,13 @@ export function buildAIHealthSummary(
     reason: runtime.reason,
     connectionError: connected ? undefined : providerStatus?.error || 'Unable to reach the active provider.',
     availableModels,
+    requestedProvider: runtime.requestedProvider,
+    requestedModel: runtime.requestedModel,
+    effectiveProvider: runtime.effectiveProvider,
+    effectiveModel: runtime.effectiveModel,
+    executionProvider: runtime.executionProvider,
+    executionModel: runtime.executionModel,
+    viaFallback: runtime.viaFallback,
+    lastExecutionAt: runtime.lastExecutionAt,
   };
 }

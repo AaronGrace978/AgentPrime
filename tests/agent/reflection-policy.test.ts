@@ -15,7 +15,7 @@ describe('reflection policy', () => {
 
     expect(looksSimpleStaticWebsiteTask('Build me a Cookie website that helps me sell cookies')).toBe(true);
     expect(plan.budget).toBe('standard');
-    expect(plan.planningMode).toBe('compact');
+    expect(plan.planningMode).toBe('skip');
     expect(plan.maxRepairPasses).toBe(2);
   });
 
@@ -41,6 +41,32 @@ describe('reflection policy', () => {
 
     expect(looksSimpleStaticWebsiteTask('Build a React website with auth and a dashboard')).toBe(false);
     expect(plan.budget).toBe('deep');
+  });
+
+  it('keeps risky creation on standard when standard is explicitly selected', () => {
+    const plan = resolveReflectionBudget({
+      requestedBudget: 'standard',
+      userMessage: 'Build a full Tauri desktop app with authentication and deployment',
+      isUpdate: false,
+      retryCount: 0,
+    });
+
+    expect(plan.risky).toBe(true);
+    expect(plan.budget).toBe('standard');
+    expect(plan.planningMode).toBe('compact');
+  });
+
+  it('keeps standard repair retries on standard instead of escalating to deep', () => {
+    const plan = resolveReflectionBudget({
+      requestedBudget: 'standard',
+      userMessage: 'Repair the failed reviewed project changes',
+      isUpdate: true,
+      retryCount: 1,
+      verificationFailed: true,
+    });
+
+    expect(plan.budget).toBe('standard');
+    expect(plan.maxRepairPasses).toBe(2);
   });
 
   it('caps simple static repair retries at standard instead of deep', () => {

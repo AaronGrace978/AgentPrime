@@ -1096,9 +1096,11 @@ class AIProviderRouter {
     actualProvider: string,
     requestedProvider: string,
     requestedModel?: string,
-    viaFallback: boolean = false
+    viaFallback: boolean = false,
+    executionModelOverride?: string
   ): ChatResult {
-    const actualModel = result.servedBy?.model || result.modelSelection?.model || requestedModel;
+    const actualModel =
+      result.servedBy?.model || result.modelSelection?.model || executionModelOverride || requestedModel;
 
     recordAIRuntimeExecution({
       requestedProvider,
@@ -1127,11 +1129,13 @@ class AIProviderRouter {
     requestedProvider: string,
     requestedModel?: string,
     viaFallback: boolean = false,
-    options: ChatOptions = {}
+    options: ChatOptions = {},
+    executionModelOverride?: string
   ): void {
     const actualModel =
-      requestedModel ||
+      executionModelOverride ||
       (this.providers.get(actualProvider)?.config?.model as string | undefined) ||
+      requestedModel ||
       this.activeModel ||
       undefined;
     const runtime = recordAIRuntimeExecution({
@@ -1216,8 +1220,9 @@ class AIProviderRouter {
           await fallback.chat(messagesWithCreed, fallbackOptions),
           this.fallbackProvider,
           requestedProvider,
-          (fallbackOptions.model || model) as string | undefined,
-          true
+          model,
+          true,
+          fallbackOptions.model as string | undefined
         );
       }
 
@@ -1267,8 +1272,9 @@ class AIProviderRouter {
           await fallback.chat(messagesWithCreed, fallbackOptions),
           this.fallbackProvider,
           requestedProvider,
-          (fallbackOptions.model || model) as string | undefined,
-          true
+          model,
+          true,
+          fallbackOptions.model as string | undefined
         );
       }
       throw e;
@@ -1334,9 +1340,10 @@ class AIProviderRouter {
         this.publishRuntimeInfo(
           this.fallbackProvider,
           requestedProvider,
-          (fallbackOptions.model || model) as string | undefined,
+          model,
           true,
-          options
+          options,
+          fallbackOptions.model as string | undefined
         );
         return fallback.stream(messagesWithCreed, onChunk, fallbackOptions);
       }

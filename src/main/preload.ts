@@ -26,6 +26,7 @@ const agentAPI: AgentAPI = {
   launchProject: (projectPath: string) => ipcRenderer.invoke('file:launch-project', projectPath),
   stopProjectProcesses: (projectPath?: string) => ipcRenderer.invoke('file:stop-project-processes', projectPath),
   verifyProject: (projectPath: string) => ipcRenderer.invoke('file:verify-project', projectPath),
+  getProjectRuntimeProfile: (projectPath?: string) => ipcRenderer.invoke('file:get-project-runtime-profile', projectPath),
   updateAgentReviewStatus: (sessionId: string, filePath: string, status: 'pending' | 'accepted' | 'rejected') =>
     ipcRenderer.invoke('agent:review-update-status', sessionId, filePath, status),
   updatePendingAgentReviewStatuses: (sessionId: string, status: 'accepted' | 'rejected') =>

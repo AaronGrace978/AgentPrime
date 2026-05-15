@@ -148,7 +148,7 @@ describe('specialist-aware tool validation', () => {
     expect(blocked.error).toContain('outside its writable scope');
   });
 
-  it('allows styling specialist to edit src/App.tsx (glob ** matches root of src/)', () => {
+  it('blocks styling specialist from rewriting application component logic', () => {
     const result = validateToolCall(
       {
         name: 'write_file',
@@ -162,7 +162,8 @@ describe('specialist-aware tool validation', () => {
       { specialist: 'styling_ux_specialist' }
     );
 
-    expect(result.valid).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('outside its writable scope');
   });
 
   it('allows pipeline specialist to edit README.md', () => {

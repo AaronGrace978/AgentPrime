@@ -50,6 +50,22 @@ export interface AgentAPI {
     warnings?: string[];
     error?: string;
   }>;
+  getProjectRuntimeProfile: (projectPath?: string) => Promise<{
+    success: boolean;
+    workspacePath?: string;
+    projectKind?: string;
+    projectTypeLabel?: string;
+    installCommand?: string;
+    buildCommand?: string;
+    startCommand?: string;
+    testCommand?: string;
+    canInstall?: boolean;
+    canBuild?: boolean;
+    canRun?: boolean;
+    canTest?: boolean;
+    readinessSummary?: string;
+    error?: string;
+  }>;
   verifyProject: (projectPath: string) => Promise<{
     success: boolean;
     projectKind: string;

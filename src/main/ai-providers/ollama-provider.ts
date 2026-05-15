@@ -31,10 +31,22 @@ let modelCache: { models: string[]; timestamp: number } | null = null;
 const CACHE_TTL = 30000; // 30 seconds
 const LOCAL_OLLAMA_URL = 'http://127.0.0.1:11434';
 const OLLAMA_CLOUD_URL = 'https://ollama.com';
-const OLLAMA_DEEPSEEK_CLOUD_URL = 'https://ollama.deepseek.com';
+const LEGACY_DEEPSEEK_CLOUD_URL = 'https://ollama.deepseek.com';
 
-function getCloudUrlForModel(model: string): string {
-  return model.toLowerCase().includes('deepseek') ? OLLAMA_DEEPSEEK_CLOUD_URL : OLLAMA_CLOUD_URL;
+function getOllamaHostname(url?: string | null): string {
+  if (!url) {
+    return '';
+  }
+
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return url.toLowerCase();
+  }
+}
+
+function getCloudUrlForModel(): string {
+  return OLLAMA_CLOUD_URL;
 }
 
 function isLocalOllamaUrl(url?: string | null): boolean {
@@ -43,11 +55,11 @@ function isLocalOllamaUrl(url?: string | null): boolean {
 }
 
 function isCloudOllamaUrl(url?: string | null): boolean {
-  const normalized = (url || '').toLowerCase();
-  return normalized.includes('ollama.com') || normalized.includes('deepseek.com');
+  const hostname = getOllamaHostname(url);
+  return hostname === 'ollama.com' || hostname.endsWith('.ollama.com') || hostname === 'ollama.deepseek.com';
 }
 
-function normalizeOllamaBaseUrl(url: string | null | undefined, model: string): string | undefined {
+function normalizeOllamaBaseUrl(url: string | null | undefined): string | undefined {
   if (!url) {
     return undefined;
   }
@@ -57,8 +69,9 @@ function normalizeOllamaBaseUrl(url: string | null | undefined, model: string): 
     return undefined;
   }
 
-  if (normalized.includes('api.ollama.com')) {
-    return getCloudUrlForModel(model);
+  const hostname = getOllamaHostname(normalized);
+  if (hostname === 'api.ollama.com' || hostname === getOllamaHostname(LEGACY_DEEPSEEK_CLOUD_URL)) {
+    return getCloudUrlForModel();
   }
 
   return normalized;
@@ -95,7 +108,7 @@ export class OllamaProvider extends BaseProvider {
     const rawAlternateApiKey =
       (config as any).alternateApiKey || process.env.OLLAMA_API_KEY_DESKTOP || null;
     const hasApiKey = !!config.apiKey || !!rawAlternateApiKey;
-    const normalizedBaseUrl = normalizeOllamaBaseUrl(config.baseUrl, modelName);
+    const normalizedBaseUrl = normalizeOllamaBaseUrl(config.baseUrl);
 
     // Priority: cloud model override > explicit cloud baseUrl > local default
     // CRITICAL: Cloud models MUST use the cloud endpoint, even if baseUrl points to local Ollama.
@@ -104,7 +117,7 @@ export class OllamaProvider extends BaseProvider {
 
     if (isCloudModel && (!normalizedBaseUrl || isLocalUrl)) {
       // Cloud model detected — force cloud endpoint (ignore local baseUrl from settings)
-      this.baseUrl = getCloudUrlForModel(modelName);
+      this.baseUrl = getCloudUrlForModel();
       if (isLocalUrl) {
         console.log(
           `[OllamaProvider] ⚠️ Cloud model '${modelName}' detected but baseUrl was local (${config.baseUrl}) — overriding to ${this.baseUrl}`
@@ -115,7 +128,7 @@ export class OllamaProvider extends BaseProvider {
       this.baseUrl = normalizedBaseUrl;
     } else if (hasApiKey) {
       // API key present with no explicit URL — assume cloud
-      this.baseUrl = getCloudUrlForModel(modelName);
+      this.baseUrl = getCloudUrlForModel();
     } else {
       // Default to local Ollama (use 127.0.0.1 to avoid IPv6 issues)
       this.baseUrl = LOCAL_OLLAMA_URL;
@@ -246,9 +259,9 @@ export class OllamaProvider extends BaseProvider {
   } {
     const normalizedModel = this.normalizeModelIdentifier(model);
     const isCloudModelByName = isOllamaCloudModel(normalizedModel);
-    let baseUrl = normalizeOllamaBaseUrl(this.baseUrl, normalizedModel) || LOCAL_OLLAMA_URL;
+    let baseUrl = normalizeOllamaBaseUrl(this.baseUrl) || LOCAL_OLLAMA_URL;
     if (isCloudModelByName && isLocalOllamaUrl(baseUrl)) {
-      baseUrl = getCloudUrlForModel(normalizedModel);
+      baseUrl = getCloudUrlForModel();
       console.log(`[Ollama] Runtime URL override: cloud model '${normalizedModel}' → ${baseUrl}`);
     }
 
@@ -914,10 +927,8 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<ChatResult> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
-    const baseUrl = normalizeOllamaBaseUrl(this.baseUrl, model) || LOCAL_OLLAMA_URL;
-    const isDirectApi = isCloudOllamaUrl(baseUrl);
-    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 4096;
+    const { baseUrl, apiModel } = this.resolveRequestContext(model, maxTokens, false);
 
     // Format messages for Anthropic API
     const { systemMessage, userMessages } = this.formatMessagesAnthropicStyle(messages);
@@ -987,10 +998,8 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<ChatWithToolsResult> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
-    const baseUrl = normalizeOllamaBaseUrl(this.baseUrl, model) || LOCAL_OLLAMA_URL;
-    const isDirectApi = isCloudOllamaUrl(baseUrl);
-    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 4096;
+    const { baseUrl, apiModel } = this.resolveRequestContext(model, maxTokens, false);
 
     // Format messages for Anthropic API
     const { systemMessage, userMessages } = this.formatMessagesAnthropicStyle(messages);
@@ -1140,10 +1149,8 @@ export class OllamaProvider extends BaseProvider {
     options: ChatOptions = {}
   ): Promise<void> {
     const model = (options.model || this.config.model || 'qwen3-coder') as string;
-    const baseUrl = normalizeOllamaBaseUrl(this.baseUrl, model) || LOCAL_OLLAMA_URL;
-    const isDirectApi = isCloudOllamaUrl(baseUrl);
-    const apiModel = this.resolveModelName(model, isDirectApi);
     const maxTokens = options.maxTokens || 4096;
+    const { baseUrl, apiModel } = this.resolveRequestContext(model, maxTokens, true);
 
     const { systemMessage, userMessages } = this.formatMessagesAnthropicStyle(messages);
 

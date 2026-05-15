@@ -75,6 +75,8 @@ export interface VerificationFinding {
   summary: string;
   files: string[];
   suggestedOwner: SpecialistId;
+  command?: string;
+  output?: string;
 }
 
 export interface SpecialistArtifact {
@@ -311,12 +313,8 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'src/**/*.css',
       'src/**/*.scss',
       'src/**/*.html',
-      'src/**/*.tsx',
-      'src/**/*.jsx',
       'app/**/*.css',
-      'app/**/*.tsx',
       'components/**/*.css',
-      'components/**/*.tsx',
       'public/**',
     ],
     readableGlobs: [
@@ -333,6 +331,7 @@ export const SPECIALIST_MATRIX: Record<SpecialistId, SpecialistDefinition> = {
       'edit backend service files',
       'change dependency or packaging policy',
       'rewrite core business logic',
+      'rewrite application component logic',
     ],
     consumes: ['execution_plan', 'scaffold_result', 'repair_plan'],
     produces: ['file_patch_set'],

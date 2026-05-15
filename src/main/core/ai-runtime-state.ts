@@ -60,12 +60,15 @@ export function resolveEffectiveAIRuntime(
     reason = `${requestedProviderValue} is not configured, so AgentPrime fell back to Ollama.`;
   }
 
-  const matchingExecution =
+  const requestedMatches =
+    lastRuntimeExecution &&
+    lastRuntimeExecution.requestedProvider === requestedProviderValue &&
+    (lastRuntimeExecution.requestedModel || lastRuntimeExecution.effectiveModel) === requestedModelValue;
+  const effectiveMatches =
     lastRuntimeExecution &&
     lastRuntimeExecution.effectiveProvider === effectiveProvider &&
-    lastRuntimeExecution.effectiveModel === effectiveModel
-      ? lastRuntimeExecution
-      : null;
+    lastRuntimeExecution.effectiveModel === effectiveModel;
+  const matchingExecution = requestedMatches || effectiveMatches ? lastRuntimeExecution : null;
 
   return {
     requestedProvider: requestedProviderValue,

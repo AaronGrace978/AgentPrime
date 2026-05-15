@@ -15,13 +15,47 @@ describe('resolveDeterministicScaffoldOnlyFlag', () => {
     fs.rmSync(workspacePath, { recursive: true, force: true });
   });
 
-  it('keeps normal static-site build prompts out of scaffold-only mode', () => {
+  it('routes normal static-site build prompts to scaffold-only mode', () => {
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
     try {
       expect(
         resolveDeterministicScaffoldOnlyFlag({
           message: 'Build a simple website for my project',
+          workspacePath,
+          allowScaffold: true,
+          explicitFromContext: false,
+        })
+      ).toBe(true);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('routes landing page creation to scaffold-only mode in near-empty workspaces', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(
+        resolveDeterministicScaffoldOnlyFlag({
+          message: 'Create a modern landing page with responsive design and CTA buttons',
+          workspacePath,
+          allowScaffold: true,
+          explicitFromContext: false,
+        })
+      ).toBe(true);
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('does not scaffold-only framework landing page requests', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      expect(
+        resolveDeterministicScaffoldOnlyFlag({
+          message: 'Create a React landing page with auth and a dashboard',
           workspacePath,
           allowScaffold: true,
           explicitFromContext: false,

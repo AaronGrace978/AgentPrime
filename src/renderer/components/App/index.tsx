@@ -98,6 +98,19 @@ type WorkbenchTaskRun = {
   summary: string;
   output?: string;
 };
+type ProjectRuntimeProfileState = {
+  success: boolean;
+  projectTypeLabel?: string;
+  installCommand?: string;
+  buildCommand?: string;
+  startCommand?: string;
+  testCommand?: string;
+  canInstall?: boolean;
+  canBuild?: boolean;
+  canRun?: boolean;
+  canTest?: boolean;
+  error?: string;
+};
 
 function App() {
   const toast = useToast();
@@ -114,6 +127,7 @@ function App() {
     openFile,
     saveFile,
     openFolder,
+    openWorkspacePath,
     createItem,
     loadDirectory,
     handleContentChange,
@@ -141,7 +155,7 @@ function App() {
   } = useScriptRunner();
 
   const { currentTheme, themeType, setTheme } = useTheme();
-  const { recentProjects } = useRecentProjects(workspacePath);
+  const { recentProjects, removeRecentProject } = useRecentProjects(workspacePath);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState<'file' | 'folder'>('file');
@@ -182,6 +196,7 @@ function App() {
   const [referenceResults, setReferenceResults] = useState<{ word: string; references: any[] } | null>(null);
   const [activeBottomPanel, setActiveBottomPanel] = useState<'terminal' | 'problems' | 'output' | 'tasks'>('terminal');
   const [taskRuns, setTaskRuns] = useState<WorkbenchTaskRun[]>([]);
+  const [projectRuntimeProfile, setProjectRuntimeProfile] = useState<ProjectRuntimeProfileState | null>(null);
   const [appSettings, setAppSettings] = useState<any>({
     theme: 'dark',
     fontSize: 14,
@@ -285,6 +300,23 @@ function App() {
     loadSettings();
   }, []);
 
+  const refreshProjectRuntimeProfile = useCallback(async (workspace = currentPath): Promise<ProjectRuntimeProfileState | null> => {
+    if (!workspace) {
+      setProjectRuntimeProfile(null);
+      return null;
+    }
+
+    try {
+      const profile = await window.agentAPI.getProjectRuntimeProfile(workspace) as ProjectRuntimeProfileState;
+      setProjectRuntimeProfile(profile?.success ? profile : { success: false, error: profile?.error || 'Could not inspect project runtime.' });
+      return profile;
+    } catch (error: any) {
+      const failedProfile: ProjectRuntimeProfileState = { success: false, error: error?.message || 'Could not inspect project runtime.' };
+      setProjectRuntimeProfile(failedProfile);
+      return failedProfile;
+    }
+  }, [currentPath]);
+
   useEffect(() => {
     const initWorkspace = async () => {
       try {
@@ -298,6 +330,10 @@ function App() {
     };
     initWorkspace();
   }, [loadDirectory]);
+
+  useEffect(() => {
+    void refreshProjectRuntimeProfile(currentPath);
+  }, [currentPath, refreshProjectRuntimeProfile]);
 
   useEffect(() => {
     if (!workspaceStorageKey || restoredWorkspaceRef.current === currentPath) return;
@@ -450,6 +486,13 @@ function App() {
       );
     }
   }, [toast]);
+
+  const handleOpenRecentProject = useCallback(async (projectPath: string) => {
+    const opened = await openWorkspacePath(projectPath);
+    if (!opened) {
+      removeRecentProject(projectPath);
+    }
+  }, [openWorkspacePath, removeRecentProject]);
 
   const handleSplitViewOpenFile = useCallback(async (file: FileItem): Promise<OpenFile | null> => {
     if (file.is_dir) return null;
@@ -720,18 +763,28 @@ function App() {
         return;
       }
 
-      const commands: Record<Exclude<WorkbenchTaskKind, 'run' | 'verify' | 'stop'>, string> = {
-        install: 'npm install',
-        build: 'npm run build',
-        test: 'npm test',
+      const profile = (projectRuntimeProfile?.success && currentPath === workspace)
+        ? projectRuntimeProfile
+        : await refreshProjectRuntimeProfile(workspace);
+      const commands: Record<Exclude<WorkbenchTaskKind, 'run' | 'verify' | 'stop'>, string | undefined> = {
+        install: profile?.installCommand,
+        build: profile?.buildCommand,
+        test: profile?.testCommand,
       };
-      const result = await window.agentAPI.agentRunCommand(commands[kind], workspace, 180);
+      const command = commands[kind];
+      if (!command) {
+        const label = profile?.projectTypeLabel || 'this workspace';
+        finishTask('failed', `No ${kind} command detected for ${label}.`);
+        return;
+      }
+
+      const result = await window.agentAPI.agentRunCommand(command, workspace, 180);
       const output = [result?.stdout, result?.stderr, result?.output, result?.error].filter(Boolean).join('\n');
-      finishTask(result?.success ? 'passed' : 'failed', result?.success ? `${kind} passed` : result?.error || `${kind} failed`, output);
+      finishTask(result?.success ? 'passed' : 'failed', result?.success ? `${command} passed` : result?.error || `${command} failed`, output);
     } catch (error: any) {
       finishTask('failed', error?.message || `${kind} failed`);
     }
-  }, [currentPath, handleVerificationDiagnostics, recordTaskFailure, toast]);
+  }, [currentPath, handleVerificationDiagnostics, projectRuntimeProfile, recordTaskFailure, refreshProjectRuntimeProfile, toast]);
 
   useEffect(() => {
     const pending = pendingNavigationRef.current;
@@ -1124,7 +1177,16 @@ function App() {
       ? acceptedFiles.filter((filePath) => findingFiles.has(filePath))
       : acceptedFiles;
     const blockedAcceptedFiles = acceptedFiles.filter((filePath) => !targetedAcceptedFiles.includes(filePath));
-    const prompt = buildRepairPrompt(agentReviewTask, agentReviewVerification, targetedAcceptedFiles, rejectedFiles);
+    const retryReason = targetedAcceptedFiles.length > 0
+      ? `Verifier findings target ${targetedAcceptedFiles.join(', ')}. AgentPrime will block edits outside that repair scope.`
+      : 'Verifier findings did not name files, so repair is limited to accepted review files.';
+    const prompt = buildRepairPrompt(
+      agentReviewTask,
+      agentReviewVerification,
+      targetedAcceptedFiles,
+      rejectedFiles,
+      retryReason
+    );
     setComposerOpen(true);
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent('agentprime:repair-scope', {
@@ -1132,6 +1194,7 @@ function App() {
           allowedFiles: targetedAcceptedFiles,
           blockedFiles: [...rejectedFiles, ...blockedAcceptedFiles],
           findings: agentReviewVerification.findings || [],
+          retryReason,
         }
       }));
       window.dispatchEvent(new CustomEvent('agentprime:prefill-message', {
@@ -1374,6 +1437,25 @@ function App() {
     terminalVisible
   ]);
 
+  const workbenchTaskCommand = useCallback((task: WorkbenchTaskKind): string | undefined => {
+    if (!projectRuntimeProfile?.success) return undefined;
+    if (task === 'install') return projectRuntimeProfile.installCommand;
+    if (task === 'build') return projectRuntimeProfile.buildCommand;
+    if (task === 'test') return projectRuntimeProfile.testCommand;
+    if (task === 'run') return projectRuntimeProfile.startCommand;
+    return undefined;
+  }, [projectRuntimeProfile]);
+
+  const availableWorkbenchTasks = useMemo<WorkbenchTaskKind[]>(() => {
+    const tasks: WorkbenchTaskKind[] = [];
+    if (projectRuntimeProfile?.canInstall) tasks.push('install');
+    if (projectRuntimeProfile?.canBuild) tasks.push('build');
+    if (projectRuntimeProfile?.canTest) tasks.push('test');
+    if (!projectRuntimeProfile || projectRuntimeProfile.canRun) tasks.push('run');
+    tasks.push('verify', 'stop');
+    return tasks;
+  }, [projectRuntimeProfile]);
+
   const commands: Command[] = [
     {
       id: 'open-folder',
@@ -1447,7 +1529,7 @@ function App() {
     {
       id: 'show-tasks',
       title: 'Show Tasks',
-      description: 'Open install/build/test/run/verify tasks',
+      description: 'Open detected project tasks',
       icon: <IconPlay size="sm" />,
       category: 'view',
       action: () => {
@@ -1466,7 +1548,7 @@ function App() {
     {
       id: 'run-build',
       title: 'Run Build',
-      description: 'Run npm build task',
+      description: projectRuntimeProfile?.buildCommand || 'Run detected build task',
       icon: <IconPlay size="sm" />,
       category: 'navigation',
       action: () => { void runWorkbenchTask('build'); }
@@ -1749,12 +1831,13 @@ function App() {
                               borderBottom: '1px solid var(--color-border)',
                               flexWrap: 'wrap'
                             }}>
-                              {(['install', 'build', 'test', 'run', 'verify', 'stop'] as WorkbenchTaskKind[]).map((task) => (
+                              {availableWorkbenchTasks.map((task) => (
                                 <button
                                   key={task}
                                   type="button"
                                   className="btn-secondary"
                                   onClick={() => { void runWorkbenchTask(task); }}
+                                  title={workbenchTaskCommand(task)}
                                 >
                                   {task.charAt(0).toUpperCase() + task.slice(1)}
                                 </button>
@@ -1763,7 +1846,7 @@ function App() {
                             <div style={{ overflow: 'auto', flex: 1 }}>
                               {taskRuns.length === 0 ? (
                                 <div style={{ padding: 'var(--spacing-lg)', color: 'var(--color-text-muted)' }}>
-                                  Run install, build, test, preview, verify, or stop from here.
+                                  Run detected project tasks, verify the workspace, or stop running processes from here.
                                 </div>
                               ) : (
                                 taskRuns.map((task) => (
@@ -1821,7 +1904,7 @@ function App() {
                     setModalOpen(true);
                   }}
                   onNewProject={() => setTemplateModalOpen(true)}
-                  onOpenRecentProject={loadDirectory}
+                  onOpenRecentProject={handleOpenRecentProject}
                   onOpenUserGuide={openUserGuide}
                 />
               )}
@@ -1916,7 +1999,7 @@ function App() {
             isOpen={templateModalOpen}
             onClose={() => setTemplateModalOpen(false)}
             onCreateProject={async (projectPath, _template, createResult) => {
-              await loadDirectory(projectPath);
+              await openWorkspacePath(projectPath);
               if (createResult?.dependenciesInstalled === false && createResult?.installOutput) {
                 toast.warning('Project Created With Setup Notes', 'Dependencies need attention, but the project files were created.');
               }

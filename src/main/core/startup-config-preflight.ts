@@ -126,6 +126,15 @@ const validateActiveProvider = (issues: PreflightIssue[], settings: Settings): v
         action: 'Switch to https://ollama.com unless you intentionally rely on a custom reverse proxy.'
       });
     }
+
+    if (ollamaBaseUrl.includes('ollama.deepseek.com')) {
+      reportIssue(issues, {
+        code: 'OLLAMA_DEEPSEEK_CLOUD_URL',
+        severity: 'warn',
+        message: `Ollama base URL "${ollamaBaseUrl}" uses an unreachable DeepSeek cloud host.`,
+        action: 'Switch to https://ollama.com for Ollama Cloud models, including DeepSeek models.'
+      });
+    }
   }
 };
 

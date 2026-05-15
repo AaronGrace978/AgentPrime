@@ -21,8 +21,9 @@ interface UseFileOperationsReturn {
   openFile: (file: FileItem) => Promise<void>;
   saveFile: (fileIndex?: number) => Promise<void>;
   openFolder: () => Promise<void>;
+  openWorkspacePath: (path: string) => Promise<boolean>;
   createItem: (type: 'file' | 'folder', name: string) => Promise<void>;
-  loadDirectory: (dirPath?: string) => Promise<void>;
+  loadDirectory: (dirPath?: string) => Promise<boolean>;
   handleContentChange: (newContent: string) => void;
   setOpenFiles: React.Dispatch<React.SetStateAction<OpenFile[]>>;
   setActiveFileIndex: React.Dispatch<React.SetStateAction<number>>;
@@ -39,6 +40,13 @@ export function useFileOperations({
 
   const activeFile = activeFileIndex >= 0 ? openFiles[activeFileIndex] : null;
 
+  const clearWorkspaceState = useCallback(() => {
+    setCurrentPath('');
+    setWorkspacePath(null);
+    setOpenFiles([]);
+    setActiveFileIndex(-1);
+  }, []);
+
   // Load directory
   const loadDirectory = useCallback(async (dirPath?: string) => {
     try {
@@ -46,11 +54,21 @@ export function useFileOperations({
       if (result.tree && result.root) {
         setCurrentPath(result.root);
         setWorkspacePath(result.root);
+        return true;
       }
+      if (result.error) {
+        if (result.error === 'No workspace') {
+          clearWorkspaceState();
+        }
+        onToastError?.('Workspace Unavailable', result.error);
+      }
+      return false;
     } catch (err: any) {
       console.error('Error loading directory:', err.message);
+      onToastError?.('Workspace Error', err.message || 'Failed to load workspace');
+      return false;
     }
-  }, []);
+  }, [clearWorkspaceState, onToastError]);
 
   // Open file
   const openFile = useCallback(async (file: FileItem) => {
@@ -111,11 +129,28 @@ export function useFileOperations({
       const result = await window.agentAPI.openFolder();
       if (result.success && result.path) {
         await loadDirectory(result.path);
+      } else if (result.error) {
+        onToastError?.('Open Folder Failed', result.error);
       }
     } catch (err: any) {
       console.error(`Error opening folder: ${err.message}`);
+      onToastError?.('Open Folder Failed', err.message || 'Could not open folder');
     }
-  }, [loadDirectory]);
+  }, [loadDirectory, onToastError]);
+
+  const openWorkspacePath = useCallback(async (path: string): Promise<boolean> => {
+    try {
+      const result = await window.agentAPI.setWorkspace(path);
+      if (!result?.success || !result.path) {
+        onToastError?.('Workspace Unavailable', result?.error || 'Could not open workspace');
+        return false;
+      }
+      return await loadDirectory(result.path);
+    } catch (err: any) {
+      onToastError?.('Workspace Unavailable', err.message || 'Could not open workspace');
+      return false;
+    }
+  }, [loadDirectory, onToastError]);
 
   // Create file/folder
   const createItem = useCallback(async (type: 'file' | 'folder', name: string) => {
@@ -162,6 +197,7 @@ export function useFileOperations({
     openFile,
     saveFile,
     openFolder,
+    openWorkspacePath,
     createItem,
     loadDirectory,
     handleContentChange,

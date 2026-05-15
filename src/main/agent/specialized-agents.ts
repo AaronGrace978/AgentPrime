@@ -1779,8 +1779,14 @@ export function routeToSpecialists(
     roles.push('data_contract_specialist');
   }
 
-  // Always add integration analyst for multi-file projects
-  if (context.files && context.files.length > 1) {
+  const implementationRoleCount = roles.filter((role) => role !== 'tool_orchestrator').length;
+  const needsIntegrationAnalysis =
+    /\b(integrat(?:e|ion)|wire together|full[-\s]?stack|cross[-\s]?cutting|multi[-\s]?service|end[-\s]?to[-\s]?end)\b/i.test(
+      taskLower
+    ) ||
+    implementationRoleCount >= 3;
+
+  if (needsIntegrationAnalysis && !simpleStaticWebsite) {
     roles.push('integration_analyst');
   }
 

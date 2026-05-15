@@ -1,5 +1,7 @@
 # The Witness - Python Backend + DeepSeek Integration
 
+For the canonical AgentPrime runtime setup, Ollama Cloud endpoint policy, and optional Brain/Witness mode guidance, see `docs/OPERATOR_GUIDE.md`.
+
 ## ✅ Complete Setup (Python + DeepSeek)!
 
 The Witness now uses a **Python backend** with **DeepSeek integration** built-in:
@@ -36,7 +38,7 @@ If you want to use a different API key, you can still use:
 The scripts set these environment variables:
 
 - `WITNESS_USE_OLLAMA=true` - Enable DeepSeek integration
-- `WITNESS_OLLAMA_URL=https://ollama.deepseek.com` - Ollama endpoint
+- `WITNESS_OLLAMA_URL=https://ollama.com` - Ollama Cloud endpoint
 - `WITNESS_OLLAMA_MODEL=deepseek-v3.1:671b-cloud` - DeepSeek model
 - `WITNESS_OLLAMA_API_KEY=your_key` - Your API key
 

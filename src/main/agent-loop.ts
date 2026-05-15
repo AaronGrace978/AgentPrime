@@ -1050,6 +1050,7 @@ export interface AgentContext {
   repairScope?: {
     allowedFiles: string[];
     blockedFiles: string[];
+    retryReason?: string;
     findings: Array<{
       stage: 'validation' | 'install' | 'build' | 'run' | 'browser' | 'unknown';
       severity: 'info' | 'warning' | 'error' | 'critical';

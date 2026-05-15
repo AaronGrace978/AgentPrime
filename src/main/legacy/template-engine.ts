@@ -339,6 +339,14 @@ class TemplateEngine {
     return [...dirs];
   }
 
+  private templateDeclaresRootFile(files: TemplateFile[] | undefined, fileNames: string[]): boolean {
+    const normalizedNames = new Set(fileNames.map((fileName) => fileName.toLowerCase()));
+    return (files || []).some((file) => {
+      const normalizedPath = file.path.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+      return normalizedNames.has(normalizedPath);
+    });
+  }
+
   private isLikelyBinary(buffer: Buffer): boolean {
     const sample = buffer.subarray(0, Math.min(buffer.length, 1024));
     for (const byte of sample) {
@@ -864,8 +872,13 @@ class TemplateEngine {
         }
       }
 
-      const batFiles = this.generateBatFiles(projectPath, templateContext, fileSnapshots).map((file) => file.replace(/\\/g, '/'));
-      const pythonBats = this.generatePythonBatFiles(projectPath, templateContext, fileSnapshots).map((file) => file.replace(/\\/g, '/'));
+      const templateFiles = templateDef.files || [];
+      const batFiles = this.templateDeclaresRootFile(templateFiles, ['package.json'])
+        ? this.generateBatFiles(projectPath, templateContext, fileSnapshots).map((file) => file.replace(/\\/g, '/'))
+        : [];
+      const pythonBats = this.templateDeclaresRootFile(templateFiles, ['requirements.txt', 'pyproject.toml'])
+        ? this.generatePythonBatFiles(projectPath, templateContext, fileSnapshots).map((file) => file.replace(/\\/g, '/'))
+        : [];
       const generatedAssets = this.ensureGeneratedAssets(templateId, projectPath, fileSnapshots).map((file) => file.replace(/\\/g, '/'));
       createdFiles.push(...batFiles, ...pythonBats, ...generatedAssets);
 

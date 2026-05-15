@@ -136,9 +136,33 @@ interface FileHandlersDeps {
   dialog: Dialog;
   mainWindow: () => BrowserWindow | null;
   getWorkspacePath: () => string | null;
-  setWorkspacePath: (path: string) => void;
+  setWorkspacePath: (path: string | null) => void;
   getFocusedFolder?: () => string | null;
   setFocusedFolder?: (path: string | null) => void;
+}
+
+function validateDirectoryPath(folderPath: string): { success: true; path: string } | { success: false; error: string } {
+  if (!folderPath || typeof folderPath !== 'string') {
+    return { success: false, error: 'Path is required' };
+  }
+
+  const resolvedPath = path.resolve(folderPath);
+  if (!fs.existsSync(resolvedPath)) {
+    return { success: false, error: `Workspace path does not exist: ${resolvedPath}` };
+  }
+
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(resolvedPath);
+  } catch (error: any) {
+    return { success: false, error: error?.message || `Unable to inspect workspace path: ${resolvedPath}` };
+  }
+
+  if (!stats.isDirectory()) {
+    return { success: false, error: `Workspace path is not a directory: ${resolvedPath}` };
+  }
+
+  return { success: true, path: resolvedPath };
 }
 
 /**
@@ -146,6 +170,37 @@ interface FileHandlersDeps {
  */
 export function register(deps: FileHandlersDeps): void {
   const { ipcMain, dialog, mainWindow, getWorkspacePath, setWorkspacePath } = deps;
+
+  const clearWorkspace = () => {
+    setWorkspacePath(null);
+    deps.setFocusedFolder?.(null);
+  };
+
+  const getValidWorkspacePath = (): string | null => {
+    const currentWorkspace = getWorkspacePath();
+    if (!currentWorkspace) {
+      return null;
+    }
+
+    const validation = validateDirectoryPath(currentWorkspace);
+    if (!validation.success) {
+      clearWorkspace();
+      return null;
+    }
+
+    return validation.path;
+  };
+
+  const switchWorkspace = (folderPath: string) => {
+    const validation = validateDirectoryPath(folderPath);
+    if (!validation.success) {
+      return validation;
+    }
+
+    setWorkspacePath(validation.path);
+    deps.setFocusedFolder?.(null);
+    return validation;
+  };
 
   // Open folder dialog
   ipcMain.handle('file:open-folder', async () => {
@@ -158,15 +213,14 @@ export function register(deps: FileHandlersDeps): void {
     }) as any;
     
     if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
-      setWorkspacePath(result.filePaths[0]);
-      return { success: true, path: result.filePaths[0] };
+      return switchWorkspace(result.filePaths[0]);
     }
-    return { success: false };
+    return { success: false, cancelled: true };
   });
 
   // Get current workspace
   ipcMain.handle('file:get-workspace', () => {
-    return getWorkspacePath();
+    return getValidWorkspacePath();
   });
 
   // Create new folder
@@ -183,7 +237,7 @@ export function register(deps: FileHandlersDeps): void {
     }
 
     // Get parent directory (workspace or a parent folder)
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     if (!workspacePath) {
       // If no workspace, use user's home directory or a default projects folder
       const os = require('os');
@@ -196,8 +250,7 @@ export function register(deps: FileHandlersDeps): void {
         return { success: false, error: 'Folder already exists' };
       }
       fs.mkdirSync(newFolderPath, { recursive: true });
-      setWorkspacePath(newFolderPath);
-      return { success: true, path: newFolderPath };
+      return switchWorkspace(newFolderPath);
     }
 
     // Create folder in workspace
@@ -208,34 +261,41 @@ export function register(deps: FileHandlersDeps): void {
     fs.mkdirSync(newFolderPath, { recursive: true });
     
     // Set the new folder as the workspace so agents build inside it
-    setWorkspacePath(newFolderPath);
-    
-    return { success: true, path: newFolderPath };
+    return switchWorkspace(newFolderPath);
   });
 
   // Set workspace path directly (for switching to newly created folders)
   ipcMain.handle('file:set-workspace', async (event, folderPath: string) => {
-    if (!folderPath || !fs.existsSync(folderPath)) {
-      return { success: false, error: 'Path does not exist' };
-    }
-    
-    const stats = fs.statSync(folderPath);
-    if (!stats.isDirectory()) {
-      return { success: false, error: 'Path is not a directory' };
-    }
-    
-    setWorkspacePath(folderPath);
-    return { success: true, path: folderPath };
+    return switchWorkspace(folderPath);
   });
 
   // Launch project (detect type and run)
   ipcMain.handle('file:launch-project', async (event, projectPath: string) => {
     try {
+      const workspacePath = getValidWorkspacePath();
+      if (!workspacePath) {
+        return { success: false, error: 'Open an existing workspace before launching a project.' };
+      }
+
+      const requestedProjectPath = projectPath || workspacePath;
+      const pathValidation = resolveValidatedPath(requestedProjectPath, workspacePath, {
+        allowAbsolute: true,
+        sanitizeFilename: false,
+      });
+      if (!pathValidation.valid || !pathValidation.resolvedPath) {
+        return { success: false, error: `Invalid project path: ${pathValidation.errors.join('; ')}` };
+      }
+
+      const projectValidation = validateDirectoryPath(pathValidation.resolvedPath);
+      if (!projectValidation.success) {
+        return { success: false, error: projectValidation.error };
+      }
+
       const { ProjectRunner } = require('../agent/tools/projectRunner');
-      const result = await ProjectRunner.launchProject(projectPath);
+      const result = await ProjectRunner.launchProject(projectValidation.path);
       return result.success
-        ? { success: true, message: result.message, url: result.url }
-        : { success: false, message: result.message, url: result.url, error: result.error || result.message };
+        ? { success: true, message: result.message, url: result.url, projectInfo: result.projectInfo }
+        : { success: false, message: result.message, url: result.url, error: result.error || result.message, projectInfo: result.projectInfo };
     } catch (error: any) {
       return { success: false, error: error.message || 'Failed to launch project' };
     }
@@ -243,7 +303,7 @@ export function register(deps: FileHandlersDeps): void {
 
   ipcMain.handle('file:stop-project-processes', async (event, projectPath?: string) => {
     try {
-      const workspacePath = getWorkspacePath();
+      const workspacePath = getValidWorkspacePath();
       if (!workspacePath) return { success: false, error: 'No workspace' };
 
       const requestedPath = projectPath || workspacePath;
@@ -264,8 +324,46 @@ export function register(deps: FileHandlersDeps): void {
 
   ipcMain.handle('file:verify-project', async (event, projectPath: string) => {
     try {
+      const workspacePath = getValidWorkspacePath();
+      if (!workspacePath) {
+        return {
+          success: false,
+          projectKind: 'unknown',
+          projectTypeLabel: 'Unknown Project',
+          issues: ['Open an existing workspace before verifying a project.'],
+          findings: [buildFinding('unknown', 'error', 'Open an existing workspace before verifying a project.')],
+        };
+      }
+
+      const requestedProjectPath = projectPath || workspacePath;
+      const pathValidation = resolveValidatedPath(requestedProjectPath, workspacePath, {
+        allowAbsolute: true,
+        sanitizeFilename: false,
+      });
+      if (!pathValidation.valid || !pathValidation.resolvedPath) {
+        const message = `Invalid project path: ${pathValidation.errors.join('; ')}`;
+        return {
+          success: false,
+          projectKind: 'unknown',
+          projectTypeLabel: 'Unknown Project',
+          issues: [message],
+          findings: [buildFinding('unknown', 'error', message)],
+        };
+      }
+
+      const projectValidation = validateDirectoryPath(pathValidation.resolvedPath);
+      if (!projectValidation.success) {
+        return {
+          success: false,
+          projectKind: 'unknown',
+          projectTypeLabel: 'Unknown Project',
+          issues: [projectValidation.error],
+          findings: [buildFinding('unknown', 'error', projectValidation.error)],
+        };
+      }
+
       const { ProjectRunner } = require('../agent/tools/projectRunner');
-      const result = await ProjectRunner.autoRun(projectPath);
+      const result = await ProjectRunner.autoRun(projectValidation.path);
       const findings: AgentReviewFinding[] = [
         ...result.validation.issues.map((issue: string) =>
           buildFinding('validation', 'error', issue)
@@ -308,9 +406,54 @@ export function register(deps: FileHandlersDeps): void {
     }
   });
 
+  ipcMain.handle('file:get-project-runtime-profile', async (event, projectPath?: string) => {
+    try {
+      const workspacePath = getValidWorkspacePath();
+      if (!workspacePath) {
+        return { success: false, error: 'Open an existing workspace before inspecting project commands.' };
+      }
+
+      const requestedProjectPath = projectPath || workspacePath;
+      const pathValidation = resolveValidatedPath(requestedProjectPath, workspacePath, {
+        allowAbsolute: true,
+        sanitizeFilename: false,
+      });
+      if (!pathValidation.valid || !pathValidation.resolvedPath) {
+        return { success: false, error: `Invalid project path: ${pathValidation.errors.join('; ')}` };
+      }
+
+      const projectValidation = validateDirectoryPath(pathValidation.resolvedPath);
+      if (!projectValidation.success) {
+        return { success: false, error: projectValidation.error };
+      }
+
+      const { getProjectRuntimeProfileSync } = require('../agent/project-runtime');
+      const profile = getProjectRuntimeProfileSync(projectValidation.path);
+      const testCommand = typeof profile.scripts?.test === 'string' ? 'npm test' : undefined;
+
+      return {
+        success: true,
+        workspacePath: projectValidation.path,
+        projectKind: profile.kind,
+        projectTypeLabel: profile.displayName,
+        installCommand: profile.install.command || undefined,
+        buildCommand: profile.build.command || undefined,
+        startCommand: profile.run.command || undefined,
+        testCommand,
+        canInstall: Boolean(profile.install.command),
+        canBuild: Boolean(profile.build.command),
+        canRun: Boolean(profile.run.command || profile.kind === 'static'),
+        canTest: Boolean(testCommand),
+        readinessSummary: profile.readiness.summary,
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message || 'Failed to inspect project runtime.' };
+    }
+  });
+
   // Read directory tree
   ipcMain.handle('file:read-tree', async (event, dirPath?: string) => {
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     if (!workspacePath) return { tree: [], root: null, error: 'No workspace' };
     const targetPath = dirPath || '.';
     
@@ -332,7 +475,7 @@ export function register(deps: FileHandlersDeps): void {
 
   // Read file
   ipcMain.handle('file:read', async (event, filePath: string) => {
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     if (!workspacePath) return { error: 'No workspace' };
     
     // === SECURITY: Validate file path ===
@@ -381,7 +524,7 @@ export function register(deps: FileHandlersDeps): void {
       return { error: 'Rate limit exceeded. Please slow down file operations.' };
     }
     
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     console.log('[File Write] Workspace path:', workspacePath);
     console.log('[File Write] Requested path:', filePath);
 
@@ -468,7 +611,7 @@ export function register(deps: FileHandlersDeps): void {
       return { error: 'Rate limit exceeded. Please slow down file operations.' };
     }
     
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     if (!workspacePath) return { error: 'No workspace' };
     
     // === SECURITY: Validate and sanitize path ===
@@ -511,7 +654,7 @@ export function register(deps: FileHandlersDeps): void {
       return { error: 'Rate limit exceeded for delete operations.' };
     }
     
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     if (!workspacePath) return { error: 'No workspace' };
     
     // === SECURITY: Validate path ===
@@ -596,7 +739,7 @@ export function register(deps: FileHandlersDeps): void {
 
   // Get folder context (all files in folder)
   ipcMain.handle('folder:get-context', async (event, folderPath: string) => {
-    const workspacePath = getWorkspacePath();
+    const workspacePath = getValidWorkspacePath();
     if (!workspacePath) return { error: 'No workspace' };
     
     const pathValidation = resolveValidatedPath(folderPath, workspacePath, {

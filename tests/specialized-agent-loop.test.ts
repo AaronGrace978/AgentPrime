@@ -218,10 +218,12 @@ describe('SpecializedAgentLoop verification', () => {
       }
     );
 
-    expect(refined).toEqual([
+    expect(refined).toEqual(expect.arrayContaining([
       'javascript_specialist',
       'repair_specialist',
-    ]);
+    ]));
+    expect(refined).not.toContain('tool_orchestrator');
+    expect(refined).not.toContain('integration_analyst');
   });
 
   it('keeps pipeline specialist for missing dependency repair even when importer is a source file', () => {
@@ -242,7 +244,8 @@ describe('SpecializedAgentLoop verification', () => {
     );
 
     expect(findings[0].suggestedOwner).toBe('pipeline_specialist');
-    expect(refined).toEqual(expect.arrayContaining(['pipeline_specialist', 'repair_specialist']));
+    expect(refined).toEqual(expect.arrayContaining(['pipeline_specialist']));
+    expect(refined).not.toContain('repair_specialist');
     expect(refined).not.toContain('tool_orchestrator');
     expect(refined).not.toContain('integration_analyst');
   });
@@ -278,8 +281,8 @@ describe('SpecializedAgentLoop verification', () => {
     expect(refined).toEqual(expect.arrayContaining([
       'security_specialist',
       'data_contract_specialist',
-      'repair_specialist',
     ]));
+    expect(refined).not.toContain('repair_specialist');
   });
 
   it('surfaces rollback messaging when verification fails and changes were reverted', () => {

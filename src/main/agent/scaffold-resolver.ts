@@ -318,8 +318,8 @@ export function validateScaffoldTemplateForTask(task: string, templateId: string
 
 /**
  * Whether specialized-agent runs should stop after deterministic template materialization.
- * Normal build/create prompts should continue into generative specialists so the user gets
- * prompt-specific content instead of only the stock starter template.
+ * Simple static-site prompts should stay on the fast scaffold/review path; broader app
+ * requests continue into generative specialists for prompt-specific implementation.
  */
 export function resolveDeterministicScaffoldOnlyFlag(options: {
   message: string;
@@ -352,7 +352,11 @@ export function resolveDeterministicScaffoldOnlyFlag(options: {
   ) {
     return true;
   }
-  return templateId === 'static-site' && asksForTemplateOnlyScaffold(options.message);
+  const normalizedTask = normalizeTemplateDetectionTask(options.message);
+  return (
+    templateId === 'static-site' &&
+    (asksForTemplateOnlyScaffold(normalizedTask) || looksSimpleStaticWebsiteTask(normalizedTask))
+  );
 }
 
 function getTemplatesRoot(): string {

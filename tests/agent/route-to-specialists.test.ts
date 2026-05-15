@@ -17,4 +17,14 @@ describe('routeToSpecialists', () => {
     const roles = routeToSpecialists('Build a simple website and dockerize it for deploy');
     expect(roles).toContain('pipeline_specialist');
   });
+
+  it('does not add integration analyst just because project files exist', () => {
+    const roles = routeToSpecialists('Update the button text in this React app', {
+      files: ['src/App.tsx', 'src/styles.css', 'package.json'],
+      language: 'typescript',
+    });
+
+    expect(roles).toContain('javascript_specialist');
+    expect(roles).not.toContain('integration_analyst');
+  });
 });

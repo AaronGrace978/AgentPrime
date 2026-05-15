@@ -10,6 +10,7 @@ const runtimeBudgetSchema = z.enum(['instant', 'standard', 'deep']);
 const repairScopeSchema = z.object({
   allowedFiles: z.array(z.string().max(4096)).max(500),
   blockedFiles: z.array(z.string().max(4096)).max(500),
+  retryReason: z.string().max(8000).optional(),
   findings: z.array(z.object({
     stage: z.enum(['validation', 'install', 'build', 'run', 'browser', 'unknown']),
     severity: z.enum(['info', 'warning', 'error', 'critical']),

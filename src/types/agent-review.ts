@@ -44,6 +44,7 @@ export interface AgentRepairScope {
   allowedFiles: string[];
   blockedFiles: string[];
   findings: AgentReviewFinding[];
+  retryReason?: string;
 }
 
 export type AgentReviewPlanMode = 'talk' | 'create' | 'edit' | 'verify' | 'repair';

@@ -51,11 +51,11 @@ export function resolveReflectionBudget(options: ReflectionBudgetOptions): Refle
   if (simpleStaticWebsite) {
     budget = escalated ? 'standard' : requestedBudget;
   } else if (escalated) {
-    budget = 'deep';
+    budget = requestedBudget === 'instant' ? 'standard' : requestedBudget;
   } else if (requestedBudget === 'instant') {
     budget = risky ? 'standard' : 'instant';
   } else if (requestedBudget === 'standard') {
-    budget = risky ? 'deep' : 'standard';
+    budget = 'standard';
   } else {
     budget = 'deep';
   }
@@ -84,14 +84,17 @@ export function resolveReflectionBudget(options: ReflectionBudgetOptions): Refle
     };
   }
 
+  const planningMode = risky || escalated ? 'compact' : 'skip';
   return {
     budget: 'standard',
     risky,
-    planningMode: 'compact',
-    reflectionQuestionLimit: 2,
+    planningMode,
+    reflectionQuestionLimit: planningMode === 'skip' ? 1 : 2,
     specialistRecoveryRetries: 1,
     maxRepairPasses: 2,
-    summary: 'Standard budget balances latency and verification with bounded planning and repair passes.',
+    summary: planningMode === 'skip'
+      ? 'Standard budget uses deterministic execution first and reserves specialist planning for risky or failing work.'
+      : 'Standard budget balances latency and verification with bounded planning and repair passes.',
   };
 }
 

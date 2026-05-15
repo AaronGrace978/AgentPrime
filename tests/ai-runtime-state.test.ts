@@ -54,6 +54,35 @@ describe('AI runtime state', () => {
     expect(runtime.resolution).toBe('fallback_execution');
   });
 
+  it('keeps fallback execution visible when the fallback provider uses a different model', () => {
+    recordAIRuntimeExecution({
+      requestedProvider: 'openai',
+      requestedModel: 'gpt-5.4',
+      effectiveProvider: 'openai',
+      effectiveModel: 'gpt-5.4',
+      executionProvider: 'ollama',
+      executionModel: 'qwen3-coder-next:cloud',
+      viaFallback: true,
+      reason: 'OpenAI failed; Ollama served the request.',
+    });
+
+    const runtime = resolveEffectiveAIRuntime({
+      activeProvider: 'openai',
+      activeModel: 'gpt-5.4',
+      providers: {
+        openai: { apiKey: 'test-key' },
+        ollama: { model: 'qwen3-coder-next:cloud' },
+      },
+    } as any);
+
+    expect(runtime.requestedModel).toBe('gpt-5.4');
+    expect(runtime.effectiveModel).toBe('gpt-5.4');
+    expect(runtime.executionProvider).toBe('ollama');
+    expect(runtime.executionModel).toBe('qwen3-coder-next:cloud');
+    expect(runtime.displayModel).toBe('qwen3-coder-next:cloud');
+    expect(runtime.viaFallback).toBe(true);
+  });
+
   it('ignores stale execution metadata from a different selection', () => {
     recordAIRuntimeExecution({
       requestedProvider: 'ollama',

@@ -32,7 +32,8 @@ export function buildRepairPrompt(
   taskDescription: string,
   verification: ReviewVerificationState,
   acceptedFiles: string[] = [],
-  rejectedFiles: string[] = []
+  rejectedFiles: string[] = [],
+  retryReason?: string
 ): string {
   const issueLines = verification.findings && verification.findings.length > 0
     ? verification.findings.map((finding) => {
@@ -57,6 +58,7 @@ export function buildRepairPrompt(
     `Original task: ${taskDescription || 'Agent-created project changes'}`,
     verification.projectTypeLabel ? `Detected project: ${verification.projectTypeLabel}` : null,
     verification.readinessSummary ? `Readiness rule: ${verification.readinessSummary}` : null,
+    retryReason ? `Repair scope: ${retryReason}` : null,
     acceptedFiles.length > 0 ? `Accepted files:\n${acceptedFiles.map((filePath) => `- ${filePath}`).join('\n')}` : null,
     rejectedFiles.length > 0 ? `Rejected files (do not modify):\n${rejectedFiles.map((filePath) => `- ${filePath}`).join('\n')}` : null,
     commandHints || null,

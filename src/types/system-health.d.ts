@@ -40,6 +40,14 @@ export interface SystemStatusSummary {
     reason?: string;
     connectionError?: string;
     availableModels?: number;
+    requestedProvider?: string;
+    requestedModel?: string;
+    effectiveProvider?: string;
+    effectiveModel?: string;
+    executionProvider?: string;
+    executionModel?: string;
+    viaFallback?: boolean;
+    lastExecutionAt?: number;
   };
   brain: {
     enabled: boolean;

@@ -412,6 +412,10 @@ export class TaskMaster {
     retryFiles: string[]
   ): string[] {
     if (specialist === 'repair_specialist') {
+      if (retryFiles.length > 0) {
+        return [...new Set(retryFiles)];
+      }
+
       const baseline = [
         'index.html',
         'styles.css',
@@ -429,7 +433,7 @@ export class TaskMaster {
         'postcss.config.*',
         'README.md',
       ];
-      return retryFiles.length > 0 ? [...new Set([...retryFiles, ...baseline])] : baseline;
+      return baseline;
     }
 
     switch (specialist) {
@@ -471,8 +475,6 @@ export class TaskMaster {
           'src/**/*.css',
           'src/**/*.scss',
           'src/**/*.html',
-          'src/**/*.tsx',
-          'src/**/*.jsx',
           'public/**',
         ];
       case 'python_specialist':

@@ -2507,6 +2507,95 @@
           "prompt": "can you build me a flight simulator three.js game?"
         }
       ]
+    },
+    {
+      "id": "proj_1778880197646_ku2wl84bt",
+      "name": "New folder (2)",
+      "path": "C:\\Users\\AGrac\\OneDrive\\Desktop\\New folder (2)",
+      "type": "web",
+      "description": "Create a Vite React landing page app with a real npm build/dev pipeline",
+      "createdAt": "2026-05-15T21:23:17.646Z",
+      "updatedAt": "2026-05-15T21:23:17.646Z",
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.node.json",
+        "vite.config.ts",
+        "index.html",
+        "public/vite.svg",
+        "src/vite-env.d.ts",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/App.css",
+        "src/index.css",
+        "src/components/Hero.tsx",
+        "src/components/Features.tsx",
+        "src/components/CTA.tsx",
+        "src/components/Footer.tsx",
+        "README.md",
+        "src/components/Hero.css",
+        "src/components/Features.css",
+        "src/components/CTA.css",
+        "src/components/Footer.css",
+        "src/components/Navbar.tsx",
+        "src/components/Navbar.module.css",
+        "src/components/Hero.module.css",
+        "src/components/Features.module.css",
+        "src/components/Testimonials.tsx",
+        "src/components/Testimonials.module.css",
+        "src/components/Contact.tsx",
+        "src/components/Contact.module.css",
+        "src/components/Footer.module.css",
+        "src/hooks/useInView.ts"
+      ],
+      "technologies": [
+        "TypeScript",
+        "JavaScript",
+        "HTML",
+        "CSS",
+        "React",
+        "Vite"
+      ],
+      "buildHistory": [
+        {
+          "timestamp": "2026-05-15T21:23:17.646Z",
+          "action": "create",
+          "description": "Create a Vite React landing page app with a real npm build/dev pipeline",
+          "filesChanged": [
+            "package.json",
+            "tsconfig.json",
+            "tsconfig.node.json",
+            "vite.config.ts",
+            "index.html",
+            "public/vite.svg",
+            "src/vite-env.d.ts",
+            "src/main.tsx",
+            "src/App.tsx",
+            "src/App.css",
+            "src/index.css",
+            "src/components/Hero.tsx",
+            "src/components/Features.tsx",
+            "src/components/CTA.tsx",
+            "src/components/Footer.tsx",
+            "README.md",
+            "src/components/Hero.css",
+            "src/components/Features.css",
+            "src/components/CTA.css",
+            "src/components/Footer.css",
+            "src/components/Navbar.tsx",
+            "src/components/Navbar.module.css",
+            "src/components/Hero.module.css",
+            "src/components/Features.module.css",
+            "src/components/Testimonials.tsx",
+            "src/components/Testimonials.module.css",
+            "src/components/Contact.tsx",
+            "src/components/Contact.module.css",
+            "src/components/Footer.module.css",
+            "src/hooks/useInView.ts"
+          ],
+          "prompt": "Create a Vite React landing page app with a real npm build/dev pipeline.\n\nRequirements:\n- Generate a complete runnable project in this workspace.\n- Include package.json with working dev, build, and preview scripts.\n- Use React + TypeScript + Vite.\n- Build a modern responsive landing page with hero section, CTA buttons, feature cards, and polished styling.\n- After creating files, install dependencies if needed, run npm run build, and verify the app can launch with npm run dev or npm run preview.\n- Stage changes for review before applying."
+        }
+      ]
     }
   ]
 }

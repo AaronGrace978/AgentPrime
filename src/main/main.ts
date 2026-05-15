@@ -269,18 +269,11 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 // Local models typically: model:size or model (e.g., llama3.2:7b)
 const isCloudModel = (model: string) => model.includes('-cloud') || model.includes(':cloud');
 
-// Get cloud URL from environment or use default
-// For DeepSeek models, use https://ollama.deepseek.com
-// For other cloud models, default to the official Ollama Cloud endpoint.
-const getCloudUrl = (model: string): string => {
-  if (model.toLowerCase().includes('deepseek')) {
-    return 'https://ollama.deepseek.com';
-  }
-  return 'https://ollama.com';
-};
+// Get cloud URL from environment or use the official Ollama Cloud endpoint.
+const getCloudUrl = (): string => 'https://ollama.com';
 
-const OLLAMA_URL = process.env.OLLAMA_URL || (isCloudModel(OLLAMA_MODEL) ? getCloudUrl(OLLAMA_MODEL) : 'http://127.0.0.1:11434');
-const OLLAMA_URL_SECONDARY = process.env.OLLAMA_URL_SECONDARY || (isCloudModel(OLLAMA_MODEL_FALLBACK) ? getCloudUrl(OLLAMA_MODEL_FALLBACK) : 'http://127.0.0.1:11435');
+const OLLAMA_URL = process.env.OLLAMA_URL || (isCloudModel(OLLAMA_MODEL) ? getCloudUrl() : 'http://127.0.0.1:11434');
+const OLLAMA_URL_SECONDARY = process.env.OLLAMA_URL_SECONDARY || (isCloudModel(OLLAMA_MODEL_FALLBACK) ? getCloudUrl() : 'http://127.0.0.1:11435');
 
 let mainWindow: BrowserWindow | null = null;
 let previewWindow: BrowserWindow | null = null;
@@ -317,6 +310,39 @@ const hasSingleInstanceLock = setupSingleInstanceGuard(
   },
   !multiInstanceAllowed
 );
+
+function clearWorkspaceRuntimeState(): void {
+  focusedFolderPath = null;
+  activeFilePath = null;
+  workspaceSymbolIndex = null;
+  setWorkspaceSymbolIndexForAgents(null);
+  codebaseIndexer = null;
+  activatePrime = null;
+}
+
+function getValidatedWorkspacePath(): string | null {
+  if (!workspacePath) {
+    return null;
+  }
+
+  const resolvedPath = path.resolve(workspacePath);
+  try {
+    if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isDirectory()) {
+      log.warn(`[Main] Clearing unavailable workspace path: ${resolvedPath}`);
+      workspacePath = null;
+      clearWorkspaceRuntimeState();
+      return null;
+    }
+  } catch (error: any) {
+    log.warn(`[Main] Clearing unreadable workspace path: ${resolvedPath} (${error?.message || 'unknown error'})`);
+    workspacePath = null;
+    clearWorkspaceRuntimeState();
+    return null;
+  }
+
+  workspacePath = resolvedPath;
+  return resolvedPath;
+}
 
 if (!hasSingleInstanceLock) {
   log.warn('[Main] Another AgentPrime instance is already running. Exiting duplicate instance.');
@@ -947,7 +973,7 @@ function createWindow(): void {
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: https:; " +
           "font-src 'self' data:; " +
-          "connect-src 'self' http://localhost:* http://127.0.0.1:* https://api.anthropic.com https://api.openai.com https://openrouter.ai https://*.ollama.com ws://localhost:* wss://localhost:*"
+          "connect-src 'self' http://localhost:* http://127.0.0.1:* https://api.anthropic.com https://api.openai.com https://openrouter.ai https://ollama.com https://*.ollama.com ws://localhost:* wss://localhost:*"
       }
     });
   });
@@ -1200,7 +1226,7 @@ app.whenReady().then(async () => {
       });
 
       pluginManager = new PluginManager(sandbox, {
-        getWorkspacePath: () => workspacePath,
+        getWorkspacePath: getValidatedWorkspacePath,
         invokeHostMethod: handlePluginHostInvoke,
       });
       setPluginManagerSingleton(pluginManager);
@@ -1232,8 +1258,8 @@ app.whenReady().then(async () => {
     ipcMain,
     dialog,
     mainWindow: () => mainWindow,
-    getWorkspacePath: () => workspacePath,
-    setWorkspacePath: (path: string) => {
+    getWorkspacePath: getValidatedWorkspacePath,
+    setWorkspacePath: (path: string | null) => {
       workspacePath = path;
       // Initialize codebase indexer when workspace is set
       if (workspacePath) {
@@ -1303,7 +1329,7 @@ app.whenReady().then(async () => {
   // Register chat handler
   registerChat({
     ipcMain,
-    getWorkspacePath: () => workspacePath,
+    getWorkspacePath: getValidatedWorkspacePath,
     getCurrentFile: () => activeFilePath,
     getCurrentFolder: () => focusedFolderPath,
     getConversationHistory: (mode: ConversationMode = 'agent') => conversationHistory[mode] || [],
@@ -1358,7 +1384,7 @@ app.on('activate', () => {
 
 // Basic IPC handlers (more will be added as modules are migrated)
 ipcMain.handle('get-workspace', () => {
-  return workspacePath;
+  return getValidatedWorkspacePath();
 });
 
 ipcMain.handle('get-settings', () => {

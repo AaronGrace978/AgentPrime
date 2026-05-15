@@ -11,6 +11,7 @@ const MAX_RECENT = 5;
 interface UseRecentProjectsReturn {
   recentProjects: RecentProject[];
   addRecentProject: (path: string) => void;
+  removeRecentProject: (path: string) => void;
   clearRecentProjects: () => void;
 }
 
@@ -53,6 +54,18 @@ export function useRecentProjects(workspacePath: string | null): UseRecentProjec
     });
   }, []);
 
+  const removeRecentProject = useCallback((path: string) => {
+    setRecentProjects(prev => {
+      const updated = prev.filter(project => project.path !== path);
+      if (updated.length > 0) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      return updated;
+    });
+  }, []);
+
   // Clear all recent projects
   const clearRecentProjects = useCallback(() => {
     setRecentProjects([]);
@@ -62,6 +75,7 @@ export function useRecentProjects(workspacePath: string | null): UseRecentProjec
   return {
     recentProjects,
     addRecentProject,
+    removeRecentProject,
     clearRecentProjects
   };
 }

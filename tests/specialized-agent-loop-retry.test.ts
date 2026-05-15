@@ -7,6 +7,7 @@ import { transactionManager } from '../src/main/core/transaction-manager';
 import { reviewSessionManager } from '../src/main/agent/review-session-manager';
 import * as telemetry from '../src/main/core/telemetry-service';
 import * as projectTester from '../src/main/agent/tools/projectTester';
+import * as scaffoldResolver from '../src/main/agent/scaffold-resolver';
 import { ProjectRunner } from '../src/main/agent/tools/projectRunner';
 import { ProjectAutoFixer } from '../src/main/agent/tools/project-auto-fixer';
 import { TimeoutError } from '../src/main/core/timeout-utils';
@@ -467,6 +468,78 @@ describe('SpecializedAgentLoop orchestration retry', () => {
     expect(fallbackReviewSpy).toHaveBeenCalled();
   });
 
+  it('stages an explicit deterministic scaffold review without relying on the E2E sentinel', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-real-scaffold-review-');
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      model: 'qwen-test',
+      deterministicScaffoldOnly: true,
+      runtimeBudget: 'standard',
+    } as any);
+    const operations = [
+      {
+        path: 'index.html',
+        originalContent: null,
+        newContent: '<main><h1>Launch Ready</h1></main>\n',
+        existed: false,
+      },
+      {
+        path: 'styles.css',
+        originalContent: null,
+        newContent: 'body { font-family: system-ui; }\n',
+        existed: false,
+      },
+      {
+        path: 'app.js',
+        originalContent: null,
+        newContent: 'console.log("AgentPrime scaffold ready");\n',
+        existed: false,
+      },
+    ];
+
+    jest.spyOn(scaffoldResolver, 'scaffoldProjectFromTemplate').mockResolvedValue({
+      success: true,
+      templateId: 'static-site',
+      projectPath: workspacePath,
+      createdFiles: operations.map((operation) => operation.path),
+      dependenciesInstalled: false,
+    });
+    jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: true,
+      missingFiles: [],
+      errors: [],
+      createdFiles: operations.map((operation) => operation.path),
+    });
+    jest.spyOn(transactionManager, 'startTransaction').mockReturnValue({
+      getOperationCount: () => operations.length,
+      getOperations: () => operations,
+    } as any);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    const rollbackSpy = jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run(
+      'Create a static landing page with a hero section and status panel.'
+    );
+    const reviewSession = loop.consumePendingReviewSession();
+
+    expect(result).toContain('Review Required');
+    expect(reviewSession?.changes.map((change) => change.filePath)).toEqual([
+      'index.html',
+      'styles.css',
+      'app.js',
+    ]);
+    expect(reviewSession?.checkpoint).toMatchObject({
+      strategy: 'staged_patch_set',
+      reflectionBudget: 'standard',
+      requiresExplicitApply: true,
+    });
+    expect(fs.existsSync(path.join(workspacePath, 'index.html'))).toBe(false);
+    expect(rollbackSpy).toHaveBeenCalled();
+  });
+
   it('does not fall back to deterministic scaffold review when VibeCoder repair policy blocks scaffold/create work', async () => {
     const workspacePath = createTempDir('agentprime-specialized-vibecoder-no-fallback-');
     const loop = new SpecializedAgentLoop({
@@ -514,6 +587,76 @@ describe('SpecializedAgentLoop orchestration retry', () => {
 
     expect(result).toBe('repair response without scaffold fallback');
     expect(fallbackReviewSpy).not.toHaveBeenCalled();
+  });
+
+  it('rolls back repair runs that touch files outside verifier scope', async () => {
+    const workspacePath = createTempDir('agentprime-specialized-repair-scope-');
+    const loop = new SpecializedAgentLoop({
+      workspacePath,
+      model: 'qwen-test',
+      repairScope: {
+        allowedFiles: ['src/App.tsx'],
+        blockedFiles: ['src/theme.css'],
+        retryReason: 'Verifier failure only named src/App.tsx.',
+        findings: [
+          {
+            stage: 'build',
+            severity: 'error',
+            summary: 'src/App.tsx has a type error',
+            files: ['src/App.tsx'],
+          },
+        ],
+      },
+    } as any);
+    const operations = [
+      {
+        path: 'src/App.tsx',
+        originalContent: 'before',
+        newContent: 'after',
+        existed: true,
+      },
+      {
+        path: 'src/theme.css',
+        originalContent: 'body {}',
+        newContent: 'body { color: red; }',
+        existed: true,
+      },
+    ];
+
+    jest.spyOn(specializedAgents, 'routeToSpecialists').mockReturnValue(['javascript_specialist'] as any);
+    jest.spyOn(specializedAgents, 'executeWithSpecialists').mockResolvedValue({
+      results: [],
+      finalAnalysis: 'repair attempted',
+      executedTools: [],
+      scaffoldApplied: false,
+      scaffoldTemplateId: undefined,
+      skippedGenerativePass: false,
+    } as any);
+    jest.spyOn(loop as any, 'getProjectFiles').mockReturnValue(['src/App.tsx', 'src/theme.css']);
+    jest.spyOn(loop as any, 'detectLanguage').mockReturnValue('typescript');
+    jest.spyOn(loop as any, 'detectProjectType').mockReturnValue('application');
+    const verifySpy = jest.spyOn(loop as any, 'verifyProject').mockResolvedValue({
+      isComplete: true,
+      missingFiles: [],
+      errors: [],
+      createdFiles: ['src/App.tsx'],
+    });
+    jest.spyOn(transactionManager, 'startTransaction').mockReturnValue({
+      getOperationCount: () => operations.length,
+      getOperations: () => operations,
+    } as any);
+    const rollbackSpy = jest.spyOn(transactionManager, 'rollbackTransaction').mockResolvedValue(undefined);
+    jest.spyOn(transactionManager, 'recordFileChange').mockResolvedValue(undefined as any);
+    jest.spyOn(telemetry, 'getTelemetryService').mockReturnValue({
+      track: jest.fn(),
+    } as any);
+
+    const result = await loop.run('Repair the failed reviewed changes');
+
+    expect(result).toContain('Repair scope blocked');
+    expect(result).toContain('src/theme.css');
+    expect(rollbackSpy).toHaveBeenCalled();
+    expect(verifySpy).not.toHaveBeenCalled();
   });
 
   it('rolls back immediate-apply specialist changes when verification never passes', async () => {

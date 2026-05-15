@@ -90,6 +90,7 @@ function looksPremiumSalesWebsiteTask(userMessage: string): boolean {
 
 interface ProjectVerification {
   isComplete: boolean;
+  runtimeVerified?: boolean;
   missingFiles: string[];
   errors: string[];
   createdFiles: string[];
@@ -148,6 +149,16 @@ function inferVerificationStage(summary: string): AgentReviewFinding['stage'] {
     return 'validation';
   }
   return 'unknown';
+}
+
+function extractVerificationCommand(summary: string): string | undefined {
+  const match = summary.match(/Command\s+"([^"]+)"/i);
+  return match?.[1];
+}
+
+function extractVerificationOutput(summary: string): string | undefined {
+  const match = summary.match(/failed:\s*(.+)$/i);
+  return match?.[1]?.trim();
 }
 
 function formatSpecialistTitle(id: SpecialistId): string {
@@ -305,6 +316,68 @@ export class SpecializedAgentLoop extends EventEmitter {
     return snapshot;
   }
 
+  private emitExecutionTrace(
+    message: string,
+    metadata: Record<string, unknown> = {},
+    type: 'progress' | 'success' | 'error' = 'progress'
+  ): void {
+    const event = {
+      type,
+      label: 'Specialist execution trace',
+      phase: 'specialist_trace',
+      elapsedMs: 0,
+      message,
+      metadata,
+    };
+    this.emit('runtime-event', event);
+    recordAgentTrace('route_plan', { message, ...metadata });
+  }
+
+  private describeSpecialistSelection(
+    blackboard: SpecialistBlackboard,
+    retryContext?: TaskMasterRetryContext
+  ): string {
+    const steps = blackboard.steps.filter((step) => step.specialist !== 'integration_verifier');
+    if (steps.length === 0) {
+      return 'Task Master kept this pass on deterministic/verifier-owned work.';
+    }
+
+    const retryEvidence = retryContext
+      ? ` Repair evidence: ${[...retryContext.missingFiles, ...retryContext.errors]
+          .slice(0, 2)
+          .join('; ')}`
+      : '';
+
+    return steps
+      .map((step) => {
+        const files = step.claimedFiles.slice(0, 6).join(', ') || 'no writable files';
+        return `${formatSpecialistTitle(step.specialist)} selected because ${step.goal} Allowed: ${files}.`;
+      })
+      .join(' ') + retryEvidence;
+  }
+
+  private summarizeRetryEvidence(findings: VerificationFinding[]): {
+    failedCommand?: string;
+    implicatedFiles: string[];
+    suggestedOwners: string[];
+    reason: string;
+  } {
+    const failedCommand = findings.find((finding) => finding.command)?.command;
+    const implicatedFiles = [
+      ...new Set(findings.flatMap((finding) => finding.files).filter(Boolean)),
+    ].slice(0, 8);
+    const suggestedOwners = [
+      ...new Set(findings.map((finding) => formatSpecialistTitle(finding.suggestedOwner))),
+    ];
+    const reason =
+      findings
+        .map((finding) => finding.summary)
+        .slice(0, 2)
+        .join('; ') || 'Verifier reported incomplete runtime readiness.';
+
+    return { failedCommand, implicatedFiles, suggestedOwners, reason };
+  }
+
   private resolveMode(isUpdate: boolean, retryCount: number): SpecialistBlackboard['mode'] {
     if (retryCount > 0) {
       return 'repair';
@@ -321,7 +394,6 @@ export class SpecializedAgentLoop extends EventEmitter {
       return roles;
     }
 
-    let refined = [...roles];
     const retryFiles = new Set<string>([
       ...lastVerification.missingFiles,
       ...lastVerification.errors.flatMap((error) => extractFilesFromVerificationIssue(error)),
@@ -368,6 +440,16 @@ export class SpecializedAgentLoop extends EventEmitter {
     const directRetryRoles = new Set(
       findings.map((finding) => mapFindingOwnerToAgentRole(finding.suggestedOwner))
     );
+    const evidenceDrivenRoles = [...directRetryRoles].filter(
+      (role) => role !== 'integration_analyst' && role !== 'tool_orchestrator'
+    );
+    let refined =
+      findings.length > 0 || hasConcreteRetryTargets
+        ? evidenceDrivenRoles.length > 0
+          ? evidenceDrivenRoles
+          : (['repair_specialist'] as AgentRole[])
+        : [...roles];
+
     if (!hasStylingSpecificFailures && refined.includes('styling_ux_specialist')) {
       refined = refined.filter((role) => role !== 'styling_ux_specialist');
       log.info(
@@ -446,7 +528,11 @@ export class SpecializedAgentLoop extends EventEmitter {
       );
     }
 
-    if ((hasSourceTargets || hasRootStaticAssetTargets) && !refined.includes('javascript_specialist')) {
+    if (
+      evidenceDrivenRoles.length === 0 &&
+      (hasSourceTargets || hasRootStaticAssetTargets) &&
+      !refined.includes('javascript_specialist')
+    ) {
       refined.push('javascript_specialist');
     }
 
@@ -553,6 +639,51 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     return [...new Set(refined)];
+  }
+
+  private normalizeRepairScopePath(filePath: string): string {
+    return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  }
+
+  private validateRepairScopeOperations(
+    operations: ReadonlyArray<{ path: string }>,
+    repairScope: NonNullable<AgentContext['repairScope']>
+  ): { success: true } | { success: false; message: string; files: string[] } {
+    const touchedFiles = Array.from(
+      new Set(
+        operations
+          .map((operation) => this.normalizeRepairScopePath(operation.path))
+          .filter(Boolean)
+      )
+    );
+    const allowedFiles = new Set(
+      repairScope.allowedFiles.map((filePath) => this.normalizeRepairScopePath(filePath))
+    );
+    const blockedFiles = new Set(
+      repairScope.blockedFiles.map((filePath) => this.normalizeRepairScopePath(filePath))
+    );
+    const touchedBlocked = touchedFiles.filter((filePath) => blockedFiles.has(filePath));
+    const touchedOutsideAllowed =
+      allowedFiles.size > 0
+        ? touchedFiles.filter((filePath) => !allowedFiles.has(filePath))
+        : [];
+    const violations = Array.from(new Set([...touchedBlocked, ...touchedOutsideAllowed]));
+
+    if (violations.length === 0) {
+      return { success: true };
+    }
+
+    const reason = repairScope.retryReason
+      ? ` ${repairScope.retryReason}`
+      : ' Repair runs may only touch verifier-failed accepted files.';
+
+    return {
+      success: false,
+      files: violations,
+      message:
+        `Repair scope blocked edits outside the verifier evidence: ${violations.join(', ')}.` +
+        reason,
+    };
   }
 
   private mapLegacyRoleToSpecialist(role: AgentRole): SpecialistId {
@@ -872,6 +1003,13 @@ export class SpecializedAgentLoop extends EventEmitter {
             : undefined;
         blackboard = this.buildBlackboard(userMessage, mode, roles, retryContext);
         this.emit('blackboard-update', blackboard);
+        this.emitExecutionTrace(this.describeSpecialistSelection(blackboard, retryContext), {
+          attempt: attemptCount,
+          mode,
+          selectedSpecialists: roles,
+          allowedFilesBySpecialist: blackboard.claimedFiles,
+          verificationFailed: retryCount > 0,
+        });
 
         log.info(
           `[SpecializedAgent] Attempt ${attemptCount}/${maxRepairPasses + 1} - Routing to: ${roles.join(', ')} (budget: ${runtimeBudget})`
@@ -900,7 +1038,11 @@ export class SpecializedAgentLoop extends EventEmitter {
           }
         } else if (repairScope) {
           const findingLines = repairScope.findings
-            .map((finding) => `- [${finding.stage}] ${finding.summary}`)
+            .map((finding) => {
+              const command = finding.command ? ` command=${finding.command}` : '';
+              const owner = finding.suggestedOwner ? ` owner=${finding.suggestedOwner}` : '';
+              return `- [${finding.stage}]${command}${owner} ${finding.summary}`;
+            })
             .join('\n');
           const allowedLines = repairScope.allowedFiles
             .map((filePath) => `- ${filePath}`)
@@ -910,6 +1052,7 @@ export class SpecializedAgentLoop extends EventEmitter {
             .join('\n');
           taskMessage =
             `REPAIR SCOPE IS ENFORCED.\n\n` +
+            `Retry reason:\n${repairScope.retryReason || 'Verifier findings define the repair scope.'}\n\n` +
             `Allowed files:\n${allowedLines || '- Use only files named in the findings.'}\n\n` +
             `Blocked files:\n${blockedLines || '- None'}\n\n` +
             `Verifier findings:\n${findingLines || '- No structured findings were provided.'}\n\n` +
@@ -1010,6 +1153,30 @@ export class SpecializedAgentLoop extends EventEmitter {
           scaffoldTemplateId,
           skippedGenerativePass,
         } = specialistRun;
+
+        if (repairScope) {
+          const scopeValidation = this.validateRepairScopeOperations(
+            transaction.getOperations(),
+            repairScope
+          );
+          if (!scopeValidation.success) {
+            await transactionManager.rollbackTransaction();
+            rolledBackIncomplete = true;
+            log.warn(`[SpecializedAgent] ${scopeValidation.message}`);
+            telemetry.track('agent_task_complete', {
+              mode: 'specialized',
+              success: false,
+              rolledBack: true,
+              retryCount,
+              runtimeBudget,
+              autonomyLevel,
+              autonomyLabel: autonomyPolicy.label,
+              error: scopeValidation.message,
+            });
+            return `❌ **Repair scope blocked**\n\n${scopeValidation.message}\n\nStart another repair pass from the verifier findings or widen the accepted file scope.`;
+          }
+        }
+
         if (blackboard) {
           blackboard.status = 'verifying';
           this.emit('blackboard-update', blackboard);
@@ -1054,6 +1221,7 @@ export class SpecializedAgentLoop extends EventEmitter {
         if (this.context.agentRoutePlan?.verificationPlan.skipProjectVerification) {
           lastVerification = {
             isComplete: true,
+            runtimeVerified: true,
             missingFiles: [],
             errors: [],
             createdFiles: allCreatedFiles,
@@ -1109,17 +1277,14 @@ export class SpecializedAgentLoop extends EventEmitter {
             );
           if (onlyDeterministicScaffoldRan) {
             log.info(
-              '[SpecializedAgent] 🧪 Only deterministic scaffold ran (no AI customization); skipping ProjectRunner.autoRun to avoid building an un-customized template'
+              '[SpecializedAgent] 🧪 Only deterministic scaffold ran; verifying against the detected runtime profile before reporting readiness'
             );
-            verificationSucceeded = true;
-            if (blackboard) {
-              blackboard.status = 'completed';
-              this.emit('blackboard-update', blackboard);
-            }
-            shouldContinue = false;
-            break;
           }
 
+          this.emitExecutionTrace('Running runtime verification before completion.', {
+            verification: 'ProjectRunner.autoRun',
+            runtimeProfile: getProjectRuntimeProfileSync(this.context.workspacePath).displayName,
+          });
           const lifecycleResult = await ProjectRunner.autoRun(this.context.workspacePath);
           this.applyLifecycleResultToVerification(lastVerification, lifecycleResult);
 
@@ -1232,6 +1397,18 @@ export class SpecializedAgentLoop extends EventEmitter {
           blackboard.status = 'repairing';
           this.emit('blackboard-update', blackboard);
         }
+        const retryEvidence = this.summarizeRetryEvidence(lastStructuredFindings);
+        this.emitExecutionTrace(
+          `Retry needed because verification failed: ${retryEvidence.reason}`,
+          {
+            failedCommand: retryEvidence.failedCommand,
+            implicatedFiles: retryEvidence.implicatedFiles,
+            suggestedOwners: retryEvidence.suggestedOwners,
+            missingFiles: lastVerification.missingFiles,
+            errors: lastVerification.errors.slice(0, 5),
+          },
+          'error'
+        );
 
         if (retryCount >= maxRepairPasses) {
           log.info('[SpecializedAgent] Max repair passes reached, returning partial result');
@@ -1747,6 +1924,7 @@ export class SpecializedAgentLoop extends EventEmitter {
 
     return {
       isComplete: uniqueMissing.length === 0 && errors.length === 0,
+      runtimeVerified: false,
       missingFiles: uniqueMissing,
       errors,
       createdFiles,
@@ -1995,26 +2173,31 @@ export class SpecializedAgentLoop extends EventEmitter {
     verification: ProjectVerification,
     lifecycleResult: any
   ): void {
+    const projectInfo = lifecycleResult.projectInfo || {};
     if (lifecycleResult.validation?.issues?.length > 0) {
       verification.errors.push(
         ...lifecycleResult.validation.issues.map((issue: string) => `[Validate] ${issue}`)
       );
     }
     if (lifecycleResult.installResult && !lifecycleResult.installResult.success) {
+      const command = projectInfo.installCommand || 'dependency install';
       verification.errors.push(
-        `[Install] ${this.compactProcessOutput(lifecycleResult.installResult.output)}`
+        `[Install] Command "${command}" failed: ${this.compactProcessOutput(lifecycleResult.installResult.output)}`
       );
     }
     if (lifecycleResult.buildResult && !lifecycleResult.buildResult.success) {
+      const command = projectInfo.buildCommand || 'build';
       verification.errors.push(
-        `[Build] ${this.compactProcessOutput(lifecycleResult.buildResult.output)}`
+        `[Build] Command "${command}" failed: ${this.compactProcessOutput(lifecycleResult.buildResult.output)}`
       );
     }
     if (lifecycleResult.runResult && !lifecycleResult.runResult.success) {
+      const command = projectInfo.startCommand || 'runtime launch';
       verification.errors.push(
-        `[Run] ${this.compactProcessOutput(lifecycleResult.runResult.output)}`
+        `[Run] Command "${command}" failed: ${this.compactProcessOutput(lifecycleResult.runResult.output)}`
       );
     }
+    verification.runtimeVerified = Boolean(lifecycleResult.success);
     if (!lifecycleResult.success) {
       verification.isComplete = false;
     }
@@ -2157,6 +2340,8 @@ export class SpecializedAgentLoop extends EventEmitter {
         summary: error,
         files,
         suggestedOwner: inferSpecialistOwnerForFinding(stage, error, files),
+        command: extractVerificationCommand(error),
+        output: extractVerificationOutput(error),
       });
     }
 
@@ -2169,7 +2354,7 @@ export class SpecializedAgentLoop extends EventEmitter {
   private buildInitialReviewVerification(
     verification: ProjectVerification | null
   ): AgentReviewVerificationState | undefined {
-    if (!verification || verification.isComplete) {
+    if (!verification || (verification.isComplete && verification.runtimeVerified)) {
       return undefined;
     }
 
@@ -2183,10 +2368,15 @@ export class SpecializedAgentLoop extends EventEmitter {
         summary: finding.summary,
         files: finding.files,
         suggestedOwner: finding.suggestedOwner,
+        command: finding.command,
+        output: finding.output,
       })
     );
 
     const issues = findings.map((finding) => finding.summary);
+    if (verification.isComplete && !verification.runtimeVerified) {
+      issues.push('Runtime verification has not passed for the detected project profile yet.');
+    }
     if (issues.length === 0) {
       return undefined;
     }
@@ -2270,6 +2460,14 @@ export class SpecializedAgentLoop extends EventEmitter {
     }
 
     const verification = await this.verifyProject(scaffolded.createdFiles);
+    this.emitExecutionTrace('Deterministic scaffold created; running runtime verification.', {
+      verification: 'ProjectRunner.autoRun',
+      runtimeProfile: getProjectRuntimeProfileSync(this.context.workspacePath).displayName,
+      allowedFiles: scaffolded.createdFiles,
+    });
+    const lifecycleResult = await ProjectRunner.autoRun(this.context.workspacePath);
+    this.applyLifecycleResultToVerification(verification, lifecycleResult);
+
     const stagedReview = applyImmediately
       ? null
       : reviewSessionManager.createSessionFromOperations(
@@ -2361,7 +2559,12 @@ export class SpecializedAgentLoop extends EventEmitter {
         : runtimeProfile.install.manager === 'pip'
           ? !runtimeProfile.install.required
           : true;
-    const isReady = Boolean(verification?.isComplete);
+    const projectVerificationSkipped = Boolean(
+      this.context.agentRoutePlan?.verificationPlan.skipProjectVerification
+    );
+    const isReady = Boolean(
+      verification?.isComplete && (verification.runtimeVerified || projectVerificationSkipped)
+    );
 
     let response = isReady ? `## ✅ Project Created!\n\n` : `## ⚠️ Project Needs Fixes\n\n`;
     response += `**Location:** \`${this.context.workspacePath}\`\n\n`;
@@ -2385,7 +2588,7 @@ export class SpecializedAgentLoop extends EventEmitter {
 
     // Show verification results
     if (verification) {
-      if (verification.isComplete) {
+      if (isReady) {
         response += `### ✅ Verification Passed\n`;
         response += `${runtimeProfile.readiness.summary}\n\n`;
       } else {
@@ -2412,6 +2615,9 @@ export class SpecializedAgentLoop extends EventEmitter {
             response += `- ${err}\n`;
           });
           response += `\n`;
+        } else if (verification.isComplete && !verification.runtimeVerified) {
+          response += `### ⚠️ Runtime Verification Needed\n`;
+          response += `Structural checks passed, but the detected runtime has not verified yet. Run \`${runCommand || 'the project'}\` before calling it ready.\n\n`;
         }
       }
     }

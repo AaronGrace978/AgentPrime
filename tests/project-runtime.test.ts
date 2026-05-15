@@ -198,6 +198,33 @@ describe('Project runtime source of truth', () => {
     expect(runResult.output).toContain('Runtime launch skipped for probe verification');
   });
 
+  it('runs an explicit static-site runtime script instead of claiming file-open success', async () => {
+    const workspacePath = createTempDir('agentprime-runtime-static-script-');
+    const port = await ProjectRunner.findAvailablePort(4610) || 4610;
+    fs.writeFileSync(path.join(workspacePath, 'package.json'), JSON.stringify({
+      name: 'static-with-runtime',
+      scripts: { dev: 'node dev-server.js' },
+    }, null, 2));
+    fs.writeFileSync(path.join(workspacePath, 'index.html'), '<!doctype html><h1>Static runtime</h1>');
+    fs.writeFileSync(path.join(workspacePath, 'dev-server.js'), `
+const http = require('http');
+const port = ${port};
+http.createServer((_req, res) => res.end('ok')).listen(port, () => {
+  console.log('http://localhost:' + port);
+});
+`, 'utf-8');
+
+    const profile = getProjectRuntimeProfileSync(workspacePath);
+    const projectInfo = await ProjectRunner.detectProject(workspacePath);
+    const runResult = await ProjectRunner.runProject(workspacePath, projectInfo, { probeOnly: true, waitMs: 300 });
+
+    expect(profile.kind).toBe('static');
+    expect(projectInfo.startCommand).toBe('npm run dev');
+    expect(runResult.success).toBe(true);
+    expect(runResult.url).toBe(`http://localhost:${port}`);
+    expect(runResult.output).not.toContain('file:///');
+  });
+
   it('does not reinstall Node dependencies when install markers are current', async () => {
     const workspacePath = createTempDir('agentprime-runtime-node-modules-');
     createViteShape(workspacePath);

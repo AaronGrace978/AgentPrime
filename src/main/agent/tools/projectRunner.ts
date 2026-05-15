@@ -325,7 +325,7 @@ export class ProjectRunner {
   ): Promise<{ success: boolean; output: string; port?: number; url?: string }> {
     const waitMs = options.waitMs ?? 3000;
 
-    if (projectInfo.kind === 'static' && projectInfo.hasIndexHtml) {
+    if (projectInfo.kind === 'static' && projectInfo.hasIndexHtml && !projectInfo.startCommand) {
       const indexHtmlPath = path.join(workspacePath, 'index.html');
       if (!fs.existsSync(indexHtmlPath)) {
         return { success: false, output: 'index.html not found' };
@@ -535,12 +535,15 @@ export class ProjectRunner {
       return parseInt(scriptPortMatch[1], 10);
     }
 
-    if (projectInfo.type !== 'node') {
-      return undefined;
-    }
+    const scriptEntrypointMatch = scriptSource?.match(/\bnode\s+["']?([^"'\s]+\.js)["']?/);
+    const filesToInspect =
+      projectInfo.type === 'node'
+        ? ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean)
+        : scriptEntrypointMatch
+          ? [scriptEntrypointMatch[1]]
+          : [];
 
-    const serverFiles = ['server.js', 'index.js', 'app.js', projectInfo.mainFile].filter(Boolean);
-    for (const file of serverFiles) {
+    for (const file of filesToInspect) {
       if (!file) {
         continue;
       }
@@ -554,6 +557,10 @@ export class ProjectRunner {
       } catch {
         // Ignore unreadable candidates.
       }
+    }
+
+    if (projectInfo.type !== 'node') {
+      return undefined;
     }
 
     return projectInfo.kind === 'vite' ? 5173 : undefined;
@@ -570,7 +577,7 @@ export class ProjectRunner {
       return { url, port: parseInt(urlMatch[1], 10) };
     }
 
-    if (configuredPort && (projectInfo.kind === 'vite' || projectInfo.type === 'node')) {
+    if (configuredPort && (projectInfo.kind === 'vite' || projectInfo.type === 'node' || (projectInfo.kind === 'static' && projectInfo.startCommand))) {
       return {
         url: `http://localhost:${configuredPort}`,
         port: configuredPort,

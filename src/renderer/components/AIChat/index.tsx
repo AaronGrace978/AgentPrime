@@ -1589,6 +1589,7 @@ const AIChat: React.FC<AIChatProps> = ({
           <ChatRuntimeStatusBar
             currentModel={statusBarModel}
             chatMode={chatMode}
+            runtimeStatus={runtimeStatus}
           />
           {chatMode === 'agent' && agentRoutePlan && (
             <div className="agent-route-plan">

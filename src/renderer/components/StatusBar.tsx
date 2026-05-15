@@ -65,9 +65,22 @@ const StatusBar: React.FC<StatusBarProps> = ({
   const ai = systemStatus?.ai;
   const brain = systemStatus?.brain;
   const startup = systemStatus?.startup;
-  const aiConnectionDetails = ai?.connectionError || ai?.reason || (ai?.connected ? 'AI Connected' : 'AI Disconnected');
+  const executionDetails = ai?.executionProvider || ai?.executionModel
+    ? `Actual: ${ai.executionProvider || ai.provider}/${ai.executionModel || ai.model}`
+    : null;
+  const requestedDetails = ai?.requestedProvider || ai?.requestedModel
+    ? `Requested: ${ai.requestedProvider || ai.provider}/${ai.requestedModel || ai.model}`
+    : null;
+  const fallbackDetails = ai?.viaFallback ? 'Served by fallback provider/model' : null;
+  const aiConnectionDetails =
+    [ai?.connectionError || ai?.reason || (ai?.connected ? 'AI Connected' : 'AI Disconnected'), executionDetails, fallbackDetails]
+      .filter(Boolean)
+      .join('\n');
   const modelDetails = [
-    `Model: ${ai?.model || 'loading...'}`,
+    `Displayed model: ${ai?.model || 'loading...'}`,
+    requestedDetails,
+    executionDetails,
+    fallbackDetails,
     ai?.availableModels !== undefined ? `Provider reported ${ai.availableModels} model${ai.availableModels === 1 ? '' : 's'}` : null,
     ai?.connectionError || ai?.reason || null,
   ].filter(Boolean).join('\n');
@@ -134,7 +147,10 @@ const StatusBar: React.FC<StatusBarProps> = ({
         {/* Current Model */}
         <div className="status-item model" title={modelDetails}>
           <span className="status-icon">AI</span>
-          <span className="status-text">{formatModel(ai?.model || 'loading...')}</span>
+          <span className="status-text">
+            {ai?.viaFallback ? 'Actual ' : ''}
+            {formatModel(ai?.model || 'loading...')}
+          </span>
         </div>
       </div>
 

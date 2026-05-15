@@ -2,6 +2,8 @@
 
 Use this checklist before publishing installers or tagging a release.
 
+For local setup, provider configuration, desktop-only mode, and optional Brain/Witness operation, use `docs/OPERATOR_GUIDE.md`.
+
 ## Local Data Policy
 
 - `data/project-registry.json` is local user state and should not be committed.

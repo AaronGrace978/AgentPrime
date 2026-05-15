@@ -30,7 +30,7 @@ interface HandlerDeps {
   dialog: any;
   mainWindow: () => any;
   getWorkspacePath: () => string | null;
-  setWorkspacePath: (path: string) => void;
+  setWorkspacePath: (path: string | null) => void;
   getFocusedFolder?: () => string | null;
   setFocusedFolder?: (path: string | null) => void;
   templateEngine: any;

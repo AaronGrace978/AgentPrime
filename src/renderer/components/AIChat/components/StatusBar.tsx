@@ -5,16 +5,25 @@
 import React from 'react';
 import { estimateModelCapability } from '../modelCapability';
 import type { ChatMode } from '../types';
+import type { AIRuntimeSnapshot } from '../../../../types/ai-providers';
 
 interface StatusBarProps {
   currentModel: string;
   chatMode?: ChatMode;
+  runtimeStatus?: AIRuntimeSnapshot | null;
 }
 
-export const StatusBar: React.FC<StatusBarProps> = ({ currentModel, chatMode }) => {
+export const StatusBar: React.FC<StatusBarProps> = ({ currentModel, chatMode, runtimeStatus }) => {
   if (!currentModel) return null;
 
-  const power = estimateModelCapability(currentModel);
+  const actualModel = runtimeStatus?.displayModel || runtimeStatus?.executionModel;
+  const hasActualRuntime = Boolean(runtimeStatus?.lastExecutionAt || runtimeStatus?.executionProvider || runtimeStatus?.executionModel);
+  const isFallback = Boolean(runtimeStatus?.viaFallback);
+  const showActual =
+    hasActualRuntime &&
+    actualModel &&
+    (actualModel !== currentModel || isFallback || runtimeStatus?.displayProvider !== runtimeStatus?.requestedProvider);
+  const power = estimateModelCapability((showActual ? actualModel : currentModel) || currentModel);
   const isDino = chatMode === 'dino';
 
   const activeDotColor =
@@ -53,9 +62,24 @@ export const StatusBar: React.FC<StatusBarProps> = ({ currentModel, chatMode }) 
       <span style={chipStyle} title={currentModel}>
         {currentModel}
       </span>
+      {showActual && (
+        <>
+          <span style={{ fontWeight: 600, color: 'var(--prime-text-secondary)' }}>Actual:</span>
+          <span
+            style={chipStyle}
+            title={[
+              `Requested: ${runtimeStatus?.requestedProvider}/${runtimeStatus?.requestedModel}`,
+              `Actual: ${runtimeStatus?.displayProvider}/${actualModel}`,
+              isFallback ? 'Served by fallback provider/model.' : null,
+            ].filter(Boolean).join('\n')}
+          >
+            {runtimeStatus?.displayProvider}/{actualModel}
+          </span>
+        </>
+      )}
       <div
         style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-        title={`Estimated model capability ${power}/10 (from the active model name). Changes when you switch models in settings.`}
+        title={`Estimated model capability ${power}/10 (from the ${showActual ? 'actual executed' : 'active'} model name).`}
       >
         <span style={{ fontWeight: 600, color: 'var(--prime-text-secondary)' }}>Power:</span>
         <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
